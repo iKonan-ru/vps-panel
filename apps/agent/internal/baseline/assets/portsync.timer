@@ -1,0 +1,10 @@
+[Unit]
+Description=vps-portsync periodic run
+
+[Timer]
+OnBootSec=45s
+OnUnitActiveSec=2min
+AccuracySec=15s
+
+[Install]
+WantedBy=timers.target

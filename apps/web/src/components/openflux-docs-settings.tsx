@@ -1,0 +1,264 @@
+import { Alert } from '@/components/ui/alert';
+import { Button } from '@/components/ui/button';
+import { Chip } from '@/components/ui/chip';
+import { useConfirm } from '@/components/ui/confirm';
+import { Field } from '@/components/ui/field';
+import { Input } from '@/components/ui/input';
+import { LinkButton } from '@/components/ui/link-button';
+import { Pager, usePaged } from '@/components/ui/pager';
+import { Section } from '@/components/ui/section';
+import { Select } from '@/components/ui/select';
+import { Textarea } from '@/components/ui/textarea';
+import { api } from '@/lib/api';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
+import { List, Plus, Trash2 } from 'lucide-react';
+import { type FormEvent, useState } from 'react';
+
+interface OfDoc {
+  id: string;
+  kind: 'vyandex' | 'mailru';
+  url: string;
+  usedBy: { client: string; device: string; server: string } | null;
+}
+
+const kindTitle = { vyandex: 'Яндекс', mailru: 'Mail.ru' };
+
+/**
+ * Пул документов OpenFlux: каждый канал клиента получает по свободному
+ * документу Яндекса и Mail.ru. Документы создаются в своём аккаунте с редактированием по ссылке.
+ */
+export function OpenfluxDocsSettings() {
+  const qc = useQueryClient();
+  const ask = useConfirm();
+  const { data } = useQuery({
+    queryKey: ['openflux-docs'],
+    queryFn: () => api<OfDoc[]>('/api/openflux/docs'),
+  });
+  const [text, setText] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [msg, setMsg] = useState<{ tone: 'ok' | 'bad'; text: string } | null>(null);
+  const [showForm, setShowForm] = useState(false);
+  const [showList, setShowList] = useState(false);
+  const [kind, setKind] = useState<'all' | OfDoc['kind']>('all');
+  const [state, setState] = useState<'all' | 'used' | 'free'>('all');
+  const [q, setQ] = useState('');
+  const refresh = () => qc.invalidateQueries({ queryKey: ['openflux-docs'] });
+
+  async function add(e: FormEvent) {
+    e.preventDefault();
+    setBusy(true);
+    setMsg(null);
+    try {
+      const r = await api<{ added: number; bad: string[] }>('/api/openflux/docs', {
+        method: 'POST',
+        json: { text },
+      });
+      await refresh();
+      setText(r.bad.join('\n'));
+      setMsg(
+        r.bad.length
+          ? {
+              tone: 'bad',
+              text: `Добавлено: ${r.added}. Не подошли (оставлены в поле): ${r.bad.length} - нужна ссылка https://docs.yandex.ru/edit/d/... или https://cloud.mail.ru/public/.../...`,
+            }
+          : {
+              tone: 'ok',
+              text: `Добавлено: ${r.added}. Каналы клиентов получат документы при сверке.`,
+            },
+      );
+    } catch (x) {
+      setMsg({ tone: 'bad', text: (x as Error).message });
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  const docs = data ?? [];
+  const count = (k: OfDoc['kind']) => {
+    const all = docs.filter((d) => d.kind === k);
+    return { all: all.length, free: all.filter((d) => !d.usedBy).length };
+  };
+  const ya = count('vyandex');
+  const mr = count('mailru');
+  // пустой пул - сразу форма; иначе форма и список по кнопкам, чтобы 100+ строк не занимали страницу
+  const formShown = showForm || (data !== undefined && docs.length === 0);
+  const needle = q.trim().toLowerCase();
+  const rows = docs.filter(
+    (d) =>
+      (kind === 'all' || d.kind === kind) &&
+      (state === 'all' || (state === 'used') === Boolean(d.usedBy)) &&
+      (!needle ||
+        (d.usedBy &&
+          `${d.usedBy.client} ${d.usedBy.device} ${d.usedBy.server}`
+            .toLowerCase()
+            .includes(needle))),
+  );
+  const paged = usePaged(rows, 10);
+
+  async function remove(d: OfDoc) {
+    const ok = await ask({
+      title: 'Убрать документ из пула?',
+      text: d.usedBy
+        ? `Канал ${d.usedBy.client} на ${d.usedBy.server} перенастроится без него (ссылка у клиента сменится).`
+        : 'Документ больше не будет выдаваться каналам.',
+      okLabel: 'Убрать',
+      danger: Boolean(d.usedBy),
+    });
+    if (!ok) return;
+    try {
+      await api(`/api/openflux/docs/${d.id}`, { method: 'DELETE' });
+      await refresh();
+    } catch (x) {
+      setMsg({ tone: 'bad', text: (x as Error).message });
+    }
+  }
+
+  return (
+    <Section
+      title="OpenFlux: документы для каналов клиентов"
+      info="У каждого канала клиента - прямое подключение и комнаты cups.online (их сервер создаёт сам). Документы - ещё два запасных транспорта, но создать их можно только из своего аккаунта: Яндекс Документ или документ в Облаке Mail.ru с доступом на редактирование для всех по ссылке. Один документ - один канал (общий теряет ответы): нужно по документу на устройство на каждом сервере. Нет свободных - канал работает без документа."
+    >
+      <div className="flex flex-wrap items-center gap-2 px-4 py-3 text-[13px]">
+        {data === undefined ? (
+          <span className="text-muted">Загрузка...</span>
+        ) : (
+          <>
+            {(
+              [
+                ['Яндекс', ya],
+                ['Mail.ru', mr],
+              ] as const
+            ).map(([t, n]) => {
+              return (
+                <span key={t} className="flex items-center gap-1.5">
+                  <span className="text-muted">{t}:</span>
+                  <Chip>занято {n.all - n.free}</Chip>
+                  <Chip tone={n.free ? 'ok' : n.all ? 'warn' : 'muted'}>свободно {n.free}</Chip>
+                </span>
+              );
+            })}
+            <div className="grow" />
+            {docs.length > 0 && (
+              <Button
+                size="sm"
+                variant={showList ? 'primary' : 'default'}
+                onClick={() => setShowList(!showList)}
+              >
+                <List className="size-3.5" />
+                Список ({docs.length})
+              </Button>
+            )}
+            {docs.length > 0 && (
+              <Button
+                size="sm"
+                variant={showForm ? 'primary' : 'default'}
+                onClick={() => setShowForm(!showForm)}
+              >
+                <Plus className="size-3.5" />
+                Добавить
+              </Button>
+            )}
+          </>
+        )}
+      </div>
+      {formShown && (
+        <form className="flex flex-col gap-3 border-t border-border p-4" onSubmit={add}>
+          <Field label="Ссылки на документы, по одной в строке" htmlFor="of-docs">
+            <Textarea
+              id="of-docs"
+              rows={4}
+              value={text}
+              onChange={(e) => setText(e.target.value)}
+              placeholder={
+                'https://docs.yandex.ru/edit/d/...\nhttps://cloud.mail.ru/public/.../...'
+              }
+            />
+          </Field>
+          <div className="flex justify-end">
+            <Button type="submit" variant="primary" disabled={busy || !text.trim()}>
+              Добавить
+            </Button>
+          </div>
+        </form>
+      )}
+      {msg && (
+        <div className="border-t border-border p-4">
+          <Alert tone={msg.tone}>{msg.text}</Alert>
+        </div>
+      )}
+      {showList && docs.length > 0 && (
+        <>
+          <div className="flex flex-wrap items-center gap-2 border-t border-border px-4 py-2">
+            <Select
+              size="sm"
+              aria-label="Вид"
+              value={kind}
+              onChange={(e) => setKind(e.target.value as typeof kind)}
+            >
+              <option value="all">все виды</option>
+              <option value="vyandex">Яндекс</option>
+              <option value="mailru">Mail.ru</option>
+            </Select>
+            <Select
+              size="sm"
+              aria-label="Состояние"
+              value={state}
+              onChange={(e) => setState(e.target.value as typeof state)}
+            >
+              <option value="all">все</option>
+              <option value="used">занятые</option>
+              <option value="free">свободные</option>
+            </Select>
+            <Input
+              type="search"
+              aria-label="Поиск"
+              placeholder="Клиент, устройство, сервер"
+              className="h-7 w-[220px] grow text-xs sm:grow-0"
+              value={q}
+              onChange={(e) => setQ(e.target.value)}
+            />
+          </div>
+          {paged.items.map((d) => (
+            <div
+              key={d.id}
+              className="flex items-center gap-3 border-t border-border px-4 py-1.5 text-[13px]"
+            >
+              <Chip>{kindTitle[d.kind]}</Chip>
+              <span className="min-w-0 grow truncate">
+                {d.usedBy ? (
+                  <>
+                    {d.usedBy.client}
+                    {d.usedBy.device && <span className="text-muted"> ({d.usedBy.device})</span>}
+                    <span className="text-muted">, {d.usedBy.server}</span>
+                  </>
+                ) : (
+                  <span className="text-muted">свободен</span>
+                )}
+              </span>
+              <LinkButton
+                href={d.url}
+                label="Документ"
+                title="Открыть документ"
+                copyTitle="Скопировать ссылку на документ"
+              />
+              <Button
+                size="icon-sm"
+                variant="ghost"
+                title="Убрать из пула"
+                onClick={() => remove(d)}
+              >
+                <Trash2 className="size-3.5 text-bad" />
+              </Button>
+            </div>
+          ))}
+          {rows.length === 0 && (
+            <div className="border-t border-border px-4 py-3 text-[13px] text-muted">
+              Ничего не найдено
+            </div>
+          )}
+          <Pager {...paged} />
+        </>
+      )}
+    </Section>
+  );
+}

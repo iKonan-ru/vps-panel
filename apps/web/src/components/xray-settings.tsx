@@ -1,0 +1,279 @@
+import { Alert } from '@/components/ui/alert';
+import { Button } from '@/components/ui/button';
+import { Chip } from '@/components/ui/chip';
+import { useConfirm } from '@/components/ui/confirm';
+import { Field } from '@/components/ui/field';
+import { Section } from '@/components/ui/section';
+import { Select } from '@/components/ui/select';
+import { api } from '@/lib/api';
+import { ago } from '@/lib/format';
+import { useServers } from '@/lib/servers';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
+import { Activity, Power, Route } from 'lucide-react';
+import { useState } from 'react';
+
+interface XrayStatus {
+  configured: boolean;
+  binary: boolean;
+  running: boolean;
+  pid: number | null;
+  startedAt: string | null;
+  restarts: number;
+  lastError: string | null;
+  lastCheck: { at: string; ok: boolean; ms: number; err: string | null } | null;
+  outbound: {
+    serverId: string;
+    serverName: string;
+    inboundId: number;
+    inboundRemark: string;
+    address: string;
+    port: number;
+    uuid: string;
+    sni: string;
+    updatedAt: string;
+  } | null;
+}
+
+interface Inbound {
+  id: number;
+  remark: string;
+  port: number;
+  enable: boolean;
+}
+
+/**
+ * Выход панели в Telegram через xray (VLESS-Reality к 3x-ui на заграничном сервере):
+ * выбор сервера и инбаунда, статус процесса, проверка, отключение.
+ */
+export function XraySettings() {
+  const ask = useConfirm();
+  const qc = useQueryClient();
+  const { data: st } = useQuery({
+    queryKey: ['xray'],
+    queryFn: () => api<XrayStatus>('/api/xray'),
+    refetchInterval: 30_000,
+  });
+  const { data: servers } = useServers();
+  const [serverId, setServerId] = useState('');
+  const [inboundId, setInboundId] = useState<number | ''>('');
+  const [busy, setBusy] = useState(false);
+  const [msg, setMsg] = useState<{ tone: 'ok' | 'bad'; text: string } | null>(null);
+
+  const candidates = (servers ?? []).filter(
+    (s) => s.status === 'online' && s.services.some((sv) => sv.kind === 'xui'),
+  );
+  const inbounds = useQuery({
+    queryKey: ['xray-inbounds', serverId],
+    queryFn: () => api<{ inbounds: Inbound[] }>(`/api/xray/inbounds?server=${serverId}`),
+    enabled: Boolean(serverId),
+    retry: false,
+  });
+
+  if (!st) return null;
+
+  async function run(label: string, fn: () => Promise<unknown>) {
+    setBusy(true);
+    setMsg(null);
+    try {
+      await fn();
+      await qc.invalidateQueries({ queryKey: ['xray'] });
+      if (label) setMsg({ tone: 'ok', text: label });
+    } catch (err) {
+      setMsg({ tone: 'bad', text: (err as Error).message });
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  const setup = () =>
+    run('', async () => {
+      const r = await api<{ check: NonNullable<XrayStatus['lastCheck']> }>('/api/xray/setup', {
+        method: 'POST',
+        json: { serverId, inboundId },
+      });
+      setMsg(
+        r.check.ok
+          ? { tone: 'ok', text: `Настроено, Telegram отвечает через прокси за ${r.check.ms} мс` }
+          : { tone: 'bad', text: `Настроено, но проверка не прошла: ${r.check.err ?? ''}` },
+      );
+    });
+
+  const check = () =>
+    run('', async () => {
+      const r = await api<{ check: NonNullable<XrayStatus['lastCheck']> }>('/api/xray/check', {
+        method: 'POST',
+      });
+      setMsg(
+        r.check.ok
+          ? { tone: 'ok', text: `Telegram отвечает через прокси за ${r.check.ms} мс` }
+          : { tone: 'bad', text: `Не прошло: ${r.check.err ?? ''}` },
+      );
+    });
+
+  const disable = async () => {
+    const ok = await ask({
+      title: 'Отключить выход через xray?',
+      text: 'Уведомления пойдут напрямую или через агентов. Клиент vps-panel в 3X-UI останется.',
+      okLabel: 'Отключить',
+      danger: true,
+    });
+    if (ok) void run('Выключено', () => api('/api/xray/disable', { method: 'POST' }));
+  };
+
+  const tone = !st.configured
+    ? 'muted'
+    : st.running && st.lastCheck?.ok !== false
+      ? 'ok'
+      : st.running
+        ? 'warn'
+        : 'bad';
+  const label = !st.configured
+    ? 'не настроено'
+    : !st.running
+      ? 'не запущен'
+      : st.lastCheck?.ok === false
+        ? 'запущен, проверка не прошла'
+        : 'работает';
+
+  return (
+    <Section
+      title="Выход в Telegram (прокси)"
+      info={
+        <>
+          С хоста панели Telegram недоступен, поэтому панель держит xray-клиент к твоему же 3X-UI на
+          заграничном сервере (VLESS-Reality) и ходит к Telegram через него. Клиент{' '}
+          <span className="font-mono">vps-panel</span> в 3X-UI заводится автоматически. Если прокси
+          не отвечает, панель пробует напрямую и через агентов.
+        </>
+      }
+      extra={
+        <Chip tone={tone} dot={st.running}>
+          {label}
+        </Chip>
+      }
+      actions={
+        st.configured ? (
+          <>
+            <Button size="sm" disabled={busy} onClick={check} label="Проверить">
+              <Activity className="size-3.5" />
+            </Button>
+            <Button size="sm" variant="ghost" disabled={busy} onClick={disable} label="Отключить">
+              <Power className="size-3.5" />
+            </Button>
+          </>
+        ) : null
+      }
+    >
+      <div className="flex flex-col gap-4 p-4">
+        {st.configured && st.outbound && (
+          <div className="grid gap-x-6 gap-y-1 text-[13px] sm:grid-cols-2">
+            <div>
+              <span className="text-muted">Сервер: </span>
+              {st.outbound.serverName} ({st.outbound.address}:{st.outbound.port})
+            </div>
+            <div>
+              <span className="text-muted">Inbound: </span>
+              {st.outbound.inboundRemark || `#${st.outbound.inboundId}`}, SNI {st.outbound.sni}
+            </div>
+            <div>
+              <span className="text-muted">Клиент: </span>
+              <span className="font-mono">vps-panel {st.outbound.uuid}</span>
+            </div>
+            <div>
+              <span className="text-muted">Процесс: </span>
+              {st.running
+                ? `pid ${st.pid}, запущен ${st.startedAt ? ago(st.startedAt) : ''}`
+                : 'не запущен'}
+              {st.restarts > 0 ? `, перезапусков ${st.restarts}` : ''}
+            </div>
+            <div className="sm:col-span-2">
+              <span className="text-muted">Последняя проверка: </span>
+              {st.lastCheck
+                ? st.lastCheck.ok
+                  ? `${ago(st.lastCheck.at)}, ${st.lastCheck.ms} мс`
+                  : `${ago(st.lastCheck.at)}, ошибка: ${st.lastCheck.err ?? ''}`
+                : 'не было'}
+            </div>
+            {st.lastError && (
+              <div className="font-mono text-xs text-warn sm:col-span-2">{st.lastError}</div>
+            )}
+          </div>
+        )}
+
+        {!st.binary && (
+          <Alert tone="bad">
+            В образе панели нет бинарника xray: пересобери контейнер (deploy/Dockerfile).
+          </Alert>
+        )}
+
+        <div className="flex flex-col gap-2">
+          <div className="text-[13px] font-medium">
+            {st.configured ? 'Сменить сервер выхода' : 'Настроить выход'}
+          </div>
+          {candidates.length === 0 ? (
+            <div className="text-[13px] text-muted">
+              Нет серверов на связи, где агент нашёл 3X-UI.
+            </div>
+          ) : (
+            <div className="flex flex-wrap items-end gap-3">
+              <Field label="Сервер" htmlFor="xray-server" className="min-w-[220px]">
+                <Select
+                  id="xray-server"
+                  value={serverId}
+                  onChange={(e) => {
+                    setServerId(e.target.value);
+                    setInboundId('');
+                  }}
+                >
+                  <option value="">выбери сервер</option>
+                  {candidates.map((s) => (
+                    <option key={s.id} value={s.id}>
+                      {s.name} ({s.hosting.country || s.host})
+                    </option>
+                  ))}
+                </Select>
+              </Field>
+              <Field label="Inbound VLESS-Reality" htmlFor="xray-inbound" className="min-w-[260px]">
+                <Select
+                  id="xray-inbound"
+                  value={inboundId}
+                  disabled={!serverId || inbounds.isLoading}
+                  onChange={(e) => setInboundId(e.target.value ? Number(e.target.value) : '')}
+                >
+                  <option value="">
+                    {!serverId
+                      ? 'сначала сервер'
+                      : inbounds.isLoading
+                        ? 'загружаю...'
+                        : inbounds.data?.inbounds.length === 0
+                          ? 'Reality-inbound-ов нет'
+                          : 'выбери inbound'}
+                  </option>
+                  {inbounds.data?.inbounds.map((i) => (
+                    <option key={i.id} value={i.id} disabled={!i.enable}>
+                      {i.remark || `#${i.id}`} : {i.port}
+                      {i.enable ? '' : ' (выключен)'}
+                    </option>
+                  ))}
+                </Select>
+              </Field>
+              <Button
+                variant="primary"
+                disabled={busy || !serverId || inboundId === '' || !st.binary}
+                onClick={setup}
+                label={busy ? 'Настраиваю...' : 'Настроить'}
+              >
+                <Route className="size-4" />
+              </Button>
+            </div>
+          )}
+          {inbounds.error && (
+            <div className="text-[13px] text-bad">{(inbounds.error as Error).message}</div>
+          )}
+        </div>
+
+        {msg && <Alert tone={msg.tone}>{msg.text}</Alert>}
+      </div>
+    </Section>
+  );
+}

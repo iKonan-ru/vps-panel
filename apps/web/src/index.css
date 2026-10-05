@@ -1,0 +1,175 @@
+@import "./fonts.css";
+@import "tailwindcss";
+
+@custom-variant dark (&:where(.dark, .dark *));
+
+/* Токены темы. Тёмная - основная, светлая переопределяет. */
+:root {
+  --bg: #f5f6f8;
+  --surface: #ffffff;
+  --surface-2: #eef0f3;
+  --border: #d9dee6;
+  --text: #1c1e21;
+  --muted: #5f6975;
+  --accent: #2f6fe4;
+  --ok: #1f9d6a;
+  --warn: #b7791f;
+  --bad: #d3403d;
+  color-scheme: light;
+}
+.dark {
+  --bg: #0f1115;
+  --surface: #161a20;
+  --surface-2: #1c2129;
+  --border: #2a313c;
+  --text: #e8eaed;
+  --muted: #9aa4b2;
+  --accent: #4f8cff;
+  --ok: #3ecf8e;
+  --warn: #f2b544;
+  --bad: #f25f5c;
+  color-scheme: dark;
+}
+
+@theme inline {
+  --color-bg: var(--bg);
+  --color-surface: var(--surface);
+  --color-surface-2: var(--surface-2);
+  --color-border: var(--border);
+  --color-text: var(--text);
+  --color-muted: var(--muted);
+  --color-accent: var(--accent);
+  --color-ok: var(--ok);
+  --color-warn: var(--warn);
+  --color-bad: var(--bad);
+  --font-sans: "IBM Plex Sans", system-ui, sans-serif;
+  --font-mono: "JetBrains Mono", ui-monospace, monospace;
+  --animate-fade-in: fade-in 0.2s ease-out backwards;
+  --animate-pop-in: pop-in 0.2s cubic-bezier(0.22, 1, 0.36, 1) backwards;
+}
+
+/*
+ * Анимации. fade-in - только прозрачность: transform у предка сломал бы fixed внутри
+ * (терминал на весь экран во вкладке). pop-in - для окон и выпадающих списков. Заполнение
+ * backwards, не both: законченная анимация не держит слой наложения (fixed внутри уходил бы
+ * под шапку).
+ */
+@keyframes fade-in {
+  from {
+    opacity: 0;
+  }
+}
+@keyframes pop-in {
+  from {
+    opacity: 0;
+    transform: translateY(6px) scale(0.98);
+  }
+}
+
+/* Шкала заполнения (Meter): при появлении растёт от нуля, новое значение - плавно. */
+.meter-fill {
+  transform-origin: left;
+  transition: width 0.7s cubic-bezier(0.22, 1, 0.36, 1), background-color 0.4s;
+  animation: meter-grow 0.9s cubic-bezier(0.22, 1, 0.36, 1);
+}
+@keyframes meter-grow {
+  from {
+    transform: scaleX(0);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .meter-fill,
+  .animate-fade-in,
+  .animate-pop-in {
+    animation: none;
+    transition: none;
+  }
+}
+
+html,
+body,
+#root {
+  height: 100%;
+}
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--text);
+  font-family: var(--font-sans);
+  font-size: 14px;
+}
+
+/*
+ * Полосы прокрутки: тонкие, полупрозрачные, без дорожки - ярче при наведении.
+ * Chrome и Safari - через ::-webkit-scrollbar; стандартные scrollbar-width/color только
+ * для браузеров без него (Firefox), иначе Chrome 121+ берёт их и игнорирует webkit-стили.
+ */
+@layer base {
+  * {
+    --scroll-thumb: color-mix(in srgb, var(--muted) 35%, transparent);
+    --scroll-thumb-hover: color-mix(in srgb, var(--muted) 65%, transparent);
+  }
+  ::-webkit-scrollbar {
+    width: 8px;
+    height: 8px;
+  }
+  ::-webkit-scrollbar-track,
+  ::-webkit-scrollbar-corner {
+    background: transparent;
+  }
+  ::-webkit-scrollbar-thumb {
+    background-color: var(--scroll-thumb);
+    background-clip: padding-box;
+    border: 2px solid transparent;
+    border-radius: 9999px;
+  }
+  ::-webkit-scrollbar-thumb:hover {
+    background-color: var(--scroll-thumb-hover);
+  }
+  @supports not selector(::-webkit-scrollbar) {
+    * {
+      scrollbar-width: thin;
+      scrollbar-color: var(--scroll-thumb) transparent;
+    }
+  }
+}
+
+/* Tailwind 4 сбрасывает курсор у кнопок; возвращаем привычное поведение для всего кликабельного. */
+@layer base {
+  button:not(:disabled),
+  [role="button"]:not([aria-disabled="true"]),
+  [role="switch"]:not(:disabled),
+  [role="tab"],
+  select:not(:disabled),
+  a[href],
+  label[for],
+  input[type="checkbox"]:not(:disabled),
+  input[type="radio"]:not(:disabled),
+  summary {
+    cursor: pointer;
+  }
+  button:disabled,
+  select:disabled {
+    cursor: not-allowed;
+  }
+}
+
+/* Мобильная шапка: когда в ней хлебные крошки, от лого остаётся только знак. */
+header:has(#mobile-crumbs:not(:empty)) .logo-text {
+  display: none;
+}
+
+/* Вывод команд и логи - как вкладка "Терминал": тёмный фон и светлый текст в обеих темах
+   (полупрозрачный чёрный поверх светлой темы давал серую подложку под тёмным текстом). */
+.console {
+  background: #0b0f14;
+  color: #d6dde6;
+  border: 1px solid var(--border);
+  transition: background-color 0.4s, border-color 0.4s;
+}
+/* действие завершилось успешно: зеленоватая консоль */
+.console-ok {
+  background: #0a1a12;
+  border-color: rgb(62 207 142 / 0.45);
+}

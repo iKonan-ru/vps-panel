@@ -1,0 +1,479 @@
+import { ActionPanel } from '@/components/action-output';
+import { MetricCard } from '@/components/server/metric-card';
+import { XuiClients } from '@/components/server/xui-clients';
+import { type Inbound, XuiInbounds } from '@/components/server/xui-inbounds';
+import { Alert } from '@/components/ui/alert';
+import { Button } from '@/components/ui/button';
+import { Card } from '@/components/ui/card';
+import { Checkbox } from '@/components/ui/checkbox';
+import { useConfirm } from '@/components/ui/confirm';
+import { Dialog } from '@/components/ui/dialog';
+import { Field } from '@/components/ui/field';
+import { InfoTip } from '@/components/ui/info-tip';
+import { Input } from '@/components/ui/input';
+import { LinkButton } from '@/components/ui/link-button';
+import { Num } from '@/components/ui/num';
+import { Section } from '@/components/ui/section';
+import { ApiError, api } from '@/lib/api';
+import { cn } from '@/lib/cn';
+import { uptime } from '@/lib/format';
+import { type ServerDetail, serverLock } from '@/lib/servers';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
+import { Download, KeyRound, Play, Power, RefreshCw, ScrollText, Square } from 'lucide-react';
+import { type FormEvent, useState } from 'react';
+
+interface XuiInfo {
+  installed: boolean;
+  active: boolean;
+  enabled: boolean;
+  version: string;
+  db: string;
+  panelPort: number;
+  listen: string;
+  basePath: string;
+  https: boolean;
+  certFile: string;
+  twoFactor: boolean;
+  subEnabled: boolean;
+  subPort: number;
+  inbounds: number;
+  log: string;
+  errors: string[];
+}
+/** server/status 3X-UI (поле obj ответа REST API). */
+interface XuiServerStatus {
+  cpu?: number;
+  mem?: { current: number; total: number };
+  uptime?: number;
+  xray?: { state: string; version: string; errorMsg?: string };
+  appStats?: { threads: number; mem: number; uptime: number };
+}
+
+const xuiApi = {
+  info: (id: string) => api<XuiInfo>(`/api/servers/${id}/xui`),
+  set: (id: string, body: Record<string, unknown>) =>
+    api<{ actionId: string }>(`/api/servers/${id}/xui/set`, { method: 'POST', json: body }),
+  service: (id: string, action: string) =>
+    api<{ actionId: string }>(`/api/servers/${id}/xui/service`, {
+      method: 'POST',
+      json: { action },
+    }),
+  update: (id: string) =>
+    api<{ actionId: string }>(`/api/servers/${id}/xui/update`, { method: 'POST' }),
+  token: (id: string) => api<{ ok: boolean }>(`/api/servers/${id}/xui/token`, { method: 'POST' }),
+  status: (id: string) => api<XuiServerStatus>(`/api/servers/${id}/xui/status`),
+};
+
+function randomPath(): string {
+  const chars = 'abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';
+  let out = '';
+  const buf = new Uint32Array(18);
+  crypto.getRandomValues(buf);
+  for (const b of buf) out += chars[b % chars.length];
+  return out;
+}
+
+/** Вкладка 3X-UI: служба, Xray по API, inbound-ы и клиенты, настройки панели, обновление; журнал - по кнопке. */
+export function XuiTab({ s }: { s: ServerDetail }) {
+  const qc = useQueryClient();
+  const online = s.status === 'online';
+  const {
+    data,
+    error: loadError,
+    isFetching,
+  } = useQuery({
+    queryKey: ['xui', s.id],
+    queryFn: () => xuiApi.info(s.id),
+    enabled: online,
+    staleTime: 20_000,
+  });
+  const apiStatus = useQuery({
+    queryKey: ['xui-api', s.id],
+    queryFn: () => xuiApi.status(s.id),
+    enabled: online && Boolean(data?.installed),
+    staleTime: 20_000,
+    retry: false,
+  });
+  // тот же запрос, что у блока "Inbound-ы" (общий кэш): имена inbound-ов для клиентов
+  const inboundList = useQuery({
+    queryKey: ['xui-inbounds', s.id],
+    queryFn: () => api<Inbound[]>(`/api/servers/${s.id}/xui/inbound-list`),
+    enabled: online && Boolean(data?.installed),
+    staleTime: 20_000,
+    retry: false,
+  });
+  const [action, setAction] = useState<{ id: string; title: string } | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [showLog, setShowLog] = useState(false);
+  const [busy, setBusy] = useState(false);
+  // пока на сервере идёт другое действие, изменения недоступны (выпуск токена - можно)
+  const lock = serverLock(s);
+
+  const refresh = () => {
+    void qc.invalidateQueries({ queryKey: ['xui', s.id] });
+    void qc.invalidateQueries({ queryKey: ['xui-api', s.id] });
+    void qc.invalidateQueries({ queryKey: ['xui-inbounds', s.id] });
+    void qc.invalidateQueries({ queryKey: ['xui-clients', s.id] });
+    void qc.invalidateQueries({ queryKey: ['servers'] });
+  };
+
+  async function start(title: string, fn: () => Promise<{ actionId: string }>) {
+    setBusy(true);
+    setError(null);
+    try {
+      const r = await fn();
+      setAction({ id: r.actionId, title });
+    } catch (e) {
+      setError((e as Error).message);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function issueToken() {
+    setBusy(true);
+    setError(null);
+    try {
+      await xuiApi.token(s.id);
+      refresh();
+      void qc.invalidateQueries({ queryKey: ['access', s.id] });
+    } catch (e) {
+      setError((e as Error).message);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  if (!online) return <Card className="p-8 text-[13px] text-muted">Агент не на связи.</Card>;
+  if (loadError) return <Alert tone="bad">{loadError.message}</Alert>;
+  if (!data) return <Card className="p-8 text-[13px] text-muted">Читаю настройки 3X-UI...</Card>;
+  if (!data.installed)
+    return (
+      <Card className="p-8 text-[13px] text-muted">
+        3X-UI на сервере не найден. Установить можно командой из каталога.
+      </Card>
+    );
+
+  const svc = s.services.find((x) => x.kind === 'xui');
+  const panelUrl = s.panelLinks.xui ?? svc?.panelUrl;
+  const obj = apiStatus.data;
+  const noToken = apiStatus.error instanceof ApiError && apiStatus.error.code === 'no-token';
+  // агент 0.3.2+: xray не запущен или падает по кругу (inbound на занятом порту роняет весь xray)
+  const xrayDown = svc?.details?.xrayDown === true;
+  const xrayError = typeof svc?.details?.xrayError === 'string' ? svc.details.xrayError : '';
+
+  return (
+    <>
+      {xrayDown && (
+        <Alert tone="bad">
+          xray не работает - VLESS на сервере недоступен.
+          {xrayError && <span className="block font-mono text-xs">{xrayError}</span>}
+          Исправьте inbound в панели 3X-UI (кнопка "Открыть панель 3X-UI" ниже) - например, порт
+          занят другим сервисом, - xray запустится сам.
+        </Alert>
+      )}
+      {error && <Alert tone="bad">{error}</Alert>}
+      {data.errors.map((e) => (
+        <Alert key={e} tone="info">
+          {e}
+        </Alert>
+      ))}
+      {action && (
+        <ActionPanel
+          title={action.title}
+          actionId={action.id}
+          onHide={() => setAction(null)}
+          onFinished={refresh}
+        />
+      )}
+
+      {/* как в "Обзоре": на мобиле по две в ряд */}
+      <div className="grid grid-cols-2 gap-3 md:gap-4 lg:grid-cols-4">
+        <MetricCard
+          label="Служба x-ui"
+          value={data.active ? 'Работает' : 'Остановлена'}
+          tone={data.active ? 'ok' : 'bad'}
+          note={
+            <>
+              {data.version || '?'}, база {data.db === 'postgres' ? 'PostgreSQL' : 'sqlite'}
+              {!data.enabled && <span className="text-warn">, без автозапуска</span>}
+            </>
+          }
+        />
+        <MetricCard
+          label="Xray"
+          value={
+            obj?.xray
+              ? obj.xray.state === 'running'
+                ? 'Работает'
+                : obj.xray.state
+              : noToken
+                ? 'Нужен токен'
+                : apiStatus.isFetching
+                  ? '...'
+                  : 'нет данных'
+          }
+          tone={obj?.xray ? (obj.xray.state === 'running' ? 'ok' : 'bad') : 'muted'}
+          note={
+            <span title={obj?.xray?.errorMsg}>
+              {[
+                obj?.xray?.version ? `v${obj.xray.version}` : '',
+                obj?.uptime ? `аптайм ${uptime(obj.uptime)}` : '',
+                obj?.xray?.errorMsg ?? '',
+              ]
+                .filter(Boolean)
+                .join(', ') || (noToken ? 'выпусти API-токен кнопкой ниже' : '-')}
+            </span>
+          }
+        />
+        <MetricCard
+          label="Панель"
+          value={<span className="font-mono">{data.panelPort}</span>}
+          unit={<span className="font-mono">{data.basePath}</span>}
+          note={[
+            data.https ? 'HTTPS' : 'без HTTPS',
+            data.twoFactor ? '2FA' : 'без 2FA',
+            data.listen && data.listen !== '0.0.0.0' ? `listen ${data.listen}` : '',
+          ]
+            .filter(Boolean)
+            .join(', ')}
+        />
+        <MetricCard
+          label="Inbound-ы"
+          value={<Num value={data.inbounds} />}
+          note={`подписка 3X-UI ${data.subEnabled ? `на ${data.subPort}` : 'выключена'}`}
+        />
+      </div>
+
+      <div className="flex flex-wrap items-center gap-2">
+        {(
+          [
+            'restart',
+            'restart-xray',
+            data.active ? 'stop' : 'start',
+            data.enabled ? 'disable' : 'enable',
+          ] as const
+        ).map((a) => (
+          <Button
+            key={a}
+            size="sm"
+            disabled={busy || lock.busy}
+            title={lock.reason}
+            onClick={() => start(`3X-UI: ${a}`, () => xuiApi.service(s.id, a))}
+            label={
+              {
+                restart: 'Перезапустить',
+                'restart-xray': 'Перезапустить Xray',
+                stop: 'Остановить',
+                start: 'Запустить',
+                disable: 'Выключить автозапуск',
+                enable: 'Включить автозапуск',
+              }[a]
+            }
+          >
+            {a === 'restart' || a === 'restart-xray' ? (
+              <RefreshCw className="size-3.5" />
+            ) : a === 'stop' ? (
+              <Square className="size-3.5" />
+            ) : a === 'start' ? (
+              <Play className="size-3.5" />
+            ) : (
+              <Power className="size-3.5" />
+            )}
+          </Button>
+        ))}
+        {panelUrl && (
+          <>
+            <span className="mx-1 hidden h-5 w-px bg-border md:block" />
+            <LinkButton
+              href={panelUrl}
+              variant="primary"
+              label="Открыть панель 3X-UI"
+              title={data.version ? `Открыть панель 3X-UI (${data.version})` : panelUrl}
+            />
+            <span className="mx-1 hidden h-5 w-px bg-border md:block" />
+          </>
+        )}
+        <Button
+          size="sm"
+          disabled={busy || lock.busy}
+          title={lock.reason}
+          onClick={() => start('Обновление 3X-UI', () => xuiApi.update(s.id))}
+          label="Обновить 3X-UI"
+        >
+          <Download className="size-3.5" />
+        </Button>
+        <Button
+          size="sm"
+          disabled={busy}
+          onClick={issueToken}
+          title="Токен для REST API 3X-UI: статус Xray, inbound-ы, клиенты панели"
+          label={noToken ? 'Выпустить API-токен' : 'Перевыпустить API-токен'}
+        >
+          <KeyRound className="size-3.5" />
+        </Button>
+        <Button
+          size="sm"
+          onClick={() => setShowLog(true)}
+          title="Последние строки журнала 3X-UI"
+          label="Журнал"
+        >
+          <ScrollText className="size-3.5" />
+        </Button>
+        <div className="grow" />
+        <Button
+          size="icon-sm"
+          variant="ghost"
+          disabled={isFetching}
+          onClick={refresh}
+          title="Обновить данные"
+          aria-label="Обновить данные"
+        >
+          <RefreshCw className={cn('size-3.5', isFetching && 'animate-spin')} />
+        </Button>
+      </div>
+
+      <XuiInbounds serverId={s.id} disabled={busy || lock.busy} reason={lock.reason} />
+      <XuiClients
+        serverId={s.id}
+        inbounds={inboundList.data}
+        disabled={busy || lock.busy}
+        reason={lock.reason}
+      />
+
+      <SettingsForm
+        info={data}
+        busy={busy || lock.busy}
+        onSubmit={(body) => start('Настройки 3X-UI', () => xuiApi.set(s.id, body))}
+      />
+
+      <Dialog open={showLog} onClose={() => setShowLog(false)} title="Журнал 3X-UI" wide>
+        <pre className="max-h-[60vh] overflow-auto whitespace-pre-wrap rounded-lg bg-surface-2 p-3 font-mono text-xs">
+          {data.log || 'Журнал пуст'}
+        </pre>
+      </Dialog>
+    </>
+  );
+}
+
+function SettingsForm({
+  info,
+  busy,
+  onSubmit,
+}: {
+  info: XuiInfo;
+  busy: boolean;
+  onSubmit: (body: Record<string, unknown>) => void;
+}) {
+  const ask = useConfirm();
+  const [port, setPort] = useState(String(info.panelPort));
+  const [basePath, setBasePath] = useState(info.basePath.replace(/^\/|\/$/g, ''));
+  const [listen, setListen] = useState(info.listen === '0.0.0.0' ? '' : info.listen);
+  const [username, setUsername] = useState('');
+  const [password, setPassword] = useState('');
+  const [reset2fa, setReset2fa] = useState(false);
+
+  const body: Record<string, unknown> = {};
+  if (Number(port) !== info.panelPort) body.port = Number(port);
+  if (basePath !== info.basePath.replace(/^\/|\/$/g, '')) body.basePath = basePath;
+  if ((listen || '0.0.0.0') !== (info.listen || '0.0.0.0')) body.listen = listen || '0.0.0.0';
+  if (username.trim()) body.username = username.trim();
+  if (password) body.password = password;
+  if (reset2fa) body.resetTwoFactor = true;
+  const changed = Object.keys(body).length > 0;
+
+  const submit = async (e: FormEvent) => {
+    e.preventDefault();
+    if (!changed) return;
+    if (body.port || body.basePath) {
+      const ok = await ask({
+        title: 'Изменить порт или путь панели?',
+        text: 'Старая ссылка перестанет работать, port-sync откроет новый порт.',
+        okLabel: 'Изменить',
+      });
+      if (!ok) return;
+    }
+    onSubmit(body);
+  };
+
+  return (
+    <Section title="Настройки панели">
+      <form onSubmit={submit} className="flex flex-col gap-3 p-4">
+        <div className="grid gap-3 sm:grid-cols-2">
+          <Field label="Порт панели" htmlFor="xui-port">
+            <Input
+              id="xui-port"
+              type="number"
+              min={1}
+              max={65535}
+              value={port}
+              onChange={(e) => setPort(e.target.value)}
+            />
+          </Field>
+          <Field label="Listen IP (пусто = все)" htmlFor="xui-listen">
+            <Input
+              id="xui-listen"
+              value={listen}
+              onChange={(e) => setListen(e.target.value)}
+              placeholder="0.0.0.0"
+              className="font-mono"
+            />
+          </Field>
+        </div>
+        <Field label="Путь панели (base path)" htmlFor="xui-path">
+          <div className="flex gap-2">
+            <Input
+              id="xui-path"
+              value={basePath}
+              onChange={(e) => setBasePath(e.target.value)}
+              className="font-mono"
+              pattern="[A-Za-z0-9_-]{0,64}"
+            />
+            <Button
+              onClick={() => setBasePath(randomPath())}
+              title="Случайный длинный путь: панель не найти сканером"
+            >
+              Случайный
+            </Button>
+          </div>
+        </Field>
+        <div className="grid gap-3 sm:grid-cols-2">
+          <Field label="Новый логин" htmlFor="xui-user">
+            <Input
+              id="xui-user"
+              value={username}
+              onChange={(e) => setUsername(e.target.value)}
+              placeholder="оставить как есть"
+              autoComplete="off"
+            />
+          </Field>
+          <Field label="Новый пароль" htmlFor="xui-pass">
+            <Input
+              id="xui-pass"
+              type="password"
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
+              placeholder="оставить как есть"
+              autoComplete="new-password"
+            />
+          </Field>
+        </div>
+        {info.twoFactor && (
+          <Checkbox
+            label="Сбросить 2FA (если потерян аутентификатор)"
+            checked={reset2fa}
+            onChange={(e) => setReset2fa(e.target.checked)}
+          />
+        )}
+        <div className="flex items-center gap-2">
+          <span className="text-xs text-muted">После сохранения 3X-UI перезапускается.</span>
+          <InfoTip>Сертификат панели - во вкладке Сертификаты.</InfoTip>
+          <div className="grow" />
+          <Button type="submit" variant="primary" disabled={busy || !changed}>
+            Сохранить
+          </Button>
+        </div>
+      </form>
+    </Section>
+  );
+}

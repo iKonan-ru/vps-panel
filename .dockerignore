@@ -1,0 +1,13 @@
+# Контекст сборки образа панели (deploy/docker-compose.yml: context ..): только исходники.
+**/node_modules
+**/dist
+.git
+.idea
+docs
+apps/agent
+apps/server/data
+apps/server/:memory:
+deploy/.env
+deploy/data
+deploy/agent-dist
+deploy/files

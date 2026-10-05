@@ -1,0 +1,16 @@
+# Управляется VPS Panel (vps-agent). Ручные правки перезапишутся.
+[DEFAULT]
+bantime  = 1h
+findtime = 10m
+maxretry = 5
+bantime.increment = true
+bantime.maxtime   = 1w
+backend   = systemd
+banaction = ufw
+banaction_allports = ufw
+ignoreip  = 127.0.0.1/8 ::1
+
+[sshd]
+enabled = true
+port    = {{SSH_PORT}}
+mode    = aggressive

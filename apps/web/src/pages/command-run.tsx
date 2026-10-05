@@ -1,0 +1,431 @@
+import { ActionOutput } from '@/components/action-output';
+import { ActionStatusChip } from '@/components/actions-table';
+import { Breadcrumbs } from '@/components/breadcrumbs';
+import { History } from '@/components/command-run/history';
+import { ParamField } from '@/components/command-run/param-field';
+import { Alert } from '@/components/ui/alert';
+import { Button, ButtonLink } from '@/components/ui/button';
+import { Card } from '@/components/ui/card';
+import { Chip } from '@/components/ui/chip';
+import { Field } from '@/components/ui/field';
+import { InfoTip } from '@/components/ui/info-tip';
+import { PageTitle } from '@/components/ui/page-title';
+import { Select } from '@/components/ui/select';
+import { Tabs } from '@/components/ui/tabs';
+import { type Check, commandsApi, paramVisible } from '@/lib/commands';
+import { serverLock, useServer, useServers } from '@/lib/servers';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
+import { useNavigate, useParams, useSearch } from '@tanstack/react-router';
+import {
+  AlertTriangle,
+  Check as CheckIcon,
+  ClipboardCheck,
+  Play,
+  Server,
+  Square,
+  X,
+} from 'lucide-react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+
+type Tab = 'form' | 'output' | 'history';
+
+/** Запуск команды: сервер и вопросы, план, проверки, живой вывод, история на сервере. */
+export function CommandRunPage() {
+  const { id } = useParams({ from: '/app/commands/$id' });
+  const search = useSearch({ from: '/app/commands/$id' });
+  const navigate = useNavigate();
+  const qc = useQueryClient();
+  const { data: cmds, isFetching: cmdsFetching } = useQuery({
+    queryKey: ['commands'],
+    queryFn: commandsApi.list,
+    staleTime: 60_000,
+  });
+  const { data: servers } = useServers();
+  const cmd = cmds?.find((c) => c.id === id);
+  // каталог мог обновиться после выкладки панели: прежде чем сказать "не найдена", перечитываем
+  const [retried, setRetried] = useState(false);
+  useEffect(() => {
+    if (cmds && !cmd && !retried) {
+      setRetried(true);
+      void qc.invalidateQueries({ queryKey: ['commands'] });
+    }
+  }, [cmds, cmd, retried, qc]);
+
+  const [serverId, setServerId] = useState<string>(search.server ?? '');
+  // вкладка в адресе (?tab=), по умолчанию: вывод, если открыт запуск, иначе форма
+  const tab: Tab = search.tab ?? (search.run ? 'output' : 'form');
+  const setTab = (t: Tab) =>
+    void navigate({
+      to: '/commands/$id',
+      params: { id },
+      search: (prev) => ({ server: prev.server, run: prev.run, tab: t }),
+      replace: true,
+    });
+  const [answers, setAnswers] = useState<Record<string, string>>({});
+  const [loadedFor, setLoadedFor] = useState<string>('');
+  const [plan, setPlan] = useState<string[]>([]);
+  const [errors, setErrors] = useState<string[]>([]);
+  const [checks, setChecks] = useState<Check[] | null>(null);
+  const [checking, setChecking] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [actionId, setActionId] = useState<string | null>(search.run ?? null);
+  // сервер открытого запуска: в форме тем временем могут выбрать другой
+  const [runServerId, setRunServerId] = useState<string>(search.server ?? '');
+  const [finished, setFinished] = useState<number | null>(null);
+  const [showAll, setShowAll] = useState(false);
+
+  const detail = useServer(serverId);
+  // выбранный сервер занят другим действием - запуск недоступен до его окончания
+  const lock = detail.data ? serverLock(detail.data) : { busy: false, reason: undefined };
+  // экземпляры AWG на выбранном сервере (сервисы amnezia из инвентаря) - для параметров awg-container
+  const awgContainers = useMemo(
+    () =>
+      (detail.data?.inventory?.services ?? [])
+        .filter((sv) => sv.kind === 'amnezia' && typeof sv.details?.container === 'string')
+        .map((sv) => {
+          const name = String(sv.details?.container);
+          const state =
+            sv.details?.state === 'running' ? '' : `, ${String(sv.details?.state ?? '')}`;
+          // "0.0.0.0:45987->45987/udp" -> "45987/udp"
+          const ports = sv.ports.map((p) => p.replace(/^.*:(\d+)->\d+/, '$1'));
+          return { name, label: `${name} (${ports.join(', ') || 'порт не определён'}${state})` };
+        }),
+    [detail.data],
+  );
+  const online = useMemo(() => (servers ?? []).filter((s) => s.status === 'online'), [servers]);
+  useEffect(() => {
+    if (!serverId && online.length === 1 && online[0]) setServerId(online[0].id);
+  }, [online, serverId]);
+
+  // Значения по умолчанию при выборе сервера
+  useEffect(() => {
+    if (!cmd || !serverId || loadedFor === `${cmd.id}:${serverId}`) return;
+    commandsApi
+      .defaults(serverId, cmd.id)
+      .then((d) => {
+        setAnswers(d);
+        setLoadedFor(`${cmd.id}:${serverId}`);
+        setChecks(null);
+      })
+      .catch((e: Error) => setError(e.message));
+  }, [cmd, serverId, loadedFor]);
+
+  // План пересчитывается с задержкой после правок
+  const planTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  useEffect(() => {
+    if (!cmd || !serverId || loadedFor !== `${cmd.id}:${serverId}`) return;
+    if (planTimer.current) clearTimeout(planTimer.current);
+    planTimer.current = setTimeout(() => {
+      commandsApi
+        .plan(serverId, cmd.id, answers)
+        .then((p) => {
+          setPlan(p.steps);
+          setErrors(p.errors);
+        })
+        .catch(() => undefined);
+    }, 300);
+  }, [cmd, serverId, answers, loadedFor]);
+
+  const set = useCallback((name: string, value: string) => {
+    setAnswers((a) => ({ ...a, [name]: value }));
+    setChecks(null);
+  }, []);
+
+  async function runPreflight() {
+    if (!cmd) return;
+    setChecking(true);
+    setError(null);
+    try {
+      setChecks((await commandsApi.preflight(serverId, cmd.id, answers)).checks);
+    } catch (e) {
+      setError((e as Error).message);
+    } finally {
+      setChecking(false);
+    }
+  }
+
+  async function run() {
+    if (!cmd) return;
+    setBusy(true);
+    setError(null);
+    try {
+      const r = await commandsApi.run(serverId, cmd.id, answers);
+      setActionId(r.actionId);
+      setRunServerId(serverId);
+      setFinished(null);
+      void navigate({
+        to: '/commands/$id',
+        params: { id: cmd.id },
+        search: { server: serverId, run: r.actionId, tab: 'output' },
+        replace: true,
+      });
+      void qc.invalidateQueries({ queryKey: ['actions'] });
+    } catch (e) {
+      setError((e as Error).message);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function cancel() {
+    if (!actionId) return;
+    try {
+      await commandsApi.cancel(actionId);
+    } catch (e) {
+      setError((e as Error).message);
+    }
+  }
+
+  if (!cmds || (!cmd && (!retried || cmdsFetching)))
+    return <Card className="p-8 text-muted">Загрузка...</Card>;
+  if (!cmd) return <Card className="p-8 text-bad">Команда не найдена</Card>;
+  const server = servers?.find((s) => s.id === serverId);
+  const runServer = servers?.find((s) => s.id === runServerId);
+  const canRun =
+    Boolean(serverId) &&
+    errors.length === 0 &&
+    !busy &&
+    (!checks || !checks.some((c) => c.level === 'fail'));
+  const secretsMissing = cmd.params.some(
+    (p) =>
+      p.required &&
+      (p.secret || p.type === 'password') &&
+      !answers[p.name] &&
+      paramVisible(p, answers),
+  );
+
+  return (
+    <>
+      <Breadcrumbs items={[{ label: 'Команды', to: '/commands' }, { label: cmd.title }]} />
+      <div className="flex flex-wrap items-center gap-3">
+        <PageTitle hero>{cmd.title}</PageTitle>
+        <Chip>{cmd.params.length === 0 ? 'без вопросов' : `${cmd.params.length} вопр.`}</Chip>
+      </div>
+      <Tabs<Tab>
+        items={[
+          { id: 'form', title: 'Форма' },
+          { id: 'output', title: 'Вывод' },
+          { id: 'history', title: server ? `История на ${server.name}` : 'История' },
+        ]}
+        value={tab}
+        onChange={setTab}
+      />
+
+      {error && <Alert tone="bad">{error}</Alert>}
+
+      {tab === 'form' && (
+        <>
+          <div className="grid items-start gap-4 lg:grid-cols-[minmax(0,1.15fr)_minmax(0,1fr)]">
+            <Card className="flex flex-col gap-4 p-5">
+              <div className="text-[13px] leading-relaxed text-muted">{cmd.description}</div>
+              <Field
+                label="Сервер"
+                htmlFor="cmd-server"
+                hint="команда выполняется на одном сервере"
+              >
+                <Select
+                  id="cmd-server"
+                  value={serverId}
+                  onChange={(e) => setServerId(e.target.value)}
+                >
+                  <option value="">выбери сервер</option>
+                  {(servers ?? []).map((s) => (
+                    <option key={s.id} value={s.id} disabled={s.status !== 'online'}>
+                      {s.name} - {s.host} {s.status === 'online' ? '(в сети)' : '(не в сети)'}
+                    </option>
+                  ))}
+                </Select>
+              </Field>
+              {serverId && loadedFor !== `${cmd.id}:${serverId}` && (
+                <div className="text-sm text-muted">Загружаю значения по умолчанию...</div>
+              )}
+              {serverId && loadedFor === `${cmd.id}:${serverId}` && (
+                <div className="grid gap-3 sm:grid-cols-2">
+                  {cmd.params
+                    .filter((p) => paramVisible(p, answers))
+                    .map((p) => (
+                      <ParamField
+                        key={p.name}
+                        p={p}
+                        value={answers[p.name] ?? ''}
+                        onChange={(v) => set(p.name, v)}
+                        awgContainers={awgContainers}
+                      />
+                    ))}
+                  {cmd.params.length === 0 && (
+                    <div className="text-sm text-muted sm:col-span-2">
+                      Вопросов нет - можно запускать.
+                    </div>
+                  )}
+                </div>
+              )}
+              {errors.length > 0 && (
+                <Alert tone="bad">
+                  {errors.map((e) => (
+                    <div key={e}>{e}</div>
+                  ))}
+                </Alert>
+              )}
+            </Card>
+
+            <div className="flex flex-col gap-4">
+              <Card className="flex flex-col gap-2.5 p-4">
+                <div className="font-semibold">Что будет сделано</div>
+                {plan.length === 0 ? (
+                  <div className="text-[13px] text-muted">Выбери сервер</div>
+                ) : (
+                  <div className="flex flex-col gap-1.5 text-[13px]">
+                    {plan.map((s) => (
+                      <div key={s} className="flex items-start gap-2">
+                        <CheckIcon className="mt-0.5 size-4 shrink-0 text-ok" />
+                        <span>{s}</span>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </Card>
+              <Card className="flex flex-col gap-2.5 p-4">
+                <div className="flex items-center gap-2.5">
+                  <div className="font-semibold">Проверки перед запуском</div>
+                  {checks &&
+                    (checks.some((c) => c.level === 'fail') ? (
+                      <Chip tone="bad">есть проблемы</Chip>
+                    ) : checks.some((c) => c.level === 'warn') ? (
+                      <Chip tone="warn">с оговорками</Chip>
+                    ) : (
+                      <Chip tone="ok">всё в порядке</Chip>
+                    ))}
+                  <div className="grow" />
+                  <Button
+                    size="sm"
+                    disabled={!serverId || checking || errors.length > 0}
+                    onClick={runPreflight}
+                    label={checking ? 'Проверяю...' : checks ? 'Проверить снова' : 'Проверить'}
+                  >
+                    <ClipboardCheck className={checking ? 'size-3.5 animate-pulse' : 'size-3.5'} />
+                  </Button>
+                </div>
+                {checks ? (
+                  <div className="flex flex-col gap-1.5 text-[13px]">
+                    {checks.map((c, i) => (
+                      <div key={`${c.text}-${i}`} className="flex items-start gap-2">
+                        {c.level === 'ok' ? (
+                          <CheckIcon className="mt-0.5 size-4 shrink-0 text-ok" />
+                        ) : c.level === 'warn' ? (
+                          <AlertTriangle className="mt-0.5 size-4 shrink-0 text-warn" />
+                        ) : (
+                          <X className="mt-0.5 size-4 shrink-0 text-bad" />
+                        )}
+                        <span>{c.text}</span>
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <div className="text-[13px] text-muted">
+                    Агент проверит порты, наличие сервиса и место на диске. Запуск без проверки тоже
+                    возможен.
+                  </div>
+                )}
+              </Card>
+              {cmd.after && (
+                <Card className="p-4 text-[13px] text-muted">
+                  <span className="font-medium text-text">После установки: </span>
+                  {cmd.after}
+                </Card>
+              )}
+            </div>
+          </div>
+          <div className="flex flex-wrap items-center gap-3">
+            <InfoTip>
+              Ответы сохраняются как значения по умолчанию для следующего запуска на этом сервере
+              (кроме паролей).
+            </InfoTip>
+            <div className="grow" />
+            <ButtonLink to="/commands">Отмена</ButtonLink>
+            <Button
+              variant="primary"
+              disabled={!canRun || secretsMissing || lock.busy}
+              onClick={run}
+              title={lock.reason ?? (secretsMissing ? 'Заполни пароли' : '')}
+              label={server ? `Запустить на ${server.name}` : 'Запустить'}
+            >
+              <Play className="size-4" />
+            </Button>
+          </div>
+        </>
+      )}
+
+      {tab === 'output' && (
+        <Card className="flex flex-col gap-3 p-4">
+          {!actionId ? (
+            <div className="text-[13px] text-muted">
+              Команда ещё не запускалась в этой вкладке. Заполни форму и нажми "Запустить", либо
+              открой запуск из истории.
+            </div>
+          ) : (
+            <>
+              <div className="flex flex-wrap items-center gap-2.5">
+                <div className="font-semibold">
+                  Запуск: {cmd.title}
+                  {runServer ? ` на ${runServer.name}` : ''}
+                </div>
+                <ActionStatusChip
+                  finishedAt={finished === null ? null : 'done'}
+                  exitCode={finished}
+                  withCode
+                />
+                <div className="grow" />
+                {finished === null && (
+                  <Button size="sm" variant="danger" onClick={cancel} label="Остановить">
+                    <Square className="size-3.5" />
+                  </Button>
+                )}
+                {finished !== null && (
+                  <Button size="sm" onClick={() => setTab('form')} label="Запустить ещё раз">
+                    <Play className="size-3.5" />
+                  </Button>
+                )}
+              </div>
+              <ActionOutput actionId={actionId} onFinished={setFinished} tall />
+              {finished === 0 && cmd.after && <Alert tone="ok">{cmd.after}</Alert>}
+              {finished === 0 && runServer && (
+                <div>
+                  <ButtonLink
+                    to="/servers/$id"
+                    params={{ id: runServer.id }}
+                    size="sm"
+                    label="Открыть карточку сервера"
+                  >
+                    <Server className="size-3.5" />
+                  </ButtonLink>
+                </div>
+              )}
+            </>
+          )}
+        </Card>
+      )}
+
+      {tab === 'history' && (
+        <History
+          serverId={serverId}
+          commandId={cmd.id}
+          showAll={showAll}
+          onShowAll={() => setShowAll(true)}
+          onOpen={(aid) => {
+            setActionId(aid);
+            setRunServerId(serverId);
+            setFinished(null);
+            // запуск - в адрес: после перезагрузки откроется он, а не прошлый
+            void navigate({
+              to: '/commands/$id',
+              params: { id },
+              search: { server: serverId, run: aid, tab: 'output' },
+              replace: true,
+            });
+          }}
+        />
+      )}
+    </>
+  );
+}
