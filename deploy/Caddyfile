@@ -1,0 +1,147 @@
+{
+	email {$ACME_EMAIL}
+	# Поддомены панелей сервисов (<слаг>-xui.<домен>): сертификат выпускается при первом
+	# обращении, но только если панель знает такой поддомен (иначе сканер из CT-логов
+	# заставлял бы выпускать сертификаты на что угодно).
+	on_demand_tls {
+		ask http://panel:3000/api/proxy/ask
+	}
+}
+
+{$PANEL_DOMAIN} {
+	encode zstd gzip
+	header {
+		Strict-Transport-Security "max-age=31536000; includeSubDomains"
+		X-Content-Type-Options nosniff
+		X-Frame-Options DENY
+		Referrer-Policy strict-origin-when-cross-origin
+		# панель и всё на её именах поисковикам не показывается (и robots.txt ниже)
+		X-Robots-Tag "noindex, nofollow, noarchive"
+		# CSP панели: нарушения приходят в
+		# /api/csp-report и пишутся в журнал панели. Скрипты - только свои. Элементы <style> -
+		# inline тоже: xterm (DOM-рендер) пишет в них размеры ячеек и цвета темы; атрибуты style -
+		# только 'self' (React ставит стили через CSSOM, CSP их не касается).
+		Content-Security-Policy "default-src 'self'; script-src 'self'; style-src 'self'; style-src-elem 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self'; connect-src 'self' wss://{$PANEL_DOMAIN}; worker-src 'self'; manifest-src 'self'; frame-ancestors 'none'; base-uri 'none'; object-src 'none'; form-action 'self'; report-uri /api/csp-report"
+	}
+	# Подписки и личные страницы живут на SUB_DOMAIN; на имени панели их нет: личная страница -
+	# HTML со скриптом, в origin панели ей не место. Без SUB_DOMAIN (sub.localhost) - здесь.
+	@client {
+		path /sub/* /c/*
+		expression `"{$SUB_DOMAIN}" != "sub.localhost"`
+	}
+	handle @client {
+		respond 404
+	}
+	handle /robots.txt {
+		respond "User-agent: *
+Disallow: /
+" 200
+	}
+	# пока панель перезапускается при выкладке (около 5 с), запрос ждёт её, а не получает 502
+	handle {
+		reverse_proxy panel:3000 {
+			lb_try_duration 30s
+			lb_try_interval 250ms
+		}
+	}
+	# Токены в адресе (подписки и личные страницы на этом имени, одноразовые ссылки бэкапов)
+	# в журнал не пишутся; /api/auth/* остаётся как есть - по нему банит fail2ban.
+	log {
+		output file /data/access.log {
+			roll_size 10mb
+			roll_keep 5
+		}
+		format filter {
+			wrap json
+			fields {
+				request>uri regexp ^/(sub|c|api/agent/backups/upload|api/agent/backups/download)/[^/?]+ /$1/***
+			}
+		}
+	}
+}
+
+# Подписки и личные страницы клиентов (SUB_DOMAIN): только /sub/* и /c/*, остальное - 404.
+# В адресе токен клиента, поэтому в журнал адрес запроса не пишется. Без SUB_DOMAIN compose
+# подставляет sub.localhost (внутренний сертификат, снаружи не используется).
+{$SUB_DOMAIN} {
+	encode zstd gzip
+	header {
+		Strict-Transport-Security "max-age=31536000"
+		X-Content-Type-Options nosniff
+		X-Frame-Options DENY
+		Referrer-Policy no-referrer
+		X-Robots-Tag "noindex, nofollow, noarchive"
+	}
+	handle /robots.txt {
+		respond "User-agent: *
+Disallow: /
+" 200
+	}
+	@client path /sub/* /c/*
+	handle @client {
+		reverse_proxy panel:3000 {
+			lb_try_duration 30s
+			lb_try_interval 250ms
+		}
+	}
+	handle {
+		respond 404
+	}
+	log {
+		output file /data/access-sub.log {
+			roll_size 10mb
+			roll_keep 5
+		}
+		format filter {
+			wrap json
+			fields {
+				request>uri delete
+				request>headers>Referer delete
+			}
+		}
+	}
+}
+
+# Панели сервисов на серверах через панель (lib/panel-proxy.ts): <слаг>-xui и
+# <слаг>-mtproxyl. Блок без имени - всё, чего нет в блоках выше; сертификат выпускается по
+# требованию и только для поддомена, который знает панель (ask). Не "*.{$PANEL_DOMAIN}": Caddy
+# 2.11 не держит отдельный сертификат для имени под wildcard-блоком, и SUB_DOMAIN остался бы без
+# сертификата. Вход - только через панель, трафик - туннелем через
+# агента к 127.0.0.1 сервера.
+https:// {
+	tls {
+		on_demand
+	}
+	encode zstd gzip
+	header {
+		Strict-Transport-Security "max-age=31536000"
+		X-Content-Type-Options nosniff
+		Referrer-Policy same-origin
+		X-Robots-Tag "noindex, nofollow, noarchive"
+	}
+	handle /robots.txt {
+		respond "User-agent: *
+Disallow: /
+" 200
+	}
+	handle {
+		reverse_proxy panel:3000 {
+			lb_try_duration 30s
+			lb_try_interval 250ms
+			flush_interval -1
+		}
+	}
+	# одноразовый тикет входа (/__vps/auth?t=...) в журнал не пишется
+	log {
+		output file /data/access-proxy.log {
+			roll_size 10mb
+			roll_keep 3
+		}
+		format filter {
+			wrap json
+			fields {
+				request>uri regexp ^/__vps/auth\?.* /__vps/auth?***
+			}
+		}
+	}
+}

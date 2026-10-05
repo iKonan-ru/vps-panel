@@ -1,0 +1,11 @@
+# Управляется VPS Panel. Подбор пароля к панели 3x-ui (нативная установка, x-ui.service).
+[xui-panel]
+enabled  = true
+backend  = systemd
+journalmatch = _SYSTEMD_UNIT=x-ui.service
+filter   = xui-panel
+banaction = ufw
+port     = 0:65535
+maxretry = 5
+findtime = 10m
+bantime  = 6h

@@ -1,0 +1,4 @@
+packages:
+  - apps/server
+  - apps/web
+  - packages/protocol

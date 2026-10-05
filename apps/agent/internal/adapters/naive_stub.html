@@ -1,0 +1,41 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="robots" content="noindex,nofollow,noarchive">
+<title>VPS Panel</title>
+<link rel="icon" type="image/svg+xml" href="data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCA1MTIgNTEyIj4KICA8ZGVmcz4KICAgIDxsaW5lYXJHcmFkaWVudCBpZD0iYmciIHgxPSIwIiB5MT0iMCIgeDI9IjEiIHkyPSIxIj4KICAgICAgPHN0b3Agb2Zmc2V0PSIwIiBzdG9wLWNvbG9yPSIjMWExZjJiIi8+CiAgICAgIDxzdG9wIG9mZnNldD0iMSIgc3RvcC1jb2xvcj0iIzBmMTExNSIvPgogICAgPC9saW5lYXJHcmFkaWVudD4KICA8L2RlZnM+CiAgPHJlY3Qgd2lkdGg9IjUxMiIgaGVpZ2h0PSI1MTIiIHJ4PSIxMTIiIGZpbGw9InVybCgjYmcpIi8+CiAgPCEtLSDQtNCy0LAg0Y7QvdC40YLQsCDRgdGC0L7QudC60LggLS0+CiAgPHJlY3QgeD0iMTEyIiB5PSIxNTAiIHdpZHRoPSIyODgiIGhlaWdodD0iODgiIHJ4PSIyMiIgZmlsbD0ibm9uZSIgc3Ryb2tlPSIjNGY4Y2ZmIiBzdHJva2Utd2lkdGg9IjMwIi8+CiAgPHJlY3QgeD0iMTEyIiB5PSIyNzQiIHdpZHRoPSIyODgiIGhlaWdodD0iODgiIHJ4PSIyMiIgZmlsbD0ibm9uZSIgc3Ryb2tlPSIjNGY4Y2ZmIiBzdHJva2Utd2lkdGg9IjMwIi8+CiAgPCEtLSDQuNC90LTQuNC60LDRgtC+0YDRizog0LLQtdGA0YXQvdC40Lkg0L7QvdC70LDQudC9LCDQvdC40LbQvdC40Lkg0YLQvtC20LUgLS0+CiAgPGNpcmNsZSBjeD0iMzM2IiBjeT0iMTk0IiByPSIyMCIgZmlsbD0iIzNlY2Y4ZSIvPgogIDxjaXJjbGUgY3g9IjMzNiIgY3k9IjMxOCIgcj0iMjAiIGZpbGw9IiMzZWNmOGUiLz4KICA8IS0tINCy0LXQvdGC0LjQu9GP0YbQuNGPINGB0LvQtdCy0LAgLS0+CiAgPHJlY3QgeD0iMTYwIiB5PSIxODIiIHdpZHRoPSI1NiIgaGVpZ2h0PSIyNCIgcng9IjEyIiBmaWxsPSIjNGY4Y2ZmIi8+CiAgPHJlY3QgeD0iMTYwIiB5PSIzMDYiIHdpZHRoPSI1NiIgaGVpZ2h0PSIyNCIgcng9IjEyIiBmaWxsPSIjNGY4Y2ZmIi8+Cjwvc3ZnPgo=">
+<style>
+:root{--bg:#0b0d12;--accent:#4f8cff;--ok:#3ecf8e;--text:#e8eaed;--muted:#7d8796}
+*{box-sizing:border-box}
+html,body{height:100%;margin:0}
+body{background:var(--bg);color:var(--text);font-family:"IBM Plex Sans","Inter",system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;overflow:hidden;display:grid;place-items:center}
+.mark{position:relative;display:flex;flex-direction:column;align-items:center;gap:28px;animation:rise .9s cubic-bezier(.2,.7,.2,1) both}
+.logo{width:132px;height:132px;filter:drop-shadow(0 18px 48px rgba(79,140,255,.35)) drop-shadow(0 2px 6px rgba(0,0,0,.6))}
+.led{animation:led 3.2s ease-in-out infinite}
+.led.b{animation-delay:1.6s}
+.name{font-size:30px;font-weight:600;letter-spacing:.02em;line-height:1}
+.name b{font-weight:600;color:var(--accent)}
+@keyframes led{0%,100%{opacity:1}50%{opacity:.35}}
+@keyframes rise{from{opacity:0;transform:translateY(10px)}to{opacity:1;transform:none}}
+@media (max-width:480px){.logo{width:104px;height:104px}.name{font-size:24px}.mark{gap:22px}}
+</style>
+</head>
+<body>
+<main class="mark">
+<svg class="logo" viewBox="0 0 512 512" role="img" aria-label="VPS Panel">
+<defs><linearGradient id="g" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#1d2331"/><stop offset="1" stop-color="#0f1115"/></linearGradient></defs>
+<rect width="512" height="512" rx="112" fill="url(#g)"/>
+<rect x="1.5" y="1.5" width="509" height="509" rx="110.5" fill="none" stroke="rgba(255,255,255,.08)" stroke-width="3"/>
+<rect x="112" y="150" width="288" height="88" rx="22" fill="none" stroke="#4f8cff" stroke-width="30"/>
+<rect x="112" y="274" width="288" height="88" rx="22" fill="none" stroke="#4f8cff" stroke-width="30"/>
+<circle class="led" cx="336" cy="194" r="20" fill="#3ecf8e"/>
+<circle class="led b" cx="336" cy="318" r="20" fill="#3ecf8e"/>
+<rect x="160" y="182" width="56" height="24" rx="12" fill="#4f8cff"/>
+<rect x="160" y="306" width="56" height="24" rx="12" fill="#4f8cff"/>
+</svg>
+<div class="name">VPS <b>Panel</b></div>
+</main>
+</body>
+</html>

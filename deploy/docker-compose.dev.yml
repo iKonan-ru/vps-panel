@@ -1,0 +1,8 @@
+# Тестовый запуск без Caddy и HTTPS: панель на 127.0.0.1:3000.
+# docker compose -f docker-compose.yml -f docker-compose.dev.yml up -d --build panel
+services:
+  panel:
+    ports:
+      - "127.0.0.1:3000:3000"
+    environment:
+      PANEL_PUBLIC_URL: http://127.0.0.1:3000

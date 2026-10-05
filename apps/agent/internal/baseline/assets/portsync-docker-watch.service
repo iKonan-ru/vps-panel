@@ -1,0 +1,13 @@
+[Unit]
+Description=vps-portsync: rerun when containers start/stop
+After=docker.service
+Requires=docker.service
+
+[Service]
+Type=simple
+ExecStart=/bin/sh -c 'docker events --filter type=container --filter event=start --filter event=die --format "{{.Actor.Attributes.name}}" | while read -r n; do sleep 2; systemctl start vps-portsync.service; done'
+Restart=always
+RestartSec=10
+
+[Install]
+WantedBy=multi-user.target

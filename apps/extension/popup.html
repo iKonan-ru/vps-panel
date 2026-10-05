@@ -1,0 +1,107 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<title>VPS Panel: прокси</title>
+<style>
+:root{color-scheme:light;--bg:#f5f6f8;--surface:#fff;--surface-2:#eef0f3;--border:#d9dee6;--text:#1c1e21;--muted:#5f6975;--accent:#2f6fe4;--ok:#1f9d6a;--bad:#d93025;
+--chev:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 24 24' fill='none' stroke='%235f6975' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E")}
+@media(prefers-color-scheme:dark){:root{color-scheme:dark;--bg:#0f1115;--surface:#161a20;--surface-2:#1c2129;--border:#2a313c;--text:#e8eaed;--muted:#9aa4b2;--accent:#4f8cff;--ok:#3ecf8e;--bad:#ff6b6b;
+--chev:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 24 24' fill='none' stroke='%239aa4b2' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E")}}
+*{box-sizing:border-box}
+body{margin:0;width:340px;background:var(--bg);color:var(--text);font:13px/1.45 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif}
+main{padding:14px;display:flex;flex-direction:column;gap:12px}
+h1{font-size:15px;margin:0;font-weight:600}
+.card{background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:12px;display:flex;flex-direction:column;gap:10px}
+.row{display:flex;align-items:center;gap:10px}
+.grow{flex:1;min-width:0}
+.muted{color:var(--muted)}
+.state{font-weight:600}
+.state.on{color:var(--ok)}.state.bad{color:var(--bad)}
+.err{color:var(--bad)}
+button,select,input[type=text]{font:inherit;color:var(--text);background:var(--surface-2);border:1px solid var(--border);border-radius:8px;height:32px;padding:0 10px}
+button{cursor:pointer}button:hover{border-color:var(--muted)}
+button.primary{background:var(--accent);border-color:var(--accent);color:#fff}
+select,input[type=text]{width:100%}
+select{appearance:none;-webkit-appearance:none;padding-right:34px;background-image:var(--chev);background-repeat:no-repeat;background-position:right 10px center;background-size:16px 16px;cursor:pointer}
+.small{font-size:12px;margin:2px 0 0 24px}
+.dd{display:flex;flex-direction:column;gap:4px}
+.ddbtn{display:flex;align-items:center;gap:8px;width:100%;text-align:left;padding-right:34px;background-image:var(--chev);background-repeat:no-repeat;background-position:right 10px center;background-size:16px 16px}
+.ddbtn[aria-expanded=true]{border-color:var(--accent)}
+.ddlist{border:1px solid var(--border);border-radius:8px;background:var(--surface);overflow:hidden}
+.ddopt{display:flex;align-items:center;gap:8px;width:100%;height:34px;padding:0 10px;border:0;border-radius:0;background:none;text-align:left}
+.ddopt+.ddopt{border-top:1px solid var(--border)}
+.ddopt:hover,.ddopt:focus-visible{background:var(--surface-2);outline:none}
+.ddopt.sel{font-weight:600}
+.ping{flex:none;font-variant-numeric:tabular-nums;font-size:12px;color:var(--muted)}
+.ping.good{color:var(--ok)}.ping.mid{color:#c98a00}.ping.bad{color:var(--bad)}
+.switch{position:relative;width:44px;height:24px;flex:none}
+.switch input{opacity:0;width:0;height:0}
+.switch span{position:absolute;inset:0;border-radius:12px;background:var(--border);transition:.15s;cursor:pointer}
+.switch span::before{content:"";position:absolute;width:18px;height:18px;left:3px;top:3px;border-radius:50%;background:#fff;transition:.15s}
+.switch input:checked+span{background:var(--ok)}.switch input:checked+span::before{transform:translateX(20px)}
+label.chk{display:flex;align-items:center;gap:8px;cursor:pointer}
+.link{background:none;border:0;padding:0;height:auto;color:var(--accent);cursor:pointer}
+.upd{border-color:var(--accent)}
+.own{border-top:1px solid var(--border);padding-top:10px}
+.own summary{cursor:pointer;font-weight:500;list-style-position:inside}
+.own[open] summary{margin-bottom:8px}
+.own textarea{display:block;width:100%;min-height:96px;resize:vertical;font:12px/1.45 ui-monospace,"JetBrains Mono",monospace;color:var(--text);background:var(--surface-2);border:1px solid var(--border);border-radius:8px;padding:8px 10px}
+.own textarea:focus{outline:none;border-color:var(--accent)}
+.own .hint{font-size:12px;margin-top:6px}
+.own code{font:11px ui-monospace,monospace;background:var(--surface-2);border-radius:4px;padding:0 3px}
+.own .err{margin-top:6px;font-size:12px;white-space:pre-line}
+.own .row{margin-top:8px}
+[hidden]{display:none!important}
+</style>
+</head>
+<body>
+<main>
+  <h1>VPS Panel: прокси для браузера</h1>
+  <section class="card upd" id="update" hidden>
+    <div><b id="updTitle"></b></div>
+    <div class="muted">Скачайте архив, распакуйте его поверх папки расширения (с заменой файлов) и нажмите "Перезапустить".</div>
+    <div class="row"><button class="primary" id="updDownload">Скачать</button><button id="updRestart">Перезапустить</button></div>
+  </section>
+  <section class="card" id="setup" hidden>
+    <div class="muted">Вставьте ссылку с вашей личной страницы VPS Panel (или ссылку подписки).</div>
+    <input type="text" id="link" placeholder="https://sub.example.com/c/..." autocomplete="off" spellcheck="false">
+    <div class="row"><button class="primary" id="save">Подключить</button><button id="cancel" hidden>Отмена</button></div>
+  </section>
+  <section class="card" id="main" hidden>
+    <div class="row">
+      <div class="grow"><div class="state" id="state"></div><div class="muted" id="sub"></div></div>
+      <label class="switch" title="Включить или выключить"><input type="checkbox" id="on"><span></span></label>
+    </div>
+    <div>
+      <div class="muted">Сервер</div>
+      <div class="dd">
+        <button type="button" class="ddbtn" id="ddBtn" aria-haspopup="listbox" aria-expanded="false"><span class="grow" id="ddLabel"></span><span class="ping" id="ddPing"></span></button>
+        <div class="ddlist" id="ddList" role="listbox" hidden></div>
+      </div>
+    </div>
+    <div>
+      <label class="chk"><input type="checkbox" id="ru">Российские сайты - напрямую</label>
+      <div class="muted small">Напрямую, мимо сервера, идут сайты в зонах .ru, .рф и .su; всё остальное - через сервер.</div>
+    </div>
+    <details class="own" id="own">
+      <summary>Свои адреса напрямую <span class="muted" id="ownCount"></span></summary>
+      <textarea id="ownText" rows="6" spellcheck="false" autocomplete="off" placeholder="example.com&#10;*.example.com&#10;10.0.0.0/8"></textarea>
+      <div class="muted hint">По одному в строке: <code>example.com</code> - только он; <code>*.example.com</code> - он и поддомены; маски вроде <code>cdn*.example.com</code>; IP и подсети: <code>1.2.3.4</code>, <code>10.0.0.0/8</code>, <code>2001:db8::/32</code>; страницы: <code>https://example.com/page</code>. После <code>#</code> - комментарий.</div>
+      <div class="muted hint">Подсети действуют на адреса, набранные цифрами (имена сайтов в адреса не переводятся). Страница https идёт напрямую вместе со всем сайтом: Chrome не показывает расширению путь https-адреса.</div>
+      <div class="err" id="ownErr" hidden></div>
+      <div class="row"><button id="ownSave">Сохранить</button><span class="muted" id="ownSaved"></span></div>
+    </details>
+    <div class="row muted"><span class="grow" id="check"></span><button id="test">Проверить</button></div>
+  </section>
+  <div class="err" id="error" hidden></div>
+  <div class="row muted" id="foot" hidden>
+    <span class="grow" id="updated"></span>
+    <button class="link" id="refresh">Обновить</button>
+    <button class="link" id="change">Ссылка</button>
+  </div>
+</main>
+<script src="rules.js"></script>
+<script src="popup.js"></script>
+</body>
+</html>

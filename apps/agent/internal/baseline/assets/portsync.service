@@ -1,0 +1,8 @@
+[Unit]
+Description=vps-portsync: firewall follows server config
+After=network-online.target docker.service ufw.service
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/sbin/vps-portsync --verbose
