@@ -1,10 +1,18 @@
-// Фон расширения. Подписка /sub/<токен>/browser даёт серверы: имя,
-// порты, логин, пароль, секретное имя. По ним - PAC (chrome.proxy), пароль к прокси
-// (onAuthRequired) и прогрев пароля: прокси с probe_resistance без пароля прикидывается сайтом и
-// пароль не спрашивает, поэтому расширение само идёт на секретное имя - там прокси отвечает 407,
-// Chrome запоминает пароль и дальше шлёт его сам в каждом запросе.
+// Фон расширения. Подписка /sub/<токен>/browser даёт серверы: имя, порты, логин, пароль,
+// секретное имя.
+// Chrome: по ним - PAC (B.proxy), пароль к прокси (onAuthRequired) и прогрев пароля: прокси
+// с probe_resistance без пароля прикидывается сайтом и пароль не спрашивает, поэтому расширение
+// само идёт на секретное имя - там прокси отвечает 407, Chrome запоминает пароль и дальше шлёт
+// его сам в каждом запросе.
+// Firefox: решение по каждому запросу (proxy.onRequest) теми же функциями из rules.js, пароль -
+// заголовком Proxy-Authorization сразу в CONNECT, прогрев не нужен.
 
-importScripts('rules.js'); // parseDirect, buildPac
+// Chrome - service worker и chrome.*; Firefox - фоновая страница (rules.js подключает манифест)
+// и browser.*. У обоих API с промисами.
+const B = globalThis.browser || globalThis.chrome;
+const FIREFOX = Boolean(globalThis.browser && browser.proxy && browser.proxy.onRequest);
+const ACTION = B.action || B.browserAction;
+if (typeof importScripts === 'function') importScripts('rules.js'); // parseDirect, buildPac, pacRoute
 
 const DEF = {
   subUrl: '',
@@ -19,9 +27,9 @@ const DEF = {
 };
 
 async function getState() {
-  return { ...DEF, ...(await chrome.storage.local.get(Object.keys(DEF))) };
+  return { ...DEF, ...(await B.storage.local.get(Object.keys(DEF))) };
 }
-const setState = (patch) => chrome.storage.local.set(patch);
+const setState = (patch) => B.storage.local.set(patch);
 
 /** Ссылка личной страницы или подписки -> адрес подписки расширения; null - не наша ссылка. */
 function subscriptionUrl(input) {
@@ -63,21 +71,23 @@ function newer(a, b) {
  * не обновит: архив распаковывают поверх папки, затем "Перезапустить" (runtime.reload).
  */
 function updateOf(st) {
+  // Firefox обновляет подписанное расширение сам (update_url в манифесте)
+  if (FIREFOX) return null;
   const e = st.sub && st.sub.extension;
-  return e && e.version && newer(e.version, chrome.runtime.getManifest().version) ? e : null;
+  return e && e.version && newer(e.version, B.runtime.getManifest().version) ? e : null;
 }
 
 async function badge(text, color) {
-  await chrome.action.setBadgeText({ text });
-  if (color) await chrome.action.setBadgeBackgroundColor({ color });
+  await ACTION.setBadgeText({ text });
+  if (color) await ACTION.setBadgeBackgroundColor({ color });
 }
 
 async function webrtc(on) {
   // WebRTC мимо прокси показал бы настоящий адрес
   try {
     if (on)
-      await chrome.privacy.network.webRTCIPHandlingPolicy.set({ value: 'disable_non_proxied_udp' });
-    else await chrome.privacy.network.webRTCIPHandlingPolicy.clear({});
+      await B.privacy.network.webRTCIPHandlingPolicy.set({ value: 'disable_non_proxied_udp' });
+    else await B.privacy.network.webRTCIPHandlingPolicy.clear({});
   } catch {}
 }
 
@@ -118,14 +128,21 @@ async function applyNow() {
   const servers = activeServers(st);
   indexCreds(servers);
   if (!st.enabled || !servers.length) {
-    await chrome.proxy.settings.clear({ scope: 'regular' });
+    if (FIREFOX) route = null;
+    else await B.proxy.settings.clear({ scope: 'regular' });
     await webrtc(false);
     if (st.error && st.subUrl) await badge('!', '#d93025');
     else if (updateOf(st)) await badge('NEW', '#2f6fe4');
     else await badge('', '');
     return;
   }
-  const cur = await chrome.proxy.settings.get({});
+  if (FIREFOX) {
+    route = routeContext(st, servers, false);
+    await webrtc(true);
+    await badge('ON', '#1f9d6a');
+    return;
+  }
+  const cur = await B.proxy.settings.get({});
   if (cur.levelOfControl === 'not_controllable' || cur.levelOfControl === 'controlled_by_other_extensions') {
     await setState({
       error:
@@ -137,7 +154,7 @@ async function applyNow() {
     return;
   }
   const pac = (priming) =>
-    chrome.proxy.settings.set({
+    B.proxy.settings.set({
       value: { mode: 'pac_script', pacScript: { data: buildPac(st, servers, priming), mandatory: true } },
       scope: 'regular',
     });
@@ -150,6 +167,56 @@ async function applyNow() {
   await pac(false);
   if (updateOf(st)) await badge('NEW', '#2f6fe4');
   else await badge('ON', '#1f9d6a');
+}
+
+// Firefox: куда идёт запрос. route - данные маршрутизации (null - прокси выключен). Пока фон
+// после запуска браузера не прочитал настройки, запросы ждут (иначе первые ушли бы мимо прокси).
+let route = null;
+let ready = Promise.resolve();
+
+/** Пароль к прокси заголовком Basic (логин и пароль - UTF-8). */
+function basic(s) {
+  const bytes = new TextEncoder().encode(`${s.user}:${s.pass}`);
+  return `Basic ${btoa(String.fromCharCode(...bytes))}`;
+}
+
+/** Ответ PAC ("DIRECT" или "HTTPS имя:порт; ...") -> ProxyInfo Firefox с паролями. */
+function proxyInfo(answer) {
+  if (answer === 'DIRECT') return { type: 'direct' };
+  const list = [];
+  for (const part of answer.split(';')) {
+    const m = /^\s*HTTPS\s+(\S+):(\d+)\s*$/.exec(part);
+    if (!m) continue;
+    const s = creds && creds.get(`${m[1]}:${m[2]}`);
+    if (!s) continue;
+    list.push({
+      type: 'https',
+      host: m[1],
+      port: Number(m[2]),
+      proxyAuthorizationHeader: basic(s),
+      // недоступный сервер - через 5 секунд следующий из цепочки
+      failoverTimeout: 5,
+    });
+  }
+  // ни одного прокси не собралось - не пускать мимо, а отказать
+  return list.length ? list : { type: 'https', host: '127.0.0.1', port: 9 };
+}
+
+if (FIREFOX) {
+  browser.proxy.onRequest.addListener(
+    async (d) => {
+      await ready;
+      if (!route) return { type: 'direct' };
+      let host = '';
+      try {
+        host = new URL(d.url).hostname;
+      } catch {
+        return { type: 'direct' };
+      }
+      return proxyInfo(pacRoute(d.url, host, route));
+    },
+    { urls: ['<all_urls>'] },
+  );
 }
 
 let refreshing = null;
@@ -238,49 +305,71 @@ async function check() {
   return res;
 }
 
-// Пароль к прокси. Повтор по тому же запросу - пароль не подошёл: отмена и обновление подписки
-// (выдали новую ссылку или пароль сменился), иначе Chrome спрашивал бы по кругу.
-const tries = new Map();
-chrome.webRequest.onAuthRequired.addListener(
-  (d, done) => {
-    if (!d.isProxy) return done({});
-    (async () => {
-      if (!creds) indexCreds(activeServers(await getState()));
-      const s = creds.get(`${d.challenger.host}:${d.challenger.port}`);
-      const n = (tries.get(d.requestId) || 0) + 1;
-      tries.set(d.requestId, n);
-      if (tries.size > 500) tries.clear();
-      if (!s || n > 2) {
-        if (s) refresh();
-        return done({ cancel: true });
-      }
-      done({ authCredentials: { username: s.user, password: s.pass } });
-    })();
-  },
-  { urls: ['<all_urls>'] },
-  ['asyncBlocking'],
-);
+// Chrome: пароль к прокси и восстановление после его сброса (в Firefox пароль идёт заголовком).
+if (!FIREFOX) {
+  // Пароль к прокси. Повтор по тому же запросу - пароль не подошёл: отмена и обновление подписки
+  // (выдали новую ссылку или пароль сменился), иначе Chrome спрашивал бы по кругу.
+  const tries = new Map();
+  B.webRequest.onAuthRequired.addListener(
+    (d, done) => {
+      if (!d.isProxy) return done({});
+      (async () => {
+        if (!creds) indexCreds(activeServers(await getState()));
+        const s = creds.get(`${d.challenger.host}:${d.challenger.port}`);
+        const n = (tries.get(d.requestId) || 0) + 1;
+        tries.set(d.requestId, n);
+        if (tries.size > 500) tries.clear();
+        if (!s || n > 2) {
+          if (s) refresh();
+          return done({ cancel: true });
+        }
+        done({ authCredentials: { username: s.user, password: s.pass } });
+      })();
+    },
+    { urls: ['<all_urls>'] },
+    ['asyncBlocking'],
+  );
 
-// Страница не открылась из-за прокси (пароль сброшен - смена сети, перезапуск) - прогрев и одна
-// перезагрузка вкладки.
-const reloaded = new Map();
-chrome.webRequest.onErrorOccurred.addListener(
-  (d) => {
-    if (d.type !== 'main_frame' || !/TUNNEL_CONNECTION_FAILED|PROXY_AUTH|PROXY_CONNECTION_FAILED/.test(d.error))
-      return;
-    (async () => {
-      const st = await getState();
-      if (!st.enabled) return;
-      await applying;
-      await Promise.race([prime(activeServers(st), false), new Promise((r) => setTimeout(r, 3000))]);
-      if (d.tabId >= 0 && Date.now() - (reloaded.get(d.tabId) || 0) > 60_000) {
-        reloaded.set(d.tabId, Date.now());
-        chrome.tabs.reload(d.tabId).catch(() => {});
-      }
-    })();
-  },
-  { urls: ['<all_urls>'] },
-);
+  // Страница не открылась из-за прокси (пароль сброшен - смена сети, перезапуск) - прогрев и одна
+  // перезагрузка вкладки.
+  const reloaded = new Map();
+  B.webRequest.onErrorOccurred.addListener(
+    (d) => {
+      if (d.type !== 'main_frame' || !/TUNNEL_CONNECTION_FAILED|PROXY_AUTH|PROXY_CONNECTION_FAILED/.test(d.error))
+        return;
+      (async () => {
+        const st = await getState();
+        if (!st.enabled) return;
+        await applying;
+        await Promise.race([prime(activeServers(st), false), new Promise((r) => setTimeout(r, 3000))]);
+        if (d.tabId >= 0 && Date.now() - (reloaded.get(d.tabId) || 0) > 60_000) {
+          reloaded.set(d.tabId, Date.now());
+          B.tabs.reload(d.tabId).catch(() => {});
+        }
+      })();
+    },
+    { urls: ['<all_urls>'] },
+  );
+}
+
+/**
+ * Firefox: ссылку берём с открытой личной страницы - подписанный архив один на всех, своей
+ * ссылки в нём нет. Имя страниц (firefox.json) зашито при сборке: чужие сайты не подходят.
+ */
+async function linkFromTabs() {
+  let host = '';
+  try {
+    host = (await (await fetch(B.runtime.getURL('firefox.json'))).json()).subHost || '';
+  } catch {}
+  if (!host) return null;
+  for (const t of await B.tabs.query({})) {
+    try {
+      const u = new URL(t.url || '');
+      if (u.hostname === host && subscriptionUrl(u.href)) return u.href;
+    } catch {}
+  }
+  return null;
+}
 
 async function setLink(link) {
   const url = subscriptionUrl(link);
@@ -295,7 +384,7 @@ async function setLink(link) {
   return {};
 }
 
-chrome.runtime.onMessage.addListener((msg, _sender, reply) => {
+B.runtime.onMessage.addListener((msg, _sender, reply) => {
   (async () => {
     switch (msg && msg.cmd) {
       case 'setLink':
@@ -331,6 +420,13 @@ chrome.runtime.onMessage.addListener((msg, _sender, reply) => {
       case 'refresh':
         await refresh();
         return {};
+      case 'auto': {
+        // окно без ссылки: в Firefox - поискать открытую личную страницу
+        const st = await getState();
+        if (st.subUrl || !FIREFOX) return {};
+        const link = await linkFromTabs();
+        return link ? setLink(link) : {};
+      }
       case 'check':
         return { check: await check() };
       case 'pings': {
@@ -340,15 +436,15 @@ chrome.runtime.onMessage.addListener((msg, _sender, reply) => {
       }
       case 'download': {
         const u = updateOf(await getState());
-        if (u && /^https:\/\//.test(u.download)) await chrome.tabs.create({ url: u.download });
+        if (u && /^https:\/\//.test(u.download)) await B.tabs.create({ url: u.download });
         return {};
       }
       case 'restart':
         // перечитать файлы с диска: после распаковки нового архива поверх папки
-        setTimeout(() => chrome.runtime.reload(), 100);
+        setTimeout(() => B.runtime.reload(), 100);
         return {};
       case 'forget':
-        await chrome.storage.local.clear();
+        await B.storage.local.clear();
         await apply();
         return {};
       default:
@@ -357,43 +453,53 @@ chrome.runtime.onMessage.addListener((msg, _sender, reply) => {
   })()
     .then(async (r) => {
       const state = await getState();
-      reply({ ...(r || {}), state, update: updateOf(state), current: chrome.runtime.getManifest().version });
+      reply({ ...(r || {}), state, update: updateOf(state), current: B.runtime.getManifest().version });
     })
     .catch((e) => reply({ error: e.message }));
   return true;
 });
 
 function alarms() {
-  chrome.alarms.create('refresh', { periodInMinutes: 12 * 60 });
-  chrome.alarms.create('prime', { periodInMinutes: 15 });
+  B.alarms.create('refresh', { periodInMinutes: 12 * 60 });
+  B.alarms.create('prime', { periodInMinutes: 15 });
 }
-chrome.alarms.onAlarm.addListener(async (a) => {
+B.alarms.onAlarm.addListener(async (a) => {
   if (a.name === 'refresh') refresh();
-  if (a.name === 'prime') {
+  if (a.name === 'prime' && !FIREFOX) {
     const st = await getState();
     if (st.enabled) prime(activeServers(st), true);
   }
 });
 
-// Установка: ссылка из config.json архива (панель кладёт туда подписку клиента).
-chrome.runtime.onInstalled.addListener(async () => {
+// Установка: ссылка из config.json архива (Chrome: панель кладёт туда подписку клиента) или с
+// открытой личной страницы (Firefox).
+B.runtime.onInstalled.addListener(async () => {
   alarms();
   const st = await getState();
   if (!st.subUrl) {
     try {
-      const cfg = await (await fetch(chrome.runtime.getURL('config.json'))).json();
+      const cfg = await (await fetch(B.runtime.getURL('config.json'))).json();
       if (cfg && cfg.subscription) {
         await setLink(cfg.subscription);
         return;
       }
     } catch {}
+    const link = FIREFOX ? await linkFromTabs() : null;
+    if (link) {
+      await setLink(link);
+      return;
+    }
   }
   await refresh();
 });
-chrome.runtime.onStartup.addListener(() => {
+B.runtime.onStartup.addListener(() => {
   alarms();
   refresh();
 });
+
+// Firefox: фоновая страница живёт всё время работы браузера - маршрут из сохранённых настроек
+// сразу при запуске (запросы до этого ждут ready)
+if (FIREFOX) ready = apply().catch(() => {});
 
 // для проверки на стенде (Playwright)
 self.vps = { getState, refresh, apply, check, subscriptionUrl, buildPac };

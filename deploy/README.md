@@ -103,7 +103,9 @@ deploy/files раздаётся панелью по /files/<путь> (без в
 агента; контрольная сумма - /files/sha256/<путь>) и монтируется в контейнер.
 Сейчас там WDTT: deploy.sh и бинарники wdtt-server, собранные из исходников
 qWDTT скриптом tools/build-wdtt.sh (нужен Go), и naive: Caddy с forwardproxy для
-прокси для браузера, скрипт tools/build-naive.sh. В git из
+прокси для браузера, скрипт tools/build-naive.sh, и firefox: подписанное Mozilla
+расширение для Firefox и updates.json (tools/sign-firefox.mjs, нужен ключ API
+addons.mozilla.org; клиентам - по /sub/firefox/<файл> и /c/<токен>/firefox.xpi). В git из
 deploy/files ничего не хранится: deploy/install.sh собирает файлы сам (и пересобирает,
 когда меняется скрипт сборки), при выкладке с машины разработки - собрать там, push.sh
 переносит deploy/files вместе с кодом.

@@ -10,10 +10,13 @@ import { describe, expect, it } from 'vitest';
 type Rules = {
   parseDirect: (t: string) => { rules: Record<string, unknown[]>; errors: string[]; count: number };
   buildPac: (st: Record<string, unknown>, servers: unknown[], priming?: boolean) => string;
+  routeContext: (st: Record<string, unknown>, servers: unknown[], priming?: boolean) => unknown;
+  pacRoute: (url: string, host: string, ctx: unknown) => string;
 };
 const ctx = createContext({ URL, module: { exports: {} } });
 runInContext(readFileSync(join(__dirname, '../../extension/rules.js'), 'utf8'), ctx);
-const { parseDirect, buildPac } = (ctx.module as { exports: Rules }).exports;
+const { parseDirect, buildPac, routeContext, pacRoute } = (ctx.module as { exports: Rules })
+  .exports;
 
 /** Помощники PAC, как в Chrome: isPlainHostName, shExpMatch, isInNetEx (v6). */
 function v6(a: string): bigint {
@@ -174,5 +177,44 @@ describe('PAC', () => {
     const f = c.FindProxyForURL as (u: string, h: string) => string;
     expect(f('https://other.example/', 'other.example')).toBe('PROXY 127.0.0.1:9');
     expect(f('http://aa.test/p443', 'aa.test')).toBe('HTTPS hoster.example.com:443');
+  });
+});
+
+describe('Firefox: решение по адресу (proxy.onRequest)', () => {
+  it('те же функции со своими помощниками - ответы как у PAC в Chrome', () => {
+    const directText =
+      'example.com\n*.corp.example\ncdn*.example.net\n1.2.3.4\n10.20.0.0/16\n2001:db8::/32\nhttps://site.example/page\nhttp://plain.example/docs/';
+    const st = {
+      server: 'auto',
+      ruDirect: true,
+      subUrl: 'https://sub.example.com/sub/x/browser',
+      directText,
+    };
+    const chrome = pac(directText, true);
+    const c = routeContext(st, servers);
+    for (const url of [
+      'https://example.com/a',
+      'https://www.example.com/',
+      'https://a.b.corp.example/',
+      'https://cdn7.example.net/',
+      'https://img.example.net/',
+      'http://1.2.3.4/',
+      'http://10.20.3.4/',
+      'http://[2001:db8::5]/',
+      'http://[2001:db9::5]/',
+      'https://site.example/other',
+      'http://plain.example/docs/x',
+      'http://plain.example/other',
+      'https://ya.ru/',
+      'https://xn--80aswg.xn--p1ai/',
+      'https://ru.wikipedia.org/',
+      'https://sub.example.com/c/x',
+      'https://hoster.example.com:8444/',
+      'http://192.168.1.1/',
+      'http://intranet/',
+      'http://aa.test/p8444',
+    ]) {
+      expect(pacRoute(url, new URL(url).hostname, c), url).toBe(chrome(url));
+    }
   });
 });

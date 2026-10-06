@@ -1,4 +1,4 @@
-import { readFileSync, statSync } from 'node:fs';
+import { readFileSync, readdirSync, statSync } from 'node:fs';
 import { join } from 'node:path';
 
 /**
@@ -26,4 +26,36 @@ export function extensionVersion(dir: string): string | null {
   }
   cache = { dir, mtime, version };
   return version;
+}
+
+/**
+ * Подписанное расширение Firefox в FILES_DIR/firefox (кладёт tools/sign-firefox.mjs):
+ * updates.json - адрес обновлений в манифесте расширения, архивы vps-panel-proxy-<версия>.xpi.
+ */
+export const FIREFOX_FILE = /^(updates\.json|vps-panel-proxy-\d+(\.\d+){1,3}\.xpi)$/;
+
+/** Последний по версии подписанный архив Firefox: путь к файлу; нет - null. */
+export function firefoxXpi(filesDir: string): string | null {
+  const dir = join(filesDir, 'firefox');
+  let names: string[];
+  try {
+    names = readdirSync(dir).filter((n) => n.endsWith('.xpi') && FIREFOX_FILE.test(n));
+  } catch {
+    return null;
+  }
+  const ver = (n: string) =>
+    n
+      .replace(/^vps-panel-proxy-|\.xpi$/g, '')
+      .split('.')
+      .map(Number);
+  names.sort((a, b) => {
+    const x = ver(a);
+    const y = ver(b);
+    for (let i = 0; i < Math.max(x.length, y.length); i++) {
+      const d = (y[i] ?? 0) - (x[i] ?? 0);
+      if (d) return d;
+    }
+    return 0;
+  });
+  return names[0] ? join(dir, names[0]) : null;
 }

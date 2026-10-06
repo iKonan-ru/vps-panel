@@ -13,6 +13,8 @@
 #   GITHUB_TOKEN_FILE=<файл>  токен GitHub для git push (иначе обычные учётные данные git)
 #   LEAK_PATTERNS=<файл>      строки (ERE, по одной), которым не место в репозитории и в
 #                             сообщениях коммитов: проверяют tools/check.sh и этот скрипт
+#   AMO_KEY_FILE=<файл>       ключ API addons.mozilla.org: подпись расширения Firefox новой
+#                             версии (tools/sign-firefox.mjs); пусто - не подписывать
 set -euo pipefail
 cd "$(dirname "$0")/.."
 msg="${1:?файл с сообщением коммита}"
@@ -28,6 +30,12 @@ if [ -n "${LEAK_PATTERNS:-}" ] && grep -qE -f "$LEAK_PATTERNS" "$msg"; then
 fi
 
 tools/check.sh
+# расширение Firefox: подписанная сборка текущей версии, если её ещё нет (подпись - у Mozilla,
+# минута-две). Сбой выкладку не держит: у клиентов остаётся прежняя версия.
+if [ -n "${AMO_KEY_FILE:-}" ]; then
+  AMO_KEY_FILE="$AMO_KEY_FILE" SUB_DOMAIN="${SUB_DOMAIN:-}" PANEL_DOMAIN="${PANEL_DOMAIN:-}" \
+    node tools/sign-firefox.mjs || echo "Firefox: подпись не удалась - у клиентов прежняя версия"
+fi
 # В коммит: изменения отслеживаемых файлов и новые файлы исходников. Случайные файлы (заметки,
 # файлы в корне) не попадают - их добавляют руками.
 git add -u

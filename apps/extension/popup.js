@@ -1,6 +1,8 @@
 // Окно расширения: состояние из фона (bg.js), действия - сообщениями ему.
 const $ = (id) => document.getElementById(id);
-const send = (msg) => chrome.runtime.sendMessage(msg);
+// Firefox - browser.*, Chrome - chrome.* (оба с промисами)
+const B = globalThis.browser || globalThis.chrome;
+const send = (msg) => B.runtime.sendMessage(msg);
 
 function when(iso) {
   if (!iso) return '';
@@ -195,7 +197,9 @@ $('test').addEventListener('click', () => {
 });
 
 (async () => {
-  const r = await act({ cmd: 'state' });
+  let r = await act({ cmd: 'state' });
+  // ссылки ещё нет: Firefox возьмёт её с открытой личной страницы (в Chrome - ничего не делает)
+  if (r && r.state && !r.state.subUrl) r = (await act({ cmd: 'auto' })) || r;
   // подписка старше 5 минут - обновить: так и новая версия расширения видна сразу
   const age = Date.now() - Date.parse(r.state.fetchedAt || 0);
   if (r.state.subUrl && !(age < 5 * 60_000)) await act({ cmd: 'refresh' });

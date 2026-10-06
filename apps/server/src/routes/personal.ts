@@ -10,6 +10,7 @@ import { gclientBindings, gclientDevices, gclients, servers } from '../db/schema
 import type { AppReleases } from '../lib/apps.js';
 import { awgClientConfigs } from '../lib/awg-clients.js';
 import { awgTunnelNames } from '../lib/awg-config.js';
+import { firefoxXpi } from '../lib/extension.js';
 import { awgRef } from '../lib/gclient-services.js';
 import {
   OS_IDS,
@@ -192,7 +193,8 @@ ${await copyStack(`${subBase}/sub/${c.token}/wdtt`, 'Скопировать по
         `<p class="hint">Приложение OpenFlux: "Подключить" открывает профиль в приложении, на другом устройстве - QR-код или скопированная ссылка. Ссылка - для своего устройства: на одном канале одновременно работает одно устройство.</p>${items}${appsLink(c.token, 'openflux', 'Скачать OpenFlux')}`,
       );
     }
-    // Прокси для браузера: расширение Chrome - архив со ссылкой внутри
+    // Прокси для браузера: расширение Chrome - архив со ссылкой внутри; Firefox - подписанное
+    // расширение (ссылку берёт с этой страницы, обновляется само)
     if (rows.some((r) => r.b.service === 'naive' && r.b.state === 'ok' && r.b.links[0])) {
       const pageUrl = `${subBase}/c/${c.token}`;
       body += card(
@@ -202,6 +204,14 @@ ${await copyStack(`${subBase}/sub/${c.token}/wdtt`, 'Скопировать по
 <span class="split"><a class="btn main primary" href="/c/${c.token}/chrome.zip">${icon('download')}Скачать расширение</a></span>
 <p class="hint">Если расширение попросит ссылку - вставьте ссылку этой страницы:</p><span class="split">${copyBtn(pageUrl, 'Скопировать ссылку страницы', 'main')}</span>`,
       );
+      if (firefoxXpi(env.FILES_DIR))
+        body += card(
+          'Браузер Firefox без программ',
+          `<p class="hint">Расширение для Firefox: VPN только для браузера, ничего не нужно устанавливать в систему. Обновляется само.</p>
+<ol class="steps"><li>Откройте эту страницу в Firefox и нажмите "Установить в Firefox".</li><li>Firefox спросит, разрешить ли установку с этого сайта: нажмите "Продолжить установку", затем "Добавить".</li><li>Не закрывайте эту страницу, пока не появится значок VPS Panel: ссылку расширение возьмёт с неё само.</li><li>Готово: значок VPS Panel - на панели расширений (под значком пазла), там же включение и выбор сервера.</li></ol>
+<span class="split"><a class="btn main primary" href="/c/${c.token}/firefox.xpi">${icon('download')}Установить в Firefox</a></span>
+<p class="hint">Если расширение попросит ссылку - вставьте ссылку этой страницы:</p><span class="split">${copyBtn(pageUrl, 'Скопировать ссылку страницы', 'main')}</span>`,
+        );
     }
     if (!rows.length)
       body += '<section class="card empty">Подключения ещё готовятся. Загляните позже.</section>';
@@ -242,6 +252,21 @@ ${await copyStack(`${subBase}/sub/${c.token}/wdtt`, 'Скопировать по
       .type('application/zip')
       .header('Content-Disposition', 'attachment; filename="vps-panel-proxy.zip"')
       .send(zip(files));
+  });
+
+  /**
+   * Расширение Firefox: последний подписанный архив (tools/sign-firefox.mjs). Тип x-xpinstall -
+   * Firefox сразу предлагает установить. Архив один на всех: ссылку клиента расширение берёт с
+   * открытой личной страницы.
+   */
+  app.get('/c/:token/firefox.xpi', opts30, async (req, reply) => {
+    secure(reply);
+    const { token } = req.params as { token: string };
+    const c = clientOf(token);
+    if (!c || !c.enabled) return reply.code(404).type('text/plain').send('not found');
+    const file = firefoxXpi(env.FILES_DIR);
+    if (!file) return reply.code(503).type('text/plain').send('extension is not available');
+    return reply.type('application/x-xpinstall').send(readFileSync(file));
   });
 
   /** Конфиг AWG устройства на сервере: QR, скачивание .conf, ключ для Amnezia VPN. */
