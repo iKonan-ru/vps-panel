@@ -20,6 +20,7 @@ import {
   copyStack,
   deviceBlock,
   esc,
+  fold,
   head,
   icon,
   linkBtn,
@@ -115,29 +116,28 @@ export async function personalRoutes(
       for (const { b, s } of mt) {
         const tg = b.links.find((l) => l.startsWith('tg://')) ?? b.links[0] ?? '';
         const web = b.links.find((l) => l.startsWith('https://t.me/'));
-        items += `<div class="row"><span class="name">${esc(serverTitle(s))}</span>${await linkBtn({ href: tg, label: 'Подключить', icon: 'send', copy: web ?? tg, qr: tg, primary: true, sm: true })}</div>`;
+        items += `<div class="drow"><span class="name">${esc(serverTitle(s))}</span>${await linkBtn({ href: tg, label: 'Подключить', icon: 'send', copy: web ?? tg, qr: tg, primary: true, sm: true })}</div>`;
       }
       body += card(
         'Прокси для Telegram',
-        `<p class="hint">Нажмите "Подключить" - Telegram предложит добавить прокси. Если не открылся, скопируйте ссылку и откройте её в Telegram.</p><div class="rows">${items}</div>`,
+        `<p class="hint">"Подключить" у сервера - Telegram предложит добавить прокси.</p>${fold({ head: 'Серверы', n: mt.length, body: items })}`,
       );
     }
     // VLESS: одна подписка на все серверы
     if (rows.some((r) => r.b.service === 'xui')) {
       body += card(
         'VPN по подписке',
-        `<p class="hint">Приложение Happ (или v2rayNG, Hiddify): добавьте подписку кнопкой, скопированной ссылкой или QR-кодом. Серверы обновляются в приложении сами.</p>
+        `<p class="hint">Добавьте подписку в Happ (или v2rayNG, Hiddify) кнопкой, ссылкой или QR-кодом - серверы обновятся сами.</p>
 ${await linkBtn({ href: `happ://add/${subUrl}`, label: 'Добавить в Happ', copy: subUrl, qr: subUrl, primary: true, wide: true })}
 ${appsLink(c.token, 'vless', 'Скачать приложение Happ')}`,
       );
     }
-    // AWG: конфиги по устройствам; блоки сворачиваются, развёрнут первый
+    // AWG: конфиги по устройствам; блоки устройств свёрнуты
     const awg = rows.filter(
       (r) => r.b.service === 'awg' && r.b.state === 'ok' && awgRef(r.b.ref).publicKey,
     );
     if (awg.length) {
       let items = '';
-      let first = true;
       for (const d of devices) {
         const mine = awg.filter((r) => r.b.deviceId === d.id);
         if (!mine.length) continue;
@@ -146,12 +146,11 @@ ${appsLink(c.token, 'vless', 'Скачать приложение Happ')}`,
           ({ b, s }) =>
             `<div class="drow"><span class="name">${esc(serverTitle(s))}${d.awg20 ? `<small>AWG ${awgRef(b.ref).major}.x</small>` : ''}</span><a class="btn sm" href="/c/${c.token}/awg/${b.id}">Конфиг${icon('chevron')}</a></div>`,
         );
-        items += deviceBlock({ type: d.type, title: devTitle(d), rows: list, open: first });
-        first = false;
+        items += deviceBlock({ type: d.type, title: devTitle(d), rows: list });
       }
       body += card(
         'VPN по конфигу AWG',
-        `<p class="hint">Отдельный конфиг на каждое устройство и сервер: откройте конфиг на нужном устройстве.</p>${items}${appsLink(c.token, 'awg', 'Скачать Amnezia VPN или AmneziaWG')}`,
+        `<p class="hint">Свой конфиг на каждое устройство и сервер.</p>${items}${appsLink(c.token, 'awg', 'Скачать Amnezia VPN или AmneziaWG')}`,
       );
     }
     // WDTT: подписка qWDTT и ссылки серверов
@@ -159,22 +158,21 @@ ${appsLink(c.token, 'vless', 'Скачать приложение Happ')}`,
     if (wd.length) {
       let items = '';
       for (const { b, s } of wd)
-        items += `<div class="row"><span class="name">${esc(serverTitle(s))}</span>${await copyStack(b.links[0] ?? '', 'Скопировать', true)}</div>`;
+        items += `<div class="drow"><span class="name">${esc(serverTitle(s))}</span>${await copyStack(b.links[0] ?? '', 'Скопировать', true)}</div>`;
       const ownHashes = wdttHashes(db).length
         ? ''
         : ' Хеши звонков VK добавьте в приложении (вход в аккаунт VK).';
       body += card(
         'VPN через звонки VK (WDTT)',
-        `<p class="hint">Телефон (qWDTT): в разделе подписок добавьте ссылку подписки - серверы и пароли обновятся сами. Компьютер (PWDTT): добавьте сервер ссылкой ниже.${ownHashes}</p>
+        `<p class="hint">Телефон (qWDTT): добавьте подписку - серверы и пароли обновятся сами. Компьютер (PWDTT): ссылки серверов ниже.${ownHashes}</p>
 ${await copyStack(`${subBase}/sub/${c.token}/wdtt`, 'Скопировать подписку', false, true)}
-<div class="rows">${items}</div>${appsLink(c.token, 'wdtt', 'Скачать qWDTT или PWDTT')}`,
+${fold({ head: 'Ссылки серверов (PWDTT)', n: wd.length, body: items })}${appsLink(c.token, 'wdtt', 'Скачать qWDTT или PWDTT')}`,
       );
     }
     // OpenFlux: канал на устройство на каждом сервере - по устройствам, как AWG
     const of = rows.filter((r) => r.b.service === 'openflux' && r.b.state === 'ok' && r.b.links[0]);
     if (of.length) {
       let items = '';
-      let first = true;
       for (const d of devices) {
         const mine = of.filter((r) => r.b.deviceId === d.id);
         if (!mine.length) continue;
@@ -185,33 +183,43 @@ ${await copyStack(`${subBase}/sub/${c.token}/wdtt`, 'Скопировать по
             `<div class="drow"><span class="name">${esc(serverTitle(s))}</span>${await linkBtn({ href: link, label: 'Подключить', copy: link, qr: link, primary: true, sm: true })}</div>`,
           );
         }
-        items += deviceBlock({ type: d.type, title: devTitle(d), rows: list, open: first });
-        first = false;
+        items += deviceBlock({ type: d.type, title: devTitle(d), rows: list });
       }
       body += card(
         'OpenFlux',
-        `<p class="hint">Приложение OpenFlux: "Подключить" открывает профиль в приложении, на другом устройстве - QR-код или скопированная ссылка. Ссылка - для своего устройства: на одном канале одновременно работает одно устройство.</p>${items}${appsLink(c.token, 'openflux', 'Скачать OpenFlux')}`,
+        `<p class="hint">"Подключить" открывает профиль в приложении OpenFlux. Ссылка - только для своего устройства.</p>${items}${appsLink(c.token, 'openflux', 'Скачать OpenFlux')}`,
       );
     }
-    // Прокси для браузера: расширение Chrome - архив со ссылкой внутри; Firefox - подписанное
-    // расширение (ссылку берёт с этой страницы, обновляется само)
+    // Расширение для браузера: Chrome - архив со ссылкой клиента внутри; Firefox - подписанное
+    // расширение (ссылку берёт с этой страницы, обновляется само). Кнопка браузера посетителя -
+    // основная (скрипт страницы), шаги установки - свёрнуты.
     if (rows.some((r) => r.b.service === 'naive' && r.b.state === 'ok' && r.b.links[0])) {
       const pageUrl = `${subBase}/c/${c.token}`;
+      const firefox = Boolean(firefoxXpi(env.FILES_DIR));
+      const askLink = `<li>Если расширение попросит ссылку - вставьте ссылку этой страницы:<br>${copyBtn(pageUrl, 'Скопировать ссылку', 'sm')}</li>`;
+      const steps = (title: string, list: string[]) =>
+        fold({
+          head: esc(title),
+          body: `<div class="fold-b"><ol class="steps">${list.map((x) => `<li>${x}</li>`).join('')}${askLink}</ol></div>`,
+        });
       body += card(
-        'Браузер Chrome без программ',
-        `<p class="hint">Расширение для Chrome: VPN только для браузера, ничего не нужно устанавливать в систему. Ссылка уже внутри архива.</p>
-<ol class="steps"><li>Скачайте архив и распакуйте его в папку, которую не будете удалять.</li><li>Откройте в Chrome адрес <b>chrome://extensions</b> и включите "Режим разработчика" (справа вверху).</li><li>Нажмите "Загрузить распакованное расширение" и выберите распакованную папку <b>vps-panel-proxy</b> (не архив .zip: внутри папки лежит manifest.json).</li><li>Готово: значок VPS Panel - на панели расширений (под значком пазла), там же включение и выбор сервера.</li></ol>
-<span class="split"><a class="btn main primary" href="/c/${c.token}/chrome.zip">${icon('download')}Скачать расширение</a></span>
-<p class="hint">Если расширение попросит ссылку - вставьте ссылку этой страницы:</p><span class="split">${copyBtn(pageUrl, 'Скопировать ссылку страницы', 'main')}</span>`,
+        'Расширение для браузера',
+        `<div class="browsers"><a class="btn primary" data-browser="chrome" href="/c/${c.token}/chrome.zip">${icon('download')}Chrome</a>${firefox ? `<a class="btn" data-browser="firefox" href="/c/${c.token}/firefox.xpi">${icon('download')}Firefox</a>` : ''}</div>
+${steps('Как установить в Chrome', [
+  'Скачайте архив и распакуйте его в папку, которую не будете удалять.',
+  'Откройте <b>chrome://extensions</b> и включите "Режим разработчика" (справа вверху).',
+  '"Загрузить распакованное расширение" - выберите папку <b>vps-panel-proxy</b> (не архив .zip).',
+  'Значок VPS Panel - под значком пазла: там включение и выбор сервера.',
+])}${
+  firefox
+    ? steps('Как установить в Firefox', [
+        'Откройте эту страницу в Firefox и нажмите "Firefox". Разрешите установку: "Продолжить установку", затем "Добавить".',
+        'Не закрывайте страницу, пока не появится значок VPS Panel: ссылку расширение возьмёт с неё. Обновляется само.',
+        'Значок - под значком пазла: там включение и выбор сервера.',
+      ])
+    : ''
+}`,
       );
-      if (firefoxXpi(env.FILES_DIR))
-        body += card(
-          'Браузер Firefox без программ',
-          `<p class="hint">Расширение для Firefox: VPN только для браузера, ничего не нужно устанавливать в систему. Обновляется само.</p>
-<ol class="steps"><li>Откройте эту страницу в Firefox и нажмите "Установить в Firefox".</li><li>Firefox спросит, разрешить ли установку с этого сайта: нажмите "Продолжить установку", затем "Добавить".</li><li>Не закрывайте эту страницу, пока не появится значок VPS Panel: ссылку расширение возьмёт с неё само.</li><li>Готово: значок VPS Panel - на панели расширений (под значком пазла), там же включение и выбор сервера.</li></ol>
-<span class="split"><a class="btn main primary" href="/c/${c.token}/firefox.xpi">${icon('download')}Установить в Firefox</a></span>
-<p class="hint">Если расширение попросит ссылку - вставьте ссылку этой страницы:</p><span class="split">${copyBtn(pageUrl, 'Скопировать ссылку страницы', 'main')}</span>`,
-        );
     }
     if (!rows.length)
       body += '<section class="card empty">Подключения ещё готовятся. Загляните позже.</section>';

@@ -130,9 +130,9 @@ describe('личная страница', () => {
     expect(at('Прокси для Telegram')).toBeGreaterThan(0);
     expect(at('Прокси для Telegram')).toBeLessThan(at('VPN по подписке'));
     expect(at('VPN по подписке')).toBeLessThan(at('OpenFlux'));
-    // два блока устройств OpenFlux, развёрнут только первый
-    expect(r.body.match(/<details class="devblk"/g)).toHaveLength(2);
-    expect(r.body.match(/<details class="devblk" open>/g)).toHaveLength(1);
+    // свёрнутые блоки: серверы прокси для Telegram и два устройства OpenFlux; развёрнутых нет
+    expect(r.body.match(/<details class="devblk"/g)).toHaveLength(3);
+    expect(r.body).not.toContain('<details class="devblk" open');
     await app.close();
   });
 });

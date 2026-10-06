@@ -46,7 +46,7 @@ h1{font-size:20px;font-weight:600;margin:0}.lead{color:var(--muted);font-size:13
 .devblk{border:1px solid var(--border);border-radius:10px;overflow:hidden}
 .devh{display:flex;align-items:center;gap:8px;padding:8px 12px;background:var(--surface-2);font-weight:600;font-size:13px}.devh svg{width:16px;height:16px;color:var(--muted)}
 summary.devh{cursor:pointer;list-style:none;user-select:none}summary.devh::-webkit-details-marker{display:none}
-summary.devh .n{margin-left:auto;font-weight:400;color:var(--muted)}summary.devh .chev{transition:transform .15s}details[open]>summary.devh .chev{transform:rotate(90deg)}
+summary.devh .n{margin-left:auto;font-weight:400;color:var(--muted)}summary.devh .chev.end{margin-left:auto}summary.devh .chev{transition:transform .15s}details[open]>summary.devh .chev{transform:rotate(90deg)}
 .drow{flex-wrap:wrap}
 .drow{display:flex;align-items:center;gap:8px;padding:10px 12px;border-top:1px solid var(--border)}.drow .name{flex:1;min-width:0}
 .drow .name small{display:block;margin:0;font-size:12px;color:var(--muted)}
@@ -60,7 +60,9 @@ summary.devh .n{margin-left:auto;font-weight:400;color:var(--muted)}summary.devh
 .back{display:inline-flex;align-items:center;gap:6px;color:var(--muted);text-decoration:none;font-size:13px;margin-bottom:12px}.back svg{width:16px;height:16px}
 .key{font:12px/1.45 ui-monospace,"JetBrains Mono",monospace;word-break:break-all;background:var(--surface-2);border:1px solid var(--border);border-radius:8px;padding:10px;max-height:120px;overflow:auto;color:var(--muted)}
 .empty{color:var(--muted);text-align:center;padding:28px 16px}
-.steps{margin:0;padding-left:20px;display:flex;flex-direction:column;gap:6px;font-size:13px}.steps b{font-weight:600;word-break:break-all}`;
+.steps{margin:0;padding-left:20px;display:flex;flex-direction:column;gap:6px;font-size:13px}.steps b{font-weight:600;word-break:break-all}
+.fold-b{display:flex;flex-direction:column;gap:10px;padding:10px 12px;border-top:1px solid var(--border)}
+.browsers{display:grid;grid-template-columns:repeat(auto-fit,minmax(120px,1fr));gap:8px}`;
 
 /**
  * Копирование ссылок; QR - под стеком кнопок по нажатию, кадры Amnezia VPN листаются раз в 1,2 с.
@@ -72,6 +74,7 @@ const SCRIPT = `document.addEventListener('click',function(e){var b=e.target.clo
 var q=e.target.closest('[data-qr]');if(q){var p=document.getElementById(q.getAttribute('data-qr'));p.hidden=!p.hidden;q.classList.toggle('on',!p.hidden);q.setAttribute('aria-expanded',String(!p.hidden));return}
 var m=e.target.closest('.more');if(m){var a=m.previousElementSibling,on=a.classList.toggle('picked');m.textContent=on?'Другие платформы':'Скрыть другие платформы'}});
 var u=navigator.userAgent,os=/Android/i.test(u)?'android':/iPhone|iPad|iPod/.test(u)||(/Macintosh/.test(u)&&navigator.maxTouchPoints>1)?'ios':/Windows/.test(u)?'windows':/Macintosh|Mac OS X/.test(u)?'macos':/Linux|X11|CrOS/.test(u)?'linux':'';
+var ff=/Firefox\\//.test(u);document.querySelectorAll('[data-browser]').forEach(function(b){b.classList.toggle('primary',b.getAttribute('data-browser')===(ff?'firefox':'chrome'))});
 document.querySelectorAll('[data-pick]').forEach(function(a){var m=a.querySelector('[data-os="'+(a.getAttribute('data-prefer')||os)+'"]');if(m){m.classList.add('mine');a.classList.add('pickable','picked')}});
 setInterval(function(){document.querySelectorAll('.qrp:not([hidden]) [data-frames]').forEach(function(x){var f=x.querySelectorAll('.frame'),i=0;f.forEach(function(e,j){if(e.classList.contains('on'))i=j});f[i].classList.remove('on');i=(i+1)%f.length;f[i].classList.add('on');var c=x.parentNode.querySelector('.cap');if(c)c.firstChild.textContent='кадр '+(i+1)+' из '+f.length})},1200)`;
 
@@ -231,11 +234,22 @@ export const appsLink = (token: string, anchor: string, label: string, os?: AppO
   `<a class="go" href="/c/${token}/apps${os ? `?os=${os}` : ''}#${anchor}">${icon('device')}<span class="grow">${esc(label)}</span>${icon('chevron')}</a>`;
 
 /**
- * Блок устройства, сворачивается (details, без скрипта): заголовок - значок, имя и число строк,
- * внутри - строки серверов. open - развёрнут (первое устройство).
+ * Блок устройства, свёрнут (details, без скрипта): заголовок - значок, имя и число строк,
+ * внутри - строки серверов.
  */
-export const deviceBlock = (o: { type: string; title: string; rows: string[]; open: boolean }) =>
-  `<details class="devblk"${o.open ? ' open' : ''}><summary class="devh">${deviceIcon(o.type)}${esc(capital(o.title))}<span class="n">${o.rows.length}</span>${icon('chevron').replace('<svg ', '<svg class="chev" ')}</summary>${o.rows.join('')}</details>`;
+export const deviceBlock = (o: { type: string; title: string; rows: string[] }) =>
+  fold({
+    head: `${deviceIcon(o.type)}${esc(capital(o.title))}`,
+    n: o.rows.length,
+    body: o.rows.join(''),
+  });
+
+/**
+ * Свёрнутый блок (details, без скрипта): заголовок (готовый HTML), справа - число строк n,
+ * внутри - body: строки .drow или произвольное содержимое в .fold-b.
+ */
+export const fold = (o: { head: string; body: string; n?: number }) =>
+  `<details class="devblk"><summary class="devh">${o.head}${o.n === undefined ? '' : `<span class="n">${o.n}</span>`}${icon('chevron').replace('<svg ', `<svg class="chev${o.n === undefined ? ' end' : ''}" `)}</summary>${o.body}</details>`;
 
 /** Шапка: имя клиента. */
 export const head = (name: string) =>

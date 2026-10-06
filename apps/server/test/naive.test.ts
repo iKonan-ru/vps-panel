@@ -156,7 +156,10 @@ describe('личная страница: Браузер Chrome', () => {
       apps: { list: () => ({ apps: [] }) } as never,
     });
     const page = await app.inject({ method: 'GET', url: `/c/${token}` });
-    expect(page.body).toContain('<div class="card-h">Браузер Chrome без программ</div>');
+    expect(page.body).toContain('<div class="card-h">Расширение для браузера</div>');
+    expect(page.body).toContain('Как установить в Chrome');
+    // нет подписанного архива Firefox - нет и его кнопки и шагов
+    expect(page.body).not.toContain('firefox.xpi');
     expect(page.body).toContain(`href="/c/${token}/chrome.zip"`);
     const r = await app.inject({ method: 'GET', url: `/c/${token}/chrome.zip` });
     expect(r.statusCode).toBe(200);
@@ -266,7 +269,8 @@ describe('расширение Firefox', () => {
       );
     // последняя версия - по числам, не по строке
     const page = await app.inject({ method: 'GET', url: `/c/${token}` });
-    expect(page.body).toContain('Браузер Firefox без программ');
+    expect(page.body).toContain(`data-browser="firefox" href="/c/${token}/firefox.xpi"`);
+    expect(page.body).toContain('Как установить в Firefox');
     const f = await app.inject({ method: 'GET', url: `/c/${token}/firefox.xpi` });
     expect(f.headers['content-type']).toBe('application/x-xpinstall');
     expect(f.body).toBe('xpi-1100');
@@ -276,7 +280,9 @@ describe('расширение Firefox', () => {
     );
     db.update(gclients).set({ enabled: true }).run();
     rmSync(join(files, 'firefox'), { recursive: true });
-    expect((await app.inject({ method: 'GET', url: `/c/${token}` })).body).not.toContain('Firefox');
+    expect((await app.inject({ method: 'GET', url: `/c/${token}` })).body).not.toContain(
+      'firefox.xpi',
+    );
     await app.close();
   });
 });
