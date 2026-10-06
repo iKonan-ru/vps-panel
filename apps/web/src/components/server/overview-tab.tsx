@@ -41,6 +41,7 @@ const uninstallCommand: Record<string, string> = {
   wdtt: 'wdtt-uninstall',
   amnezia: 'awg-uninstall',
   openflux: 'openflux-uninstall',
+  naive: 'naive-uninstall',
 };
 
 /** Обновление установленного сервиса (проверяет панель раз в 6 часов). */
