@@ -17,7 +17,7 @@ import { useAction } from '@/lib/use-action';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { Link, useNavigate } from '@tanstack/react-router';
 import type { GClientAccess, GClientRow, GServer } from '@vps/protocol';
-import { ListChecks, Plus, RefreshCw, Server } from 'lucide-react';
+import { ListChecks, Plus, RefreshCw, Server, SlidersHorizontal } from 'lucide-react';
 import { type FormEvent, useState } from 'react';
 
 interface XuiInbound {
@@ -114,10 +114,26 @@ export function ClientsPage() {
             {/* плашки состояний - строкой под именем, внизу карточки: в ряду они на одной линии */}
             <Card className="flex h-full flex-col gap-2 p-3.5 hover:border-accent">
               <div className="min-w-0 flex-1">
-                <div className="flex flex-wrap items-center gap-2">
-                  <span className="font-semibold">{c.name}</span>
-                  {!c.enabled && <Chip tone="muted">выключен</Chip>}
-                  {c.limited && <Chip tone="accent">выборочный доступ</Chip>}
+                {/* строка имени не переносится: длинное имя обрезается, значок выборочного
+                    доступа - всегда у правого края */}
+                <div className="flex items-center gap-2">
+                  <span className="min-w-0 truncate font-semibold" title={c.name}>
+                    {c.name}
+                  </span>
+                  {!c.enabled && (
+                    <Chip tone="muted" className="shrink-0">
+                      выключен
+                    </Chip>
+                  )}
+                  {c.limited && (
+                    <SlidersHorizontal
+                      className="ml-auto size-3.5 shrink-0 text-accent"
+                      role="img"
+                      aria-label="Выборочный доступ"
+                    >
+                      <title>Выборочный доступ: только выбранные серверы и сервисы</title>
+                    </SlidersHorizontal>
+                  )}
                 </div>
                 <div
                   className="truncate text-xs text-muted"
