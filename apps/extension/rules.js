@@ -1,6 +1,6 @@
-// Правила маршрутизации: разбор своих адресов "напрямую" и сборка PAC.
-// Без API Chrome - тот же файл подключают фон (importScripts), окно и тесты панели
-// (apps/server/test/extension-pac.test.ts).
+// Правила маршрутизации: разбор своих адресов "напрямую", PAC для Chrome и решение по адресу
+// для Firefox (proxy.onRequest). Без API браузера - тот же файл подключают фон, окно и тесты
+// панели (apps/server/test/extension-pac.test.ts).
 
 /** Домен в punycode (сайт.рф -> xn--80aswg.xn--p1ai); null - не домен. */
 function asciiHost(s) {
@@ -113,13 +113,13 @@ function parseDirect(text) {
 }
 
 /**
- * PAC: всё - на прокси (цепочкой: выбранный сервер, остальные - запасные), кроме своих адресов,
- * российских зон (по галочке) и списка "напрямую". priming - на время прогрева пароля: всё,
- * кроме секретных имён, - на заведомо мёртвый прокси (страница в эту секунду не откроется, но и
- * мимо прокси не уйдёт). Подсети сравниваются только с адресами, набранными цифрами: имя сайта
- * PAC не резолвит (лишний запрос DNS мимо прокси и задержка на каждом адресе).
+ * Данные маршрутизации: всё - на прокси (цепочкой: выбранный сервер, остальные - запасные),
+ * кроме своих адресов, российских зон (по галочке) и списка "напрямую". priming - на время
+ * прогрева пароля в Chrome: всё, кроме секретных имён, - на заведомо мёртвый прокси (страница в
+ * эту секунду не откроется, но и мимо прокси не уйдёт). Подсети сравниваются только с адресами,
+ * набранными цифрами: имя сайта не резолвится (лишний запрос DNS мимо прокси и задержка).
  */
-function buildPac(st, servers, priming) {
+function routeContext(st, servers, priming) {
   const chosen = st.server === 'auto' ? servers : servers.filter((s) => s.id === st.server);
   const list = chosen.length ? chosen : servers;
   const chain = priming
@@ -142,17 +142,27 @@ function buildPac(st, servers, priming) {
   const r = parseDirect(st.directText).rules;
   const own = {};
   for (const h of r.hosts) own[h] = 1;
-  const D = { hosts: own, suffixes: r.suffixes, patterns: r.patterns, cidr4: r.cidr4, cidr6: r.cidr6, urls: r.urls };
-  // Chrome принимает PAC только в ASCII: данные - JSON с \uXXXX вместо всего, что выше 0x7f
-  // (в коде PAC ниже - только ASCII; страница https идёт напрямую целиком - Chrome не отдаёт
-  // в PAC путь https-адреса, http сравнивается по началу пути)
-  const json = (v) => JSON.stringify(v).replace(/[\u0080-\uffff]/g, (c) => `\\u${c.charCodeAt(0).toString(16).padStart(4, '0')}`);
-  return `var CHAIN=${json(chain)};var PROBES=${json(probes)};var HOSTS=${json(hosts)};var SUBHOST=${json(subHost)};var RU=${st.ruDirect ? 'true' : 'false'};var D=${json(D)};
-function ip4(h) {
-  var m = /^(\\d+)\\.(\\d+)\\.(\\d+)\\.(\\d+)$/.exec(h);
+  return {
+    CHAIN: chain,
+    PROBES: probes,
+    HOSTS: hosts,
+    SUBHOST: subHost,
+    RU: Boolean(st.ruDirect),
+    D: { hosts: own, suffixes: r.suffixes, patterns: r.patterns, cidr4: r.cidr4, cidr6: r.cidr6, urls: r.urls },
+  };
+}
+
+// Решение по адресу - одни и те же функции для PAC Chrome (их текст вставляется в PAC) и для
+// proxy.onRequest Firefox (вызываются здесь же). Поэтому внутри них только ASCII (Chrome не
+// принимает PAC с другими символами), стиль ES5 и помощники PAC: isPlainHostName, shExpMatch,
+// isInNetEx (в Firefox - свои реализации ниже). Ответ - строка PAC: "DIRECT" или цепочка.
+// Страница https идёт напрямую целиком: Chrome не отдаёт в PAC путь https-адреса, http
+// сравнивается по началу пути.
+function pacIp4(h) {
+  var m = /^(\d+)\.(\d+)\.(\d+)\.(\d+)$/.exec(h);
   return m ? ((+m[1] << 24) >>> 0) + (+m[2] << 16) + (+m[3] << 8) + (+m[4]) : -1;
 }
-function own(url, host) {
+function pacOwn(url, host, D) {
   var i;
   if (D.hosts[host]) return true;
   for (i = 0; i < D.suffixes.length; i++) {
@@ -160,7 +170,7 @@ function own(url, host) {
     if (host === s || host.slice(-s.length - 1) === '.' + s) return true;
   }
   for (i = 0; i < D.patterns.length; i++) if (shExpMatch(host, D.patterns[i])) return true;
-  var n = ip4(host);
+  var n = pacIp4(host);
   if (n >= 0)
     for (i = 0; i < D.cidr4.length; i++) {
       var b = D.cidr4[i][1], mask = b === 0 ? 0 : (0xffffffff << (32 - b)) >>> 0;
@@ -168,25 +178,65 @@ function own(url, host) {
     }
   if (host.indexOf(':') >= 0 && typeof isInNetEx === 'function')
     for (i = 0; i < D.cidr6.length; i++) if (isInNetEx(host, D.cidr6[i])) return true;
-  var path = url.replace(/^[a-z]+:\\/\\/[^\\/]*/i, '') || '/';
+  var path = url.replace(/^[a-z]+:\/\/[^\/]*/i, '') || '/';
   for (i = 0; i < D.urls.length; i++)
     if (host === D.urls[i].h && (url.slice(0, 6) === 'https:' || path.indexOf(D.urls[i].p) === 0)) return true;
   return false;
 }
-function FindProxyForURL(url, host) {
-  host = host.toLowerCase().replace(/^\\[|\\]$/g, '');
-  var pr = PROBES[host];
+function pacRoute(url, host, C) {
+  host = host.toLowerCase().replace(/^\[|\]$/g, '');
+  var pr = C.PROBES[host];
   if (pr) {
-    var m = /^http:\\/\\/[^\\/]+\\/p(\\d+)/.exec(url);
-    return m && pr[m[1]] ? pr[m[1]] : CHAIN;
+    var m = /^http:\/\/[^\/]+\/p(\d+)/.exec(url);
+    return m && pr[m[1]] ? pr[m[1]] : C.CHAIN;
   }
-  if (host === SUBHOST || HOSTS[host]) return 'DIRECT';
-  if (isPlainHostName(host) || host === 'localhost' || /\\.(localhost|local|lan|internal)$/.test(host)) return 'DIRECT';
-  if (/^(10|127)\\./.test(host) || /^192\\.168\\./.test(host) || /^172\\.(1[6-9]|2[0-9]|3[01])\\./.test(host) || /^169\\.254\\./.test(host) || host === '::1') return 'DIRECT';
-  if (RU && /(^|\\.)(ru|su|xn--p1ai)$/.test(host)) return 'DIRECT';
-  if (own(url, host)) return 'DIRECT';
-  return CHAIN;
+  if (host === C.SUBHOST || C.HOSTS[host]) return 'DIRECT';
+  if (isPlainHostName(host) || host === 'localhost' || /\.(localhost|local|lan|internal)$/.test(host)) return 'DIRECT';
+  if (/^(10|127)\./.test(host) || /^192\.168\./.test(host) || /^172\.(1[6-9]|2[0-9]|3[01])\./.test(host) || /^169\.254\./.test(host) || host === '::1') return 'DIRECT';
+  if (C.RU && /(^|\.)(ru|su|xn--p1ai)$/.test(host)) return 'DIRECT';
+  if (pacOwn(url, host, C.D)) return 'DIRECT';
+  return C.CHAIN;
+}
+
+/** PAC для Chrome: данные и функции решения выше; данные - JSON с \uXXXX вместо не-ASCII. */
+function buildPac(st, servers, priming) {
+  const json = (v) =>
+    JSON.stringify(v).replace(/[\u0080-\uffff]/g, (c) => `\\u${c.charCodeAt(0).toString(16).padStart(4, '0')}`);
+  return `var C=${json(routeContext(st, servers, priming))};
+${pacIp4}
+${pacOwn}
+${pacRoute}
+function FindProxyForURL(url, host) {
+  return pacRoute(url, host, C);
 }`;
 }
 
-if (typeof module !== 'undefined') module.exports = { parseDirect, parseRule, buildPac };
+// Помощники PAC для Firefox (там решение идёт не в PAC, а в proxy.onRequest). Имена - как в PAC:
+// их зовут функции решения выше. В Chrome эти определения в PAC не попадают.
+function isPlainHostName(h) {
+  return h.indexOf('.') < 0 && h.indexOf(':') < 0;
+}
+function shExpMatch(s, p) {
+  const re = p.replace(/[.+^${}()|[\]\\]/g, '\\$&').replace(/\*/g, '.*').replace(/\?/g, '.');
+  return new RegExp(`^${re}$`).test(s);
+}
+function ip6big(a) {
+  const [l, r = ''] = a.split('::');
+  const L = l ? l.split(':') : [];
+  const R = r ? r.split(':') : [];
+  const parts = a.includes('::') ? [...L, ...Array(8 - L.length - R.length).fill('0'), ...R] : L;
+  return parts.reduce((n, p) => (n << 16n) + BigInt(Number.parseInt(p || '0', 16)), 0n);
+}
+function isInNetEx(ip, prefix) {
+  const [net, bits] = prefix.split('/');
+  if (!ip.includes(':') || !net || ip.includes('.')) return false;
+  const b = BigInt(128 - Number(bits));
+  try {
+    return ip6big(ip) >> b === ip6big(net) >> b;
+  } catch {
+    return false;
+  }
+}
+
+if (typeof module !== 'undefined')
+  module.exports = { parseDirect, parseRule, buildPac, routeContext, pacRoute };

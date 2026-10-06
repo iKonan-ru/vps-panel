@@ -151,6 +151,7 @@ describe('личная страница: Браузер Chrome', () => {
         PANEL_PUBLIC_URL: 'https://panel.example',
         SUB_PUBLIC_URL: 'https://sub.example',
         EXTENSION_DIR: ext,
+        FILES_DIR: join(dir, 'nofiles'),
       } as never,
       apps: { list: () => ({ apps: [] }) } as never,
     });
@@ -226,5 +227,56 @@ describe('/sub/<токен>/browser', () => {
       (await app2.inject({ method: 'GET', url: `/sub/${token}/browser` })).json().extension,
     ).toBeUndefined();
     await app2.close();
+  });
+});
+
+describe('расширение Firefox', () => {
+  it('updates.json и архивы - без входа; архив на личной странице - клиенту; нет архива - нет блока', async () => {
+    const files = join(dir, 'files');
+    mkdirSync(join(files, 'firefox'), { recursive: true });
+    writeFileSync(join(files, 'firefox', 'updates.json'), '{"addons":{}}');
+    writeFileSync(join(files, 'firefox', 'vps-panel-proxy-1.4.0.xpi'), 'xpi-140');
+    writeFileSync(join(files, 'firefox', 'vps-panel-proxy-1.10.0.xpi'), 'xpi-1100');
+    writeFileSync(join(files, 'firefox', 'other.txt'), 'secret');
+    const env = {
+      EXTENSION_DIR: join(dir, 'none'),
+      FILES_DIR: files,
+      SUB_PUBLIC_URL: 'https://sub.example',
+      PANEL_PUBLIC_URL: 'https://p',
+      NODE_ENV: 'test',
+    };
+    const app = Fastify();
+    await app.register(subscriptionRoutes, { db, env: env as never });
+    await app.register(personalRoutes, {
+      db,
+      registry: { isOnline: () => false } as never,
+      box: {} as never,
+      env: env as never,
+      apps: { list: () => ({ apps: [] }) } as never,
+    });
+    const u = await app.inject({ method: 'GET', url: '/sub/firefox/updates.json' });
+    expect(u.statusCode).toBe(200);
+    expect(u.headers['content-type']).toContain('application/json');
+    const x = await app.inject({ method: 'GET', url: '/sub/firefox/vps-panel-proxy-1.4.0.xpi' });
+    expect(x.headers['content-type']).toBe('application/x-xpinstall');
+    expect(x.body).toBe('xpi-140');
+    for (const bad of ['other.txt', '..%2Fother.txt', 'vps-panel-proxy-1.0.xpi.bak'])
+      expect((await app.inject({ method: 'GET', url: `/sub/firefox/${bad}` })).statusCode).toBe(
+        404,
+      );
+    // последняя версия - по числам, не по строке
+    const page = await app.inject({ method: 'GET', url: `/c/${token}` });
+    expect(page.body).toContain('Браузер Firefox без программ');
+    const f = await app.inject({ method: 'GET', url: `/c/${token}/firefox.xpi` });
+    expect(f.headers['content-type']).toBe('application/x-xpinstall');
+    expect(f.body).toBe('xpi-1100');
+    db.update(gclients).set({ enabled: false }).run();
+    expect((await app.inject({ method: 'GET', url: `/c/${token}/firefox.xpi` })).statusCode).toBe(
+      404,
+    );
+    db.update(gclients).set({ enabled: true }).run();
+    rmSync(join(files, 'firefox'), { recursive: true });
+    expect((await app.inject({ method: 'GET', url: `/c/${token}` })).body).not.toContain('Firefox');
+    await app.close();
   });
 });

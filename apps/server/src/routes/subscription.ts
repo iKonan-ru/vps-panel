@@ -1,7 +1,9 @@
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
 import type { FastifyInstance } from 'fastify';
 import type { Env } from '../config.js';
 import type { Db } from '../db/index.js';
-import { extensionVersion } from '../lib/extension.js';
+import { FIREFOX_FILE, extensionVersion } from '../lib/extension.js';
 import {
   buildBrowserSubscription,
   buildSubscription,
@@ -18,7 +20,10 @@ const TITLE = 'VPN';
  */
 export async function subscriptionRoutes(
   app: FastifyInstance,
-  opts: { db: Db; env?: Pick<Env, 'EXTENSION_DIR' | 'SUB_PUBLIC_URL' | 'PANEL_PUBLIC_URL'> },
+  opts: {
+    db: Db;
+    env?: Pick<Env, 'EXTENSION_DIR' | 'SUB_PUBLIC_URL' | 'PANEL_PUBLIC_URL' | 'FILES_DIR'>;
+  },
 ) {
   const subBase = opts.env
     ? (opts.env.SUB_PUBLIC_URL ?? opts.env.PANEL_PUBLIC_URL).replace(/\/+$/, '')
@@ -64,6 +69,26 @@ export async function subscriptionRoutes(
    * прокси. Неизвестный токен (новая ссылка) - 404, расширение тоже снимает прокси. extension -
    * актуальная версия расширения и ссылка на архив клиента (обновление - вручную).
    */
+  /**
+   * Расширение Firefox: updates.json (адрес обновлений зашит в подписанном расширении - Firefox
+   * сам проверяет его и ставит новую версию) и подписанные архивы. Без входа: архив один на всех,
+   * ссылки клиента в нём нет.
+   */
+  app.get('/sub/firefox/:file', opts30, async (req, reply) => {
+    const { file } = req.params as { file: string };
+    if (!opts.env || !FIREFOX_FILE.test(file))
+      return reply.code(404).type('text/plain').send('not found');
+    let data: Buffer;
+    try {
+      data = readFileSync(join(opts.env.FILES_DIR, 'firefox', file));
+    } catch {
+      return reply.code(404).type('text/plain').send('not found');
+    }
+    const json = file === 'updates.json';
+    reply.header('Cache-Control', json ? 'no-cache' : 'public, max-age=86400');
+    return reply.type(json ? 'application/json' : 'application/x-xpinstall').send(data);
+  });
+
   app.get('/sub/:token/browser', opts30, async (req, reply) => {
     const { token } = req.params as { token: string };
     reply.header('Cache-Control', 'no-store');
