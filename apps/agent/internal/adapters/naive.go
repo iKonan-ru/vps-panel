@@ -116,9 +116,11 @@ func NaiveRender(c NaiveConfig, users map[string]string, deny []string) (string,
 	b.WriteString("\tlog {\n\t\tlevel WARN\n\t}\n}\n\n")
 	// Адрес без имени (":порт") обязателен: Caddy выбирает сайт по Host, а у запроса через прокси
 	// Host - адрес цели (CONNECT example.com:443); имя рядом - чтобы Caddy выпустил сертификат.
+	// 443 - не https_port, поэтому схема явно: ":443" Caddy считает HTTP и не принимает конфиг
+	// ("cannot natively multiplex HTTP and HTTPS").
 	sites := []string{fmt.Sprintf(":%d", c.Port), fmt.Sprintf("https://%s:%d", c.Domain, c.Port)}
 	if c.Listen443 {
-		sites = append(sites, ":443", fmt.Sprintf("https://%s:443", c.Domain))
+		sites = append(sites, "https://:443", fmt.Sprintf("https://%s:443", c.Domain))
 	}
 	b.WriteString(strings.Join(sites, ", ") + " {\n\troute {\n")
 	if len(names) > 0 {

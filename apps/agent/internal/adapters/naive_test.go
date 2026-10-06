@@ -2,7 +2,9 @@ package adapters
 
 import (
 	"os"
+	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 )
@@ -71,13 +73,44 @@ func TestNaiveRender443And80(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, want := range []string{":8444, https://hoster.example.com:8444, :443, https://hoster.example.com:443 {", "http_port 80", "http://hoster.example.com {"} {
+	for _, want := range []string{":8444, https://hoster.example.com:8444, https://:443, https://hoster.example.com:443 {", "http_port 80", "http://hoster.example.com {"} {
 		if !strings.Contains(text, want) {
 			t.Errorf("нет %q", want)
 		}
 	}
 	if strings.Contains(text, "disable_http_challenge") {
 		t.Error("с 80 HTTP-01 не выключается")
+	}
+}
+
+// Все раскладки 443 и 80 - настоящим Caddy (caddy adapt разбирает конфиг без запуска служб).
+// Бинарник собирает tools/build-naive.sh; его нет - тест пропускается.
+func TestNaiveRenderCaddyAdapts(t *testing.T) {
+	bin, _ := filepath.Abs(filepath.Join("..", "..", "..", "..", "deploy", "files", "naive", "caddy-linux-"+runtime.GOARCH))
+	if _, err := os.Stat(bin); err != nil || runtime.GOOS != "linux" {
+		t.Skip("нет сборки Caddy: tools/build-naive.sh")
+	}
+	users := map[string]string{"ivan-a1b2": "AAAAAAAAAAAAAAAAAAAAAAAA"}
+	for _, mode := range []struct{ listen, mask, http80 bool }{
+		{false, false, false}, {false, false, true}, {true, false, false},
+		{true, false, true}, {false, true, false}, {false, true, true},
+	} {
+		c := naiveTestConfig()
+		c.Listen443, c.Mask443, c.HTTP80 = mode.listen, mode.mask, mode.http80
+		for _, u := range []map[string]string{nil, users} {
+			text, err := NaiveRender(c, u, []string{"203.0.113.7/32"})
+			if err != nil {
+				t.Fatal(err)
+			}
+			f := filepath.Join(t.TempDir(), "Caddyfile")
+			if err := os.WriteFile(f, []byte(text), 0o600); err != nil {
+				t.Fatal(err)
+			}
+			out, err := exec.Command(bin, "adapt", "--config", f, "--adapter", "caddyfile").CombinedOutput()
+			if err != nil {
+				t.Errorf("%+v, пользователей %d: Caddy не принял конфиг: %s\n%s", mode, len(u), out, text)
+			}
+		}
 	}
 }
 

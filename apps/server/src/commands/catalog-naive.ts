@@ -1,6 +1,6 @@
 import { randomBytes } from 'node:crypto';
 import type { CommandDef } from './types.js';
-import { PROLOGUE } from './util.js';
+import { NAIVE_FUNCS, PROLOGUE } from './util.js';
 
 /**
  * Прокси для браузера: Caddy с forwardproxy (naive), служба
@@ -10,13 +10,9 @@ import { PROLOGUE } from './util.js';
  * 443: если его держит MTProxyL - маска telemt (SNI имени -> 127.0.0.1:<порт>), если свободен -
  * Caddy слушает его сам. Сертификат Caddy выпускает сам: TLS-ALPN-01 через 443 и HTTP-01 на 80,
  * если 80 свободен. Бинарник называется caddy - port-sync откроет его порты сам.
+ * MTProxyL можно поставить и после прокси, и удалить: его команды переключают режим 443 прокси
+ * сами (NAIVE_FUNCS в util.ts).
  */
-
-/** Функции скрипта: свободен ли порт, порт прокси MTProxyL. */
-const FUNCS = `port_owner() { ss -Hltnp "sport = :$1" 2>/dev/null | head -1 | grep -o 'users:(("[^"]*"' | cut -d'"' -f2; }
-mt_port() { grep -E '^[[:space:]]*port[[:space:]]*=' /opt/mtproxyl/mtproxy/config.toml 2>/dev/null | head -1 | grep -oE '[0-9]+' || true; }
-naive_unit_active() { systemctl is-active --quiet vps-naive 2>/dev/null; }
-`;
 
 const UNIT = `[Unit]
 Description=VPS Panel: прокси для браузера (Caddy naive)
@@ -75,7 +71,7 @@ export const naiveCmd: CommandDef = {
   // расширении); при переустановке скрипт оставляет прежнее - подписки клиентов не меняются
   env: () => ({ NAIVE_SECRET: `${randomBytes(10).toString('hex')}.test` }),
   cleanup: ['/tmp/vps-naive-caddy'],
-  script: `${PROLOGUE}${FUNCS}
+  script: `${PROLOGUE}${NAIVE_FUNCS}
 NAIVE_DOMAIN=$(printf '%s' "$NAIVE_DOMAIN" | tr 'A-Z' 'a-z')
 /usr/local/bin/vps-agent -h 2>&1 | grep -q naive-render || { echo "агент устарел: обнови агента сервера" >&2; exit 2; }
 arch=$(uname -m)
@@ -134,10 +130,7 @@ systemctl is-active vps-naive
 
 if [ "$mask" = true ]; then
   say "MTProxyL: маска telemt $NAIVE_DOMAIN -> 127.0.0.1:$NAIVE_PORT, перезапуск прокси"
-  mtproxyl expert set --raw censorship.exclusive_mask "$NAIVE_DOMAIN" "127.0.0.1:$NAIVE_PORT" --no-apply
-  mtproxyl expert apply </dev/null
-  mtproxyl restart </dev/null
-  sleep 3
+  naive_mask_on "$NAIVE_DOMAIN" "$NAIVE_PORT" || { echo "MTProxyL не принял маску" >&2; exit 1; }
 fi
 
 if [ -x /usr/local/sbin/vps-portsync ]; then
@@ -170,7 +163,7 @@ if [ "$mask" = true ] || [ "$l443" = true ]; then
 fi
 say "Готово: пользователи - глобальные клиенты панели (сверка заведёт их сама), расширение берёт адрес из подписки"
 `,
-  preflight: `${FUNCS}
+  preflight: `${NAIVE_FUNCS}
 /usr/local/bin/vps-agent -h 2>&1 | grep -q naive-render && echo "OK|агент умеет собирать конфиг прокси" || echo "FAIL|агент устарел: обнови агента сервера"
 D=$(printf '%s' "$NAIVE_DOMAIN" | tr 'A-Z' 'a-z')
 ip=$(getent ahostsv4 "$D" 2>/dev/null | awk '{print $1; exit}')
