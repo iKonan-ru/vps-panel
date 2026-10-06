@@ -18,6 +18,71 @@ apt_install() { need apt-get || { echo "поддерживаются тольк�
 fetch() { curl -fsSL --retry 3 --retry-delay 2 "$@"; }
 `;
 
+/**
+ * Прокси для браузера (naive) и порт 443 - общие функции команд naive и MTProxyL. У прокси 443 в
+ * одном из режимов (config.json прокси): listen - Caddy слушает 443 сам (443 был свободен),
+ * mask - 443 держит MTProxyL, его telemt по SNI имени прокси передаёт соединение на порт Caddy,
+ * none - прокси только на своём порту. Порядок установки любой: установка MTProxyL на 443
+ * забирает 443 у прокси (naive_443 none до установщика, маска и naive_443 mask после), удаление
+ * MTProxyL возвращает 443 прокси (naive_443 listen).
+ * - port_owner <порт> - процесс, который слушает TCP-порт (пусто - свободен);
+ * - mt_port - порт прокси MTProxyL из его конфига;
+ * - naive_installed, naive_unit_active, naive_get <ключ> (из config.json), naive_mode;
+ * - naive_443 <режим> - режим в config.json, Caddyfile от агента, перезапуск службы, если
+ *   Caddyfile изменился; listen, который Caddy не принял (агент старее этой правки), - none;
+ * - naive_mask_on <имя> <порт> - маска telemt и перезапуск прокси Telegram (ошибка - код не 0,
+ *   скрипт не падает).
+ */
+export const NAIVE_FUNCS = `port_owner() { ss -Hltnp "sport = :$1" 2>/dev/null | head -1 | grep -o 'users:(("[^"]*"' | cut -d'"' -f2; }
+mt_port() { grep -E '^[[:space:]]*port[[:space:]]*=' /opt/mtproxyl/mtproxy/config.toml 2>/dev/null | head -1 | grep -oE '[0-9]+' || true; }
+naive_unit_active() { systemctl is-active --quiet vps-naive 2>/dev/null; }
+naive_installed() { [ -f /etc/systemd/system/vps-naive.service ] && [ -f /etc/vps-naive/config.json ]; }
+naive_get() { python3 -c 'import json, sys
+v = json.load(open("/etc/vps-naive/config.json")).get(sys.argv[1], "")
+print(str(v).lower() if isinstance(v, bool) else v)' "$1" 2>/dev/null || true; }
+naive_mode() { if [ "$(naive_get mask443)" = true ]; then echo mask; elif [ "$(naive_get listen443)" = true ]; then echo listen; else echo none; fi; }
+naive_cfg443() {
+python3 - "$1" <<'PY'
+import json, sys
+p = "/etc/vps-naive/config.json"
+c = json.load(open(p))
+c["listen443"] = sys.argv[1] == "listen"
+c["mask443"] = sys.argv[1] == "mask"
+with open(p, "w") as f:
+    json.dump(c, f, indent=2)
+PY
+chmod 600 /etc/vps-naive/config.json
+}
+naive_443() {
+  local mode=$1 before after
+  before=$(sha256sum /etc/vps-naive/Caddyfile 2>/dev/null || true)
+  naive_cfg443 "$mode"
+  /usr/local/bin/vps-agent -naive-render
+  if [ "$mode" = listen ] && ! runuser -u vps-naive -- /opt/vps-naive/caddy validate --config /etc/vps-naive/Caddyfile --adapter caddyfile >/dev/null 2>&1; then
+    echo "ВНИМАНИЕ: Caddy не принял 443 (обнови агента сервера и повтори установку прокси для браузера) - прокси только на порту $(naive_get port)"
+    mode=none
+    naive_cfg443 none
+    /usr/local/bin/vps-agent -naive-render
+  fi
+  after=$(sha256sum /etc/vps-naive/Caddyfile)
+  if [ "$before" != "$after" ] || ! naive_unit_active; then
+    systemctl restart vps-naive
+    sleep 2
+  fi
+  case "$mode" in
+    listen) echo "прокси для браузера: 443 - Caddy сам, служба $(systemctl is-active vps-naive || true)";;
+    mask) echo "прокси для браузера: 443 - маска MTProxyL, служба $(systemctl is-active vps-naive || true)";;
+    *) echo "прокси для браузера: только порт $(naive_get port), служба $(systemctl is-active vps-naive || true)";;
+  esac
+}
+naive_mask_on() {
+  mtproxyl expert set --raw censorship.exclusive_mask "$1" "127.0.0.1:$2" --no-apply &&
+    mtproxyl expert apply </dev/null &&
+    mtproxyl restart </dev/null &&
+    sleep 3
+}
+`;
+
 /** Скрипт установки docker (официальный установщик), если его ещё нет. */
 export const ENSURE_DOCKER = `if ! need docker; then
   say "Docker не найден - ставлю официальным установщиком"

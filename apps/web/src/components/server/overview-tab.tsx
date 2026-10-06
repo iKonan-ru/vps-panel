@@ -314,17 +314,14 @@ export function OverviewTab({ s, onTab }: { s: ServerDetail; onTab?: (tab: strin
           <Section
             title="Сервисы"
             actions={
-              !s.services.some((x) => x.kind === 'openflux') && (
-                <Button
-                  size="sm"
-                  disabled={!canAct}
-                  title={lock.reason ?? 'Поставить OpenFlux и создать канал'}
-                  onClick={() => onTab?.('openflux')}
-                  label="OpenFlux"
-                >
-                  <Plus className="size-3.5" />
-                </Button>
-              )
+              <ButtonLink
+                to="/commands"
+                size="sm"
+                title="Каталог команд: установка и удаление сервисов"
+                label="Установить сервис"
+              >
+                <Plus className="size-3.5" />
+              </ButtonLink>
             }
           >
             {s.services.length === 0 && (

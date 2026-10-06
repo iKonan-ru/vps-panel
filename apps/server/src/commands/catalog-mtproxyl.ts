@@ -1,5 +1,5 @@
 import type { AccessEntry, CommandDef } from './types.js';
-import { ENSURE_DOCKER, PROLOGUE, openPanelUrl, rndHex } from './util.js';
+import { ENSURE_DOCKER, NAIVE_FUNCS, PROLOGUE, openPanelUrl, rndHex } from './util.js';
 
 /**
  * Веб-панель MTProxyL (отдельный установщик mtproxyl-panel/install.sh). Он спрашивает всё
@@ -181,7 +181,7 @@ export const mtproxylCmd: CommandDef = {
   timeoutSec: 45 * 60,
   files: () => ({ '/tmp/mtproxyl-panel-driver.py': DRIVER }),
   cleanup: ['/tmp/mtproxyl-panel-driver.py', '/tmp/mtproxyl-panel-install.sh'],
-  script: `${PROLOGUE}
+  script: `${PROLOGUE}${NAIVE_FUNCS}
 [ "\${#MTP_PASSWORD}" -ge 8 ] || { echo "пароль панели короче 8 символов" >&2; exit 2; }
 if need mtproxyl; then
   say "MTProxyL уже установлен: прокси и пользователей не трогаю, ставлю или обновляю панель"
@@ -199,8 +199,22 @@ ${ENSURE_DOCKER}  fi
     s=$(head -c 16 /dev/urandom | od -An -tx1 | tr -d ' \\n')
     args+=(--secret "$u:$s")
   done
+  # 443 держит прокси для браузера: уступает его MTProxyL, дальше отвечает на 443 через маску telemt
+  naive_moved=false
+  if [ "$MT_PORT" = 443 ] && naive_installed && [ "$(port_owner 443)" = caddy ]; then
+    say "443 держит прокси для браузера: освобождаю 443 для MTProxyL (прокси пока только на своём порту)"
+    naive_443 none
+    naive_moved=true
+  fi
   say "Запускаю: mtproxyl install (аргументы без секретов и токена: --mode manager --port $MT_PORT --sni $MT_SNI --engine $MT_ENGINE --zapret2 $MT_ZAPRET2)"
-  bash /tmp/mtproxyl-install.sh -- "\${args[@]}" </dev/null
+  bash /tmp/mtproxyl-install.sh -- "\${args[@]}" </dev/null || {
+    rc=$?
+    if [ "$naive_moved" = true ] && [ -z "$(port_owner 443)" ]; then
+      say "MTProxyL не встал: возвращаю 443 прокси для браузера"
+      naive_443 listen
+    fi
+    exit $rc
+  }
   rm -f /tmp/mtproxyl-install.sh
 fi
 say "Ссылки для пользователей"
@@ -227,9 +241,25 @@ say "Проверяю службу панели"
 systemctl is-active mtproxyl-panel
 grep -E '^[[:space:]]*listen[[:space:]]*=' /etc/mtproxyl-panel/config.toml || true
 say "Панель - только на 127.0.0.1:$MTP_PORT, вход через VPS Panel"
+if naive_installed && [ "$(mt_port)" = 443 ] && [ "$(naive_mode)" != mask ]; then
+  nd=$(naive_get domain)
+  np=$(naive_get port)
+  if [ -f /opt/mtproxyl/superexpert.toml ]; then
+    echo "ВНИМАНИЕ: MTProxyL в режиме суперэксперта - маску 443 для прокси для браузера задать нельзя, он только на порту $np"
+  else
+    say "Прокси для браузера: маска telemt $nd -> 127.0.0.1:$np, перезапуск прокси Telegram"
+    if naive_mask_on "$nd" "$np"; then
+      naive_443 mask
+    else
+      echo "ВНИМАНИЕ: маска не задалась - прокси для браузера только на порту $np; повтори установку прокси для браузера"
+    fi
+  fi
+  [ -x /usr/local/sbin/vps-portsync ] && /usr/local/sbin/vps-portsync | tail -n 5 || true
+fi
 say "Готово"
 `,
-  preflight: `if command -v mtproxyl >/dev/null 2>&1; then echo "WARN|MTProxyL уже установлен: прокси и пользователи останутся как есть, поставится или обновится только панель"
+  preflight: `${NAIVE_FUNCS}if command -v mtproxyl >/dev/null 2>&1; then echo "WARN|MTProxyL уже установлен: прокси и пользователи останутся как есть, поставится или обновится только панель"
+elif [ "$MT_PORT" = 443 ] && [ "$(port_owner 443)" = caddy ] && naive_installed; then echo "WARN|443 держит прокси для браузера: он уступит 443 MTProxyL и будет отвечать на 443 через маску telemt (служба прокси перезапустится, браузеры клиентов переподключатся)"
 elif ss -ltn | awk '{print $4}' | grep -q ":$MT_PORT$"; then echo "FAIL|порт $MT_PORT уже занят"
 else echo "OK|порт $MT_PORT свободен"; fi
 if [ "$MT_ENGINE" = "docker" ] && ! command -v docker >/dev/null 2>&1 && ! command -v mtproxyl >/dev/null 2>&1; then echo "WARN|docker не установлен, будет поставлен"; fi
@@ -244,6 +274,7 @@ if ss -ltn | awk '{print $4}' | grep -q ":$MTP_PORT$" && ! systemctl is-active m
     'Если системный sudo - sudo-rs (свежие Ubuntu), переключить на классический sudo.ws: иначе установщик панели не примет свой sudoers',
     `Веб-панель на 127.0.0.1:${a.MTP_PORT} без шифрования (HTTP), логин ${a.MTP_USER}: вход через VPS Panel (поддомен), снаружи панели нет`,
     'В конце - ссылки tg://proxy для пользователей (в выводе; потом - во вкладке MTProxyL)',
+    'Если на сервере прокси для браузера и MTProxyL на 443: прокси уступает 443, telemt передаёт ему соединения на его имя (маска)',
   ],
   access: ({ answers, server, panelUrl }) => {
     const panel: AccessEntry = {

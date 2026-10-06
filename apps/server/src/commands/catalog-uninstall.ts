@@ -1,5 +1,5 @@
 import type { CommandDef } from './types.js';
-import { PROLOGUE } from './util.js';
+import { NAIVE_FUNCS, PROLOGUE } from './util.js';
 
 /**
  * Удаление сервисов, поставленных командами каталога. Каждая команда сначала
@@ -61,7 +61,7 @@ export const mtproxylUninstallCmd: CommandDef = {
     'Снести MTProxyL вместе с веб-панелью: контейнер или служба telemt, конфиги и секреты в /opt/mtproxyl, правила nft, панель с конфигом и данными.',
   params: [CONFIRM],
   timeoutSec: 10 * 60,
-  script: `${PROLOGUE}
+  script: `${PROLOGUE}${NAIVE_FUNCS}
 ${GUARD}
 need mtproxyl || { echo "MTProxyL не установлен" >&2; exit 3; }
 if systemctl list-unit-files mtproxyl-panel.service >/dev/null 2>&1 && systemctl cat mtproxyl-panel >/dev/null 2>&1; then
@@ -70,12 +70,26 @@ if systemctl list-unit-files mtproxyl-panel.service >/dev/null 2>&1 && systemctl
 fi
 say "Удаляю MTProxyL (mtproxyl uninstall)"
 printf 'yes\\nn\\n' | mtproxyl uninstall
+# прокси для браузера отвечал на 443 через маску telemt: 443 освободился - слушает его сам
+if naive_installed && [ "$(naive_mode)" = mask ]; then
+  sleep 2
+  if [ -z "$(port_owner 443)" ]; then
+    say "Прокси для браузера: 443 свободен - Caddy снова слушает его сам"
+    naive_443 listen
+  else
+    say "Прокси для браузера: 443 занят ($(port_owner 443)) - прокси только на своём порту"
+    naive_443 none
+  fi
+  [ -x /usr/local/sbin/vps-portsync ] && /usr/local/sbin/vps-portsync | tail -n 5 || true
+fi
 say "Готово"
 `,
-  preflight: `if command -v mtproxyl >/dev/null 2>&1; then echo "WARN|MTProxyL установлен: пропадут секреты пользователей и ссылки (сделай бэкап во вкладке Бэкапы)"; else echo "FAIL|MTProxyL не установлен"; fi`,
+  preflight: `${NAIVE_FUNCS}if command -v mtproxyl >/dev/null 2>&1; then echo "WARN|MTProxyL установлен: пропадут секреты пользователей и ссылки (сделай бэкап во вкладке Бэкапы)"; else echo "FAIL|MTProxyL не установлен"; fi
+if naive_installed && grep -q '"mask443": true' /etc/vps-naive/config.json 2>/dev/null; then echo "OK|прокси для браузера отвечает на 443 через MTProxyL: после удаления будет слушать 443 сам (служба прокси перезапустится)"; fi`,
   plan: () => [
     'Удалить веб-панель MTProxyL, если есть (с конфигом и данными)',
     'mtproxyl uninstall: остановить движок, снять правила nft, удалить /opt/mtproxyl без выгрузки секретов',
+    'Прокси для браузера, если он отвечал на 443 через MTProxyL, снова слушает 443 сам',
   ],
 };
 
