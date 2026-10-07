@@ -7,6 +7,7 @@ import {
   ProxyLinks,
   RenameForm,
 } from '@/components/clients/client-dialogs';
+import { LiveSummary, ServerLive, useClientLive } from '@/components/clients/live-stats';
 import { SyncPanel } from '@/components/clients/sync-panel';
 import { ClientConfig } from '@/components/links/awg-config';
 import { Alert } from '@/components/ui/alert';
@@ -52,6 +53,8 @@ export function ClientPage() {
   const [proxy, setProxy] = useState<GBinding | null>(null);
   const [qr, setQr] = useState(false);
   const refresh = () => qc.invalidateQueries({ queryKey: ['gclient', id] });
+  // подключение и трафик по привязкам: раз в 3 с, пока карточка открыта и вкладка видна
+  const live = useClientLive(id, data?.bindings ?? []);
 
   async function call(fn: () => Promise<unknown>) {
     setErr(null);
@@ -219,6 +222,7 @@ export function ClientPage() {
                   error: data.bindings.filter((b) => b.state === 'error').length,
                 }}
               />
+              <LiveSummary live={live} />
               {c.access !== null && <Chip tone="accent">выборочный доступ</Chip>}
               {syncing && <span className="text-xs text-muted">идёт сверка...</span>}
             </>
@@ -275,6 +279,7 @@ export function ClientPage() {
                       key={b.id}
                       b={b}
                       device={data.devices.find((d) => d.id === b.deviceId)}
+                      live={live.binding(b.id)}
                       onOpen={
                         b.service === 'xui'
                           ? () => setQr(true)
@@ -290,6 +295,7 @@ export function ClientPage() {
                     />
                   ))}
                 </div>
+                <ServerLive serverId={serverId} live={live} />
                 {list
                   .filter((b) => b.state === 'error')
                   .map((b) => (

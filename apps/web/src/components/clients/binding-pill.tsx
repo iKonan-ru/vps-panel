@@ -1,8 +1,9 @@
 import { deviceTitle } from '@/components/clients/binding-states';
+import { PillRate, dotClass, liveText } from '@/components/clients/live-stats';
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/cn';
 import { ago } from '@/lib/format';
-import type { GBinding, GDevice } from '@vps/protocol';
+import type { GBinding, GDevice, GLiveBinding } from '@vps/protocol';
 import { QrCode as QrCodeIcon } from 'lucide-react';
 
 /** Привязки клиента к серверам: порядок сервисов, группировка по серверу, плашка привязки. */
@@ -38,15 +39,22 @@ export function pillLabel(b: GBinding, device: GDevice | undefined) {
 }
 
 /**
- * Услуга на сервере: точка состояния (зелёная - работает, серая - ждёт сверки, красная - ошибка)
- * и подпись; подробности - в подсказке. Кнопка открывает подписку (VLESS), ссылки (MTProxy) или
- * конфиг (AWG) с QR.
+ * Услуга на сервере: точка состояния (красная - ошибка сверки, серая - ждёт сверки; заведено -
+ * зелёная: залитая и пульсирует - клиент на связи, контур - не на связи; жёлтая - сервис не
+ * работает), подпись и скорость, если клиент качает; подробности - в подсказке. Кнопка открывает
+ * подписку (VLESS), ссылки (MTProxy) или конфиг (AWG) с QR.
  */
 export function BindingPill({
   b,
   device,
+  live,
   onOpen,
-}: { b: GBinding; device: GDevice | undefined; onOpen: (() => void) | undefined }) {
+}: {
+  b: GBinding;
+  device: GDevice | undefined;
+  live?: GLiveBinding | undefined;
+  onOpen: (() => void) | undefined;
+}) {
   const label = pillLabel(b, device);
   const state = b.state === 'ok' ? 'работает' : b.state === 'pending' ? 'ждёт сверки' : 'ошибка';
   const detail =
@@ -56,21 +64,15 @@ export function BindingPill({
   const custom = b.xuiInbounds
     ? `свой набор inbound-ов (${b.xuiInbounds.length}) - правится во вкладке 3X-UI сервера`
     : '';
-  const title = [`${label}: ${state}`, detail, custom].filter(Boolean).join('; ');
+  const title = [`${label}: ${state}`, liveText(live), detail, custom].filter(Boolean).join('; ');
   const opens = b.service === 'awg' ? 'конфиг' : b.service === 'xui' ? 'подписка' : 'ссылки';
-  const dot = (
-    <span
-      className={cn(
-        'size-2 shrink-0 rounded-full',
-        b.state === 'ok' ? 'bg-ok' : b.state === 'error' ? 'bg-bad' : 'bg-muted',
-      )}
-    />
-  );
+  const dot = <span className={cn('size-2 shrink-0 rounded-full', dotClass(b.state, live))} />;
   if (onOpen)
     return (
       <Button size="sm" onClick={onOpen} title={`${title}; ${opens} и QR`}>
         {dot}
         {label}
+        <PillRate l={live} />
         <QrCodeIcon className="size-3.5 text-muted" />
       </Button>
     );
@@ -81,6 +83,7 @@ export function BindingPill({
     >
       {dot}
       {label}
+      <PillRate l={live} />
     </span>
   );
 }

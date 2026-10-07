@@ -283,6 +283,7 @@ export const AgentMethodSchema = z.enum([
   'xui.token',
   'xui.api',
   'wdtt.api',
+  'clients.stats',
 ]);
 export type AgentMethod = z.infer<typeof AgentMethodSchema>;
 

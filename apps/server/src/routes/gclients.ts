@@ -5,6 +5,7 @@ import {
   type GBindingState,
   type GClientAccess,
   type GClientDetail,
+  type GClientLive,
   type GClientRow,
   type GOwner,
   type GServer,
@@ -21,6 +22,7 @@ import type { Env } from '../config.js';
 import type { Db } from '../db/index.js';
 import { gclientBindings, gclientDevices, gclients, openfluxDocs, servers } from '../db/schema.js';
 import { actionJournal } from '../lib/action-journal.js';
+import { ClientStatsHub, liveOnServer } from '../lib/client-stats.js';
 import { clientSlug, newClientToken, newXuiSubId } from '../lib/gclient-names.js';
 import { awgRef, wdttKey, xuiTargets } from '../lib/gclient-services.js';
 import { type GClients, queued } from '../lib/gclients.js';
@@ -215,6 +217,50 @@ export async function gclientRoutes(
             awg: b.service === 'awg' ? awgRef(b.ref) : null,
           }),
         ),
+    };
+  });
+
+  /** Снимки clients.stats серверов: общие для всех карточек клиентов. */
+  const live = new ClientStatsHub({
+    registry,
+    xuiToken: (serverId) => {
+      try {
+        return savedXuiToken(db, box, serverId);
+      } catch {
+        return '';
+      }
+    },
+  });
+
+  /**
+   * Живая статистика клиента: подключение и трафик по привязкам. Карточка опрашивает раз в 3 с,
+   * пока открыта; агента спрашивают не чаще раза в 2,5 с на сервер. Чтение - в журнал действий
+   * не пишется; ключи записей (пароль WDTT - только хешем) в ответ не попадают.
+   */
+  app.get('/api/gclients/:id/live', async (req, reply): Promise<GClientLive> => {
+    const c = getClient(Id.parse(req.params).id);
+    const rows = db.select().from(gclientBindings).where(eq(gclientBindings.clientId, c.id)).all();
+    const ids = [...new Set(rows.map((b) => b.serverId))];
+    const snaps = new Map(
+      await Promise.all(ids.map(async (id) => [id, await live.server(id)] as const)),
+    );
+    reply.header('Cache-Control', 'no-store');
+    return {
+      at: new Date().toISOString(),
+      servers: [...snaps.values()].map((s) => s.info),
+      bindings: rows.flatMap((b) => {
+        const s = snaps.get(b.serverId);
+        if (!s) return [];
+        let key = b.ref;
+        if (b.service === 'wdtt') {
+          try {
+            key = b.secret ? wdttKey(box.open(b.secret)) : '';
+          } catch {
+            key = '';
+          }
+        }
+        return [liveOnServer({ id: b.id, service: b.service as GService, ref: b.ref, key }, s)];
+      }),
     };
   });
 

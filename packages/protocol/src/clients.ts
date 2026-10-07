@@ -140,3 +140,83 @@ export interface GServer {
   naive: boolean;
   xuiExcluded: number[];
 }
+
+/**
+ * Ответ агента clients.stats: счётчики всех сервисов сервера по ключам записей. Раздела нет -
+ * сервиса нет или он не ответил (причина - в errors под тем же именем). Без UUID, паролей,
+ * ключей и адресов клиентов.
+ */
+export interface ClientStatsSnapshot {
+  /** время снимка на сервере, unix мс */
+  at: number;
+  /** 3X-UI по email: up - от клиента, down - к клиенту, lastOnline - мс */
+  xui?: Record<string, { up: number; down: number; lastOnline: number; online: boolean }>;
+  /** AWG: контейнер -> ключ пира; rx - от клиента, tx - к клиенту, handshake - unix с */
+  awg?: Record<string, Record<string, { handshake: number; rx: number; tx: number }>>;
+  /** telemt по метке: in - от клиента, out - к клиенту (с запуска), подключений и адресов сейчас */
+  mtproxyl?: Record<string, { in: number; out: number; conns: number; ips: number }>;
+  /** WDTT по ключу пароля (wdttKey): up - от клиента, down - к клиенту, устройств на связи */
+  wdtt?: Record<string, { up: number; down: number; devices: number }>;
+  /** OpenFlux по имени канала: служба работает, с какого времени, прямых соединений */
+  openflux?: Record<string, { active: boolean; since: string; conns: number }>;
+  /** прокси для браузера: служба работает */
+  naive?: boolean;
+  errors: Record<string, string>;
+}
+
+/**
+ * Подключение привязки сейчас: online - на связи; idle - не на связи (lastSeen - когда был, если
+ * известно); never - ни разу не подключался; running - сервис работает, а подключение не видно
+ * (naive, OpenFlux не через direct); down - сервис не работает или не ответил; missing - записи
+ * на сервере нет (ждёт сверки); offline - сервер не в сети; outdated - агент без clients.stats.
+ */
+export type GLiveState =
+  | 'online'
+  | 'idle'
+  | 'never'
+  | 'running'
+  | 'down'
+  | 'missing'
+  | 'offline'
+  | 'outdated';
+
+/** Живая статистика привязки. Байты: in - от клиента, out - к клиенту. */
+export interface GLiveBinding {
+  bindingId: string;
+  state: GLiveState;
+  /** последняя активность, ISO; null - неизвестна */
+  lastSeen: string | null;
+  /** скорость, байт/с; null - пока неизвестна (первый снимок, обнуление счётчика) */
+  rateIn: number | null;
+  rateOut: number | null;
+  /** всего по счётчику сервиса; null - сервис не считает */
+  totalIn: number | null;
+  totalOut: number | null;
+  /** счётчик "всего" живёт с запуска сервиса (AWG, MTProxy), а не всё время */
+  sinceStart: boolean;
+  /** подключений (MTProxy, прямых у OpenFlux), адресов (MTProxy), устройств (WDTT) */
+  conns: number | null;
+  ips: number | null;
+  devices: number | null;
+  /** пояснение: причина down, что значит running */
+  note: string;
+}
+
+/** Сервер в живой статистике клиента. */
+export interface GLiveServer {
+  serverId: string;
+  online: boolean;
+  /** агент не знает clients.stats: нужно обновить агента */
+  outdated: boolean;
+  /** время снимка, ISO; null - снимка нет */
+  at: string | null;
+  /** снимок не получен (агент не ответил) */
+  error: string;
+}
+
+/** GET /api/gclients/:id/live */
+export interface GClientLive {
+  at: string;
+  servers: GLiveServer[];
+  bindings: GLiveBinding[];
+}
