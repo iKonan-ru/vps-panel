@@ -7,7 +7,7 @@ import {
   ProxyLinks,
   RenameForm,
 } from '@/components/clients/client-dialogs';
-import { LiveSummary, ServerLive, useClientLive } from '@/components/clients/live-stats';
+import { LiveSummary, ServerOnlineMark, useClientLive } from '@/components/clients/live-stats';
 import { SyncPanel } from '@/components/clients/sync-panel';
 import { ClientConfig } from '@/components/links/awg-config';
 import { Alert } from '@/components/ui/alert';
@@ -265,13 +265,17 @@ export function ClientPage() {
               key={serverId}
               className="flex flex-col gap-2 border-b border-border px-4 py-2.5 last:border-b-0 sm:flex-row sm:items-start sm:gap-3"
             >
-              <Link
-                to="/servers/$id"
-                params={{ id: serverId }}
-                className="shrink-0 pt-1 text-[13px] font-medium hover:text-accent sm:w-32 sm:truncate"
-              >
-                {list[0]?.serverName}
-              </Link>
+              <div className="flex shrink-0 flex-wrap items-center gap-2 sm:w-32 sm:flex-col sm:items-start sm:gap-1">
+                <Link
+                  to="/clients/$id/servers/$serverId"
+                  params={{ id, serverId }}
+                  title="Статистика клиента на этом сервере: подключение и трафик по сервисам"
+                  className="max-w-full pt-1 text-[13px] font-medium hover:text-accent sm:truncate"
+                >
+                  {list[0]?.serverName}
+                </Link>
+                <ServerOnlineMark serverId={serverId} live={live} />
+              </div>
               <div className="flex min-w-0 grow flex-col gap-1.5">
                 <div className="flex flex-wrap gap-1.5">
                   {list.map((b) => (
@@ -295,7 +299,6 @@ export function ClientPage() {
                     />
                   ))}
                 </div>
-                <ServerLive serverId={serverId} live={live} />
                 {list
                   .filter((b) => b.state === 'error')
                   .map((b) => (

@@ -239,7 +239,14 @@ export async function gclientRoutes(
    */
   app.get('/api/gclients/:id/live', async (req, reply): Promise<GClientLive> => {
     const c = getClient(Id.parse(req.params).id);
-    const rows = db.select().from(gclientBindings).where(eq(gclientBindings.clientId, c.id)).all();
+    // ?server= - только этот сервер (страница клиента на сервере)
+    const { server } = z.object({ server: z.string().max(64).optional() }).parse(req.query);
+    const rows = db
+      .select()
+      .from(gclientBindings)
+      .where(eq(gclientBindings.clientId, c.id))
+      .all()
+      .filter((b) => !server || b.serverId === server);
     const ids = [...new Set(rows.map((b) => b.serverId))];
     const snaps = new Map(
       await Promise.all(ids.map(async (id) => [id, await live.server(id)] as const)),

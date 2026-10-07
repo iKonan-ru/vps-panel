@@ -1,5 +1,5 @@
 import { deviceTitle } from '@/components/clients/binding-states';
-import { PillRate, dotClass, liveText } from '@/components/clients/live-stats';
+import { dotClass, liveText } from '@/components/clients/live-stats';
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/cn';
 import { ago } from '@/lib/format';
@@ -41,7 +41,7 @@ export function pillLabel(b: GBinding, device: GDevice | undefined) {
 /**
  * Услуга на сервере: точка состояния (красная - ошибка сверки, серая - ждёт сверки; заведено -
  * зелёная: залитая и пульсирует - клиент на связи, контур - не на связи; жёлтая - сервис не
- * работает), подпись и скорость, если клиент качает; подробности - в подсказке. Кнопка открывает
+ * работает) и подпись; подробности - в подсказке, цифры - на странице сервера клиента. Кнопка открывает
  * подписку (VLESS), ссылки (MTProxy) или конфиг (AWG) с QR.
  */
 export function BindingPill({
@@ -72,7 +72,6 @@ export function BindingPill({
       <Button size="sm" onClick={onOpen} title={`${title}; ${opens} и QR`}>
         {dot}
         {label}
-        <PillRate l={live} />
         <QrCodeIcon className="size-3.5 text-muted" />
       </Button>
     );
@@ -83,7 +82,6 @@ export function BindingPill({
     >
       {dot}
       {label}
-      <PillRate l={live} />
     </span>
   );
 }

@@ -18,6 +18,10 @@ import {
 
 const AppsPage = lazyRouteComponent(() => import('@/pages/apps'), 'AppsPage');
 const ClientPage = lazyRouteComponent(() => import('@/pages/client'), 'ClientPage');
+const ClientServerPage = lazyRouteComponent(
+  () => import('@/pages/client-server'),
+  'ClientServerPage',
+);
 const ClientsPage = lazyRouteComponent(() => import('@/pages/clients'), 'ClientsPage');
 const CommandRunPage = lazyRouteComponent(() => import('@/pages/command-run'), 'CommandRunPage');
 const CommandsPage = lazyRouteComponent(() => import('@/pages/commands'), 'CommandsPage');
@@ -122,6 +126,12 @@ const clientRoute = createRoute({
   path: '/clients/$id',
   component: ClientPage,
 });
+/** Клиент на одном сервере: живая статистика по сервисам. */
+const clientServerRoute = createRoute({
+  getParentRoute: () => appRoute,
+  path: '/clients/$id/servers/$serverId',
+  component: ClientServerPage,
+});
 const servicesRoute = createRoute({
   getParentRoute: () => appRoute,
   path: '/services',
@@ -151,6 +161,7 @@ const routeTree = rootRoute.addChildren([
     servicesRoute,
     clientsRoute,
     clientRoute,
+    clientServerRoute,
     appsRoute,
     settingsRoute,
   ]),
