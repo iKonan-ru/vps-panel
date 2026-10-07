@@ -247,6 +247,26 @@ describe('GET /api/gclients/:id/live', () => {
         'b1:offline',
         'b2:offline',
       ]);
+      // ?server= - только этот сервер
+      db.insert(servers)
+        .values({ id: 's2', name: 's2', host: '2.2.2.2' } as never)
+        .run();
+      db.insert(gclientBindings)
+        .values({ id: 'b3', clientId: 'c1', serverId: 's2', service: 'xui', ref: 'ivan' })
+        .run();
+      const all = (
+        await built.app.inject({ method: 'GET', url: '/api/gclients/c1/live', headers: { cookie } })
+      ).json() as import('@vps/protocol').GClientLive;
+      expect(all.servers).toHaveLength(2);
+      const one = (
+        await built.app.inject({
+          method: 'GET',
+          url: '/api/gclients/c1/live?server=s2',
+          headers: { cookie },
+        })
+      ).json() as import('@vps/protocol').GClientLive;
+      expect(one.servers.map((s) => s.serverId)).toEqual(['s2']);
+      expect(one.bindings.map((b) => b.bindingId)).toEqual(['b3']);
     } finally {
       await built.app.close();
       rmSync(dir, { recursive: true, force: true });

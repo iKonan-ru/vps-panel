@@ -15,6 +15,9 @@
   --ok: #1f9d6a;
   --warn: #b7791f;
   --bad: #d3403d;
+  /* графики: две серии (к клиенту, от клиента), пара проверена на различимость и контраст */
+  --series-1: #2a78d6;
+  --series-2: #eb6834;
   color-scheme: light;
 }
 .dark {
@@ -28,6 +31,8 @@
   --ok: #3ecf8e;
   --warn: #f2b544;
   --bad: #f25f5c;
+  --series-1: #3987e5;
+  --series-2: #d95926;
   color-scheme: dark;
 }
 
