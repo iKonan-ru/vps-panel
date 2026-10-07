@@ -103,6 +103,10 @@ func serviceOps() map[string]op {
 			return adapters.MtExec(ctx, p, out)
 		}),
 
+		"clients.stats": typed(func(ctx context.Context, p adapters.ClientStatsRequest, _ stream) (any, error) {
+			return adapters.ClientStatsAll(ctx, p), nil
+		}),
+
 		"telegram.send": typed(func(ctx context.Context, p adapters.TelegramSend, _ stream) (any, error) {
 			return adapters.TelegramSendMessage(ctx, p)
 		}),
