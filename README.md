@@ -351,7 +351,7 @@ tools/          check.sh, ship.sh, сборка wdtt-server и Caddy с forwardp
 - [Liafanx/MTProxyL](https://github.com/Liafanx/MTProxyL) и [telemt/telemt](https://github.com/telemt/telemt)
 - [amnezia-vpn](https://github.com/amnezia-vpn): AmneziaWG и клиенты Amnezia
 - [SpaceNeuroX/proxy-turn-vk-android](https://github.com/SpaceNeuroX/proxy-turn-vk-android) и [Regstar2/pwdtt](https://github.com/Regstar2/pwdtt): WDTT
-- [p1neappleXpress/OpenFlux](https://github.com/p1neappleXpress/OpenFlux)
+- [p1neappleXpress/OpenFlux](https://github.com/p1neappleXpress/OpenFlux) и форк клиента для Android [damnurmum/OpenFlux-Android](https://github.com/damnurmum/OpenFlux-Android)
 - [klzgrad/naiveproxy](https://github.com/klzgrad/naiveproxy) и [klzgrad/forwardproxy](https://github.com/klzgrad/forwardproxy)
 - [caddyserver/caddy](https://github.com/caddyserver/caddy)
 - клиент подписок [Happ](https://github.com/Happ-proxy)

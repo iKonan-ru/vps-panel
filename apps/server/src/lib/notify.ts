@@ -4,7 +4,7 @@ import type { AgentRegistry } from '../agents/registry.js';
 import type { StatusCache } from '../agents/state.js';
 import type { Db } from '../db/index.js';
 import { servers } from '../db/schema.js';
-import { rollPaymentDate } from './billing.js';
+import { daysToPayment, rollPaymentDate } from './billing.js';
 import { schedule } from './schedule.js';
 import type { ServiceUpdate } from './service-updates.js';
 import { type Telegram, esc } from './telegram.js';
@@ -172,8 +172,8 @@ export class Notifier {
   }
 
   /**
-   * Платежи хостингу: прошедшие даты сдвигаются на период оплаты, затем напоминание
-   * за N дней до даты, один раз на дату.
+   * Платежи хостингу: наступившие и прошедшие даты сдвигаются на период оплаты, затем
+   * напоминание за N дней до даты, один раз на дату.
    */
   private async checkPayments() {
     const rows = await this.db.select().from(servers);
@@ -189,7 +189,7 @@ export class Notifier {
     if (!st.events.updates || !st.token) return;
     for (const r of rows) {
       if (!r.nextPaymentAt) continue;
-      const days = Math.ceil((new Date(r.nextPaymentAt).getTime() - now) / 86_400_000);
+      const days = daysToPayment(r.nextPaymentAt, now);
       if (days > st.paymentDays || days < 0) continue;
       if (this.paymentNotified.get(r.id) === r.nextPaymentAt) continue;
       this.paymentNotified.set(r.id, r.nextPaymentAt);

@@ -11,7 +11,7 @@ import { PageTitle } from '@/components/ui/page-title';
 import { api } from '@/lib/api';
 import { cn } from '@/lib/cn';
 import { countryLabel, countryName } from '@/lib/countries';
-import { dateShort, daysUntil, money, uptime } from '@/lib/format';
+import { dateShort, daysUntil, money, paymentSoon, uptime } from '@/lib/format';
 import { useServers } from '@/lib/servers';
 import { useQuery } from '@tanstack/react-query';
 import { Link, useNavigate } from '@tanstack/react-router';
@@ -183,7 +183,7 @@ function SecurityChip({ s, className }: { s: ServerSummary; className?: string }
 function PayCell({ s }: { s: ServerSummary }) {
   const h = s.hosting;
   const days = daysUntil(h.nextPaymentAt);
-  const soon = days !== null && days <= 7;
+  const soon = paymentSoon(days);
   if (h.price === null && !h.nextPaymentAt) return <span className="text-muted">-</span>;
   return (
     <div className={soon ? 'text-warn' : ''}>

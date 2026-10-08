@@ -11,7 +11,7 @@ import { Dialog } from '@/components/ui/dialog';
 import { LinkButton } from '@/components/ui/link-button';
 import { actions } from '@/lib/actions';
 import { countryLabel } from '@/lib/countries';
-import { dateShort, daysUntil, money, perMonth } from '@/lib/format';
+import { dateShort, daysUntil, daysWord, money, paymentSoon, perMonth } from '@/lib/format';
 import { useQueryClient } from '@tanstack/react-query';
 import type { Hosting } from '@vps/protocol';
 import { Pencil } from 'lucide-react';
@@ -63,10 +63,10 @@ export function HostingCard({ serverId, hosting }: { serverId: string; hosting: 
                 </span>
               )}
               {h.nextPaymentAt && (
-                <span className={days !== null && days <= 5 ? 'text-warn' : 'text-muted'}>
+                <span className={paymentSoon(days) ? 'text-warn' : 'text-muted'}>
                   {' - следующая '}
                   {dateShort(h.nextPaymentAt)}
-                  {days !== null && days <= 5 && ` (через ${days} дн)`}
+                  {paymentSoon(days) && ` (${daysWord(days)})`}
                 </span>
               )}
             </Row>

@@ -55,9 +55,29 @@ export function dateShort(iso: string | null): string {
   return `${String(d.getDate()).padStart(2, '0')}.${String(d.getMonth() + 1).padStart(2, '0')}`;
 }
 
+/** Календарных дней до даты (по местному времени): 0 - сегодня, 1 - завтра. */
 export function daysUntil(iso: string | null): number | null {
   if (!iso) return null;
-  return Math.ceil((new Date(iso).getTime() - Date.now()) / 86_400_000);
+  const d = new Date(iso);
+  const now = new Date();
+  const a = Date.UTC(d.getFullYear(), d.getMonth(), d.getDate());
+  const b = Date.UTC(now.getFullYear(), now.getMonth(), now.getDate());
+  return Math.round((a - b) / 86_400_000);
+}
+
+/** За сколько дней до платежа хостингу дата подсвечивается. */
+export const PAYMENT_SOON_DAYS = 2;
+
+/** Платёж скоро: дата в ближайшие PAYMENT_SOON_DAYS дней. */
+export function paymentSoon(days: number | null): days is number {
+  return days !== null && days <= PAYMENT_SOON_DAYS;
+}
+
+/** "сегодня", "завтра", "через 2 дн". */
+export function daysWord(days: number): string {
+  if (days <= 0) return 'сегодня';
+  if (days === 1) return 'завтра';
+  return `через ${days} дн`;
 }
 
 /** Версия агента "0.2.0+20260926.0145.abc1234" -> "0.2.0 (26.09 01:45)". */
