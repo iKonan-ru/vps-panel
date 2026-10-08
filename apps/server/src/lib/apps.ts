@@ -127,6 +127,12 @@ export const APPS: AppDef[] = [
           asset: /^OpenFluxAndroid-[\d.]+-androidApp-universal-release\.apk$/,
           label: 'APK',
         },
+        {
+          repo: 'damnurmum/OpenFlux-Android',
+          asset: /^OpenFlux-android-universal-release\.apk$/,
+          label: 'APK форка',
+          note: 'форк damnurmum/OpenFlux-Android',
+        },
       ],
       ios: [
         { url: 'https://testflight.apple.com/join/BwnAcdus', label: 'TestFlight', note: 'бета' },

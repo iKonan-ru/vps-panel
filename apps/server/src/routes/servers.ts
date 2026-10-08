@@ -8,6 +8,7 @@ import type { Env } from '../config.js';
 import type { Db } from '../db/index.js';
 import { actionLog, servers } from '../db/schema.js';
 import { installCommand, issueRegistration, latestAgentVersion } from '../lib/agent-dist.js';
+import { rollPaymentDate } from '../lib/billing.js';
 import { newId } from '../lib/ids.js';
 import { panelAddresses } from '../lib/panel-host.js';
 import type { PanelProxy } from '../lib/panel-proxy.js';
@@ -37,7 +38,12 @@ function hostingToRow(h: HostingPatch | undefined) {
   if (h.price !== undefined) out.price = h.price;
   if (h.currency !== undefined) out.currency = h.currency;
   if (h.billingMonths !== undefined) out.billingMonths = h.billingMonths;
-  if (h.nextPaymentAt !== undefined) out.nextPaymentAt = h.nextPaymentAt;
+  if (h.nextPaymentAt !== undefined) {
+    // сегодняшняя или прошедшая дата сразу становится следующей, не дожидаясь часовой проверки
+    const rolled =
+      h.nextPaymentAt && h.billingMonths ? rollPaymentDate(h.nextPaymentAt, h.billingMonths) : null;
+    out.nextPaymentAt = rolled ?? h.nextPaymentAt;
+  }
   if (h.notes !== undefined) out.notes = h.notes;
   return out;
 }
