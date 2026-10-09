@@ -1,7 +1,6 @@
 import { Breadcrumbs } from '@/components/breadcrumbs';
 import { BindingPill, byServer, pillLabel } from '@/components/clients/binding-pill';
 import { BindingStates, deviceTitle } from '@/components/clients/binding-states';
-import { BrowserExtSection } from '@/components/clients/browser-ext';
 import {
   AccessForm,
   DeviceForm,
@@ -209,10 +208,6 @@ export function ClientPage() {
               </div>
             ))}
           </Section>
-          <BrowserExtSection
-            exts={data.browserExt}
-            hasNaive={data.bindings.some((b) => b.service === 'naive')}
-          />
         </div>
 
         <Section
@@ -341,11 +336,11 @@ export function ClientPage() {
         onClose={() => setProxy(null)}
         title={
           proxy
-            ? `${proxy.serverName}: ${{ wdtt: 'WDTT', openflux: 'OpenFlux' }[proxy.service as string] ?? 'MTProxy'}`
+            ? `${proxy.serverName}: ${{ wdtt: 'WDTT', openflux: 'OpenFlux', naive: 'Браузер' }[proxy.service as string] ?? 'MTProxy'}`
             : ''
         }
       >
-        {proxy && <ProxyLinks clientId={id} binding={proxy} />}
+        {proxy && <ProxyLinks clientId={id} binding={proxy} exts={data.browserExt} />}
       </Dialog>
       <Dialog open={qr} onClose={() => setQr(false)} title="Подписка VLESS">
         <div className="flex flex-col items-center gap-3">
