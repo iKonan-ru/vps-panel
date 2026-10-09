@@ -9,7 +9,6 @@ import { SshKeysDialog } from '@/components/server/ssh-keys-dialog';
 import { Alert } from '@/components/ui/alert';
 import { Button, ButtonLink } from '@/components/ui/button';
 import { Chip } from '@/components/ui/chip';
-import { useConfirm } from '@/components/ui/confirm';
 import { LinkButton } from '@/components/ui/link-button';
 import { Num } from '@/components/ui/num';
 import { Section } from '@/components/ui/section';
@@ -18,7 +17,7 @@ import { actions } from '@/lib/actions';
 import { api } from '@/lib/api';
 import { gb } from '@/lib/format';
 import { type ServerDetail, serverLock } from '@/lib/servers';
-import { type ServiceUpdateKind, startServiceUpdate, updateConfirm } from '@/lib/service-update';
+import { type ServiceUpdateKind, startServiceUpdate } from '@/lib/service-update';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import type { Finding } from '@vps/protocol';
 import {
@@ -77,7 +76,6 @@ function mbps(bps: number): string {
 export function OverviewTab({ s, onTab }: { s: ServerDetail; onTab?: (tab: string) => void }) {
   // диалог исправления: null - закрыт, '' - все шаги, иначе - шаг из замечания
   const qc = useQueryClient();
-  const ask = useConfirm();
   const [baseline, setBaseline] = useState<string | null>(null);
   const [cleanup, setCleanup] = useState(false);
   const [keys, setKeys] = useState(false);
@@ -106,8 +104,6 @@ export function OverviewTab({ s, onTab }: { s: ServerDetail; onTab?: (tab: strin
     refetchInterval: 10 * 60_000,
   });
   async function updateService(u: ServiceUpdate) {
-    const confirm = updateConfirm[u.kind];
-    if (confirm && !(await ask(confirm))) return;
     setError(null);
     try {
       const r = await startServiceUpdate[u.kind](s.id);

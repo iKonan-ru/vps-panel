@@ -22,7 +22,6 @@ import { api } from '@/lib/api';
 import { cn } from '@/lib/cn';
 import { bytes, uptime } from '@/lib/format';
 import { type ServerDetail, serverLock } from '@/lib/servers';
-import { updateConfirm } from '@/lib/service-update';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { MonitorCog, Plus, RefreshCw, RotateCcw, UserRound } from 'lucide-react';
 import { useState } from 'react';
@@ -109,13 +108,6 @@ export function MtproxylTab({ s }: { s: ServerDetail }) {
     }
   }
 
-  /** Обновить веб-панель до последнего релиза: установщик берёт настройки из её конфига. */
-  async function updatePanel() {
-    const confirm = updateConfirm['mtproxyl-panel'];
-    if (!confirm || (await ask(confirm)))
-      await run('Обновление панели MTProxyL', 'panel.update', {}, true);
-  }
-
   /** Сменить версию движка telemt: только готовый образ docker или бинарник (без сборки). */
   async function changeEngine(tag: string) {
     const ok = await ask({
@@ -130,7 +122,9 @@ export function MtproxylTab({ s }: { s: ServerDetail }) {
 
   function updateComponent(kind: MtVersionKind, latest: string) {
     if (kind === 'mtproxyl') return run(`Обновление MTProxyL до ${latest}`, 'update', {}, true);
-    return updatePanel();
+    // веб-панель - до последнего релиза сразу, без подтверждения: установщик берёт настройки из
+    // её конфига, прокси и пользователи не затрагиваются
+    return run('Обновление панели MTProxyL', 'panel.update', {}, true);
   }
 
   /** Включить или выключить пользователя. */

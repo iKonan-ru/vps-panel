@@ -17,14 +17,3 @@ export const startServiceUpdate: Record<
   mtproxyl: (id) => mtExec(id, 'update'),
   'mtproxyl-panel': (id) => mtExec(id, 'panel.update'),
 };
-
-/** Подтверждение перед обновлением сервиса. */
-export const updateConfirm: Partial<
-  Record<ServiceUpdateKind, { title: string; text: string; okLabel: string }>
-> = {
-  'mtproxyl-panel': {
-    title: 'Обновить панель MTProxyL?',
-    text: 'Будет скачана последняя версия панели, настройки сохранятся, панель перезапустится. Прокси и пользователи не затрагиваются.',
-    okLabel: 'Обновить',
-  },
-};
