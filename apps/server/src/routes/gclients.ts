@@ -162,7 +162,9 @@ export async function gclientRoutes(
     const names = serverNames();
     const devices = db.select().from(gclientDevices).where(isNull(gclientDevices.deletedAt)).all();
     const bindings = db.select().from(gclientBindings).all();
-    const exts = extsByClient(db, null, extensionVersion(env.EXTENSION_DIR));
+    const exts = extsByClient(db, null, extensionVersion(env.EXTENSION_DIR), (sid) =>
+      registry.isOnline(sid),
+    );
     return db
       .select()
       .from(gclients)
@@ -221,7 +223,10 @@ export async function gclientRoutes(
             awg: b.service === 'awg' ? awgRef(b.ref) : null,
           }),
         ),
-      browserExt: extsByClient(db, [c.id], extensionVersion(env.EXTENSION_DIR)).get(c.id) ?? [],
+      browserExt:
+        extsByClient(db, [c.id], extensionVersion(env.EXTENSION_DIR), (sid) =>
+          registry.isOnline(sid),
+        ).get(c.id) ?? [],
     };
   });
 

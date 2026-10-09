@@ -48,27 +48,30 @@ export function BrowserExtIcon({ exts, className }: { exts: GBrowserExt[]; class
 }
 
 /**
- * Установки расширения у клиента (браузер, версия, включено ли, сервер, когда было на связи,
- * ошибка в окне) - в окне плашки "Браузер" в карточке клиента.
+ * Подключение расширения клиента через этот сервер (окно плашки "Браузер" сервера в карточке
+ * клиента): установки, у которых выбран этот сервер или "Авто" идёт сейчас через него. Старые
+ * версии сервер не сообщают - о них только подсказка обновиться.
  */
-export function BrowserExtList({ exts }: { exts: GBrowserExt[] }) {
+export function BrowserExtList({ exts, serverId }: { exts: GBrowserExt[]; serverId: string }) {
+  const here = exts.filter((e) => e.version !== null && e.viaServerId === serverId);
+  const legacy = exts.filter((e) => e.version === null);
   return (
     <div className="flex flex-col gap-2">
       <div className="flex items-center gap-1 text-sm font-medium">
-        Расширение у клиента
+        Расширение через этот сервер
         <InfoTip>
           Расширение сообщает о себе при каждом изменении и раз в 15 минут, пока браузер открыт:
-          версия, включён ли прокси, выбранный сервер, ошибка в окне. Старые версии не сообщают -
-          видно только, когда они брали подписку.
+          версия, включён ли прокси, выбранный сервер, ошибка в окне. При "Авто" браузер идёт через
+          первый доступный сервер цепочки - он и считается.
         </InfoTip>
       </div>
       <div className="rounded-lg border border-border">
-        {exts.length === 0 && (
+        {here.length === 0 && (
           <div className="px-3 py-2.5 text-[13px] text-muted">
-            Не установлено или ещё не выходило на связь.
+            Расширение клиента через этот сервер не подключено.
           </div>
         )}
-        {exts.map((e) => {
+        {here.map((e) => {
           const s = state(e);
           return (
             <div
@@ -77,7 +80,7 @@ export function BrowserExtList({ exts }: { exts: GBrowserExt[] }) {
             >
               <div className="flex flex-wrap items-center gap-1.5">
                 <span className="font-medium">{browserName[e.browser]}</span>
-                <span className="text-xs text-muted">{e.version ?? 'старая версия'}</span>
+                <span className="text-xs text-muted">{e.version}</span>
                 <Chip tone={s.tone} dot={s.tone === 'ok'}>
                   {s.text}
                 </Chip>
@@ -95,15 +98,19 @@ export function BrowserExtList({ exts }: { exts: GBrowserExt[] }) {
                 )}
               </div>
               <div className="text-xs text-muted">
-                {e.version === null
-                  ? `брало подписку ${ago(e.seenAt)}; статус будет после обновления расширения`
-                  : `${e.server ? `сервер: ${e.server}; ` : ''}отчёт ${ago(e.seenAt)}`}
+                {`${e.server === 'Авто' ? 'Авто: сейчас через этот сервер' : 'выбран этот сервер'}; отчёт ${ago(e.seenAt)}`}
               </div>
               {e.error && <div className="break-words text-xs text-bad">{e.error}</div>}
             </div>
           );
         })}
       </div>
+      {legacy.length > 0 && (
+        <div className="text-xs text-muted">
+          Старая версия расширения ({legacy.map((e) => browserName[e.browser]).join(', ')}) не
+          сообщает, через какой сервер идёт: будет видно после обновления.
+        </div>
+      )}
     </div>
   );
 }
