@@ -1,9 +1,7 @@
 import { Chip } from '@/components/ui/chip';
 import { InfoTip } from '@/components/ui/info-tip';
-import { cn } from '@/lib/cn';
 import { ago } from '@/lib/format';
 import type { GBrowserExt } from '@vps/protocol';
-import { Globe } from 'lucide-react';
 
 const browserName: Record<GBrowserExt['browser'], string> = {
   chrome: 'Chrome',
@@ -16,35 +14,6 @@ function state(e: GBrowserExt): { tone: 'ok' | 'muted' | 'warn'; text: string } 
   if (e.version === null) return { tone: 'muted', text: 'статус неизвестен' };
   if (!e.online) return { tone: 'warn', text: 'нет связи' };
   return e.enabled ? { tone: 'ok', text: 'включено' } : { tone: 'muted', text: 'выключено' };
-}
-
-/** Строка подсказки: "Chrome 1.5.0: включено, сервер Авто". */
-function summary(e: GBrowserExt): string {
-  const s = state(e);
-  const server = e.enabled && e.online && e.server ? `, сервер ${e.server}` : '';
-  return `${browserName[e.browser]} ${e.version ?? '(старая версия)'}: ${s.text}${server}${e.error ? ` - ${e.error}` : ''}`;
-}
-
-/**
- * Значок в карточке списка клиентов: зелёный - прокси включён хотя бы в одном браузере и
- * расширение на связи, жёлтый - включён, но расширение пишет об ошибке, серый - установлено, но
- * выключено или молчит. Что именно - в подсказке.
- */
-export function BrowserExtIcon({ exts, className }: { exts: GBrowserExt[]; className?: string }) {
-  if (!exts.length) return null;
-  const live = exts.filter((e) => e.online && e.enabled);
-  const on = live.some((e) => !e.error);
-  const tone = on ? 'text-ok' : live.length ? 'text-warn' : 'text-muted';
-  const title = `Расширение для браузера\n${exts.map(summary).join('\n')}`;
-  return (
-    <Globe
-      className={cn('size-3.5 shrink-0', tone, className)}
-      role="img"
-      aria-label={on ? 'Прокси для браузера работает' : 'Прокси для браузера не работает'}
-    >
-      <title>{title}</title>
-    </Globe>
-  );
 }
 
 /**

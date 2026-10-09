@@ -162,9 +162,6 @@ export async function gclientRoutes(
     const names = serverNames();
     const devices = db.select().from(gclientDevices).where(isNull(gclientDevices.deletedAt)).all();
     const bindings = db.select().from(gclientBindings).all();
-    const exts = extsByClient(db, null, extensionVersion(env.EXTENSION_DIR), (sid) =>
-      registry.isOnline(sid),
-    );
     return db
       .select()
       .from(gclients)
@@ -186,7 +183,6 @@ export async function gclientRoutes(
           },
           servers: [...new Set(mine.map((b) => names.get(b.serverId) ?? b.serverId))],
           limited: c.access !== null,
-          browserExt: exts.get(c.id) ?? [],
         };
       });
   });
