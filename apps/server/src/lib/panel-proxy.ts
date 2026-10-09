@@ -16,7 +16,7 @@ import type { AgentRegistry } from '../agents/registry.js';
 import type { StatusCache } from '../agents/state.js';
 import type { Db } from '../db/index.js';
 import { servers, sessions } from '../db/schema.js';
-import { tunnelConnection } from './agent-tunnel.js';
+import { TunnelSocket, tunnelConnection } from './agent-tunnel.js';
 
 /**
  * Панели сервисов через поддомены панели: `<слаг сервера>-xui.<домен>` и
@@ -124,6 +124,98 @@ div{max-width:420px;padding:24px;border:1px solid #2a2f3a;border-radius:12px}h1{
 }
 
 type Log = { warn: (o: unknown, m?: string) => void; info: (o: unknown, m?: string) => void };
+
+/** Итог проверки панели сервиса перед входом; stage - на каком шаге не вышло. */
+export interface ProxyProbe {
+  ok: boolean;
+  stage?: 'target' | 'agent' | 'tunnel' | 'panel';
+  error?: string;
+  serverId?: string;
+  server?: string;
+  kind?: Kind;
+  /** Сколько агент открывал соединение с портом панели. */
+  tunnelMs?: number;
+  /** Сколько панель отвечала на первый запрос. */
+  panelMs?: number;
+}
+
+/**
+ * Запрос браузера к панели сервиса через пул туннелей. GET и HEAD без тела на соединении из пула
+ * повторяются один раз новым соединением, если оно оборвалось до ответа: панель сервиса закрывает
+ * простаивающее соединение, а весть об этом идёт через агента с задержкой, и запрос успевает уйти
+ * в уже закрытое (ответ "socket hang up", страница не открывалась до перезагрузки). Ошибка - 502
+ * или обрыв, если ответ уже начат; onError - для журнала. Никогда не бросает.
+ */
+export function forwardHttp(
+  req: IncomingMessage,
+  res: ServerResponse,
+  up: { headers: OutgoingHttpHeaders; port: number; tls: boolean; agent: HttpAgent },
+  onError: (e: Error, retried: boolean) => void,
+) {
+  const { headers, port, tls, agent } = up;
+  const request = tls ? httpsRequest : httpRequest;
+  const bodyless =
+    (req.method === 'GET' || req.method === 'HEAD') &&
+    !req.headers['content-length'] &&
+    !req.headers['transfer-encoding'];
+  const send = (retry: boolean) => {
+    const up = request({
+      host: '127.0.0.1',
+      port,
+      method: req.method,
+      path: req.url,
+      headers,
+      agent,
+      rejectUnauthorized: false,
+      timeout: 120_000,
+    });
+    up.on('response', (r) => {
+      try {
+        const out: OutgoingHttpHeaders = {};
+        for (const [k, v] of Object.entries(r.headers))
+          if (v !== undefined && !HOP.has(k)) out[k] = v;
+        res.writeHead(r.statusCode ?? 502, out);
+        r.pipe(res);
+        r.on('error', () => res.destroy());
+      } catch {
+        res.destroy();
+      }
+    });
+    up.on('timeout', () => up.destroy(new Error('таймаут')));
+    up.on('error', (e) => {
+      if (retry && up.reusedSocket && !res.headersSent && !res.destroyed) return send(false);
+      onError(e, !retry && bodyless);
+      failPage(res, 502, 'Панель сервиса не отвечает', e.message);
+    });
+    const abort = () => {
+      if (!res.writableFinished) up.destroy();
+    };
+    res.once('close', abort);
+    up.once('close', () => res.removeListener('close', abort));
+    if (bodyless) up.end();
+    else {
+      req.pipe(up);
+      req.on('error', () => up.destroy());
+    }
+  };
+  res.on('error', () => undefined);
+  send(bodyless);
+}
+
+/** Страница ошибки прокси (или обрыв, если ответ уже начат). Никогда не бросает. */
+function failPage(res: ServerResponse, status: number, title: string, text: string) {
+  try {
+    if (!res.headersSent) {
+      res.writeHead(status, {
+        'content-type': 'text/html; charset=utf-8',
+        'cache-control': 'no-store',
+      });
+      res.end(page(title, text));
+    } else res.destroy();
+  } catch {
+    res.destroy();
+  }
+}
 
 export class PanelProxy {
   private tickets = new Map<string, { label: string; sid: string; exp: number }>();
@@ -292,17 +384,7 @@ export class PanelProxy {
   }
 
   private fail(res: ServerResponse, status: number, title: string, text: string) {
-    try {
-      if (!res.headersSent) {
-        res.writeHead(status, {
-          'content-type': 'text/html; charset=utf-8',
-          'cache-control': 'no-store',
-        });
-        res.end(page(title, text));
-      } else res.destroy();
-    } catch {
-      res.destroy();
-    }
+    failPage(res, status, title, text);
   }
 
   /**
@@ -358,40 +440,95 @@ export class PanelProxy {
     if (!this.registry.isOnline(t.serverId))
       return this.fail(res, 502, 'Сервер не на связи', 'Агент сервера не подключён к VPS Panel.');
 
-    const request = t.tls ? httpsRequest : httpRequest;
-    const up = request({
-      host: '127.0.0.1',
-      port: t.port,
-      method: req.method,
-      path: req.url,
+    const upstream = {
       headers: this.upstreamHeaders(req),
+      port: t.port,
+      tls: t.tls,
       agent: this.agentFor(t),
-      rejectUnauthorized: false,
-      timeout: 120_000,
+    };
+    forwardHttp(req, res, upstream, (e, retried) =>
+      this.log.warn({ err: e.message, label, retried }, 'proxy: панель сервиса не ответила'),
+    );
+  }
+
+  /**
+   * Проверка перед входом на поддомен (страница "Открываю панель"): агент на связи, туннель до
+   * порта панели открывается, панель отвечает на HTTP. Заодно прогревает пул соединений:
+   * первые запросы браузера идут по уже открытому каналу. Никогда не бросает.
+   */
+  async probe(label: string): Promise<ProxyProbe> {
+    const t = await this.target(label);
+    if (!t) return { ok: false, stage: 'target', error: 'Такой панели сервиса нет' };
+    const row = this.db
+      .select({ name: servers.name })
+      .from(servers)
+      .where(eq(servers.id, t.serverId))
+      .get();
+    const base = { serverId: t.serverId, server: row?.name ?? '', kind: t.kind };
+    if (!this.registry.isOnline(t.serverId))
+      return { ...base, ok: false, stage: 'agent', error: 'Агент сервера не на связи с VPS Panel' };
+    if (!this.registry.supports(t.serverId, 'tunnel.open'))
+      return { ...base, ok: false, stage: 'agent', error: 'Агент устарел: обновите агента' };
+    const t0 = Date.now();
+    const opened = await new Promise<string | null>((resolve) => {
+      const sock = new TunnelSocket(this.registry, t.serverId, t.port);
+      sock.on('error', () => undefined);
+      const done = (err: string | null) => {
+        clearTimeout(timer);
+        sock.destroy();
+        resolve(err);
+      };
+      const timer = setTimeout(() => done('агент не открыл соединение за 10 с'), 10_000);
+      sock.once('tunnel-open', () => done(null));
+      sock.once('tunnel-fail', (m: string) => done(m));
+      sock.once('close', () => done('соединение закрыто'));
     });
-    up.on('response', (r) => {
-      try {
-        const headers: OutgoingHttpHeaders = {};
-        for (const [k, v] of Object.entries(r.headers))
-          if (v !== undefined && !HOP.has(k)) headers[k] = v;
-        res.writeHead(r.statusCode ?? 502, headers);
-        r.pipe(res);
-        r.on('error', () => res.destroy());
-      } catch {
-        res.destroy();
-      }
+    const tunnelMs = Date.now() - t0;
+    if (opened)
+      return {
+        ...base,
+        ok: false,
+        stage: 'tunnel',
+        tunnelMs,
+        error: `Панель не слушает порт ${t.port} на сервере: ${opened}`,
+      };
+    const t1 = Date.now();
+    const status = await new Promise<number | string>((resolve) => {
+      const request = t.tls ? httpsRequest : httpRequest;
+      const send = (retry: boolean) => {
+        const up = request({
+          host: '127.0.0.1',
+          port: t.port,
+          method: 'GET',
+          path: t.basePath,
+          headers: { 'user-agent': 'vps-panel-probe' },
+          agent: this.agentFor(t),
+          rejectUnauthorized: false,
+          timeout: 20_000,
+        });
+        up.on('response', (r) => {
+          r.resume();
+          resolve(r.statusCode ?? 0);
+        });
+        up.on('timeout', () => up.destroy(new Error('нет ответа за 20 с')));
+        up.on('error', (e) => (retry && up.reusedSocket ? send(false) : resolve(e.message)));
+        up.end();
+      };
+      send(true);
     });
-    up.on('timeout', () => up.destroy(new Error('таймаут')));
-    up.on('error', (e) => {
-      this.log.warn({ err: e.message, label }, 'proxy: панель сервиса не ответила');
-      this.fail(res, 502, 'Панель сервиса не отвечает', e.message);
-    });
-    res.on('close', () => {
-      if (!res.writableFinished) up.destroy();
-    });
-    res.on('error', () => up.destroy());
-    req.pipe(up);
-    req.on('error', () => up.destroy());
+    const panelMs = Date.now() - t1;
+    if (typeof status === 'string')
+      return { ...base, ok: false, stage: 'panel', tunnelMs, panelMs, error: status };
+    if (status >= 500)
+      return {
+        ...base,
+        ok: false,
+        stage: 'panel',
+        tunnelMs,
+        panelMs,
+        error: `Панель ответила ошибкой ${status}`,
+      };
+    return { ...base, ok: true, tunnelMs, panelMs };
   }
 
   /** WebSocket к поддомену. false - хост не наш. Никогда не бросает. */

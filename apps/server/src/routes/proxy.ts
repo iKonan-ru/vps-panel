@@ -23,10 +23,16 @@ export async function proxyRoutes(
     return reply.send('ok');
   });
 
-  /** Переход с панели на поддомен: тикет и редирект. Без сессии - на вход с возвратом. */
+  /**
+   * Переход с панели на поддомен. Без сессии - на вход с возвратом. Сначала - страница
+   * "Открываю панель" (/open/<метка> интерфейса): она проверяет агента, канал и панель сервиса
+   * (POST /api/proxy/probe) и возвращается сюда с go=1 - тогда тикет и редирект на поддомен.
+   */
   app.get('/api/proxy/open/:label', async (req, reply) => {
     const { label } = z.object({ label: z.string().regex(/^[a-z0-9-]{1,63}$/) }).parse(req.params);
-    const { back } = z.object({ back: z.string().max(2000).optional() }).parse(req.query);
+    const { back, go } = z
+      .object({ back: z.string().max(2000).optional(), go: z.literal('1').optional() })
+      .parse(req.query);
     reply.header('cache-control', 'no-store');
     const token = sessionToken(req);
     if (!token || !(await sessionOf(db, token))) {
@@ -35,8 +41,18 @@ export async function proxyRoutes(
     }
     if (!(await proxy.target(label)))
       return reply.code(404).send({ error: 'Такой панели сервиса нет' });
+    if (!go) {
+      const q = back ? `?back=${encodeURIComponent(back)}` : '';
+      return reply.redirect(`/open/${label}${q}`, 302);
+    }
     const q = new URLSearchParams({ t: proxy.issueTicket(label, sha256(token)) });
     if (back) q.set('back', back);
     return reply.redirect(`https://${label}.${proxy.domain}/__vps/auth?${q.toString()}`, 302);
+  });
+
+  /** Проверка перед входом на поддомен: агент, канал до порта панели, ответ панели. */
+  app.post('/api/proxy/probe/:label', async (req) => {
+    const { label } = z.object({ label: z.string().regex(/^[a-z0-9-]{1,63}$/) }).parse(req.params);
+    return proxy.probe(label);
   });
 }
