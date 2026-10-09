@@ -22,7 +22,7 @@ import type { Env } from '../config.js';
 import type { Db } from '../db/index.js';
 import { gclientBindings, gclientDevices, gclients, openfluxDocs, servers } from '../db/schema.js';
 import { actionJournal } from '../lib/action-journal.js';
-import { extsByClient } from '../lib/browser-ext.js';
+import { extServers, extsByClient } from '../lib/browser-ext.js';
 import { ClientStatsHub, liveOnServer } from '../lib/client-stats.js';
 import { extensionVersion } from '../lib/extension.js';
 import { clientSlug, newClientToken, newXuiSubId } from '../lib/gclient-names.js';
@@ -257,22 +257,37 @@ export async function gclientRoutes(
       await Promise.all(ids.map(async (id) => [id, await live.server(id)] as const)),
     );
     reply.header('Cache-Control', 'no-store');
+    const bindings = rows.flatMap((b) => {
+      const s = snaps.get(b.serverId);
+      if (!s) return [];
+      let key = b.ref;
+      if (b.service === 'wdtt') {
+        try {
+          key = b.secret ? wdttKey(box.open(b.secret)) : '';
+        } catch {
+          key = '';
+        }
+      }
+      return [liveOnServer({ id: b.id, service: b.service as GService, ref: b.ref, key }, s)];
+    });
+    // прокси для браузера: подключений сервер не показывает - "на связи" по отчёту расширения
+    const naive = new Map(
+      rows
+        .filter((b) => b.service === 'naive')
+        .map((b) => [b.serverId, bindings.find((l) => l.bindingId === b.id)] as const),
+    );
+    const exts = extServers(db, c.id, c.token, (sid) => naive.get(sid)?.state === 'running');
+    for (const [sid, e] of exts) {
+      const l = naive.get(sid);
+      if (l?.state !== 'running') continue;
+      l.state = 'online';
+      l.lastSeen = e.seenAt;
+      l.note = `расширение ${e.browser === 'firefox' ? 'Firefox' : 'Chrome'} ${e.version} включено${e.auto ? ' (Авто: первый доступный сервер)' : ''}`;
+    }
     return {
       at: new Date().toISOString(),
       servers: [...snaps.values()].map((s) => s.info),
-      bindings: rows.flatMap((b) => {
-        const s = snaps.get(b.serverId);
-        if (!s) return [];
-        let key = b.ref;
-        if (b.service === 'wdtt') {
-          try {
-            key = b.secret ? wdttKey(box.open(b.secret)) : '';
-          } catch {
-            key = '';
-          }
-        }
-        return [liveOnServer({ id: b.id, service: b.service as GService, ref: b.ref, key }, s)];
-      }),
+      bindings,
     };
   });
 

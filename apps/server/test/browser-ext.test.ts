@@ -5,9 +5,9 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { buildApp } from '../src/app.js';
 import { loadEnv } from '../src/config.js';
 import { createDb } from '../src/db/index.js';
-import { admins, gclientExts, gclients, servers } from '../src/db/schema.js';
+import { admins, gclientBindings, gclientExts, gclients, servers } from '../src/db/schema.js';
 import { createSession } from '../src/lib/auth.js';
-import { browserOf, extsByClient, pruneExts } from '../src/lib/browser-ext.js';
+import { browserOf, extServers, extsByClient, pruneExts } from '../src/lib/browser-ext.js';
 
 const dir = mkdtempSync(join(tmpdir(), 'vps-ext-'));
 const extDir = join(dir, 'ext');
@@ -146,5 +146,63 @@ describe('статус расширения для браузера', () => {
       browserOf('Mozilla/5.0 (X11; Linux x86_64; rv:140.0) Gecko/20100101 Firefox/140.0'),
     ).toBe('firefox');
     expect(browserOf('curl/8')).toBe('other');
+  });
+});
+
+describe('через какой сервер идёт браузер (точка "на связи" у прокси для браузера)', () => {
+  it('выбранный сервер - он, "Авто" - первый доступный в цепочке, молчащие и выключенные - нет', () => {
+    const db = createDb(':memory:');
+    const t = 'd'.repeat(32);
+    db.insert(gclients)
+      .values({ id: 'c9', name: 'Оля', token: t, slug: 'olya' } as never)
+      .run();
+    for (const [id, name] of [
+      ['sa', 'Alpha'],
+      ['sb', 'Beta'],
+    ])
+      db.insert(servers)
+        .values({ id, name, host: '1.1.1.1' } as never)
+        .run();
+    for (const id of ['sa', 'sb'])
+      db.insert(gclientBindings)
+        .values({
+          id: `b-${id}`,
+          clientId: 'c9',
+          serverId: id,
+          service: 'naive',
+          state: 'ok',
+          links: [`naive+https://olya:pw@${id}.example.com:8444?probe=x#${id}`],
+        } as never)
+        .run();
+    const now = Date.now();
+    const put = (install: string, serverId: string, enabled: boolean, minutesAgo: number) =>
+      db
+        .insert(gclientExts)
+        .values({
+          id: `c9:${install}`,
+          clientId: 'c9',
+          browser: 'chrome',
+          version: '1.5.0',
+          enabled,
+          serverId,
+          seenAt: new Date(now - minutesAgo * 60_000).toISOString(),
+        } as never)
+        .onConflictDoUpdate({
+          target: gclientExts.id,
+          set: { serverId, enabled, seenAt: new Date(now - minutesAgo * 60_000).toISOString() },
+        })
+        .run();
+    const all = () => true;
+    put('1111111111111111', 'auto', true, 1);
+    expect([...extServers(db, 'c9', t, all, now).keys()]).toEqual(['sa']);
+    // первый в цепочке не работает - браузер ушёл на следующий
+    expect([...extServers(db, 'c9', t, (sid) => sid !== 'sa', now).keys()]).toEqual(['sb']);
+    expect(extServers(db, 'c9', t, all, now).get('sa')?.auto).toBe(true);
+    put('1111111111111111', 'sb', true, 1);
+    expect([...extServers(db, 'c9', t, all, now).keys()]).toEqual(['sb']);
+    put('1111111111111111', 'sb', false, 1);
+    expect(extServers(db, 'c9', t, all, now).size).toBe(0);
+    put('1111111111111111', 'sb', true, 25);
+    expect(extServers(db, 'c9', t, all, now).size).toBe(0);
   });
 });

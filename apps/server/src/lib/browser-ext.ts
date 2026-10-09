@@ -3,6 +3,7 @@ import { and, eq, inArray, isNull, lt } from 'drizzle-orm';
 import { z } from 'zod';
 import type { Db } from '../db/index.js';
 import { gclientExts, gclients, servers } from '../db/schema.js';
+import { buildBrowserSubscription } from './subscription.js';
 
 /**
  * Расширение для браузера у клиента: что оно сообщает о себе панели. Отчёт (POST
@@ -150,4 +151,50 @@ export function extsByClient(
 export function pruneExts(db: Db, now = Date.now()) {
   const before = new Date(now - EXT_FORGET_DAYS * 86_400_000).toISOString();
   db.delete(gclientExts).where(lt(gclientExts.seenAt, before)).run();
+}
+
+/** Браузер клиента идёт через этот сервер сейчас: какое расширение и выбран ли сервер сам. */
+export interface ExtOnServer {
+  browser: GBrowserExt['browser'];
+  version: string;
+  auto: boolean;
+  seenAt: string;
+}
+
+/**
+ * Через какие серверы идёт браузер клиента сейчас (для точки "на связи" у прокси для браузера в
+ * живой статистике: подключений naive сервер не показывает). Берутся установки на связи с
+ * включённым прокси; выбран сервер - он, "Авто" - первый в цепочке подписки (тот же порядок, что
+ * у расширения), на котором прокси работает (usable): браузер идёт на первый доступный.
+ */
+export function extServers(
+  db: Db,
+  clientId: string,
+  token: string,
+  usable: (serverId: string) => boolean,
+  now = Date.now(),
+): Map<string, ExtOnServer> {
+  const out = new Map<string, ExtOnServer>();
+  const rows = db
+    .select()
+    .from(gclientExts)
+    .where(eq(gclientExts.clientId, clientId))
+    .all()
+    .filter((r) => r.version !== null && r.enabled && now - Date.parse(r.seenAt) < EXT_ONLINE_MS);
+  if (!rows.length) return out;
+  const chain = (buildBrowserSubscription(db, token)?.servers ?? []).map((s) => s.id);
+  for (const r of rows) {
+    const auto = r.serverId === 'auto';
+    const sid = auto ? chain.find(usable) : r.serverId;
+    if (!sid || !chain.includes(sid)) continue;
+    const prev = out.get(sid);
+    if (prev && prev.seenAt >= r.seenAt) continue;
+    out.set(sid, {
+      browser: r.browser as GBrowserExt['browser'],
+      version: r.version ?? '',
+      auto,
+      seenAt: r.seenAt,
+    });
+  }
+  return out;
 }
