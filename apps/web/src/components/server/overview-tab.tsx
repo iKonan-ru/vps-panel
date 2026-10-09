@@ -328,9 +328,11 @@ export function OverviewTab({ s, onTab }: { s: ServerDetail; onTab?: (tab: strin
               <div className="px-4 py-3 text-[13px] text-muted">Сервисы не обнаружены.</div>
             )}
             {s.services.map((sv, i) => (
+              // по верхнему краю и кнопки не сжимаются: при длинном списке портов (перенос на
+              // несколько строк) кнопки стоят там же, где у коротких строк
               <div
                 key={`${sv.kind}-${sv.title}-${i}`}
-                className="flex items-center gap-3.5 border-b border-border px-4 py-3 last:border-b-0"
+                className="flex items-start gap-3.5 border-b border-border px-4 py-3 last:border-b-0"
               >
                 <div className="flex size-[34px] shrink-0 items-center justify-center rounded-lg bg-surface-2 text-accent">
                   <Box className="size-4" />
@@ -355,22 +357,24 @@ export function OverviewTab({ s, onTab }: { s: ServerDetail; onTab?: (tab: strin
                     {sv.ports.join(' - ') || 'порты не определены'}
                   </div>
                 </div>
-                {(s.panelLinks[sv.kind] ?? sv.panelUrl) && (
-                  <LinkButton href={s.panelLinks[sv.kind] ?? sv.panelUrl ?? ''} label="Открыть" />
-                )}
-                {uninstallCommand[sv.kind] && (
-                  <ButtonLink
-                    to="/commands/$id"
-                    params={{ id: uninstallCommand[sv.kind] ?? '' }}
-                    search={{ server: s.id, run: undefined, tab: undefined }}
-                    size="icon-sm"
-                    variant="ghost"
-                    title="Удалить с сервера (команда каталога с подтверждением)"
-                    aria-label="Удалить с сервера"
-                  >
-                    <Trash2 className="size-3.5 text-bad" />
-                  </ButtonLink>
-                )}
+                <div className="mt-0.5 flex shrink-0 items-center gap-1.5">
+                  {(s.panelLinks[sv.kind] ?? sv.panelUrl) && (
+                    <LinkButton href={s.panelLinks[sv.kind] ?? sv.panelUrl ?? ''} label="Открыть" />
+                  )}
+                  {uninstallCommand[sv.kind] && (
+                    <ButtonLink
+                      to="/commands/$id"
+                      params={{ id: uninstallCommand[sv.kind] ?? '' }}
+                      search={{ server: s.id, run: undefined, tab: undefined }}
+                      size="icon-sm"
+                      variant="ghost"
+                      title="Удалить с сервера (команда каталога с подтверждением)"
+                      aria-label="Удалить с сервера"
+                    >
+                      <Trash2 className="size-3.5 text-bad" />
+                    </ButtonLink>
+                  )}
+                </div>
               </div>
             ))}
           </Section>
@@ -387,7 +391,6 @@ export function OverviewTab({ s, onTab }: { s: ServerDetail; onTab?: (tab: strin
               <>
                 {high > 0 && <Chip tone="bad">{high} критичных</Chip>}
                 {medium > 0 && <Chip tone="warn">{medium} средних</Chip>}
-                {s.audit && high === 0 && medium === 0 && <Chip tone="ok">замечаний нет</Chip>}
               </>
             }
             actions={

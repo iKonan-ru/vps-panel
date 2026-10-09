@@ -1,4 +1,4 @@
-import { AppLayout } from '@/components/layout';
+import { APP_SCROLL_ID, AppLayout } from '@/components/layout';
 import { Button } from '@/components/ui/button';
 import { useMe, useSetupStatus } from '@/lib/auth';
 import { LoginPage } from '@/pages/login';
@@ -167,7 +167,17 @@ const routeTree = rootRoute.addChildren([
   ]),
 ]);
 
-export const router = createRouter({ routeTree });
+/**
+ * Прокрутка: новый переход - страница сверху, "Назад" и "Вперёд" - туда, где был (позиция
+ * запоминается на запись истории). Прокручивается не окно, а блок страницы в каркасе
+ * (APP_SCROLL_ID): без сброса список серверов открывался на высоте, до которой пролистали
+ * карточку сервера.
+ */
+export const router = createRouter({
+  routeTree,
+  scrollRestoration: true,
+  scrollToTopSelectors: ['window', `#${APP_SCROLL_ID}`],
+});
 
 declare module '@tanstack/react-router' {
   interface Register {

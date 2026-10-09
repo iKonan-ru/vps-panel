@@ -9,9 +9,17 @@ import { Chip } from '@/components/ui/chip';
 import { Input } from '@/components/ui/input';
 import { PageTitle } from '@/components/ui/page-title';
 import { api } from '@/lib/api';
-import { cn } from '@/lib/cn';
 import { countryLabel, countryName } from '@/lib/countries';
-import { dateShort, daysUntil, money, paymentSoon, uptime } from '@/lib/format';
+import {
+  ago,
+  dateShort,
+  daysUntil,
+  daysWord,
+  money,
+  paymentSoon,
+  plural,
+  uptime,
+} from '@/lib/format';
 import { useServers } from '@/lib/servers';
 import { useQuery } from '@tanstack/react-query';
 import { Link, useNavigate } from '@tanstack/react-router';
@@ -119,9 +127,7 @@ export function ServersPage() {
                   <th>Состояние</th>
                   <th>Ресурсы</th>
                   <th>Сервисы</th>
-                  <th>Безопасность</th>
-                  <th>Firewall</th>
-                  <th>Обновления</th>
+                  <th>Требует внимания</th>
                 </tr>
               </thead>
               <tbody>
@@ -151,31 +157,108 @@ function useServiceUpdates() {
   });
 }
 
-/** className - выравнивание блока чипов (в карточке на мобиле - по правому краю). */
-function SecurityChip({ s, className }: { s: ServerSummary; className?: string }) {
+/**
+ * Что на сервере требует действия: замечания аудита (firewall и docker мимо firewall - тоже
+ * замечания), перезагрузка, обновления пакетов и сервисов, устаревший агент. Нечего делать -
+ * пусто. Что именно - в подсказке плашки, само действие - в карточке сервера ("Обзор") или
+ * плашкой "обновить агентов" над списком. mobile - ещё то, что на мобиле негде показать
+ * отдельно: сервер не в сети и скорая оплата.
+ */
+function attention(
+  s: ServerSummary,
+  updates: { title: string; latest: string }[],
+  mobile: boolean,
+): {
+  key: string;
+  tone: 'bad' | 'warn' | 'accent';
+  text: string;
+  title?: string;
+  pulse?: boolean;
+}[] {
+  const out: ReturnType<typeof attention> = [];
+  if (mobile && s.status === 'offline')
+    out.push({ key: 'offline', tone: 'bad', text: `не в сети ${ago(s.lastSeenAt)}` });
+  const pending = s.audit?.pendingUpdates ?? 0;
+  // строку аудита про пакеты заменяет плашка "пакеты: N"
+  const findings = (s.audit?.findings ?? []).filter(
+    (f) => !(pending > 0 && f.text.startsWith('Ожидают установки обновлени')),
+  );
+  const high = findings.filter((f) => f.severity === 'high');
+  const medium = findings.filter((f) => f.severity === 'medium');
+  if (high.length)
+    out.push({
+      key: 'high',
+      tone: 'bad',
+      text: `${high.length} ${plural(high.length, 'критичное', 'критичных', 'критичных')}`,
+      title: high.map((f) => f.text).join('\n'),
+    });
+  if (medium.length)
+    out.push({
+      key: 'medium',
+      tone: 'warn',
+      text: `${medium.length} ${plural(medium.length, 'замечание', 'замечания', 'замечаний')}`,
+      title: medium.map((f) => f.text).join('\n'),
+    });
+  if (s.audit?.rebootRequired)
+    out.push({
+      key: 'reboot',
+      tone: 'warn',
+      text: 'перезагрузка',
+      title: 'Требуется перезагрузка: обновлено ядро или libc',
+    });
+  if (pending > 0)
+    out.push({
+      key: 'packages',
+      tone: 'accent',
+      text: `пакеты: ${pending}`,
+      title: 'Обновления безопасности ждут установки',
+    });
+  for (const u of updates)
+    out.push({
+      key: `svc-${u.title}`,
+      tone: 'accent',
+      text: `${u.title} ${u.latest}`,
+      title: `Доступна версия ${u.title} ${u.latest}`,
+    });
+  if (s.agentUpdating)
+    out.push({ key: 'agent', tone: 'accent', text: 'агент обновляется', pulse: true });
+  else if (s.agentUpdateAvailable)
+    out.push({
+      key: 'agent',
+      tone: 'warn',
+      text: 'агент устарел',
+      title: `Агент ${s.agentVersion ?? ''}: обновить - кнопкой над списком или в карточке`,
+    });
+  if (mobile) {
+    const days = daysUntil(s.hosting.nextPaymentAt);
+    if (paymentSoon(days))
+      out.push({
+        key: 'pay',
+        tone: 'warn',
+        text: `оплата ${daysWord(days)}`,
+        title: `Оплата до ${dateShort(s.hosting.nextPaymentAt)}`,
+      });
+  }
+  return out;
+}
+
+function AttentionChips({ s, mobile = false }: { s: ServerSummary; mobile?: boolean }) {
   const { data: updates } = useServiceUpdates();
-  if (!s.audit) return <span className="text-muted">-</span>;
-  const high = s.audit.findings.filter((f) => f.severity === 'high').length;
-  const medium = s.audit.findings.filter((f) => f.severity === 'medium').length;
-  // обновления сервисов и пакетов - отдельным чипом, что именно - в подсказке
-  const upd = [
-    ...(updates?.[s.id] ?? []).map((u) => `${u.title} ${u.latest}`),
-    ...(s.audit.pendingUpdates > 0 ? [`пакеты: ${s.audit.pendingUpdates}`] : []),
-  ];
-  // без замечаний и обновлений показывать нечего: плашка "нет замечаний" только шумит
-  if (!high && !medium && upd.length === 0) return null;
+  const items = attention(s, updates?.[s.id] ?? [], mobile);
+  if (!items.length) return null;
   return (
-    <span className={cn('inline-flex flex-wrap gap-1', className)}>
-      {high ? (
-        <Chip tone="bad">{high} критичных</Chip>
-      ) : (
-        medium > 0 && <Chip tone="warn">{medium} средних</Chip>
-      )}
-      {upd.length > 0 && (
-        <span title={`Обновления: ${upd.join(', ')}`}>
-          <Chip tone="accent">обновления</Chip>
-        </span>
-      )}
+    <span className="flex flex-wrap gap-1">
+      {items.map((i) => (
+        <Chip
+          key={i.key}
+          tone={i.tone}
+          title={i.title}
+          dot={i.pulse === true}
+          pulse={i.pulse === true}
+        >
+          {i.text}
+        </Chip>
+      ))}
     </span>
   );
 }
@@ -250,15 +333,6 @@ function Row({ s }: { s: ServerSummary }) {
         {s.metrics && s.status === 'online' && (
           <div className="mt-1 text-xs text-muted">аптайм {uptime(s.metrics.uptimeSec)}</div>
         )}
-        {s.agentUpdating ? (
-          <div className="mt-1 text-xs text-accent">агент обновляется...</div>
-        ) : (
-          s.agentUpdateAvailable && (
-            <div className="mt-1 text-xs text-warn" title={`агент ${s.agentVersion ?? ''}`}>
-              агент устарел
-            </div>
-          )
-        )}
       </td>
       <td>
         <Resources s={s} />
@@ -268,39 +342,8 @@ function Row({ s }: { s: ServerSummary }) {
           <ServiceChips services={s.services} links={s.panelLinks} max={4} />
         </div>
       </td>
-      <td>
-        <SecurityChip s={s} />
-      </td>
-      <td>
-        {s.firewall ? (
-          <div className="flex flex-wrap gap-1">
-            {s.firewall.ufwActive ? <Chip tone="ok">вкл</Chip> : <Chip tone="bad">выкл</Chip>}
-            {s.firewall.ufwActive && s.dockerVersion && !s.firewall.dockerFiltered && (
-              <Chip
-                tone="bad"
-                title="Порты контейнеров идут мимо firewall: цепочка DOCKER-USER не фильтруется"
-              >
-                docker мимо firewall
-              </Chip>
-            )}
-          </div>
-        ) : (
-          <span className="text-muted">-</span>
-        )}
-      </td>
-      <td>
-        {s.audit ? (
-          s.audit.pendingUpdates > 0 ? (
-            <Chip tone="warn">{s.audit.pendingUpdates} ждут</Chip>
-          ) : (
-            <Chip tone="ok">0</Chip>
-          )
-        ) : (
-          <span className="text-muted">-</span>
-        )}
-        {s.audit?.rebootRequired && (
-          <div className="mt-1 text-xs text-warn">нужна перезагрузка</div>
-        )}
+      <td className="min-w-[230px]">
+        <AttentionChips s={s} />
       </td>
     </tr>
   );
@@ -351,11 +394,10 @@ function MobileCard({ s }: { s: ServerSummary }) {
             </span>
           </div>
         )}
-        <div className="flex items-center gap-1.5">
+        <div className="flex flex-wrap items-center gap-1.5">
           <ServiceChips services={s.services} links={s.panelLinks} max={3} />
-          <div className="grow" />
-          <SecurityChip s={s} className="justify-end" />
         </div>
+        <AttentionChips s={s} mobile />
       </Card>
     </div>
   );

@@ -27,6 +27,9 @@ import {
 } from 'lucide-react';
 import { type ReactNode, useState } from 'react';
 
+/** Блок, который прокручивается вместо окна. */
+export const APP_SCROLL_ID = 'app-scroll';
+
 /** more - на мобиле не в полосе вкладок (там тесно), а в панели "Ещё". */
 const nav: { to: string; label: string; icon: ReactNode; more?: boolean }[] = [
   { to: '/', label: 'Серверы', icon: <Server className="size-4" /> },
@@ -180,8 +183,13 @@ export function AppLayout({ login }: { login: string }) {
           <div id={MOBILE_CRUMBS_ID} className="flex min-w-0 grow items-center" />
           <div id={MOBILE_ACTIONS_ID} className="flex items-center gap-1.5" />
         </header>
-        {/* сверху и снизу запас под плашку и полосу вкладок на мобиле */}
-        <div className="flex flex-col gap-5 overflow-auto p-4 pt-[calc(56px+env(safe-area-inset-top)+16px)] pb-[calc(72px+env(safe-area-inset-bottom))] md:p-7 [&>*]:shrink-0">
+        {/* сверху и снизу запас под плашку и полосу вкладок на мобиле; прокручивается этот блок,
+            а не окно - его прокрутку сбрасывает и восстанавливает роутер (router.tsx) */}
+        <div
+          id={APP_SCROLL_ID}
+          data-scroll-restoration-id={APP_SCROLL_ID}
+          className="flex flex-col gap-5 overflow-auto p-4 pt-[calc(56px+env(safe-area-inset-top)+16px)] pb-[calc(72px+env(safe-area-inset-bottom))] md:p-7 [&>*]:shrink-0"
+        >
           <DeployBanner />
           <Outlet />
         </div>
