@@ -1,5 +1,4 @@
 import { Chip } from '@/components/ui/chip';
-import { Num } from '@/components/ui/num';
 import { api } from '@/lib/api';
 import { ago, bytes } from '@/lib/format';
 import { useQuery } from '@tanstack/react-query';
@@ -179,29 +178,21 @@ export function ServerOnlineMark({ serverId, live }: { serverId: string; live: C
   );
 }
 
-/** Сводка раздела "Серверы": на скольких серверах человек на связи и общая скорость. */
+/**
+ * Сводка раздела "Серверы": на скольких серверах человек на связи. Скорость - на странице клиента
+ * на сервере, по сервисам.
+ */
 export function LiveSummary({ live }: { live: ClientLive }) {
   const d = live.data;
   if (!d || d.servers.length === 0) return null;
   const onlineServers = d.servers.filter((s) =>
     live.ofServer(s.serverId).some((l) => l.state === 'online'),
   ).length;
-  const r = sumRates(d.bindings);
-  const v = r ? r.in + r.out : 0;
-  return (
-    <>
-      {onlineServers > 0 ? (
-        <Chip tone="ok" dot pulse>
-          на связи: {onlineServers} из {d.servers.length}
-        </Chip>
-      ) : (
-        <Chip>не на связи</Chip>
-      )}
-      {v >= 1024 && (
-        <span className="text-xs text-muted">
-          <Num value={v} format={rate} />
-        </span>
-      )}
-    </>
+  return onlineServers > 0 ? (
+    <Chip tone="ok" dot pulse>
+      на связи: {onlineServers} из {d.servers.length}
+    </Chip>
+  ) : (
+    <Chip>не на связи</Chip>
   );
 }
