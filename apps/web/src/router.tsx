@@ -25,6 +25,7 @@ const ClientServerPage = lazyRouteComponent(
 const ClientsPage = lazyRouteComponent(() => import('@/pages/clients'), 'ClientsPage');
 const CommandRunPage = lazyRouteComponent(() => import('@/pages/command-run'), 'CommandRunPage');
 const CommandsPage = lazyRouteComponent(() => import('@/pages/commands'), 'CommandsPage');
+const OpenPanelPage = lazyRouteComponent(() => import('@/pages/open-panel'), 'OpenPanelPage');
 const LogPage = lazyRouteComponent(() => import('@/pages/log'), 'LogPage');
 const ServerPage = lazyRouteComponent(() => import('@/pages/server'), 'ServerPage');
 const ServerNewPage = lazyRouteComponent(() => import('@/pages/server-new'), 'ServerNewPage');
@@ -69,6 +70,15 @@ const loginRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: '/login',
   component: Entry,
+});
+/**
+ * "Открываю панель" сервиса: проверка канала до панели на сервере перед переходом на поддомен.
+ * Без каркаса (открывается в новой вкладке); без сессии сама уводит на вход с возвратом.
+ */
+const openPanelRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: '/open/$label',
+  component: OpenPanelPage,
 });
 /** Старый адрес мастера - на общую страницу входа. */
 const appRoute = createRoute({ getParentRoute: () => rootRoute, id: 'app', component: Gate });
@@ -150,6 +160,7 @@ const settingsRoute = createRoute({
 
 const routeTree = rootRoute.addChildren([
   loginRoute,
+  openPanelRoute,
   appRoute.addChildren([
     serversRoute,
     newServerRoute,

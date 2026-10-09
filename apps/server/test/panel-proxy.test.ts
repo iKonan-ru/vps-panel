@@ -99,7 +99,13 @@ describe('поддомены панелей сервисов', () => {
     expect(String(anon.headers.location)).toBe(
       `/login?next=${encodeURIComponent('/api/proxy/open/netcore-xui')}`,
     );
-    const open = await get('panel.example', '/api/proxy/open/netcore-xui', {
+    // сначала - страница "Открываю панель" интерфейса, с неё - обратно с go=1
+    const page = await get('panel.example', '/api/proxy/open/netcore-xui?back=%2Fx', {
+      cookie: `__Host-vps_session=${session}`,
+    });
+    expect(page.status).toBe(302);
+    expect(page.headers.location).toBe('/open/netcore-xui?back=%2Fx');
+    const open = await get('panel.example', '/api/proxy/open/netcore-xui?go=1', {
       cookie: `__Host-vps_session=${session}`,
     });
     expect(open.status).toBe(302);
@@ -125,6 +131,20 @@ describe('поддомены панелей сервисов', () => {
       cookie: `__Host-vps_proxy=netcore-xui.${'a'.repeat(64)}.${Date.now() + 1e6}.bad`,
     });
     expect(forged.status).toBe(401);
+  });
+
+  it('probe: без сессии - 401, агент не на связи - шаг agent, неизвестная метка - target', async () => {
+    const url = '/api/proxy/probe/netcore-xui';
+    expect((await built.app.inject({ method: 'POST', url })).statusCode).toBe(401);
+    const cookie = `__Host-vps_session=${session}`;
+    const r = await built.app.inject({ method: 'POST', url, headers: { cookie } });
+    expect(r.json()).toMatchObject({ ok: false, stage: 'agent', server: 'NetCore', kind: 'xui' });
+    const none = await built.app.inject({
+      method: 'POST',
+      url: '/api/proxy/probe/nope-xui',
+      headers: { cookie },
+    });
+    expect(none.json()).toMatchObject({ ok: false, stage: 'target' });
   });
 
   it('websocket без cookie - 401, процесс жив', async () => {

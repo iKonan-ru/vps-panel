@@ -17,12 +17,19 @@ const OPEN_TIMEOUT_MS = 12 * 3600_000;
  * уронила бы всю панель. Закрытие с той стороны - конец чтения,
  * запись после него молча отбрасывается, сбой агента - просто destroy(): запрос прокси увидит
  * обрыв соединения своим обработчиком.
+ *
+ * События для проверки канала (lib/panel-proxy.ts, probe): 'tunnel-open' - агент открыл
+ * соединение с портом, 'tunnel-fail' (текст ошибки агента) - не открыл. setTimeout - как у
+ * net.Socket: 'timeout' после простоя без чтения и записи (им пользуются пул http.Agent и
+ * таймаут запроса).
  */
 export class TunnelSocket extends Duplex {
   readonly id = `t${newId()}`;
   private opened = false;
   private remoteClosed = false;
   private queue: { data: string; cb: (e?: Error | null) => void }[] = [];
+  private idleMs = 0;
+  private idleTimer: NodeJS.Timeout | undefined;
 
   constructor(
     private registry: AgentRegistry,
@@ -40,23 +47,33 @@ export class TunnelSocket extends Duplex {
         {
           timeoutMs: OPEN_TIMEOUT_MS,
           onStream: (channel, chunk) => {
-            if (channel === 'data') this.push(Buffer.from(chunk, 'base64'));
-            else if (channel === 'log' && chunk === 'open') this.onOpen();
+            if (channel === 'data') {
+              this.touch();
+              this.push(Buffer.from(chunk, 'base64'));
+            } else if (channel === 'log' && chunk === 'open') this.onOpen();
           },
         },
       )
       .then(() => {
         this.remoteClosed = true;
         this.push(null);
+        // Закрытие с той стороны закрывает поток целиком: иначе (allowHalfOpen) он не выдаёт
+        // 'close', и пул http.Agent отдавал мёртвое соединение следующему запросу - тот висел
+        // без ответа (панель сервиса закрывает простаивающие соединения сама). Непрочитанный
+        // остаток ответа дочитает потребитель, и поток закроется после 'end'; пустой - сразу.
+        this.end();
+        if (this.readableLength === 0) this.resume();
       })
-      .catch(() => {
+      .catch((e: Error) => {
         this.remoteClosed = true;
+        if (!this.opened) this.emit('tunnel-fail', e.message);
         this.destroy();
       });
   }
 
   private onOpen() {
     this.opened = true;
+    this.emit('tunnel-open');
     const queued = this.queue;
     this.queue = [];
     for (const w of queued) this.send(w.data, w.cb);
@@ -75,6 +92,7 @@ export class TunnelSocket extends Duplex {
   override _read() {}
 
   override _write(chunk: Buffer, _enc: BufferEncoding, cb: (e?: Error | null) => void) {
+    this.touch();
     const data = chunk.toString('base64');
     if (this.opened) this.send(data, cb);
     else this.queue.push({ data, cb });
@@ -86,6 +104,7 @@ export class TunnelSocket extends Duplex {
   }
 
   override _destroy(_err: Error | null, cb: (e?: Error | null) => void) {
+    clearTimeout(this.idleTimer);
     this.closeRemote();
     for (const w of this.queue) w.cb();
     this.queue = [];
@@ -100,16 +119,31 @@ export class TunnelSocket extends Duplex {
       .catch(() => undefined);
   }
 
-  // http.Agent и ClientRequest зовут методы net.Socket: у потока через агента им нечего делать
+  // http.Agent и ClientRequest зовут методы net.Socket: у потока через агента им (кроме
+  // setTimeout выше) нечего делать
   setKeepAlive() {
     return this;
   }
   setNoDelay() {
     return this;
   }
-  setTimeout(_ms: number, cb?: () => void) {
-    if (cb) this.once('timeout', cb);
+  setTimeout(ms: number, cb?: () => void) {
+    if (ms === 0) {
+      if (cb) this.removeListener('timeout', cb);
+    } else if (cb) this.once('timeout', cb);
+    this.idleMs = ms;
+    this.touch();
     return this;
+  }
+
+  /** Активность: таймер простоя заново. */
+  private touch() {
+    clearTimeout(this.idleTimer);
+    this.idleTimer = undefined;
+    if (this.idleMs > 0 && !this.destroyed) {
+      this.idleTimer = setTimeout(() => this.emit('timeout'), this.idleMs);
+      this.idleTimer.unref();
+    }
   }
   ref() {
     return this;
