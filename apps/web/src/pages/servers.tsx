@@ -9,6 +9,7 @@ import { Chip } from '@/components/ui/chip';
 import { Input } from '@/components/ui/input';
 import { PageTitle } from '@/components/ui/page-title';
 import { api } from '@/lib/api';
+import { cn } from '@/lib/cn';
 import { countryLabel, countryName } from '@/lib/countries';
 import {
   ago,
@@ -24,7 +25,7 @@ import { useServers } from '@/lib/servers';
 import { useQuery } from '@tanstack/react-query';
 import { Link, useNavigate } from '@tanstack/react-router';
 import type { ServerSummary } from '@vps/protocol';
-import { Plus, Search } from 'lucide-react';
+import { CircleAlert, Plus, Search } from 'lucide-react';
 import { useMemo, useState } from 'react';
 
 /** Сводка серверов: таблица по макету, данные живые. */
@@ -276,12 +277,24 @@ function AttentionChips({ s, mobile = false }: { s: ServerSummary; mobile?: bool
   const { data: updates } = useServiceUpdates();
   const items = attention(s, updates?.[s.id] ?? [], mobile);
   if (!items.length) return null;
+  const chips = items.map((i) => <AttentionItem key={i.key} i={i} serverId={s.id} />);
+  if (!mobile) return <span className="flex flex-wrap gap-1">{chips}</span>;
+  // в карточке на мобиле - отдельной полосой под чертой и со значком: не сливается с плашками
+  // сервисов строкой выше
+  const tone = items.some((i) => i.tone === 'bad')
+    ? 'text-bad'
+    : items.some((i) => i.tone === 'warn')
+      ? 'text-warn'
+      : 'text-accent';
   return (
-    <span className="flex flex-wrap gap-1">
-      {items.map((i) => (
-        <AttentionItem key={i.key} i={i} serverId={s.id} />
-      ))}
-    </span>
+    <div className="-mx-3.5 flex items-start gap-2 border-t border-border px-3.5 pt-2.5">
+      <CircleAlert
+        className={cn('mt-0.5 size-4 shrink-0', tone)}
+        role="img"
+        aria-label="Требует внимания"
+      />
+      <span className="flex min-w-0 flex-wrap gap-1">{chips}</span>
+    </div>
   );
 }
 
