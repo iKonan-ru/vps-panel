@@ -32,8 +32,6 @@ export interface GClientRow {
   servers: string[];
   /** доступ выборочный (не все серверы и сервисы) */
   limited: boolean;
-  /** расширения для браузера клиента */
-  browserExt: GBrowserExt[];
 }
 
 /**

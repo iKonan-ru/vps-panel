@@ -94,7 +94,7 @@ describe('статус расширения для браузера', () => {
     expect(await exts()).toHaveLength(1);
   });
 
-  it('второй браузер - вторая строка; "Авто"; устаревшая версия; в списке клиентов тоже', async () => {
+  it('второй браузер - вторая строка; "Авто"; устаревшая версия', async () => {
     await report({
       install: 'fedcba9876543210',
       version: '1.4.9',
@@ -111,10 +111,6 @@ describe('статус расширения для браузера', () => {
       outdated: true,
       error: 'Подписка не обновилась',
     });
-    const rows = (
-      await built.app.inject({ method: 'GET', url: '/api/gclients', headers: { cookie } })
-    ).json();
-    expect(rows[0].browserExt).toHaveLength(2);
   });
 
   it('чужой токен - 404, неверный отчёт - 400, без входа в /api не видно', async () => {
