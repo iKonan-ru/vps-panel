@@ -9,7 +9,7 @@ import { Pager, usePaged } from '@/components/ui/pager';
 import { Section } from '@/components/ui/section';
 import { TBody, THead, Table } from '@/components/ui/table';
 import { type CommandInfo, type CommandRun, commandsApi, groupTitles } from '@/lib/commands';
-import { ago } from '@/lib/format';
+import { ago, plural } from '@/lib/format';
 import { useServers } from '@/lib/servers';
 import { useQuery } from '@tanstack/react-query';
 import { Link } from '@tanstack/react-router';
@@ -302,12 +302,4 @@ function CommandCard({
       </div>
     </Card>
   );
-}
-
-function plural(n: number, one: string, few: string, many: string): string {
-  const m10 = n % 10;
-  const m100 = n % 100;
-  if (m10 === 1 && m100 !== 11) return one;
-  if (m10 >= 2 && m10 <= 4 && (m100 < 10 || m100 >= 20)) return few;
-  return many;
 }

@@ -73,6 +73,15 @@ export function paymentSoon(days: number | null): days is number {
   return days !== null && days <= PAYMENT_SOON_DAYS;
 }
 
+/** Форма слова для числа: 1 вопрос, 2 вопроса, 5 вопросов. */
+export function plural(n: number, one: string, few: string, many: string): string {
+  const m10 = n % 10;
+  const m100 = n % 100;
+  if (m10 === 1 && m100 !== 11) return one;
+  if (m10 >= 2 && m10 <= 4 && (m100 < 10 || m100 >= 20)) return few;
+  return many;
+}
+
 /** "сегодня", "завтра", "через 2 дн". */
 export function daysWord(days: number): string {
   if (days <= 0) return 'сегодня';
