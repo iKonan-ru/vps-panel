@@ -230,6 +230,24 @@ export const gclientBindings = sqliteTable('gclient_binding', {
  * (vyandex) и публичные документы Mail.ru (mailru) с редактированием по ссылке. Документ - на
  * один канал: binding_id - привязка, которой он выдан (null - свободен).
  */
+/**
+ * Расширение для браузера у клиента: последний отчёт установки (lib/browser-ext.ts). id -
+ * "<клиент>:<установка>"; установка старой версии без отчётов - "legacy-<браузер>".
+ */
+export const gclientExts = sqliteTable('gclient_ext', {
+  id: text('id').primaryKey(),
+  clientId: text('client_id')
+    .notNull()
+    .references(() => gclients.id, { onDelete: 'cascade' }),
+  browser: text('browser').notNull().default('other'),
+  version: text('version'),
+  enabled: integer('enabled', { mode: 'boolean' }),
+  serverId: text('server_id'),
+  error: text('error').notNull().default(''),
+  seenAt: text('seen_at').notNull(),
+  createdAt: text('created_at').notNull().default(now),
+});
+
 export const openfluxDocs = sqliteTable('openflux_doc', {
   id: text('id').primaryKey(),
   kind: text('kind').notNull(),

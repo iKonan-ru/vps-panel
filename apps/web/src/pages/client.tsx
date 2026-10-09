@@ -1,6 +1,7 @@
 import { Breadcrumbs } from '@/components/breadcrumbs';
 import { BindingPill, byServer, pillLabel } from '@/components/clients/binding-pill';
 import { BindingStates, deviceTitle } from '@/components/clients/binding-states';
+import { BrowserExtSection } from '@/components/clients/browser-ext';
 import {
   AccessForm,
   DeviceForm,
@@ -208,6 +209,10 @@ export function ClientPage() {
               </div>
             ))}
           </Section>
+          <BrowserExtSection
+            exts={data.browserExt}
+            hasNaive={data.bindings.some((b) => b.service === 'naive')}
+          />
         </div>
 
         <Section
