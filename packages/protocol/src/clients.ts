@@ -32,6 +32,30 @@ export interface GClientRow {
   servers: string[];
   /** доступ выборочный (не все серверы и сервисы) */
   limited: boolean;
+  /** расширения для браузера клиента */
+  browserExt: GBrowserExt[];
+}
+
+/**
+ * Расширение для браузера у клиента (одна установка): последний отчёт расширения. Отчёт - при
+ * каждом изменении и раз в 15 минут, пока браузер открыт. version null - старая версия без
+ * отчётов: известно только, когда она брала подписку (раз в 12 часов и при открытии окна).
+ */
+export interface GBrowserExt {
+  id: string;
+  browser: 'chrome' | 'firefox' | 'other';
+  version: string | null;
+  /** версия старее той, что раздаёт панель */
+  outdated: boolean;
+  /** прокси включён; null - неизвестно (старая версия) */
+  enabled: boolean | null;
+  /** выбранный сервер: "Авто" или имя сервера; null - неизвестно */
+  server: string | null;
+  /** что видит человек в окне расширения: ссылка не действует, прокси не отвечает */
+  error: string;
+  seenAt: string;
+  /** на связи: отчёт не старше 20 минут (у старой версии - всегда false) */
+  online: boolean;
 }
 
 /** Привязка клиента к сервису на сервере. */
@@ -99,6 +123,7 @@ export interface GClientDetail {
   subscription: { url: string; page: string; temporary: boolean };
   devices: GDevice[];
   bindings: GBinding[];
+  browserExt: GBrowserExt[];
 }
 
 /** Ссылки привязки; у WDTT - ещё по именам (qwdtt:// для обоих клиентов и старая wdtt://). */

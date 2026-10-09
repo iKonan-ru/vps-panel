@@ -24,6 +24,7 @@ const DEF = {
   error: '',
   fetchedAt: '',
   check: null,
+  install: '',
 };
 
 async function getState() {
@@ -120,6 +121,7 @@ async function prime(servers, force) {
 let applying = Promise.resolve();
 function apply() {
   applying = applying.then(applyNow, applyNow);
+  applying.then(scheduleReport, scheduleReport);
   return applying;
 }
 
@@ -167,6 +169,45 @@ async function applyNow() {
   await pac(false);
   if (updateOf(st)) await badge('NEW', '#2f6fe4');
   else await badge('ON', '#1f9d6a');
+}
+
+/** Номер этой установки (случайный): по нему панель отличает браузеры одного человека. */
+async function installId() {
+  const st = await getState();
+  if (st.install) return st.install;
+  const id = [...crypto.getRandomValues(new Uint8Array(8))].map((b) => b.toString(16).padStart(2, '0')).join('');
+  await setState({ install: id });
+  return id;
+}
+
+/**
+ * Отчёт панели о себе: версия, браузер, включён ли прокси, выбранный сервер и ошибка в окне -
+ * при каждом изменении и раз в 15 минут (по нему в панели видно, что расширение работает). Ни
+ * адресов страниц, ни трафика. Не дошёл - не страшно, будет следующий.
+ */
+let reportTimer = null;
+function scheduleReport() {
+  clearTimeout(reportTimer);
+  reportTimer = setTimeout(() => report().catch(() => {}), 1500);
+}
+async function report() {
+  const st = await getState();
+  if (!st.subUrl) return;
+  const failed = st.enabled && st.check && !st.check.ok ? `проверка выхода: ${st.check.error || 'не прошла'}` : '';
+  await fetch(`${st.subUrl}/status`, {
+    method: 'POST',
+    cache: 'no-store',
+    credentials: 'omit',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({
+      install: await installId(),
+      version: B.runtime.getManifest().version,
+      browser: FIREFOX ? 'firefox' : 'chrome',
+      enabled: Boolean(st.enabled && activeServers(st).length),
+      server: String(st.server || 'auto').slice(0, 64),
+      error: String(st.error || failed).slice(0, 300),
+    }),
+  });
 }
 
 // Firefox: куда идёт запрос. route - данные маршрутизации (null - прокси выключен). Пока фон
@@ -225,7 +266,12 @@ function refresh() {
     const st = await getState();
     if (!st.subUrl) return;
     try {
-      const r = await fetch(st.subUrl, { cache: 'no-store', credentials: 'omit' });
+      // заголовок: эта версия шлёт отчёты сама (панель не путает её со старой)
+      const r = await fetch(st.subUrl, {
+        cache: 'no-store',
+        credentials: 'omit',
+        headers: { 'x-vps-ext': await installId() },
+      });
       if (r.status === 404) {
         await setState({ sub: null, error: 'Ссылка больше не действует: возьмите новую на личной странице' });
         return;
@@ -302,6 +348,7 @@ async function check() {
     clearTimeout(timer);
   }
   await setState({ check: res });
+  scheduleReport();
   return res;
 }
 
@@ -462,9 +509,11 @@ B.runtime.onMessage.addListener((msg, _sender, reply) => {
 function alarms() {
   B.alarms.create('refresh', { periodInMinutes: 12 * 60 });
   B.alarms.create('prime', { periodInMinutes: 15 });
+  B.alarms.create('status', { periodInMinutes: 15 });
 }
 B.alarms.onAlarm.addListener(async (a) => {
   if (a.name === 'refresh') refresh();
+  if (a.name === 'status') report().catch(() => {});
   if (a.name === 'prime' && !FIREFOX) {
     const st = await getState();
     if (st.enabled) prime(activeServers(st), true);
@@ -502,4 +551,4 @@ B.runtime.onStartup.addListener(() => {
 if (FIREFOX) ready = apply().catch(() => {});
 
 // для проверки на стенде (Playwright)
-self.vps = { getState, refresh, apply, check, subscriptionUrl, buildPac };
+self.vps = { getState, refresh, apply, check, report, subscriptionUrl, buildPac };

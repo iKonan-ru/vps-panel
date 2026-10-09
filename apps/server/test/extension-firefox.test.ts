@@ -35,6 +35,7 @@ function load(tabs: string[]) {
     },
   });
   const fetched: string[] = [];
+  const reports: Record<string, unknown>[] = [];
   const browser = {
     storage: {
       local: {
@@ -65,8 +66,12 @@ function load(tabs: string[]) {
       reload: async () => {},
     },
   };
-  const fetch = async (url: string) => {
+  const fetch = async (url: string, init?: { method?: string; body?: string }) => {
     fetched.push(url);
+    if (url === `https://sub.example.com/sub/${token}/browser/status` && init?.method === 'POST') {
+      reports.push(JSON.parse(init.body ?? '{}'));
+      return { ok: true, status: 204 };
+    }
     if (url === 'moz-extension://x/firefox.json')
       return { ok: true, status: 200, json: async () => ({ subHost: 'sub.example.com' }) };
     if (url === `https://sub.example.com/sub/${token}/browser`)
@@ -84,13 +89,14 @@ function load(tabs: string[]) {
     clearTimeout,
     performance,
     console,
+    crypto,
   });
   ctx.self = ctx;
   runInContext(readFileSync(join(ext, 'rules.js'), 'utf8'), ctx);
   runInContext(readFileSync(join(ext, 'bg.js'), 'utf8'), ctx);
   const route = (url: string) =>
     (listeners.request as (d: { url: string }) => Promise<unknown>)({ url });
-  return { store, listeners, route, fetched };
+  return { store, listeners, route, fetched, reports };
 }
 
 const auth = `Basic ${Buffer.from('ivan-1:Пароль1').toString('base64')}`;
@@ -134,6 +140,17 @@ describe('расширение в Firefox', () => {
       ),
     );
     expect(await b.route('https://example.com/')).toEqual({ type: 'direct' });
+    // отчёт панели о себе - после изменений, с паузой 1,5 с
+    await new Promise((r) => setTimeout(r, 1700));
+    expect(b.reports.at(-1)).toEqual({
+      install: b.store.install,
+      version: '1.4.0',
+      browser: 'firefox',
+      enabled: false,
+      server: 'auto',
+      error: '',
+    });
+    expect(String(b.store.install)).toMatch(/^[0-9a-f]{16}$/);
   });
 
   it('чужие страницы ссылку не дают', async () => {

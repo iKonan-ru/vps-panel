@@ -133,6 +133,12 @@ create table if not exists gclient_binding (
   error text not null default '', xui_inbounds text,
   updated_at text not null default (strftime('%Y-%m-%dT%H:%M:%fZ','now'))
 );
+create table if not exists gclient_ext (
+  id text primary key, client_id text not null references gclient(id) on delete cascade,
+  browser text not null default 'other', version text, enabled integer, server_id text,
+  error text not null default '', seen_at text not null,
+  created_at text not null default (strftime('%Y-%m-%dT%H:%M:%fZ','now'))
+);
 create table if not exists openflux_doc (
   id text primary key, kind text not null, url text not null unique,
   binding_id text references gclient_binding(id) on delete set null,

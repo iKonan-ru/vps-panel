@@ -3,6 +3,7 @@ import { join } from 'node:path';
 import type { FastifyInstance } from 'fastify';
 import type { Env } from '../config.js';
 import type { Db } from '../db/index.js';
+import { ExtReportSchema, recordLegacyFetch, recordReport } from '../lib/browser-ext.js';
 import { FIREFOX_FILE, extensionVersion } from '../lib/extension.js';
 import {
   buildBrowserSubscription,
@@ -94,6 +95,9 @@ export async function subscriptionRoutes(
     reply.header('Cache-Control', 'no-store');
     const s = /^[0-9a-f]{32}$/.test(token) ? buildBrowserSubscription(opts.db, token) : null;
     if (!s) return reply.code(404).type('text/plain').send('not found');
+    // версия расширения без отчётов о себе (новые шлют x-vps-ext): хотя бы "была на связи"
+    if (!req.headers['x-vps-ext'])
+      recordLegacyFetch(opts.db, token, String(req.headers['user-agent'] ?? ''));
     // актуальная версия расширения и архив клиента: расширение старее - предложит обновиться
     const v = opts.env ? extensionVersion(opts.env.EXTENSION_DIR) : null;
     const extension = v ? { version: v, download: `${subBase}/c/${token}/chrome.zip` } : undefined;
@@ -103,5 +107,19 @@ export async function subscriptionRoutes(
       ...s,
       ...(extension ? { extension } : {}),
     };
+  });
+
+  /**
+   * Отчёт расширения о себе (lib/browser-ext.ts): версия, браузер, включён ли прокси, сервер,
+   * ошибка в окне. Без входа, по токену клиента; неизвестный токен - 404.
+   */
+  app.post('/sub/:token/browser/status', opts30, async (req, reply) => {
+    const { token } = req.params as { token: string };
+    const r = ExtReportSchema.safeParse(req.body);
+    if (!/^[0-9a-f]{32}$/.test(token) || !r.success)
+      return reply.code(400).type('text/plain').send('bad request');
+    if (!recordReport(opts.db, token, r.data))
+      return reply.code(404).type('text/plain').send('not found');
+    return reply.code(204).send();
   });
 }

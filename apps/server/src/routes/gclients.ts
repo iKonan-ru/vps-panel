@@ -22,7 +22,9 @@ import type { Env } from '../config.js';
 import type { Db } from '../db/index.js';
 import { gclientBindings, gclientDevices, gclients, openfluxDocs, servers } from '../db/schema.js';
 import { actionJournal } from '../lib/action-journal.js';
+import { extsByClient } from '../lib/browser-ext.js';
 import { ClientStatsHub, liveOnServer } from '../lib/client-stats.js';
+import { extensionVersion } from '../lib/extension.js';
 import { clientSlug, newClientToken, newXuiSubId } from '../lib/gclient-names.js';
 import { awgRef, wdttKey, xuiTargets } from '../lib/gclient-services.js';
 import { type GClients, queued } from '../lib/gclients.js';
@@ -160,6 +162,7 @@ export async function gclientRoutes(
     const names = serverNames();
     const devices = db.select().from(gclientDevices).where(isNull(gclientDevices.deletedAt)).all();
     const bindings = db.select().from(gclientBindings).all();
+    const exts = extsByClient(db, null, extensionVersion(env.EXTENSION_DIR));
     return db
       .select()
       .from(gclients)
@@ -181,6 +184,7 @@ export async function gclientRoutes(
           },
           servers: [...new Set(mine.map((b) => names.get(b.serverId) ?? b.serverId))],
           limited: c.access !== null,
+          browserExt: exts.get(c.id) ?? [],
         };
       });
   });
@@ -217,6 +221,7 @@ export async function gclientRoutes(
             awg: b.service === 'awg' ? awgRef(b.ref) : null,
           }),
         ),
+      browserExt: extsByClient(db, [c.id], extensionVersion(env.EXTENSION_DIR)).get(c.id) ?? [],
     };
   });
 

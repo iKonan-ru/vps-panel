@@ -1,5 +1,6 @@
 import { AccessEditor } from '@/components/clients/access-editor';
 import { BindingStates, deviceTitle } from '@/components/clients/binding-states';
+import { BrowserExtIcon } from '@/components/clients/browser-ext';
 import { SyncPanel, useSyncState } from '@/components/clients/sync-panel';
 import { DeviceSelect } from '@/components/device-select';
 import { Alert } from '@/components/ui/alert';
@@ -13,6 +14,7 @@ import { Input } from '@/components/ui/input';
 import { PageTitle } from '@/components/ui/page-title';
 import { Switch } from '@/components/ui/switch';
 import { api } from '@/lib/api';
+import { cn } from '@/lib/cn';
 import { useAction } from '@/lib/use-action';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { Link, useNavigate } from '@tanstack/react-router';
@@ -114,8 +116,8 @@ export function ClientsPage() {
             {/* плашки состояний - строкой под именем, внизу карточки: в ряду они на одной линии */}
             <Card className="flex h-full flex-col gap-2 p-3.5 hover:border-accent">
               <div className="min-w-0 flex-1">
-                {/* строка имени не переносится: длинное имя обрезается, значок выборочного
-                    доступа - всегда у правого края */}
+                {/* строка имени не переносится: длинное имя обрезается, значки расширения для
+                    браузера и выборочного доступа - всегда у правого края */}
                 <div className="flex items-center gap-2">
                   <span className="min-w-0 truncate font-semibold" title={c.name}>
                     {c.name}
@@ -125,9 +127,13 @@ export function ClientsPage() {
                       выключен
                     </Chip>
                   )}
+                  <BrowserExtIcon exts={c.browserExt} className="ml-auto" />
                   {c.limited && (
                     <SlidersHorizontal
-                      className="ml-auto size-3.5 shrink-0 text-accent"
+                      className={cn(
+                        'size-3.5 shrink-0 text-accent',
+                        !c.browserExt.length && 'ml-auto',
+                      )}
                       role="img"
                       aria-label="Выборочный доступ"
                     >
