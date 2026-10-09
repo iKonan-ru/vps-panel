@@ -1,5 +1,6 @@
 import { AccessEditor, accessRemoves } from '@/components/clients/access-editor';
 import { pillLabel } from '@/components/clients/binding-pill';
+import { BrowserExtList } from '@/components/clients/browser-ext';
 import { DeviceSelect } from '@/components/device-select';
 import { MtLinksView } from '@/components/links/mt-links';
 import { WdttLinksView } from '@/components/links/wdtt-links';
@@ -14,13 +15,27 @@ import { QrCode } from '@/components/ui/qr-code';
 import { api } from '@/lib/api';
 import { useAction } from '@/lib/use-action';
 import { useQuery } from '@tanstack/react-query';
-import type { GBinding, GBindingLinks, GClientAccess, GDevice, GServer } from '@vps/protocol';
+import type {
+  GBinding,
+  GBindingLinks,
+  GBrowserExt,
+  GClientAccess,
+  GDevice,
+  GServer,
+} from '@vps/protocol';
 import { type FormEvent, useState } from 'react';
 
 /** Окна карточки клиента: ссылки прокси, переименование, устройство, доступ. */
 
-/** Ссылки MTProxy или WDTT привязки (из кэша панели). */
-export function ProxyLinks({ clientId, binding }: { clientId: string; binding: GBinding }) {
+/**
+ * Ссылки MTProxy, WDTT, OpenFlux или прокси для браузера (из кэша панели); у прокси для браузера -
+ * ещё установки расширения у клиента (exts).
+ */
+export function ProxyLinks({
+  clientId,
+  binding,
+  exts = [],
+}: { clientId: string; binding: GBinding; exts?: GBrowserExt[] }) {
   const { data, error } = useQuery({
     queryKey: ['gclient-links', binding.id],
     queryFn: () => api<GBindingLinks>(`/api/gclients/${clientId}/links/${binding.id}`),
@@ -32,11 +47,12 @@ export function ProxyLinks({ clientId, binding }: { clientId: string; binding: G
   if (binding.service === 'naive') {
     const link = data.links[0] ?? '';
     return (
-      <div className="flex flex-col gap-3">
+      <div className="flex flex-col gap-4">
+        <BrowserExtList exts={exts} />
         <div className="text-[13px] text-muted">
-          Прокси для браузера: расширение Chrome клиент скачивает на личной странице (блок "Браузер
-          Chrome без программ"), адрес и пароль оно берёт из подписки само. Ссылка ниже - для
-          приложений NaiveProxy (NekoBox и др.), в ней пароль.
+          Расширение для Chrome и Firefox клиент ставит с личной страницы (блок "Расширение для
+          браузера"), адрес и пароль оно берёт из подписки само. Ссылка ниже - для приложений
+          NaiveProxy (NekoBox и др.), в ней пароль.
         </div>
         <LinkButton href={link} size="md" wide copyTitle="Скопировать ссылку">
           naive+https
