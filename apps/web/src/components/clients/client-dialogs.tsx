@@ -29,7 +29,7 @@ import { type FormEvent, useState } from 'react';
 
 /**
  * Ссылки MTProxy, WDTT, OpenFlux или прокси для браузера (из кэша панели); у прокси для браузера -
- * ещё установки расширения у клиента (exts).
+ * ещё подключение расширения клиента через этот сервер (из exts).
  */
 export function ProxyLinks({
   clientId,
@@ -48,7 +48,7 @@ export function ProxyLinks({
     const link = data.links[0] ?? '';
     return (
       <div className="flex flex-col gap-4">
-        <BrowserExtList exts={exts} />
+        <BrowserExtList exts={exts} serverId={binding.serverId} />
         <div className="text-[13px] text-muted">
           Расширение для Chrome и Firefox клиент ставит с личной страницы (блок "Расширение для
           браузера"), адрес и пароль оно берёт из подписки само. Ссылка ниже - для приложений

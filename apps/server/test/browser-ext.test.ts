@@ -82,6 +82,7 @@ describe('статус расширения для браузера', () => {
       outdated: false,
       enabled: true,
       server: 'NetCore',
+      viaServerId: 's1',
       online: true,
     });
     // новая версия берёт подписку с заголовком - строка старой не появляется снова
@@ -134,7 +135,7 @@ describe('статус расширения для браузера', () => {
 
   it('на связи - 20 минут; молчащие 60 дней забываются', () => {
     const later = Date.now() + 21 * 60_000;
-    const m = extsByClient(built.db, ['c1'], '1.5.0', later);
+    const m = extsByClient(built.db, ['c1'], '1.5.0', () => true, later);
     expect(m.get('c1')?.every((e) => !e.online)).toBe(true);
     pruneExts(built.db, Date.now() + 61 * 86_400_000);
     expect(built.db.select().from(gclientExts).all()).toHaveLength(0);
@@ -198,6 +199,11 @@ describe('через какой сервер идёт браузер (точка
     // первый в цепочке не работает - браузер ушёл на следующий
     expect([...extServers(db, 'c9', t, (sid) => sid !== 'sa', now).keys()]).toEqual(['sb']);
     expect(extServers(db, 'c9', t, all, now).get('sa')?.auto).toBe(true);
+    // окно плашки "Браузер" сервера: через какой сервер идёт "Авто" - первый, чей агент на связи
+    expect(extsByClient(db, ['c9'], '1.5.0', all, now).get('c9')?.[0]?.viaServerId).toBe('sa');
+    expect(
+      extsByClient(db, ['c9'], '1.5.0', (sid) => sid === 'sb', now).get('c9')?.[0]?.viaServerId,
+    ).toBe('sb');
     put('1111111111111111', 'sb', true, 1);
     expect([...extServers(db, 'c9', t, all, now).keys()]).toEqual(['sb']);
     put('1111111111111111', 'sb', false, 1);

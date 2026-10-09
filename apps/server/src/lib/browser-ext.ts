@@ -102,12 +102,14 @@ function older(a: string, b: string): boolean {
 
 /**
  * Расширения клиентов для интерфейса: клиент -> установки, свежие сверху. latest - версия,
- * которую раздаёт панель (null - неизвестна).
+ * которую раздаёт панель (null - неизвестна); online - агент сервера на связи (для "Авто":
+ * браузер идёт на первый доступный сервер цепочки).
  */
 export function extsByClient(
   db: Db,
   clientIds: string[] | null,
   latest: string | null,
+  online: (serverId: string) => boolean = () => true,
   now = Date.now(),
 ): Map<string, GBrowserExt[]> {
   const rows = db
@@ -122,9 +124,29 @@ export function extsByClient(
       .all()
       .map((s) => [s.id, s.name]),
   );
+  // цепочка подписки - только у клиентов с "Авто"
+  const chains = new Map<string, string[]>();
+  const chainOf = (clientId: string) => {
+    let c = chains.get(clientId);
+    if (!c) {
+      const token = db
+        .select({ token: gclients.token })
+        .from(gclients)
+        .where(eq(gclients.id, clientId))
+        .get()?.token;
+      c = token ? (buildBrowserSubscription(db, token)?.servers ?? []).map((s) => s.id) : [];
+      chains.set(clientId, c);
+    }
+    return c;
+  };
   const out = new Map<string, GBrowserExt[]>();
   for (const r of rows.sort((a, b) => b.seenAt.localeCompare(a.seenAt))) {
     const legacy = r.version === null;
+    let via: string | null = r.serverId && r.serverId !== 'auto' ? r.serverId : null;
+    if (r.serverId === 'auto') {
+      const chain = chainOf(r.clientId);
+      via = chain.find(online) ?? chain[0] ?? null;
+    }
     const ext: GBrowserExt = {
       id: r.id,
       browser: r.browser as GBrowserExt['browser'],
@@ -138,6 +160,7 @@ export function extsByClient(
           : r.serverId === 'auto'
             ? 'Авто'
             : (names.get(r.serverId) ?? 'сервер удалён'),
+      viaServerId: via,
       error: r.error,
       seenAt: r.seenAt,
       online: !legacy && now - Date.parse(r.seenAt) < EXT_ONLINE_MS,
