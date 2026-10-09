@@ -148,11 +148,25 @@ export function ServersPage() {
   );
 }
 
+/** Обновление сервиса (lib/service-updates.ts на сервере). */
+interface ServiceUpdate {
+  kind: 'xui' | 'mtproxyl' | 'mtproxyl-panel';
+  title: string;
+  latest: string;
+}
+
+/** Вкладка сервера, где обновляется сервис: у 3X-UI - своя, движок и панель MTProxyL - MTProxyL. */
+const updateTab: Record<ServiceUpdate['kind'], string> = {
+  xui: 'xui',
+  mtproxyl: 'mtproxyl',
+  'mtproxyl-panel': 'mtproxyl',
+};
+
 /** Обновления 3x-ui и MTProxyL по всем серверам: один запрос на страницу. */
 function useServiceUpdates() {
   return useQuery({
     queryKey: ['service-updates-all'],
-    queryFn: () => api<Record<string, { title: string; latest: string }[]>>('/api/updates'),
+    queryFn: () => api<Record<string, ServiceUpdate[]>>('/api/updates'),
     refetchInterval: 5 * 60_000,
   });
 }
@@ -160,13 +174,14 @@ function useServiceUpdates() {
 /**
  * Что на сервере требует действия: замечания аудита (firewall и docker мимо firewall - тоже
  * замечания), перезагрузка, обновления пакетов и сервисов, устаревший агент. Нечего делать -
- * пусто. Что именно - в подсказке плашки, само действие - в карточке сервера ("Обзор") или
- * плашкой "обновить агентов" над списком. mobile - ещё то, что на мобиле негде показать
+ * пусто. Что именно - в подсказке плашки; плашка - ссылка туда, где действие: обновление
+ * сервиса - его вкладка, остальное - "Обзор" (замечания и пакеты - блок "Безопасность", агент и
+ * перезагрузка - кнопки в шапке карточки, оплата - "Хостинг"). mobile - ещё то, что на мобиле негде показать
  * отдельно: сервер не в сети и скорая оплата.
  */
 function attention(
   s: ServerSummary,
-  updates: { title: string; latest: string }[],
+  updates: ServiceUpdate[],
   mobile: boolean,
 ): {
   key: string;
@@ -174,6 +189,8 @@ function attention(
   text: string;
   title?: string;
   pulse?: boolean;
+  /** вкладка карточки сервера с действием; нет - плашка не ссылка */
+  tab?: string;
 }[] {
   const out: ReturnType<typeof attention> = [];
   if (mobile && s.status === 'offline')
@@ -188,6 +205,7 @@ function attention(
   if (high.length)
     out.push({
       key: 'high',
+      tab: 'overview',
       tone: 'bad',
       text: `${high.length} ${plural(high.length, 'критичное', 'критичных', 'критичных')}`,
       title: high.map((f) => f.text).join('\n'),
@@ -195,6 +213,7 @@ function attention(
   if (medium.length)
     out.push({
       key: 'medium',
+      tab: 'overview',
       tone: 'warn',
       text: `${medium.length} ${plural(medium.length, 'замечание', 'замечания', 'замечаний')}`,
       title: medium.map((f) => f.text).join('\n'),
@@ -202,6 +221,7 @@ function attention(
   if (s.audit?.rebootRequired)
     out.push({
       key: 'reboot',
+      tab: 'overview',
       tone: 'warn',
       text: 'перезагрузка',
       title: 'Требуется перезагрузка: обновлено ядро или libc',
@@ -209,31 +229,41 @@ function attention(
   if (pending > 0)
     out.push({
       key: 'packages',
+      tab: 'overview',
       tone: 'accent',
       text: `пакеты: ${pending}`,
       title: 'Обновления безопасности ждут установки',
     });
   for (const u of updates)
     out.push({
-      key: `svc-${u.title}`,
+      key: `svc-${u.kind}`,
       tone: 'accent',
       text: `${u.title} ${u.latest}`,
-      title: `Доступна версия ${u.title} ${u.latest}`,
+      title: `Доступна версия ${u.title} ${u.latest}: обновить на вкладке сервиса`,
+      tab: updateTab[u.kind],
     });
   if (s.agentUpdating)
-    out.push({ key: 'agent', tone: 'accent', text: 'агент обновляется', pulse: true });
+    out.push({
+      key: 'agent',
+      tone: 'accent',
+      text: 'агент обновляется',
+      pulse: true,
+      tab: 'overview',
+    });
   else if (s.agentUpdateAvailable)
     out.push({
       key: 'agent',
       tone: 'warn',
       text: 'агент устарел',
       title: `Агент ${s.agentVersion ?? ''}: обновить - кнопкой над списком или в карточке`,
+      tab: 'overview',
     });
   if (mobile) {
     const days = daysUntil(s.hosting.nextPaymentAt);
     if (paymentSoon(days))
       out.push({
         key: 'pay',
+        tab: 'overview',
         tone: 'warn',
         text: `оплата ${daysWord(days)}`,
         title: `Оплата до ${dateShort(s.hosting.nextPaymentAt)}`,
@@ -249,17 +279,37 @@ function AttentionChips({ s, mobile = false }: { s: ServerSummary; mobile?: bool
   return (
     <span className="flex flex-wrap gap-1">
       {items.map((i) => (
-        <Chip
-          key={i.key}
-          tone={i.tone}
-          title={i.title}
-          dot={i.pulse === true}
-          pulse={i.pulse === true}
-        >
-          {i.text}
-        </Chip>
+        <AttentionItem key={i.key} i={i} serverId={s.id} />
       ))}
     </span>
+  );
+}
+
+/** Плашка "Требует внимания": ссылка на вкладку с действием, если оно есть. */
+function AttentionItem({
+  i,
+  serverId,
+}: { i: ReturnType<typeof attention>[number]; serverId: string }) {
+  const chip = (
+    <Chip
+      tone={i.tone}
+      title={i.title}
+      dot={i.pulse === true}
+      pulse={i.pulse === true}
+      className={i.tab ? 'hover:brightness-125' : undefined}
+    >
+      {i.text}
+    </Chip>
+  );
+  if (!i.tab) return <span className="inline-flex">{chip}</span>;
+  return (
+    <Link
+      to="/servers/$id/$tab"
+      params={{ id: serverId, tab: i.tab }}
+      className="inline-flex rounded-full focus-visible:outline-2 focus-visible:outline-accent"
+    >
+      {chip}
+    </Link>
   );
 }
 
