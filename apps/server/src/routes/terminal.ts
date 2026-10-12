@@ -97,6 +97,25 @@ export async function terminalRoutes(
     }
     const session = s;
 
+    // Ввод - строго по порядку: агент выполняет запросы параллельно, и нажатия, отправленные
+    // каждое своим запросом, приходили в терминал вперемешку ("clear" -> "clesar"). Пока один
+    // запрос в пути, следующие нажатия копятся и уходят одним куском после его ответа.
+    let queued: Buffer[] = [];
+    let sending = false;
+    const flush = () => {
+      if (sending || !queued.length) return;
+      const data = Buffer.concat(queued).toString('base64');
+      queued = [];
+      sending = true;
+      registry
+        .request(serverId, 'term.input', { id: session.sid, data }, { timeoutMs: 10_000 })
+        .catch(() => undefined)
+        .finally(() => {
+          sending = false;
+          flush();
+        });
+    };
+
     socket.on('message', (raw) => {
       let m: { t: string; d?: string; cols?: number; rows?: number };
       try {
@@ -106,9 +125,8 @@ export async function terminalRoutes(
       }
       if (session.peer !== peer) return;
       if (m.t === 'input' && typeof m.d === 'string') {
-        registry
-          .request(serverId, 'term.input', { id: session.sid, data: m.d }, { timeoutMs: 10_000 })
-          .catch(() => undefined);
+        queued.push(Buffer.from(m.d, 'base64'));
+        flush();
       } else if (m.t === 'resize' && m.cols && m.rows) {
         registry
           .request(
