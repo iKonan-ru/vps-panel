@@ -379,7 +379,6 @@ export function OverviewTab({ s, onTab }: { s: ServerDetail; onTab?: (tab: strin
             ))}
           </Section>
           <ReachCard serverId={s.id} online={online} />
-          <HostingCard serverId={s.id} hosting={s.hosting} />
           <Section
             title={
               <span className="inline-flex items-center gap-2">
@@ -467,6 +466,7 @@ export function OverviewTab({ s, onTab }: { s: ServerDetail; onTab?: (tab: strin
         </div>
         <div className="flex flex-col gap-4">
           <ClientHostCard serverId={s.id} />
+          <HostingCard serverId={s.id} hosting={s.hosting} />
           <AccessCard serverId={s.id} />
         </div>
       </div>
