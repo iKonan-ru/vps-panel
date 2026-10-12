@@ -113,9 +113,12 @@ export function CommandRunPage() {
 
   // План пересчитывается с задержкой после правок
   const planTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  // план пересчитывается: до ответа ошибки в форме - от прошлых ответов, запуск недоступен
+  const [planPending, setPlanPending] = useState(false);
   useEffect(() => {
     if (!cmd || !serverId || loadedFor !== `${cmd.id}:${serverId}`) return;
     if (planTimer.current) clearTimeout(planTimer.current);
+    setPlanPending(true);
     planTimer.current = setTimeout(() => {
       commandsApi
         .plan(serverId, cmd.id, answers)
@@ -123,7 +126,8 @@ export function CommandRunPage() {
           setPlan(p.steps);
           setErrors(p.errors);
         })
-        .catch(() => undefined);
+        .catch(() => undefined)
+        .finally(() => setPlanPending(false));
     }, 300);
   }, [cmd, serverId, answers, loadedFor]);
 
@@ -146,7 +150,7 @@ export function CommandRunPage() {
   }
 
   async function run() {
-    if (!cmd) return;
+    if (!cmd || busy) return;
     setBusy(true);
     setError(null);
     try {
@@ -182,10 +186,16 @@ export function CommandRunPage() {
   if (!cmd) return <Card className="p-8 text-bad">Команда не найдена</Card>;
   const server = servers?.find((s) => s.id === serverId);
   const runServer = servers?.find((s) => s.id === runServerId);
+  // запуск: ответы этого сервера загружены, план и проверки свежие, карточка сервера есть
+  // (идущее на сервере действие блокирует lock.busy)
   const canRun =
     Boolean(serverId) &&
     errors.length === 0 &&
     !busy &&
+    !checking &&
+    !planPending &&
+    Boolean(detail.data) &&
+    loadedFor === `${cmd.id}:${serverId}` &&
     (!checks || !checks.some((c) => c.level === 'fail'));
   const secretsMissing = cmd.params.some(
     (p) =>
@@ -200,7 +210,6 @@ export function CommandRunPage() {
       <Breadcrumbs items={[{ label: 'Команды', to: '/commands' }, { label: cmd.title }]} />
       <div className="flex flex-wrap items-center gap-3">
         <PageTitle hero>{cmd.title}</PageTitle>
-        <Chip>{cmd.params.length === 0 ? 'без вопросов' : `${cmd.params.length} вопр.`}</Chip>
       </div>
       <Tabs<Tab>
         items={[
@@ -299,7 +308,7 @@ export function CommandRunPage() {
                   <div className="grow" />
                   <Button
                     size="sm"
-                    disabled={!serverId || checking || errors.length > 0}
+                    disabled={!serverId || checking || busy || errors.length > 0}
                     onClick={runPreflight}
                     label={checking ? 'Проверяю...' : checks ? 'Проверить снова' : 'Проверить'}
                   >

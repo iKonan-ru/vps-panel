@@ -14,6 +14,7 @@ import { MtproxylTab } from '@/components/server/mtproxyl/mtproxyl-tab';
 import { OpenfluxTab } from '@/components/server/openflux-tab';
 import { OverviewTab } from '@/components/server/overview-tab';
 import { RebootDialog } from '@/components/server/reboot-dialog';
+import { SshKeysTab } from '@/components/server/ssh-keys-tab';
 import { WdttTab } from '@/components/server/wdtt-tab';
 import { XuiTab } from '@/components/server/xui-tab';
 import { ActionBar } from '@/components/ui/action-bar';
@@ -67,6 +68,7 @@ type Tab =
   | 'wdtt'
   | 'openflux'
   | 'terminal'
+  | 'keys'
   | 'log';
 /** Вкладки адаптеров (3x-ui, MTProxyL) показываются, только если агент нашёл сервис. */
 const tabs: { id: Tab; title: string; service?: string }[] = [
@@ -78,6 +80,7 @@ const tabs: { id: Tab; title: string; service?: string }[] = [
   { id: 'openflux', title: 'OpenFlux', service: 'openflux' },
   { id: 'docker', title: 'Docker' },
   { id: 'terminal', title: 'Терминал' },
+  { id: 'keys', title: 'Ключи' },
   { id: 'firewall', title: 'Firewall' },
   { id: 'certs', title: 'Сертификаты' },
   { id: 'backups', title: 'Бэкапы' },
@@ -215,20 +218,25 @@ export function ServerPage() {
               label: 'Переустановить агента',
               icon: <Wrench className="size-4" />,
               onClick: () => setReinstall(true),
+              // переустановка - и для зависшего агента, но не поверх своего обновления
+              disabled: agentBusy || agentRunning || s.agentUpdating,
             },
             {
               key: 'ip',
               label: 'Сменить IP-адрес',
               icon: <ArrowLeftRight className="size-4" />,
-              title: 'Хостер выдал новый адрес: проверка DNS и агента, затем переключение',
+              title:
+                lock.reason ??
+                'Хостер выдал новый адрес: проверка DNS и агента, затем переключение',
               onClick: () => setIpChange(true),
+              disabled: lock.busy || agentBusy || agentRunning || s.agentUpdating,
             },
             {
               key: 'reboot',
               label: 'Перезагрузить сервер',
               icon: <Power className="size-4" />,
               onClick: () => setReboot(true),
-              disabled: !online || lock.busy,
+              disabled: !online || lock.busy || agentBusy || agentRunning || s.agentUpdating,
               title: lock.reason,
             },
             {
@@ -236,6 +244,8 @@ export function ServerPage() {
               label: 'Удалить из панели',
               icon: <Trash2 className="size-4" />,
               onClick: () => setRemove(true),
+              disabled: lock.busy || agentBusy || agentRunning || s.agentUpdating,
+              title: lock.reason,
               variant: 'danger',
               group: 'danger',
             },
@@ -268,9 +278,12 @@ export function ServerPage() {
                   <X className="size-3.5" />
                 </Button>
               )}
-              <Button size="sm" onClick={() => setAgentAction(null)} label="Скрыть">
-                <X className="size-3.5" />
-              </Button>
+              {/* скрыть - после конца: вывод держит и признак "обновляется" (onFinished) */}
+              {!agentRunning && (
+                <Button size="sm" onClick={() => setAgentAction(null)} label="Скрыть">
+                  <X className="size-3.5" />
+                </Button>
+              )}
             </>
           }
         >
@@ -311,6 +324,7 @@ export function ServerPage() {
             <TerminalTab s={s} />
           </Suspense>
         )}
+        {tab === 'keys' && <SshKeysTab s={s} />}
         {tab === 'log' && <LogTab serverId={s.id} />}
       </div>
 
@@ -423,11 +437,15 @@ function RemoveDialog({
   const nav = useNavigate();
   const [typed, setTyped] = useState('');
   const [error, setError] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
   async function go() {
+    if (busy) return;
+    setBusy(true);
     try {
       await actions.deleteServer(serverId);
     } catch (e) {
       setError((e as Error).message);
+      setBusy(false);
       return;
     }
     // сначала уходим со страницы сервера: перезапрос удалённого сервера (404 с повторами) держал
@@ -454,7 +472,7 @@ function RemoveDialog({
       {error && <Alert tone="bad">{error}</Alert>}
       <div className="flex justify-end gap-2">
         <Button onClick={onClose}>Отмена</Button>
-        <Button variant="danger" disabled={typed !== name} onClick={go}>
+        <Button variant="danger" disabled={typed !== name || busy} onClick={go}>
           Удалить
         </Button>
       </div>

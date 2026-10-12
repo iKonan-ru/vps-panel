@@ -82,7 +82,10 @@ export function useAgentsRollout(outdated: number) {
   const [error, setError] = useState<string | null>(null);
   const running = Boolean(rollout && !rollout.finishedAt);
 
+  // запуск раскатки: от подтверждения до свежего состояния кнопка недоступна
+  const [starting, setStarting] = useState(false);
   async function start() {
+    if (starting) return;
     const ok = await ask({
       title: `Обновить агентов на ${outdated} серверах?`,
       text: 'По очереди: следующий сервер - только когда агент предыдущего вернулся с новой версией. Первая ошибка останавливает раскатку.',
@@ -90,11 +93,14 @@ export function useAgentsRollout(outdated: number) {
     });
     if (!ok) return;
     setError(null);
+    setStarting(true);
     try {
       await api('/api/agents/rollout', { method: 'POST' });
       await qc.invalidateQueries({ queryKey: ['agents-rollout'] });
     } catch (e) {
       setError((e as Error).message);
+    } finally {
+      setStarting(false);
     }
   }
 
@@ -105,6 +111,7 @@ export function useAgentsRollout(outdated: number) {
         <button
           type="button"
           onClick={start}
+          disabled={starting}
           title="Обновить агентов на всех серверах по очереди"
           className="rounded-full hover:brightness-125"
         >

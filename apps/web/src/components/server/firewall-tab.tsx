@@ -325,10 +325,18 @@ export function FirewallTab({ s }: { s: ServerDetail }) {
         </div>
         <div className="flex justify-end gap-2">
           <Button onClick={() => setDisableOpen(false)}>Отмена</Button>
-          <Button variant="danger" onClick={() => disable(false)}>
+          <Button
+            variant="danger"
+            disabled={!canAct || busy !== null}
+            onClick={() => disable(false)}
+          >
             Выключить
           </Button>
-          <Button variant="danger" onClick={() => disable(true)}>
+          <Button
+            variant="danger"
+            disabled={!canAct || busy !== null}
+            onClick={() => disable(true)}
+          >
             Выключить и перезапустить docker
           </Button>
         </div>

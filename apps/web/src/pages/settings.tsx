@@ -16,7 +16,6 @@ import { Pager, usePaged } from '@/components/ui/pager';
 import { Section } from '@/components/ui/section';
 import { TBody, THead, Table } from '@/components/ui/table';
 import { WdttSettings } from '@/components/wdtt-settings';
-import { XraySettings } from '@/components/xray-settings';
 import { api } from '@/lib/api';
 import { ago } from '@/lib/format';
 import { useServers } from '@/lib/servers';
@@ -33,7 +32,7 @@ interface Security {
   sessions: { id: string; ip: string; userAgent: string; createdAt: string; expiresAt: string }[];
 }
 
-/** Настройки: уведомления, бэкап панели, маршрут до Telegram, WDTT и безопасность самой панели. */
+/** Настройки: версия панели, бэкап, уведомления (с маршрутом до Telegram), WDTT, Firefox и безопасность самой панели. */
 export function SettingsPage() {
   const qc = useQueryClient();
   const navigate = useNavigate();
@@ -58,11 +57,9 @@ export function SettingsPage() {
 
       <PanelVersionSettings />
 
-      <TelegramSettings />
-
       <PanelBackupSettings />
 
-      <XraySettings />
+      <TelegramSettings />
 
       <ReachSettings />
 

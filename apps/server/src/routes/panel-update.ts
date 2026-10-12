@@ -37,7 +37,10 @@ export async function panelUpdateRoutes(app: FastifyInstance, opts: { updates: P
         agentsAuto: z.boolean().optional(),
       })
       .parse(req.body ?? {});
+    const before = updates.settings().channel;
     updates.saveSettings(body);
+    // сменили канал - сразу свежий список: в новом канале могут быть другие версии
+    if (body.channel && body.channel !== before) await updates.refresh();
     return updates.view();
   });
 }

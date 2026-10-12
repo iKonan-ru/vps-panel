@@ -83,16 +83,21 @@ export function OpenfluxTab({ s }: { s: ServerDetail }) {
   const refresh = () => qc.invalidateQueries({ queryKey: ['openflux', s.id] });
   const exec = (json: Record<string, unknown>) =>
     api<{ actionId?: string }>(`/api/servers/${s.id}/openflux/exec`, { method: 'POST', json });
+  // пока идёт операция, остальные кнопки вкладки недоступны (двойной тап, соседний канал)
+  const op = useAction();
   async function call(title: string, json: Record<string, unknown>) {
     setErr(null);
-    try {
-      const r = await exec(json);
-      if (r.actionId) setAction({ id: r.actionId, title });
-      await refresh();
-    } catch (e) {
-      setErr((e as Error).message);
-    }
+    await op.run(async () => {
+      try {
+        const r = await exec(json);
+        if (r.actionId) setAction({ id: r.actionId, title });
+        await refresh();
+      } catch (e) {
+        setErr((e as Error).message);
+      }
+    });
   }
+  const blocked = lock.busy || op.busy;
 
   if (!online) return <Card className="p-8 text-[13px] text-muted">Агент не на связи.</Card>;
   if (error) return <Alert tone="bad">{error.message}</Alert>;
@@ -116,7 +121,7 @@ export function OpenfluxTab({ s }: { s: ServerDetail }) {
           </span>
           <Switch
             checked={data.autoupdate}
-            disabled={lock.busy}
+            disabled={blocked}
             label="автообновление ядра (раз в 6 часов)"
             onChange={() =>
               void call('OpenFlux: автообновление', {
@@ -127,7 +132,7 @@ export function OpenfluxTab({ s }: { s: ServerDetail }) {
           <div className="grow" />
           <Button
             size="sm"
-            disabled={lock.busy}
+            disabled={blocked}
             title={lock.reason ?? 'Поставить новейшее ядро node-v* и перезапустить каналы'}
             onClick={() => void call('OpenFlux: обновление ядра', { op: 'update' })}
             label="Обновить ядро"
@@ -145,7 +150,7 @@ export function OpenfluxTab({ s }: { s: ServerDetail }) {
           <Button
             size="sm"
             variant="primary"
-            disabled={lock.busy}
+            disabled={blocked}
             title={lock.reason}
             onClick={() => setAdd(true)}
             label="Новый канал"
@@ -236,7 +241,7 @@ export function OpenfluxTab({ s }: { s: ServerDetail }) {
                     key: 'restart',
                     label: 'Перезапустить канал',
                     icon: <RotateCcw className="size-3.5" />,
-                    disabled: lock.busy,
+                    disabled: blocked,
                     onClick: () =>
                       void call('OpenFlux: перезапуск', { op: 'restart', channel: c.channel }),
                   },
@@ -244,7 +249,7 @@ export function OpenfluxTab({ s }: { s: ServerDetail }) {
                     key: 'toggle',
                     label: active ? 'Остановить канал' : 'Запустить канал',
                     icon: active ? <Square className="size-3.5" /> : <Play className="size-3.5" />,
-                    disabled: lock.busy,
+                    disabled: blocked,
                     onClick: () =>
                       void call(active ? 'OpenFlux: остановка' : 'OpenFlux: запуск', {
                         op: active ? 'stop' : 'start',
@@ -257,7 +262,7 @@ export function OpenfluxTab({ s }: { s: ServerDetail }) {
                     icon: <Trash2 className="size-3.5" />,
                     variant: 'danger',
                     group: 'danger',
-                    disabled: lock.busy,
+                    disabled: blocked,
                     onClick: async () => {
                       const last = data.channels.length === 1;
                       const ok = await ask({

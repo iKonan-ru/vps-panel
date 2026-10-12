@@ -253,7 +253,7 @@ export function XuiTab({ s }: { s: ServerDetail }) {
                   <Button
                     variant="link"
                     className="text-update"
-                    disabled={busy || lock.busy}
+                    disabled={busy || lock.busy || updates.isFetching}
                     title={
                       lock.reason ??
                       `Поставить Xray ${xrayUpdate.latest} через 3X-UI: подключения VLESS прервутся на несколько секунд`
@@ -342,7 +342,8 @@ export function XuiTab({ s }: { s: ServerDetail }) {
             label,
             icon,
             onClick: () => void start(`3X-UI: ${a}`, () => xuiApi.service(s.id, a)),
-            disabled: busy || lock.busy,
+            // стоп/старт и автозапуск выбраны по состоянию: пока оно перечитывается - нельзя
+            disabled: busy || lock.busy || isFetching,
             title: lock.reason,
             group: 'service',
           })),
@@ -360,7 +361,7 @@ export function XuiTab({ s }: { s: ServerDetail }) {
             label: noToken ? 'Выпустить API-токен' : 'Перевыпустить API-токен',
             icon: <KeyRound className="size-3.5" />,
             onClick: () => void issueToken(),
-            disabled: busy,
+            disabled: busy || lock.busy,
             title: 'Токен для REST API 3X-UI: статус Xray, inbound-ы, клиенты панели',
             group: 'more',
           },

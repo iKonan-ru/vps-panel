@@ -9,6 +9,15 @@ export class ApiError extends Error {
   }
 }
 
+/**
+ * Запуск действия на сервере (ответ POST /api/servers/<id>/... с actionId): кнопки сервера
+ * блокируются сразу, не дожидаясь, пока придёт свежая карточка с activeActions (main.tsx).
+ */
+let actionStarted: ((serverId: string, actionId: string) => void) | null = null;
+export function onActionStarted(fn: (serverId: string, actionId: string) => void) {
+  actionStarted = fn;
+}
+
 /** Единая точка запросов к панели. Cookie-сессия, JSON, ошибки в ApiError. */
 export async function api<T>(path: string, init?: RequestInit & { json?: unknown }): Promise<T> {
   const { json, ...rest } = init ?? {};
@@ -37,6 +46,11 @@ export async function api<T>(path: string, init?: RequestInit & { json?: unknown
         ? data.code
         : undefined;
     throw new ApiError(res.status, msg, code);
+  }
+  const m = /^\/api\/servers\/([^/?]+)\//.exec(path);
+  if (m?.[1] && (rest.method ?? 'GET') !== 'GET' && typeof data === 'object' && data !== null) {
+    const id = (data as { actionId?: unknown }).actionId;
+    if (typeof id === 'string') actionStarted?.(decodeURIComponent(m[1]), id);
   }
   return data as T;
 }

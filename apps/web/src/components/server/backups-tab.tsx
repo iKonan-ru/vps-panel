@@ -122,6 +122,9 @@ export function BackupsTab({ s }: { s: ServerDetail }) {
           short: 'Восстановить',
           icon: <ArchiveRestore className="size-3.5" />,
           onClick: () => setRestore(b),
+          // восстановление и удаление - не поверх идущего бэкапа или другого действия
+          disabled: !canAct,
+          title: lock.reason,
           mobile: true,
         },
         {
@@ -130,6 +133,8 @@ export function BackupsTab({ s }: { s: ServerDetail }) {
           icon: <Trash2 className="size-3.5" />,
           variant: 'danger',
           group: 'danger',
+          disabled: !canAct,
+          title: lock.reason,
           onClick: () => void remove(b),
         },
       ]}

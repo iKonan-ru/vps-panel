@@ -68,15 +68,20 @@ export function WdttTab({ s }: { s: ServerDetail }) {
   const [err, setErr] = useState<string | null>(null);
 
   const refresh = () => qc.invalidateQueries({ queryKey: ['wdtt', s.id] });
+  // пока идёт операция, остальные кнопки вкладки недоступны (двойной тап, соседний пароль)
+  const op = useAction();
   async function call(fn: () => Promise<unknown>) {
     setErr(null);
-    try {
-      await fn();
-      await refresh();
-    } catch (e) {
-      setErr((e as Error).message);
-    }
+    await op.run(async () => {
+      try {
+        await fn();
+        await refresh();
+      } catch (e) {
+        setErr((e as Error).message);
+      }
+    });
   }
+  const blocked = lock.busy || op.busy;
 
   if (!online) return <Card className="p-8 text-[13px] text-muted">Агент не на связи.</Card>;
   if (error) return <Alert tone="bad">{error.message}</Alert>;
@@ -104,7 +109,7 @@ export function WdttTab({ s }: { s: ServerDetail }) {
           <Button
             size="sm"
             variant="primary"
-            disabled={lock.busy || full}
+            disabled={blocked || full}
             title={full ? 'Достигнут лимит паролей на сервере' : lock.reason}
             onClick={() => setAdd(true)}
             label="Добавить"
@@ -150,13 +155,14 @@ export function WdttTab({ s }: { s: ServerDetail }) {
                     key: 'edit',
                     label: 'Изменить',
                     icon: <Pencil className="size-3.5" />,
+                    disabled: blocked,
                     onClick: () => setEdit(p),
                   },
                   {
                     key: 'toggle',
                     label: p.is_deactivated ? 'Включить' : 'Выключить',
                     icon: <Power className="size-3.5" />,
-                    disabled: lock.busy,
+                    disabled: blocked,
                     onClick: () =>
                       void call(() =>
                         api(
@@ -170,7 +176,7 @@ export function WdttTab({ s }: { s: ServerDetail }) {
                     label: 'Отвязать устройства',
                     icon: <Unlink className="size-3.5" />,
                     hidden: (p.device_ids ?? []).length === 0,
-                    disabled: lock.busy,
+                    disabled: blocked,
                     title: 'Отвязать все устройства (можно будет подключить заново)',
                     onClick: async () => {
                       const ok = await ask({
@@ -193,7 +199,7 @@ export function WdttTab({ s }: { s: ServerDetail }) {
                     icon: <Trash2 className="size-3.5" />,
                     variant: 'danger',
                     group: 'danger',
-                    disabled: lock.busy,
+                    disabled: blocked,
                     onClick: async () => {
                       const ok = await ask({
                         title: `Удалить пользователя ${p.label}?`,

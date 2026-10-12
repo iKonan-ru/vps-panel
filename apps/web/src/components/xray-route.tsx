@@ -2,8 +2,9 @@ import { Alert } from '@/components/ui/alert';
 import { Button } from '@/components/ui/button';
 import { Chip } from '@/components/ui/chip';
 import { useConfirm } from '@/components/ui/confirm';
+import { Dialog } from '@/components/ui/dialog';
 import { Field } from '@/components/ui/field';
-import { Section } from '@/components/ui/section';
+import { InfoTip } from '@/components/ui/info-tip';
 import { Select } from '@/components/ui/select';
 import { api } from '@/lib/api';
 import { ago } from '@/lib/format';
@@ -51,19 +52,35 @@ interface Inbound {
   tcp: boolean;
 }
 
-/**
- * Выход панели в Telegram через xray (VLESS-Reality к 3x-ui на заграничных серверах):
- * основной выход - выбор сервера и инбаунда, запасные панель готовит сама; статус каждого
- * выхода, проверка, отключение.
- */
-export function XraySettings() {
-  const ask = useConfirm();
-  const qc = useQueryClient();
-  const { data: st } = useQuery({
+/** Состояние маршрута (xray-клиент панели): и для строки в блоке уведомлений, и для окна. */
+export function useXrayStatus() {
+  return useQuery({
     queryKey: ['xray'],
     queryFn: () => api<XrayStatus>('/api/xray'),
     refetchInterval: 30_000,
   });
+}
+
+/** Плашка состояния маршрута: тон и подпись. */
+export function xrayState(st: XrayStatus): {
+  tone: 'ok' | 'warn' | 'bad' | 'muted';
+  label: string;
+} {
+  if (!st.configured) return { tone: 'muted', label: 'не настроен' };
+  if (!st.running) return { tone: 'bad', label: 'не запущен' };
+  if (st.lastCheck?.ok === false) return { tone: 'warn', label: 'проверка не прошла' };
+  return { tone: 'ok', label: 'работает' };
+}
+
+/**
+ * Окно "Маршрут до Telegram" (из блока уведомлений): выход панели в Telegram через xray
+ * (VLESS-Reality к 3x-ui на заграничных серверах) - основной выход - выбор сервера и
+ * инбаунда, запасные панель готовит сама; статус каждого выхода, проверка, отключение.
+ */
+export function XrayRouteDialog({ open, onClose }: { open: boolean; onClose: () => void }) {
+  const ask = useConfirm();
+  const qc = useQueryClient();
+  const { data: st, isFetching } = useXrayStatus();
   const { data: servers } = useServers();
   const [serverId, setServerId] = useState('');
   const [inboundId, setInboundId] = useState<number | ''>('');
@@ -134,53 +151,37 @@ export function XraySettings() {
     if (ok) void run('Выключено', () => api('/api/xray/disable', { method: 'POST' }));
   };
 
-  const tone = !st.configured
-    ? 'muted'
-    : st.running && st.lastCheck?.ok !== false
-      ? 'ok'
-      : st.running
-        ? 'warn'
-        : 'bad';
-  const label = !st.configured
-    ? 'не настроено'
-    : !st.running
-      ? 'не запущен'
-      : st.lastCheck?.ok === false
-        ? 'запущен, проверка не прошла'
-        : 'работает';
+  const { tone, label } = xrayState(st);
+  // пока идёт действие или перечитывается состояние - кнопки окна недоступны
+  const locked = busy || isFetching;
 
   return (
-    <Section
-      title="Маршрут до Telegram"
-      info={
-        <>
+    <Dialog open={open} onClose={onClose} title="Маршрут до Telegram" wide>
+      <div className="flex flex-wrap items-center gap-2">
+        <Chip tone={tone} dot={st.running}>
+          {label}
+        </Chip>
+        <InfoTip>
           С хоста панели Telegram недоступен, поэтому панель держит xray-клиент к твоему же 3X-UI на
           заграничных серверах (VLESS-Reality) и ходит к Telegram через него. Основной выход
           выбираешь ты, запасные панель готовит сама на остальных серверах с 3X-UI (раз в 6 часов):
           клиент <span className="font-mono">vps-panel</span> на первом Reality-inbound-е по TCP.
           Каждый выход проверяется раз в 5 минут; не отвечает основной - сообщение уйдёт через
           следующий, затем напрямую и через агентов.
-        </>
-      }
-      extra={
-        <Chip tone={tone} dot={st.running}>
-          {label}
-        </Chip>
-      }
-      actions={
-        st.configured ? (
+        </InfoTip>
+        <div className="grow" />
+        {st.configured && (
           <>
-            <Button size="sm" disabled={busy} onClick={check} label="Проверить">
+            <Button size="sm" disabled={locked} onClick={check} label="Проверить">
               <Activity className="size-3.5" />
             </Button>
-            <Button size="sm" variant="ghost" disabled={busy} onClick={disable} label="Отключить">
+            <Button size="sm" variant="ghost" disabled={locked} onClick={disable} label="Отключить">
               <Power className="size-3.5" />
             </Button>
           </>
-        ) : null
-      }
-    >
-      <div className="flex flex-col gap-4 p-4">
+        )}
+      </div>
+      <div className="flex flex-col gap-4">
         {st.configured && (
           <div className="flex flex-col gap-2">
             <div className="text-[13px] text-muted">
@@ -229,7 +230,7 @@ export function XraySettings() {
               </span>
               <Button
                 size="sm"
-                disabled={busy}
+                disabled={locked}
                 onClick={prepareSpares}
                 label="Подготовить запасные"
                 short="Подготовить"
@@ -305,7 +306,7 @@ export function XraySettings() {
               </Field>
               <Button
                 variant="primary"
-                disabled={busy || !serverId || inboundId === '' || !st.binary}
+                disabled={locked || !serverId || inboundId === '' || !st.binary}
                 onClick={setup}
                 label={busy ? 'Настраиваю...' : 'Настроить'}
                 short={busy ? 'Настраиваю...' : 'Настроить'}
@@ -321,6 +322,6 @@ export function XraySettings() {
 
         {msg && <Alert tone={msg.tone}>{msg.text}</Alert>}
       </div>
-    </Section>
+    </Dialog>
   );
 }

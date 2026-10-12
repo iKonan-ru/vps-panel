@@ -1,3 +1,4 @@
+import { useDeploy } from '@/components/deploy-banner';
 import { Alert } from '@/components/ui/alert';
 import { Button } from '@/components/ui/button';
 import { Chip } from '@/components/ui/chip';
@@ -41,24 +42,31 @@ const HOURS = [...Array(24).keys()];
 export function PanelVersionSettings() {
   const ask = useConfirm();
   const qc = useQueryClient();
-  const { data: st } = useQuery({
+  const { data: deploy } = useDeploy();
+  const updating = deploy?.status?.state === 'building';
+  const { data: st, isFetching } = useQuery({
     queryKey: KEY,
     queryFn: () => api<PanelUpdateView>('/api/panel/update'),
-    refetchInterval: 60_000,
+    // пока обновление запрошено или идёт - чаще: блок узнаёт о конце сам
+    refetchInterval: (q) => (q.state.data?.requested || updating ? 5000 : 60_000),
   });
-  const [busy, setBusy] = useState(false);
+  const [working, setWorking] = useState(false);
   const [err, setErr] = useState<string | null>(null);
   if (!st) return null;
 
+  // занято: свой запрос, перечитывание версий, запрошенное или идущее обновление панели -
+  // кнопки и переключатели блока недоступны
+  const busy = working || isFetching || Boolean(st.requested) || updating;
   const run = async (fn: () => Promise<PanelUpdateView>) => {
-    setBusy(true);
+    if (working) return;
+    setWorking(true);
     setErr(null);
     try {
       qc.setQueryData(KEY, await fn());
     } catch (e) {
       setErr((e as Error).message);
     } finally {
-      setBusy(false);
+      setWorking(false);
     }
   };
   const save = (patch: Partial<PanelUpdateView>) =>
@@ -101,7 +109,7 @@ export function PanelVersionSettings() {
           onClick={() => run(() => api('/api/panel/update/check', { method: 'POST' }))}
           label="Проверить"
         >
-          <RefreshCw className="size-3.5" />
+          <RefreshCw className={working && !st.requested ? 'size-3.5 animate-spin' : 'size-3.5'} />
         </Button>
       }
     >
@@ -119,7 +127,9 @@ export function PanelVersionSettings() {
               <div className="min-w-0 grow text-[13px]">
                 {st.newer.length === 1 ? 'Новая версия' : `Новых версий: ${st.newer.length}`}
               </div>
-              {st.requested ? (
+              {updating ? (
+                <Chip tone="accent">обновляется до {deploy?.status?.commit}</Chip>
+              ) : st.requested ? (
                 <Chip tone="accent">обновление до {st.requested} запрошено</Chip>
               ) : (
                 st.managed && (
