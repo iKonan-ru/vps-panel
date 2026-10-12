@@ -180,6 +180,12 @@ elif [ "$(port_owner 443)" = caddy ] && naive_unit_active; then echo "OK|443 д�
 else echo "WARN|443 занят ($(port_owner 443)): прокси только на порту $NAIVE_PORT, сертификат - только через 80"; fi
 o80=$(port_owner 80)
 if [ -z "$o80" ] || { [ "$o80" = caddy ] && naive_unit_active; }; then echo "OK|80 свободен - для выпуска сертификата (HTTP-01)"; else echo "WARN|80 занят ($o80): сертификат - только через 443"; fi
+# сертификат выпускается через 443 (сам или маской MTProxyL) или 80; оба чужие (сервер панели:
+# их держит Caddy панели) - Let's Encrypt не достучится, ставить бессмысленно
+o443=$(port_owner 443)
+ok443=false; { [ "$mp" = "443" ] && command -v mtproxyl >/dev/null 2>&1; } || [ -z "$o443" ] || { [ "$o443" = caddy ] && naive_unit_active; } && ok443=true
+ok80=false; [ -z "$o80" ] || { [ "$o80" = caddy ] && naive_unit_active; } && ok80=true
+if [ "$ok443" = false ] && [ "$ok80" = false ]; then echo "FAIL|443 и 80 заняты ($o443, $o80): сертификат для $D не выпустить"; fi
 if naive_unit_active; then echo "WARN|прокси уже установлен: служба перезапустится, пользователи и секретное имя сохранятся"; fi
 curl -fsS -m 10 -o /dev/null "$PANEL_URL/files/sha256/naive/caddy-linux-amd64" && echo "OK|бинарник прокси на панели есть" || echo "FAIL|панель не отдаёт /files/naive - собери tools/build-naive.sh"`,
   plan: (a) => [

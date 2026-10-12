@@ -14,8 +14,9 @@ import {
 } from '../src/db/schema.js';
 import { clientSlug, newClientToken, newXuiSubId } from '../src/lib/gclient-names.js';
 import { awgRef } from '../src/lib/gclient-services.js';
-import { GClients, queued } from '../src/lib/gclients.js';
+import { GClients, PANEL_HOST_KEY, queued } from '../src/lib/gclients.js';
 import { SecretBox } from '../src/lib/secret-box.js';
+import { putSetting } from '../src/lib/settings.js';
 
 /** Имитация 3X-UI v3 на сервере: inbound-ы, клиенты, ссылки подписки. */
 function fakeXui() {
@@ -327,6 +328,24 @@ describe('GClients.reconcile: 3X-UI', () => {
     // повторная сверка ничего не делает: всё ok
     await g.reconcile();
     expect(journal.log).toHaveLength(2);
+  });
+
+  it('сервер панели: клиенты только после явного включения', async () => {
+    const c = mk('Оля');
+    // s1 - сервер панели: его адрес - адрес домена панели
+    const g = new GClients(db, box, registry, journal, async () => ['s1.example'], {
+      warn: () => {},
+    });
+    await g.reconcile();
+    expect(xui.s1?.clients.get(c.slug)).toBeUndefined();
+    expect(xui.s2?.clients.get(c.slug)).toBeTruthy();
+    const st = (await g.serverStates()).find((t) => t.row.id === 's1');
+    expect(st).toMatchObject({ panelHost: true, enabled: false, active: false });
+
+    putSetting(db, PANEL_HOST_KEY, '1');
+    db.update(gclientBindings).set(queued()).run();
+    await g.reconcile();
+    expect(xui.s1?.clients.get(c.slug)).toBeTruthy();
   });
 
   it('выключение, исключение сервера, удаление клиента; занятый сервер ждёт', async () => {

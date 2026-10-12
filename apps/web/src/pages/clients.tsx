@@ -8,6 +8,7 @@ import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Chip } from '@/components/ui/chip';
+import { useConfirm } from '@/components/ui/confirm';
 import { Dialog } from '@/components/ui/dialog';
 import { Field } from '@/components/ui/field';
 import { Input } from '@/components/ui/input';
@@ -32,7 +33,7 @@ interface XuiInbound {
 
 /**
  * Глобальные клиенты: человек с устройствами, VLESS и MTProxy на человека,
- * AWG на устройство, на всех серверах, кроме сервера панели и исключённых.
+ * AWG на устройство, на всех серверах, кроме исключённых (сервер панели - только если включён).
  */
 export function ClientsPage() {
   const qc = useQueryClient();
@@ -259,6 +260,7 @@ function AddClientForm({ onDone }: { onDone: (id: string) => void }) {
 /** Где заводятся глобальные клиенты: участие сервера и исключённые inbound-ы 3X-UI. */
 /** Серверы и их участие в глобальных клиентах (окно "Серверы"): переключатель и inbound-ы 3X-UI. */
 function ServersList() {
+  const ask = useConfirm();
   const qc = useQueryClient();
   const { data } = useQuery({
     queryKey: ['gclient-servers'],
@@ -272,7 +274,7 @@ function ServersList() {
     <div className="flex flex-col">
       <div className="pb-2 text-[13px] text-muted">
         Где заводятся глобальные клиенты. Выключенный сервер исключается: заведённое на нём
-        удаляется; сервер панели исключён всегда.
+        удаляется. Сервер панели участвует, только если включить его здесь.
       </div>
       {toggle.error && <Alert tone="bad">{toggle.error}</Alert>}
       {data.map((s) => {
@@ -282,11 +284,22 @@ function ServersList() {
           <div key={s.id} className="border-b border-border py-3 last:border-b-0">
             <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
               <Switch
-                checked={s.enabled && !panelHost}
-                disabled={panelHost || toggle.busy}
+                checked={s.enabled}
+                disabled={toggle.busy}
                 label={`Глобальные клиенты на ${s.name}`}
                 onChange={() =>
                   void toggle.run(async () => {
+                    // сервер панели: включение заводит на нём всех клиентов - спросить
+                    if (
+                      panelHost &&
+                      !s.enabled &&
+                      !(await ask({
+                        title: `Заводить клиентов на сервере панели ${s.name}?`,
+                        text: 'Сверка заведёт на нём глобальных клиентов во всех его сервисах (AWG, 3X-UI, MTProxy, WDTT, OpenFlux - что установлено). Порты 80 и 443 держит панель: сервисы здесь - только на других портах. Нагрузка клиентов ложится на тот же сервер, что и панель.',
+                        okLabel: 'Заводить',
+                      }))
+                    )
+                      return;
                     await api(`/api/servers/${s.id}/gclients`, {
                       method: 'PATCH',
                       json: { enabled: !s.enabled },
@@ -298,14 +311,16 @@ function ServersList() {
               <div className="min-w-0 grow">
                 <div className="text-[13px] font-medium">{s.name}</div>
                 <div className="text-xs text-muted">
-                  {panelHost
-                    ? 'сервер панели: глобальные клиенты не заводятся'
+                  {panelHost && !s.enabled
+                    ? 'сервер панели: клиенты не заводятся, пока не включишь'
                     : !s.enabled
                       ? 'исключён: клиенты здесь не заводятся, заведённые удаляются'
                       : !s.xui
                         ? '3X-UI нет'
                         : s.online
-                          ? 'участвует'
+                          ? panelHost
+                            ? 'сервер панели, участвует: 80 и 443 держит панель'
+                            : 'участвует'
                           : 'участвует, сейчас не в сети'}
                 </div>
               </div>

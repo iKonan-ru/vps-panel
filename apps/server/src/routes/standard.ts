@@ -5,6 +5,7 @@ import { type StatusCache, patchStatusCache, toSummary } from '../agents/state.j
 import type { Env } from '../config.js';
 import type { Db } from '../db/index.js';
 import { servers } from '../db/schema.js';
+import { panelHostOptIn } from '../lib/gclients.js';
 import { panelAddresses } from '../lib/panel-host.js';
 import type { ServiceUpdates } from '../lib/service-updates.js';
 import { type AwgInstanceBrief, STANDARD, standardCells } from '../lib/standard.js';
@@ -26,7 +27,8 @@ export async function standardRoutes(
     const out = await Promise.all(
       rows.map(async (row) => {
         const s = toSummary(row, registry, null, ips);
-        if (s.panelHost) return null;
+        // сервер панели - в эталоне, только если на нём заводятся глобальные клиенты
+        if (s.panelHost && !panelHostOptIn(db)) return null;
         const cache = (row.statusCache ?? {}) as StatusCache;
         let awg: AwgInstanceBrief[] | null = cache.awgInstances ?? null;
         if (!s.services.some((x) => x.kind === 'amnezia')) awg = [];

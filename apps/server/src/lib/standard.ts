@@ -2,7 +2,7 @@ import type { Service, StdCell, StdItem, StdKey } from '@vps/protocol';
 import type { ServiceUpdate } from './service-updates.js';
 
 /**
- * Эталон сервисов: на каждом сервере, кроме сервера панели, - 3X-UI, MTProxyL, AWG 3.1 и 2.0,
+ * Эталон сервисов: на каждом сервере (сервер панели - если на нём заводятся клиенты) - 3X-UI, MTProxyL, AWG 3.1 и 2.0,
  * WDTT, OpenFlux, прокси для браузера. install - команда каталога, которой недостающее ставится.
  */
 
