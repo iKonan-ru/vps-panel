@@ -1,5 +1,6 @@
 import { type WdttLinks, WdttLinksView } from '@/components/links/wdtt-links';
 import { OwnerLink, useOwners, useWdttKeys } from '@/components/owner-link';
+import { UninstallBlock } from '@/components/server/uninstall-block';
 import { ActionBar } from '@/components/ui/action-bar';
 import { Alert } from '@/components/ui/alert';
 import { Button } from '@/components/ui/button';
@@ -222,6 +223,15 @@ export function WdttTab({ s }: { s: ServerDetail }) {
           );
         })}
       </Section>
+
+      <UninstallBlock
+        serverId={s.id}
+        kind="wdtt"
+        title="WDTT"
+        loses="сервер WDTT и пароли всех пользователей пропадут, приложения перестанут подключаться."
+        disabled={blocked}
+        reason={lock.reason}
+      />
 
       <Dialog open={add} onClose={() => setAdd(false)} title="Новый пользователь WDTT">
         <PasswordForm

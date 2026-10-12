@@ -8,6 +8,7 @@ import {
   type MtVersionKind,
   type MtVersions,
 } from '@/components/server/mtproxyl/versions';
+import { UninstallBlock } from '@/components/server/uninstall-block';
 import { VersionsSection } from '@/components/server/versions-section';
 import { ActionBar } from '@/components/ui/action-bar';
 import { Alert } from '@/components/ui/alert';
@@ -414,6 +415,15 @@ export function MtproxylTab({ s }: { s: ServerDetail }) {
           </Button>
         </div>
       </VersionsSection>
+
+      <UninstallBlock
+        serverId={s.id}
+        kind="mtproxyl"
+        title="MTProxyL"
+        loses="прокси, его пользователи и веб-панель пропадут, ссылки tg://proxy перестанут работать."
+        disabled={busy || lock.busy}
+        reason={lock.reason}
+      />
 
       <Dialog open={engineOpen} onClose={() => setEngineOpen(false)} title="Версия движка telemt">
         {engineOpen && (

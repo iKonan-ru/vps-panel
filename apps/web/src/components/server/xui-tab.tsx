@@ -1,5 +1,6 @@
 import { ActionPanel } from '@/components/action-output';
 import { MetricCard } from '@/components/server/metric-card';
+import { UninstallBlock } from '@/components/server/uninstall-block';
 import { type Versions, VersionsSection } from '@/components/server/versions-section';
 import { XuiClients } from '@/components/server/xui-clients';
 import { type Inbound, XuiInbounds } from '@/components/server/xui-inbounds';
@@ -431,6 +432,15 @@ export function XuiTab({ s }: { s: ServerDetail }) {
         info={data}
         busy={busy || lock.busy}
         onSubmit={(body) => start('Настройки 3X-UI', () => xuiApi.set(s.id, body))}
+      />
+
+      <UninstallBlock
+        serverId={s.id}
+        kind="xui"
+        title="3X-UI"
+        loses="панель, Xray и все inbound-ы с их клиентами пропадут, привязки клиентов панели снимутся."
+        disabled={busy || lock.busy}
+        reason={lock.reason}
       />
 
       <Dialog open={showLog} onClose={() => setShowLog(false)} title="Журнал 3X-UI" wide>

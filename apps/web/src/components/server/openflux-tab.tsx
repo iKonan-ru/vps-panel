@@ -1,5 +1,6 @@
 import { ActionPanel } from '@/components/action-output';
 import { OwnerLink, useOwners } from '@/components/owner-link';
+import { UninstallBlock } from '@/components/server/uninstall-block';
 import { ActionBar } from '@/components/ui/action-bar';
 import { Alert } from '@/components/ui/alert';
 import { Button } from '@/components/ui/button';
@@ -286,6 +287,15 @@ export function OpenfluxTab({ s }: { s: ServerDetail }) {
           );
         })}
       </Section>
+
+      <UninstallBlock
+        serverId={s.id}
+        kind="openflux"
+        title="OpenFlux"
+        loses="все каналы пропадут, их ссылки в приложениях перестанут работать."
+        disabled={blocked}
+        reason={lock.reason}
+      />
 
       <Dialog open={add} onClose={() => setAdd(false)} title="Новый канал OpenFlux">
         <ChannelForm

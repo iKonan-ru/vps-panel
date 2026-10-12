@@ -9,6 +9,7 @@ import { Dialog } from '@/components/ui/dialog';
 import { api } from '@/lib/api';
 import { cn } from '@/lib/cn';
 import { type ServerDetail, serverLock } from '@/lib/servers';
+import { useUninstall } from '@/lib/uninstall';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { Plus, RefreshCw } from 'lucide-react';
 import { useEffect, useState } from 'react';
@@ -19,6 +20,7 @@ import { useEffect, useState } from 'react';
  */
 export function AwgTab({ s }: { s: ServerDetail }) {
   const owner = useOwners(s.id);
+  const uninstall = useUninstall();
   const qc = useQueryClient();
   const online = s.status === 'online';
   const { data, error, isFetching } = useQuery({
@@ -128,6 +130,7 @@ export function AwgTab({ s }: { s: ServerDetail }) {
           owner={(key) => owner('awg', key)}
           onClient={(c) => setOpen({ container: inst.container, publicKey: c.publicKey })}
           onAdd={() => setAdding(inst.container)}
+          onUninstall={() => uninstall(s.id, 'amnezia', { AWG_CONTAINER: inst.container })}
           addDisabled={busy || lock.busy}
           addTitle={lock.reason}
           onSetParams={async (profile) => {
