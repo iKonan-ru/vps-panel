@@ -58,6 +58,16 @@ const XRAY_INSTALL_MS = 4 * 60_000;
 /** "v3.8.5", "3.8.5" и "3.8.5-1a2b3c4" (тег образа с коммитом) - одна версия. */
 const norm = (v: string) => v.trim().replace(/^v/i, '').split('-')[0] ?? '';
 
+/** Новейшая версия списка ("v26.10.10"); не номера версий пропускаются. */
+export function newest(list: string[]): string | undefined {
+  return list
+    .filter((v) => cmpVersion(v, v) !== null)
+    .reduce<string | undefined>(
+      (best, v) => (best === undefined || cmpVersion(v, best) === 1 ? v : best),
+      undefined,
+    );
+}
+
 /** 1 - a новее b, -1 - старее, 0 - равны; null - не номера версий (сборка из ветки и т.п.). */
 export function cmpVersion(a: string, b: string): number | null {
   const pa = norm(a).split('.');
@@ -72,8 +82,8 @@ export function cmpVersion(a: string, b: string): number | null {
 
 /**
  * Проверка обновлений раз в 6 часов через агента: 3X-UI отвечает своим API
- * getPanelUpdateInfo, Xray - версией из server/status 3X-UI и последним стабильным релизом
- * XTLS/Xray-core, если 3X-UI предлагает его в getXrayVersion; MTProxyL - командой update-check,
+ * getPanelUpdateInfo, Xray - версией из server/status и новейшей из предложенных 3X-UI
+ * (getXrayVersion); MTProxyL - командой update-check,
  * веб-панель - версией из panel status и последним релизом на GitHub. Результат
  * хранится в setting, чтобы уведомление о версии не повторялось после перезапуска.
  * После обновления сервис перепроверяется сразу (recheck).
@@ -82,7 +92,6 @@ export class ServiceUpdates {
   /** Проверки по очереди: расписание и кнопка не затирают общий store друг друга. */
   private queue: Promise<unknown> = Promise.resolve();
   private panelRelease: { at: number; version: string } | null = null;
-  private xrayRelease: { at: number; tag: string } | null = null;
 
   constructor(
     private db: Db,
@@ -267,39 +276,24 @@ export class ServiceUpdates {
   }
 
   /**
-   * Xray внутри 3X-UI: последняя стабильная версия с GitHub; доступна, если она новее текущей и
-   * 3X-UI сам предлагает её поставить (getXrayVersion - список, который он умеет ставить).
+   * Xray внутри 3X-UI: новейшая версия из тех, что 3X-UI сам предлагает поставить
+   * (getXrayVersion - релизы Xray-core, которые он умеет ставить; новые релизы Xray долго
+   * помечены pre-release, а 3X-UI предлагает и их). Доступна, если новее текущей.
    */
   private async checkXray(serverId: string): Promise<Checked> {
     const call = await this.xui(serverId);
     const current = await this.xrayVersion(call);
-    const latest = await this.latestXray();
     const r = await call('GET', 'server/getXrayVersion');
     const env = r.data as XuiEnvelope | undefined;
     if (r.status !== 200 || !env?.success || !Array.isArray(env.obj))
       throw new Error(`3X-UI getXrayVersion: ${env?.msg ?? r.status}`);
-    const offered = (env.obj as string[]).includes(latest);
-    const newer = cmpVersion(latest, current) === 1;
+    const latest = newest(env.obj as string[]);
+    if (!latest) throw new Error('3X-UI getXrayVersion: пустой список');
     return {
       current: norm(current),
       latest: norm(latest),
-      available: newer && offered,
-      ...(newer && !offered ? { detail: `3X-UI пока не предлагает ${latest}: обнови 3X-UI` } : {}),
+      available: cmpVersion(latest, current) === 1,
     };
-  }
-
-  /** Последний стабильный релиз XTLS/Xray-core ("v26.7.15"): один запрос на все серверы, кэш на час. */
-  private async latestXray(): Promise<string> {
-    if (this.xrayRelease && Date.now() - this.xrayRelease.at < 60 * 60_000)
-      return this.xrayRelease.tag;
-    const r = await this.fetchOut('https://api.github.com/repos/XTLS/Xray-core/releases/latest', {
-      headers: { Accept: 'application/vnd.github+json', 'User-Agent': 'vps-panel' },
-    });
-    if (!r.ok) throw new Error(`GitHub: ${r.status}`);
-    const tag = ((await r.json()) as { tag_name?: string }).tag_name;
-    if (!tag) throw new Error('GitHub: нет релиза Xray');
-    this.xrayRelease = { at: Date.now(), tag };
-    return tag;
   }
 
   /**

@@ -45,18 +45,24 @@ function setup(state: { xray: string; offered: string[]; installs: string[] }) {
     async (_id, x) => {
       sent.push(x);
     },
-    async () => new Response(JSON.stringify({ tag_name: 'v26.7.15' })),
+    async () => {
+      throw new Error('GitHub не нужен');
+    },
   );
   return { u, sent };
 }
 
 describe('ServiceUpdates: Xray в 3X-UI', () => {
-  it('новая версия, которую 3X-UI предлагает, - обновление; ставится и пропадает', async () => {
-    const state = { xray: '26.6.27', offered: ['v26.7.15', 'v26.6.27'], installs: [] as string[] };
+  it('новейшая из предложенных 3X-UI - обновление; ставится и пропадает', async () => {
+    const state = {
+      xray: '26.9.30',
+      offered: ['v26.10.10', 'v26.9.30', 'v26.6.27'],
+      installs: [] as string[],
+    };
     const { u, sent } = setup(state);
     const list = await u.recheck('s1');
     expect(list.map((x) => `${x.kind} ${x.current} -> ${x.latest}`)).toEqual([
-      'xray 26.6.27 -> 26.7.15',
+      'xray 26.9.30 -> 26.10.10',
     ]);
     expect(sent.map((x) => x.title)).toEqual(['Xray']);
 
@@ -71,13 +77,17 @@ describe('ServiceUpdates: Xray в 3X-UI', () => {
       },
     } as Action;
     await u.installXray('s1', action);
-    expect(state.installs).toEqual(['v26.7.15']);
+    expect(state.installs).toEqual(['v26.10.10']);
     expect(code).toBe(0);
     expect(await u.list('s1')).toEqual([]);
   });
 
-  it('версию, которой нет в списке 3X-UI, не предлагает', async () => {
-    const state = { xray: '26.6.27', offered: ['v26.6.27'], installs: [] as string[] };
+  it('стоит новейшая из предложенных - обновления нет', async () => {
+    const state = {
+      xray: '26.10.10',
+      offered: ['v26.9.30', 'v26.10.10'],
+      installs: [] as string[],
+    };
     const { u, sent } = setup(state);
     expect(await u.recheck('s1')).toEqual([]);
     expect(sent).toEqual([]);
