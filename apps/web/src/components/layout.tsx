@@ -104,13 +104,34 @@ export function AppLayout({ login }: { login: string }) {
         <div
           className={cn(
             'pt-1 pb-5',
-            collapsed ? 'flex flex-col items-center gap-1.5' : 'flex items-center gap-2 px-2',
+            collapsed ? 'flex flex-col items-center gap-1.5' : 'flex items-center px-2',
           )}
         >
-          <Link to="/" aria-label="На главную" className="inline-flex">
-            <Logo compact={collapsed} size={collapsed ? 38 : 28} />
-          </Link>
-          <PanelVersionBadge compact={collapsed} />
+          {collapsed ? (
+            <>
+              <Link to="/" aria-label="На главную" className="inline-flex">
+                <Logo compact size={38} />
+              </Link>
+              <PanelVersionBadge compact />
+            </>
+          ) : (
+            // плашка - под названием: версия вида 1.0.0-beta.13 в строку с ним не помещается
+            <div className="flex items-center gap-2.5">
+              <Link to="/" aria-label="На главную" className="inline-flex">
+                <Logo compact size={32} />
+              </Link>
+              <div className="flex min-w-0 flex-col items-start gap-0.5">
+                <Link
+                  to="/"
+                  className="logo-text whitespace-nowrap font-semibold leading-tight"
+                  tabIndex={-1}
+                >
+                  VPS Panel
+                </Link>
+                <PanelVersionBadge />
+              </div>
+            </div>
+          )}
         </div>
         {nav.map((n) => (
           <Link
