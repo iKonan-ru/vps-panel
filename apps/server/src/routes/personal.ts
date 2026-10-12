@@ -11,6 +11,7 @@ import type { AppReleases } from '../lib/apps.js';
 import { awgClientConfigs } from '../lib/awg-clients.js';
 import { awgTunnelNames } from '../lib/awg-config.js';
 import { firefoxXpi } from '../lib/extension.js';
+import { firefoxDirs } from '../lib/firefox.js';
 import { awgRef } from '../lib/gclient-services.js';
 import {
   OS_IDS,
@@ -195,7 +196,7 @@ ${fold({ head: 'Ссылки серверов (PWDTT)', n: wd.length, body: item
     // основная (скрипт страницы), шаги установки - свёрнуты.
     if (rows.some((r) => r.b.service === 'naive' && r.b.state === 'ok' && r.b.links[0])) {
       const pageUrl = `${subBase}/c/${c.token}`;
-      const firefox = Boolean(firefoxXpi(env.FILES_DIR));
+      const firefox = Boolean(firefoxXpi(firefoxDirs(env)));
       const askLink = `<li>Если расширение попросит ссылку - вставьте ссылку этой страницы:<br>${copyBtn(pageUrl, 'Скопировать ссылку', 'sm')}</li>`;
       const steps = (title: string, list: string[]) =>
         fold({
@@ -272,7 +273,7 @@ ${steps('Как установить в Chrome', [
     const { token } = req.params as { token: string };
     const c = clientOf(token);
     if (!c || !c.enabled) return reply.code(404).type('text/plain').send('not found');
-    const file = firefoxXpi(env.FILES_DIR);
+    const file = firefoxXpi(firefoxDirs(env));
     if (!file) return reply.code(503).type('text/plain').send('extension is not available');
     return reply.type('application/x-xpinstall').send(readFileSync(file));
   });

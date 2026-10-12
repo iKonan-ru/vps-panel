@@ -1,5 +1,7 @@
+import { FirefoxSettings } from '@/components/firefox-settings';
 import { OpenfluxDocsSettings } from '@/components/openflux-docs-settings';
 import { PanelBackupSettings } from '@/components/panel-backup-settings';
+import { PanelVersionSettings } from '@/components/panel-version-settings';
 import { ReachSettings } from '@/components/reach-settings';
 import { MetricCard } from '@/components/server/metric-card';
 import { TelegramSettings } from '@/components/telegram-settings';
@@ -54,6 +56,8 @@ export function SettingsPage() {
     <>
       <PageTitle>Настройки</PageTitle>
 
+      <PanelVersionSettings />
+
       <TelegramSettings />
 
       <PanelBackupSettings />
@@ -64,6 +68,7 @@ export function SettingsPage() {
 
       <WdttSettings />
       <OpenfluxDocsSettings />
+      <FirefoxSettings />
 
       <div className="grid gap-3 sm:grid-cols-3 md:gap-4">
         <MetricCard

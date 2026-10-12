@@ -112,11 +112,12 @@ os.replace(tmp, p)
 PY
 }
 
-wait_health() { # wait_health <версия> <секунд>: /api/health отвечает этой версией
+wait_health() { # wait_health <версия> <секунд>: /api/health отвечает этой версией (-k: сертификат
+  # на свежей установке может быть ещё не выпущен, а проверяется здесь только ответ панели)
   local v="$1" n=$(($2 / 5)) dom
   dom="$(env_get PANEL_DOMAIN)"
   for _ in $(seq 1 "$n"); do
-    if curl -fsS -m 8 --resolve "$dom:443:127.0.0.1" "https://$dom/api/health" 2>/dev/null | grep -q "\"version\":\"$v\""; then
+    if curl -kfsS -m 8 --resolve "$dom:443:127.0.0.1" "https://$dom/api/health" 2>/dev/null | grep -q "\"version\":\"$v\""; then
       return 0
     fi
     sleep 5

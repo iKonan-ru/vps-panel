@@ -22,6 +22,7 @@ export const NOTIFY_EVENTS = [
   'updMtproxylPanel',
   'payment',
   'backupFail',
+  'updPanel',
 ] as const;
 export type NotifyEvent = (typeof NOTIFY_EVENTS)[number];
 
@@ -143,6 +144,11 @@ export const NOTIFY_GROUPS: NotifyGroup[] = [
     id: 'panel',
     title: 'Панель',
     events: [
+      {
+        key: 'updPanel',
+        title: 'Вышла новая версия панели',
+        hint: 'в своём канале (стабильный или бета)',
+      },
       {
         key: 'backupFail',
         title: 'Бэкап панели не создан или не отправлен',

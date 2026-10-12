@@ -5,6 +5,7 @@ import type { Env } from '../config.js';
 import type { Db } from '../db/index.js';
 import { ExtReportSchema, recordLegacyFetch, recordReport } from '../lib/browser-ext.js';
 import { FIREFOX_FILE, extensionVersion } from '../lib/extension.js';
+import { firefoxDirs } from '../lib/firefox.js';
 import {
   buildBrowserSubscription,
   buildSubscription,
@@ -23,7 +24,10 @@ export async function subscriptionRoutes(
   app: FastifyInstance,
   opts: {
     db: Db;
-    env?: Pick<Env, 'EXTENSION_DIR' | 'SUB_PUBLIC_URL' | 'PANEL_PUBLIC_URL' | 'FILES_DIR'>;
+    env?: Pick<
+      Env,
+      'EXTENSION_DIR' | 'SUB_PUBLIC_URL' | 'PANEL_PUBLIC_URL' | 'FILES_DIR' | 'DATA_DIR'
+    >;
   },
 ) {
   const subBase = opts.env
@@ -79,12 +83,15 @@ export async function subscriptionRoutes(
     const { file } = req.params as { file: string };
     if (!opts.env || !FIREFOX_FILE.test(file))
       return reply.code(404).type('text/plain').send('not found');
-    let data: Buffer;
-    try {
-      data = readFileSync(join(opts.env.FILES_DIR, 'firefox', file));
-    } catch {
-      return reply.code(404).type('text/plain').send('not found');
+    // сначала подписанное самой панелью (data/firefox), потом прежняя раскладка (files/firefox)
+    let data: Buffer | null = null;
+    for (const dir of firefoxDirs(opts.env)) {
+      try {
+        data = readFileSync(join(dir, file));
+        break;
+      } catch {}
     }
+    if (!data) return reply.code(404).type('text/plain').send('not found');
     const json = file === 'updates.json';
     reply.header('Cache-Control', json ? 'no-cache' : 'public, max-age=86400');
     return reply.type(json ? 'application/json' : 'application/x-xpinstall').send(data);

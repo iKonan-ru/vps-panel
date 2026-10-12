@@ -5,6 +5,7 @@ import type { StatusCache } from '../agents/state.js';
 import type { Db } from '../db/index.js';
 import { servers } from '../db/schema.js';
 import { daysToPayment, rollPaymentDate } from './billing.js';
+import type { PanelRelease } from './panel-updates.js';
 import { schedule } from './schedule.js';
 import type { ServiceUpdate, ServiceUpdateKind } from './service-updates.js';
 import { type Telegram, esc } from './telegram.js';
@@ -234,6 +235,14 @@ export class Notifier {
     // "снова виден" - только если о пропаже этой цели вообще уведомляем
     if (note.back && !(await this.tg.wants(reachEvent(note.key, false), id))) return;
     await this.tg.send(`${await this.serverName(id)}: ${note.text}`);
+  }
+
+  /** Новая версия самой панели (релиз GitHub в её канале), один раз на версию. */
+  async panelRelease(r: PanelRelease) {
+    if (!(await this.tg.wants('updPanel'))) return;
+    await this.tg.send(
+      `VPS Panel: вышла версия ${esc(r.version)}${r.prerelease ? ' (бета)' : ''}. Обновить - Настройки, блок "Версия панели". ${esc(r.url)}`,
+    );
   }
 
   /** Новая версия установленного сервиса (3x-ui, Xray, MTProxyL), один раз на версию. */
