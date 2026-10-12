@@ -197,12 +197,20 @@ let nv: Record<string, Map<string, string>>;
 let busy: Set<string>;
 const journal = {
   log: [] as { serverId: string; exitCode: number; output: string }[],
-  async start(serverId: string) {
+  /** Вывод по ходу (консоль на странице сервера): сервер -> куски. */
+  streamed: {} as Record<string, string>,
+  open(serverId: string) {
     if (busy.has(serverId)) throw Object.assign(new Error('занят'), { statusCode: 409 });
-    return serverId;
-  },
-  async finish(_id: string, serverId: string, exitCode: number, output: string) {
-    journal.log.push({ serverId, exitCode, output });
+    return {
+      id: serverId,
+      output: '',
+      stream(_channel: string, chunk: string) {
+        journal.streamed[serverId] = (journal.streamed[serverId] ?? '') + chunk;
+      },
+      async finish(exitCode: number, output = '') {
+        journal.log.push({ serverId, exitCode, output });
+      },
+    };
   },
 };
 const registry = {
@@ -264,6 +272,7 @@ beforeEach(() => {
   nv = { s1: new Map(), s2: new Map() };
   busy = new Set();
   journal.log = [];
+  journal.streamed = {};
   for (const id of ['s1', 's2'])
     db.insert(servers)
       .values({
@@ -324,6 +333,8 @@ describe('GClients.reconcile: 3X-UI', () => {
     expect(b.map((x) => x.state)).toEqual(['ok', 'ok']);
     expect(b.find((x) => x.serverId === 's1')?.links).toHaveLength(2);
     expect(journal.log.map((x) => x.exitCode)).toEqual([0, 0]);
+    // вывод идёт по ходу, а не только итогом в журнал
+    expect(journal.streamed.s1).toMatch(/^Синхронизация клиентов: изменений \d+\n/);
 
     // повторная сверка ничего не делает: всё ok
     await g.reconcile();

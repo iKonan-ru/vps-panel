@@ -151,7 +151,7 @@ export class GClients {
     private box: SecretBox,
     private registry: AgentRegistry,
     // проход сверки - одно действие без стрима
-    private journal: Pick<ReturnType<typeof actionJournal>, 'start' | 'finish'>,
+    private journal: Pick<ReturnType<typeof actionJournal>, 'open'>,
     private panelIps: () => Promise<string[]>,
     private log: { warn: (o: unknown, m?: string) => void },
   ) {}
@@ -514,9 +514,9 @@ export class GClients {
 
   /** Одно действие в журнале на сервер: изменения 3X-UI и AWG по порядку. */
   private async syncServer(row: ServerRow, work: Binding[], ctx: SyncCtx) {
-    let actionId: string;
+    let action: ReturnType<ReturnType<typeof actionJournal>['open']>;
     try {
-      actionId = await this.journal.start(row.id, 'gclients.sync', { count: work.length });
+      action = this.journal.open(row.id, 'gclients.sync', { count: work.length });
     } catch {
       return; // сервер занят другим действием - в следующий раз
     }
@@ -534,12 +534,15 @@ export class GClients {
       last: [],
     };
     this.progress.set(row.name, prog);
-    // итог строки - в журнал действия и в ход сверки (последние пять)
+    // итог строки - сразу в вывод действия (консоль на странице сервера), в журнал и в ход
+    // синхронизации (последние пять)
     const say = (line: string) => {
       out.push(line);
+      action.stream('log', `${line}\n`);
       prog.last.push(line);
       if (prog.last.length > 5) prog.last.shift();
     };
+    say(`Синхронизация клиентов: изменений ${work.length}`);
     // Состояние сервисов спрашивается один раз и только если есть работа для них. Запоминается
     // и ошибка: после таймаута следующие привязки не ждут те же 60-120 с заново.
     let xui: Promise<{ api: XuiCall; target: number[]; reason: string; own: number[] }> | null =
@@ -702,6 +705,6 @@ export class GClients {
     prog.done = stoppedAt ?? work.length;
     prog.current = '';
     prog.finished = true;
-    await this.journal.finish(actionId, row.id, failed ? 1 : 0, out.join('\n'));
+    await action.finish(failed ? 1 : 0, out.join('\n'));
   }
 }

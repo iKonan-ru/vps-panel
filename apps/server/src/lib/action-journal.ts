@@ -9,6 +9,17 @@ import type { UiHub } from './ui-hub.js';
 /** Вывод действия в журнале - хвост этой длины; столько же держим в памяти, пока оно идёт. */
 export const MAX_OUTPUT = 1_000_000;
 
+/**
+ * Вывод идущих действий (в базе он появляется только по окончании): консоль, открытая посреди
+ * действия, получает уже выведенное, а не пустое "ожидание вывода".
+ */
+const running = new Map<string, () => string>();
+
+/** Накопленный вывод идущего действия или null (не идёт или без стрима). */
+export function liveOutput(id: string): string | null {
+  return running.get(id)?.() ?? null;
+}
+
 /** Действие со стримом вывода (journal.open). */
 export interface Action {
   id: string;
@@ -27,6 +38,7 @@ export interface Action {
  */
 export function actionJournal(db: Db, hub: UiHub, registry: AgentRegistry) {
   async function finish(id: string, serverId: string, exitCode: number, output: string) {
+    running.delete(id);
     await db
       .update(actionLog)
       .set({ finishedAt: new Date().toISOString(), exitCode, output: output.slice(-MAX_OUTPUT) })
@@ -50,6 +62,7 @@ export function actionJournal(db: Db, hub: UiHub, registry: AgentRegistry) {
     beginAction(db, { id, serverId, kind, params }, force);
     hub.broadcast({ type: 'action.started', serverId, actionId: id, kind });
     let output = '';
+    running.set(id, () => output);
     return {
       id,
       get output() {
