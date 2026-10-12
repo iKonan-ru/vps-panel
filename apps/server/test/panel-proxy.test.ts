@@ -84,7 +84,9 @@ describe('поддомены панелей сервисов', () => {
     // свой IP панели: запросы без SNI Caddy ведёт через ask - иначе рукопожатие рвётся
     expect((await get('panel.example', '/api/proxy/ask?domain=203.0.113.10')).status).toBe(200);
     expect((await get('panel.example', '/api/proxy/ask?domain=203.0.113.11')).status).toBe(404);
-  });
+    // первые запросы к только что поднятой панели: под нагрузкой полной проверки (ship.sh, все
+    // тесты параллельно) не укладывались в 5 с по умолчанию
+  }, 20_000);
 
   it('неизвестный поддомен - 404, без входа - на вход через панель, xhr - 401', async () => {
     expect((await get('nope-xui.panel.example', '/')).status).toBe(404);
