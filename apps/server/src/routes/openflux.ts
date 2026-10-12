@@ -5,7 +5,7 @@ import { servers } from '../db/schema.js';
 import { actionJournal } from '../lib/action-journal.js';
 import { type ServerRouteOpts, actionRunners } from '../lib/action-runners.js';
 import { awgTunnelNames } from '../lib/awg-config.js';
-import { clientHost } from '../lib/client-host.js';
+import { openfluxLink } from '../lib/client-host.js';
 
 const Id = z.object({ id: z.string() });
 /** Имя канала - как у node-install.sh. */
@@ -48,18 +48,13 @@ export async function openfluxRoutes(app: FastifyInstance, opts: ServerRouteOpts
     if (!row) return reply.code(404).send({ error: 'Сервер не найден' });
     online(id);
     reply.header('Cache-Control', 'no-store');
-    return registry.request(
-      id,
-      'openflux.link',
-      {
-        channel,
-        // имя профиля в приложении - как у остальных сервисов: "флаг Страна :: Хостинг"
-        name: awgTunnelNames({ provider: row.provider, country: row.country, serverName: row.name })
-          .title,
-        host: clientHost(row),
-      },
-      { timeoutMs: 60_000 },
-    );
+    // имя профиля в приложении - как у остальных сервисов: "флаг Страна :: Хостинг"
+    const name = awgTunnelNames({
+      provider: row.provider,
+      country: row.country,
+      serverName: row.name,
+    }).title;
+    return openfluxLink(registry, row, channel, name);
   });
 
   const Exec = z.discriminatedUnion('op', [

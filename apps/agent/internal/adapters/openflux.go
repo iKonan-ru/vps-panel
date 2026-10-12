@@ -228,8 +228,10 @@ func OfLink(ctx context.Context, req OfLinkRequest) (map[string]any, error) {
 	if err := ofChannelExists(req.Channel); err != nil {
 		return nil, err
 	}
-	if net.ParseIP(req.Host) == nil {
-		return nil, errors.New("нужен IP-адрес сервера для direct")
+	// адрес для direct: IP или имя (адрес для клиентов) - ядро OpenFlux у клиента само
+	// разрешает имя, в обход своего туннеля
+	if net.ParseIP(req.Host) == nil && !reNaiveHost.MatchString(strings.ToLower(req.Host)) {
+		return nil, errors.New("нужен адрес сервера для direct: IP или имя")
 	}
 	conf, err := readOfConf(req.Channel)
 	if err != nil {
