@@ -35,7 +35,7 @@ export async function resolvePublic(
     const err = (v4.status === 'rejected' ? v4.reason : null) as { code?: string } | null;
     // имени нет - ответ окончательный, другие резолверы спрашивать незачем
     if (err?.code === 'ENOTFOUND' || err?.code === 'ENODATA')
-      return { addresses: [], error: `имя ${name} не находится в DNS` };
+      return { addresses: [], error: `имени ${name} нет в DNS` };
     last = err?.code ?? 'нет ответа';
   }
   return { addresses: [], error: `DNS не ответил (${last})` };
@@ -54,7 +54,11 @@ export async function checkClientHost(
   return {
     ok,
     addresses: r.addresses,
-    ...(ok ? {} : { error: `${name} указывает на ${r.addresses.join(', ')}, а сервер - ${host}` }),
+    ...(ok
+      ? {}
+      : {
+          error: `${name} указывает на ${r.addresses.join(', ')}, а адрес сервера\u00a0\u2014 ${host}`,
+        }),
   };
 }
 

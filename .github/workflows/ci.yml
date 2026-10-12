@@ -1,5 +1,6 @@
 # Проверки на каждый push и pull request: то же, что tools/check.sh (без закрытых строк
-# своей установки): протокол, типы, biome, тесты сервера, агент, символы в файлах.
+# своей установки): протокол, типы, biome, типографика интерфейса, тесты сервера, агент,
+# символы в файлах.
 name: ci
 
 on:
@@ -27,6 +28,7 @@ jobs:
       - run: pnpm --filter @vps/protocol build
       - run: pnpm -r --filter @vps/protocol --filter @vps/server --filter @vps/web exec tsc --noEmit
       - run: npx biome check apps/web/src apps/server/src apps/server/test packages/protocol/src
+      - run: node tools/check-typography.mjs apps/web/src
       - run: npx vitest run
         working-directory: apps/server
       - run: pnpm --filter @vps/web build

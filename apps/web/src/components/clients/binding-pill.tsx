@@ -34,8 +34,9 @@ export function pillLabel(b: GBinding, device: GDevice | undefined) {
   if (b.service === 'mtproxyl') return 'MTProxy';
   if (b.service === 'wdtt') return 'WDTT';
   if (b.service === 'naive') return 'Браузер';
-  if (b.service === 'openflux') return `OpenFlux${device ? ` - ${deviceTitle(device)}` : ''}`;
-  return `AWG ${b.awg?.major ?? '3'}.x${device ? ` - ${deviceTitle(device)}` : ''}`;
+  if (b.service === 'openflux')
+    return `OpenFlux${device ? `\u00a0\u2014 ${deviceTitle(device)}` : ''}`;
+  return `AWG ${b.awg?.major ?? '3'}.x${device ? `\u00a0\u2014 ${deviceTitle(device)}` : ''}`;
 }
 
 /**
@@ -56,13 +57,14 @@ export function BindingPill({
   onOpen: (() => void) | undefined;
 }) {
   const label = pillLabel(b, device);
-  const state = b.state === 'ok' ? 'работает' : b.state === 'pending' ? 'ждёт сверки' : 'ошибка';
+  const state =
+    b.state === 'ok' ? 'работает' : b.state === 'pending' ? 'ждёт синхронизации' : 'ошибка';
   const detail =
     b.state === 'ok' && b.service === 'xui'
-      ? `${b.ref}, ссылок ${b.linkCount}, сверено ${ago(b.updatedAt)}`
+      ? `${b.ref}, ссылок ${b.linkCount}, синхронизировано ${ago(b.updatedAt)}`
       : '';
   const custom = b.xuiInbounds
-    ? `свой набор inbound-ов (${b.xuiInbounds.length}) - правится во вкладке 3X-UI сервера`
+    ? `свой набор inbound (${b.xuiInbounds.length}), правится на вкладке 3X-UI сервера`
     : '';
   const title = [`${label}: ${state}`, liveText(live), detail, custom].filter(Boolean).join('; ');
   const opens = b.service === 'awg' ? 'конфиг' : b.service === 'xui' ? 'подписка' : 'ссылки';

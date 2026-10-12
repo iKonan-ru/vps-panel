@@ -32,7 +32,7 @@ export function IpChangeDialog({
   onClose: () => void;
 }) {
   return (
-    <Dialog open={open} onClose={onClose} title="Сменить IP-адрес сервера">
+    <Dialog open={open} onClose={onClose} title="Смена IP-адреса">
       {open && <IpChangeForm serverId={serverId} host={host} onClose={onClose} />}
     </Dialog>
   );
@@ -92,8 +92,8 @@ function IpChangeForm({
     return (
       <div className="flex flex-col gap-3">
         <Alert tone="ok">
-          Адрес сервера в панели - {ip.trim()}. Ссылки и конфиги на личных страницах сверка обновит
-          в течение нескольких минут; доступность из России перепроверяется.
+          Адрес изменён на {ip.trim()}. Ссылки и конфиги на личных страницах обновятся при
+          синхронизации в течение нескольких минут.
         </Alert>
         <div className="flex justify-end">
           <Button onClick={onClose}>Закрыть</Button>
@@ -104,8 +104,8 @@ function IpChangeForm({
   return (
     <form className="flex flex-col gap-3" onSubmit={(e) => void check(e)}>
       <div className="text-[13px] text-muted">
-        Сейчас: <span className="font-mono text-text">{host}</span>. Сначала поправь A-запись имени
-        сервера ("Адрес для клиентов" в "Обзоре") на новый адрес, потом проверь и переключи.
+        Сейчас: <span className="font-mono text-text">{host}</span>. Перед проверкой A-запись имени
+        из &laquo;Адрес для клиентов&raquo; нужно сменить на новый адрес.
       </div>
       <Field label="Новый IP-адрес" htmlFor="ip-new">
         <Input
@@ -151,12 +151,12 @@ function IpChangeForm({
       <div className="flex flex-wrap justify-end gap-2">
         <Button onClick={onClose}>Отмена</Button>
         <Button type="submit" disabled={busy || !ip.trim()}>
-          {steps ? 'Проверить снова' : 'Проверить'}
+          Проверить
         </Button>
         <Button
           variant="primary"
           disabled={busy || !canSwitch}
-          title={canSwitch ? undefined : 'Сначала проверка: имя должно указывать на новый адрес'}
+          title={canSwitch ? undefined : 'Нужна проверка: имя должно указывать на новый адрес'}
           onClick={() => void apply()}
         >
           Переключить

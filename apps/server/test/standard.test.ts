@@ -48,8 +48,8 @@ describe('standardCells', () => {
       naive: 'ok',
     });
     expect(c.naive.text).toBe('hoster.example.com');
-    expect(c.openflux.text).toBe('1.2.0, каналов 2');
-    expect(c.xui.text).toBe('3.8.5, inbound-ов 2');
+    expect(c.openflux.text).toBe('1.2.0, каналов: 2');
+    expect(c.xui.text).toBe('3.8.5, inbound: 2');
     expect(c.mtproxyl.text).toBe('1.6.30, с панелью');
     expect(c['awg-2.0'].text).toBe('amnezia-awg2-42508');
   });
@@ -85,10 +85,10 @@ describe('standardCells', () => {
       hint: 'канал main: failed, автообновление ядра выключено',
     });
     expect(c.xui).toMatchObject({ state: 'warn' });
-    expect(c.xui.hint).toContain('нет своих inbound-ов');
+    expect(c.xui.hint).toContain('нет своих inbound');
     expect(c.xui.hint).toContain('узлов группы 3X-UI: 5');
     expect(c.mtproxyl).toMatchObject({ state: 'warn' });
-    expect(c.mtproxyl.hint).toContain('1.2.12 -> 1.2.13');
+    expect(c.mtproxyl.hint).toContain('1.2.13 (сейчас 1.2.12)');
     expect(c['awg-3.1']).toMatchObject({ state: 'warn', hint: 'не запущен: amnezia-awg2' });
     expect(c['awg-2.0'].state).toBe('missing');
     expect(c.wdtt.state).toBe('missing');

@@ -99,7 +99,7 @@ func systemOps(panelURL string) map[string]op {
 			Sec int `json:"sec"`
 		}, _ stream) (any, error) {
 			if p.Sec < 2 || p.Sec > 300 {
-				return nil, errors.New("частота метрик - от 2 до 300 секунд")
+				return nil, errors.New("частота метрик: от 2 до 300\u00a0с")
 			}
 			setMetricsEvery(time.Duration(p.Sec) * time.Second)
 			return done(nil)

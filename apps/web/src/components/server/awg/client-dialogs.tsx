@@ -38,10 +38,10 @@ export function ClientInfo({
   const on = isOnline(c);
   const off = c.disabled || !c.inConfig;
   const source = c.managed
-    ? 'эта панель (ключ клиента хранится в панели)'
+    ? 'панель'
     : !c.inTable
-      ? 'нет записи в clientsTable (создан приложением Amnezia или вручную)'
-      : 'приложение Amnezia (ключа клиента у панели нет)';
+      ? 'приложение Amnezia или вручную (нет в clientsTable)'
+      : 'приложение Amnezia';
   const rows: [string, string][] = [
     ['Устройство', deviceOf(c.device)?.title ?? 'не указано'],
     ['IP', c.allowedIps || '-'],
@@ -86,8 +86,8 @@ export function ClientInfo({
           title={reason}
           onClick={async () => {
             const ok = await ask({
-              title: `Удалить клиента ${clientTitle(c)}?`,
-              text: 'Пир уберётся с сервера, конфиг клиента перестанет работать.',
+              title: `Удалить клиента \u00ab${clientTitle(c)}\u00bb?`,
+              text: 'Конфиг клиента перестанет работать',
               okLabel: 'Удалить',
               danger: true,
             });
@@ -161,8 +161,8 @@ export function ClientInfo({
         />
       ) : (
         <div className="text-xs text-muted">
-          Конфиг выдать нельзя: приватного ключа клиента нет ни в панели, ни на сервере (клиент
-          создан приложением Amnezia). Создай нового клиента здесь.
+          Конфиг недоступен: приватного ключа клиента нет ни в панели, ни на сервере. Для нового
+          конфига нужен новый клиент.
         </div>
       )}
     </div>
@@ -188,26 +188,18 @@ export function AddClient({
         void onSubmit(name.trim(), device);
       }}
     >
-      <Field
-        label="Имя"
-        htmlFor="awg-name"
-        hint={`видно только в панели; экземпляр ${container}, IP выберется сам`}
-      >
+      <Field label="Имя" htmlFor="awg-name" hint={`видно только в панели, экземпляр ${container}`}>
         <Input
           id="awg-name"
           value={name}
           onChange={(e) => setName(e.target.value)}
-          placeholder="например, ivan-iphone"
+          placeholder="ivan-iphone"
           maxLength={64}
           required
           autoFocus
         />
       </Field>
-      <Field
-        label="Устройство"
-        htmlFor="awg-device"
-        hint="по нему выбирается MTU конфига; видно только в панели"
-      >
+      <Field label="Устройство" htmlFor="awg-device" hint="по нему выбирается MTU конфига">
         <DeviceSelect id="awg-device" value={device} onChange={setDevice} />
       </Field>
       <div className="flex justify-end">

@@ -17,7 +17,7 @@ import (
 // EnableFirewall: port-sync, затем ufw enable. Без reload.
 func EnableFirewall(ctx context.Context, stream func(channel, chunk string)) error {
 	if _, err := os.Stat(portsyncBin); err != nil {
-		return errors.New("сначала приведи сервер к эталону: port-sync не установлен")
+		return errors.New("port-sync не установлен: сначала нужно привести сервер к эталону")
 	}
 	plan := MakePlan(ctx)
 	// Блокер именно шагов ufw и port-sync ("закроется порт VPN"). Общий CanApply бывает true,

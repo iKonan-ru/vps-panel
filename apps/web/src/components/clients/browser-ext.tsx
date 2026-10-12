@@ -29,16 +29,13 @@ export function BrowserExtList({ exts, serverId }: { exts: GBrowserExt[]; server
       <div className="flex items-center gap-1 text-sm font-medium">
         Расширение через этот сервер
         <InfoTip>
-          Расширение сообщает о себе при каждом изменении и раз в 15 минут, пока браузер открыт:
-          версия, включён ли прокси, выбранный сервер, ошибка в окне. При "Авто" браузер идёт через
-          первый доступный сервер цепочки - он и считается.
+          Расширение отчитывается при изменениях и раз в 15&nbsp;мин, пока браузер открыт. При
+          &laquo;Авто&raquo; учитывается первый доступный сервер цепочки.
         </InfoTip>
       </div>
       <div className="rounded-lg border border-border">
         {here.length === 0 && (
-          <div className="px-3 py-2.5 text-[13px] text-muted">
-            Расширение клиента через этот сервер не подключено.
-          </div>
+          <div className="px-3 py-2.5 text-[13px] text-muted">Подключений нет</div>
         )}
         {here.map((e) => {
           const s = state(e);
@@ -59,7 +56,7 @@ export function BrowserExtList({ exts, serverId }: { exts: GBrowserExt[]; server
                     title={
                       e.browser === 'firefox'
                         ? 'Firefox обновит расширение сам'
-                        : 'Обновление - кнопкой в окне расширения: скачать и распаковать поверх папки'
+                        : 'Обновление: кнопка в окне расширения, затем распаковать архив поверх прежней папки'
                     }
                   >
                     устарело
@@ -77,7 +74,7 @@ export function BrowserExtList({ exts, serverId }: { exts: GBrowserExt[]; server
       {legacy.length > 0 && (
         <div className="text-xs text-muted">
           Старая версия расширения ({legacy.map((e) => browserName[e.browser]).join(', ')}) не
-          сообщает, через какой сервер идёт: будет видно после обновления.
+          сообщает сервер: он будет виден после обновления
         </div>
       )}
     </div>

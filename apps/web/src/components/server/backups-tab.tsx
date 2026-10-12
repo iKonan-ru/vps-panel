@@ -12,7 +12,7 @@ import { Section } from '@/components/ui/section';
 import { Select } from '@/components/ui/select';
 import { TBody, THead, Table } from '@/components/ui/table';
 import { api } from '@/lib/api';
-import { ago, bytes } from '@/lib/format';
+import { ago, bytes, dateTime } from '@/lib/format';
 import { type ServerDetail, serverLock } from '@/lib/servers';
 import { useServers } from '@/lib/servers';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
@@ -75,7 +75,7 @@ export function BackupsTab({ s }: { s: ServerDetail }) {
 
   async function remove(b: Backup) {
     const ok = await ask({
-      title: `Удалить бэкап от ${new Date(b.createdAt).toLocaleString('ru-RU')}?`,
+      title: `Удалить резервную копию от ${dateTime(b.createdAt)}?`,
       okLabel: 'Удалить',
       danger: true,
     });
@@ -101,7 +101,7 @@ export function BackupsTab({ s }: { s: ServerDetail }) {
       actions={[
         {
           key: 'download',
-          label: 'Скачать себе',
+          label: 'Скачать',
           icon: <Download className="size-3.5" />,
           href: `/api/backups/${b.id}/download`,
           node: (
@@ -109,8 +109,8 @@ export function BackupsTab({ s }: { s: ServerDetail }) {
               href={`/api/backups/${b.id}/download`}
               download
               className={buttonClass({ size: 'icon-sm', variant: 'ghost' })}
-              title="Скачать себе"
-              aria-label="Скачать себе"
+              title="Скачать"
+              aria-label="Скачать"
             >
               <Download className="size-3.5" />
             </a>
@@ -118,8 +118,7 @@ export function BackupsTab({ s }: { s: ServerDetail }) {
         },
         {
           key: 'restore',
-          label: 'Восстановить на...',
-          short: 'Восстановить',
+          label: 'Восстановить',
           icon: <ArchiveRestore className="size-3.5" />,
           onClick: () => setRestore(b),
           // восстановление и удаление - не поверх идущего бэкапа или другого действия
@@ -129,7 +128,7 @@ export function BackupsTab({ s }: { s: ServerDetail }) {
         },
         {
           key: 'remove',
-          label: 'Удалить бэкап',
+          label: 'Удалить копию',
           icon: <Trash2 className="size-3.5" />,
           variant: 'danger',
           group: 'danger',
@@ -156,10 +155,10 @@ export function BackupsTab({ s }: { s: ServerDetail }) {
         title={
           <span className="inline-flex items-center gap-2">
             <Archive className="size-4 text-muted" />
-            Бэкапы конфигов
+            Резервные копии
           </span>
         }
-        info="В бэкап попадают конфиги и пользователи сервисов: 3X-UI (/etc/x-ui), WDTT (/etc/wdtt), MTProxyL (/opt/mtproxyl), Amnezia (ключи и clientsTable из контейнеров), сертификаты панели и acme.sh, настройки port-sync. Восстановление раскладывает данные на сервер, где эти сервисы уже установлены командами каталога."
+        info="Конфиги и пользователи 3X-UI, WDTT, MTProxyL и Amnezia, сертификаты, настройки port-sync. Восстановление возможно на сервер, где эти сервисы уже установлены."
         extra={<Chip>{mine.length}</Chip>}
         actions={
           <Button
@@ -168,7 +167,7 @@ export function BackupsTab({ s }: { s: ServerDetail }) {
             disabled={!canAct}
             title={lock.reason}
             onClick={() => setCreateOpen(true)}
-            label="Создать бэкап"
+            label="Создать копию"
           >
             <Upload className="size-3.5" />
           </Button>
@@ -178,8 +177,8 @@ export function BackupsTab({ s }: { s: ServerDetail }) {
           <Table>
             <THead>
               <tr>
-                <th>Когда</th>
-                <th>Что внутри</th>
+                <th>Дата</th>
+                <th>Состав</th>
                 <th>Размер</th>
                 <th />
               </tr>
@@ -188,7 +187,7 @@ export function BackupsTab({ s }: { s: ServerDetail }) {
               {mine.map((b) => (
                 <tr key={b.id}>
                   <td className="whitespace-nowrap">
-                    <div>{new Date(b.createdAt).toLocaleString('ru-RU')}</div>
+                    <div>{dateTime(b.createdAt)}</div>
                     <div className="text-xs text-muted">{ago(b.createdAt)}</div>
                   </td>
                   <td>
@@ -203,7 +202,7 @@ export function BackupsTab({ s }: { s: ServerDetail }) {
               {mine.length === 0 && (
                 <tr>
                   <td colSpan={4} className="py-4 text-center text-muted">
-                    Бэкапов этого сервера ещё нет
+                    Копий пока нет
                   </td>
                 </tr>
               )}
@@ -215,7 +214,7 @@ export function BackupsTab({ s }: { s: ServerDetail }) {
           {mine.map((b) => (
             <div key={b.id} className="flex flex-col gap-1.5 px-4 py-3">
               <div className="flex items-baseline gap-2">
-                <span>{new Date(b.createdAt).toLocaleString('ru-RU')}</span>
+                <span>{dateTime(b.createdAt)}</span>
                 <span className="text-xs text-muted">{ago(b.createdAt)}</span>
                 <div className="grow" />
                 <span className="text-xs text-muted">{bytes(b.size)}</span>
@@ -225,7 +224,7 @@ export function BackupsTab({ s }: { s: ServerDetail }) {
             </div>
           ))}
           {mine.length === 0 && (
-            <div className="px-4 py-4 text-center text-muted">Бэкапов этого сервера ещё нет</div>
+            <div className="px-4 py-4 text-center text-muted">Копий пока нет</div>
           )}
         </div>
       </Section>
@@ -236,7 +235,7 @@ export function BackupsTab({ s }: { s: ServerDetail }) {
         onClose={() => setCreateOpen(false)}
         onStarted={(id) => {
           setCreateOpen(false);
-          setAction({ id, title: 'Создание бэкапа' });
+          setAction({ id, title: 'Создание резервной копии' });
         }}
       />
       {/* окно монтируется при открытии: каждое открытие - с чистой формой, без прошлой ошибки */}
@@ -283,13 +282,11 @@ function CreateDialog({
       .catch((e: Error) => setError(e.message));
   }, [open, serverId]);
   return (
-    <Dialog open={open} onClose={onClose} title="Создать бэкап">
+    <Dialog open={open} onClose={onClose} title="Новая резервная копия">
       {error && <Alert tone="bad">{error}</Alert>}
-      {!components && !error && (
-        <div className="text-sm text-muted">Агент смотрит, что есть на сервере...</div>
-      )}
+      {!components && !error && <div className="text-sm text-muted">Загрузка&hellip;</div>}
       {components && components.length === 0 && (
-        <Alert>На сервере нет сервисов, конфиги которых можно сохранить.</Alert>
+        <Alert>На сервере нет сервисов для резервного копирования</Alert>
       )}
       {components && components.length > 0 && (
         <div className="flex flex-col gap-2 text-sm">
@@ -363,26 +360,26 @@ function RestoreDialog({
   const comps = backup?.manifest.components ?? [];
   const t = servers?.find((x) => x.id === target);
   return (
-    <Dialog open={backup !== null} onClose={onClose} title="Восстановить бэкап">
+    <Dialog open={backup !== null} onClose={onClose} title="Восстановление копии">
       {backup && (
         <>
           <div className="text-[13px] text-muted">
-            Бэкап с <b className="text-text">{backup.serverName || backup.hostname}</b> от{' '}
-            {new Date(backup.createdAt).toLocaleString('ru-RU')}. На целевом сервере сервисы должны
-            быть уже установлены (командами из каталога); их текущие конфиги сохраняются рядом с
-            пометкой before-restore.
+            Копия <b className="text-text">{backup.serverName || backup.hostname}</b> от{' '}
+            {dateTime(backup.createdAt)}. Сервисы на целевом сервере должны быть установлены, их
+            текущие конфиги сохранятся с пометкой before-restore.
           </div>
-          <Field label="Куда" htmlFor="restore-target">
+          <Field label="Сервер" htmlFor="restore-target">
             <Select id="restore-target" value={target} onChange={(e) => setTarget(e.target.value)}>
               {(servers ?? []).map((sv) => (
                 <option key={sv.id} value={sv.id} disabled={sv.status !== 'online'}>
-                  {sv.name} - {sv.host} {sv.status === 'online' ? '' : '(нет связи)'}
+                  {sv.name}, {sv.host}
+                  {sv.status === 'online' ? '' : ' (не в сети)'}
                 </option>
               ))}
             </Select>
           </Field>
           <div className="flex flex-col gap-2 text-sm">
-            <Label>Что восстанавливать</Label>
+            <Label>Состав</Label>
             {comps.map((c) => {
               const missing =
                 t &&
@@ -401,9 +398,7 @@ function RestoreDialog({
                   label={c.title}
                   hint={
                     missing ? (
-                      <span className="text-warn">
-                        на целевом сервере сервис не найден, шаг будет пропущен
-                      </span>
+                      <span className="text-warn">сервис не установлен, шаг пропускается</span>
                     ) : undefined
                   }
                 />
@@ -411,10 +406,7 @@ function RestoreDialog({
             })}
           </div>
           {target === backup.serverId && (
-            <Alert>
-              Это тот же сервер, с которого снят бэкап: конфиги вернутся к состоянию на момент
-              бэкапа.
-            </Alert>
+            <Alert>Конфиги этого сервера вернутся к состоянию на момент создания копии</Alert>
           )}
           {error && <Alert tone="bad">{error}</Alert>}
           <div className="flex justify-end gap-2">

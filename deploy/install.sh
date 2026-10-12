@@ -80,7 +80,7 @@ if [ -f "$ENV_FILE" ]; then
 else
   MODE=install
   if [ -f "$DEPLOY/data/panel.db" ]; then
-    die "в $DEPLOY/data уже есть база панели, а $ENV_FILE нет. Новый SESSION_SECRET сделает зашифрованные в базе доступы и ключи нечитаемыми: верните прежний .env (или panel.env из бэкапа панели) и запустите скрипт снова"
+    die "в $DEPLOY/data уже есть база панели, а $ENV_FILE нет. Новый SESSION_SECRET сделает зашифрованные в базе доступы и ключи нечитаемыми: верните прежний .env (или panel.env из резервной копии панели) и запустите скрипт снова"
   fi
   say "установка VPS Panel в $ROOT"
   DOMAIN="${PANEL_DOMAIN:-}"
@@ -163,7 +163,7 @@ for line in open(src, encoding="utf-8"):
 open(dst, "w", encoding="utf-8").write("".join(out))
 PY
   chmod 600 "$ENV_FILE"
-  echo "SESSION_SECRET - ключ шифрования данных в базе: храните копию .env (или бэкап панели) отдельно"
+  echo "SESSION_SECRET - ключ шифрования данных в базе: храните копию .env (или резервную копию панели) отдельно"
 fi
 mkdir -p "$DEPLOY/data"
 chown -R 1000:1000 "$DEPLOY/data"
@@ -285,8 +285,8 @@ if [ "$MODE" = install ]; then
 Панель: https://$DOMAIN
 ${SUB:+Подписки и личные страницы: https://$SUB
 }При первом входе панель попросит настроить 2FA.
-Затем - "Серверы" -> "Добавить сервер". Бэкап панели (Настройки) - включить сразу.
-Обновление - снова deploy/install.sh.
+Затем: "Серверы" -> "Добавить сервер". Резервную копию панели (Настройки) стоит включить сразу.
+Обновление: снова deploy/install.sh.
 MSG
 else
   echo "Панель обновлена: https://$DOMAIN"

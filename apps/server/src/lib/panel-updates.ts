@@ -196,7 +196,7 @@ export class PanelUpdates {
   /** Запрос обновления службе на хосте: только известная версия новее текущей. */
   async request(version: string): Promise<void> {
     if (!this.managed)
-      throw new Error('панель поставлена не из релиза: обновление - из консоли сервера');
+      throw new Error('панель установлена не из релиза: обновление только из консоли сервера');
     if (!this.newer().some((r) => r.version === version))
       throw new Error(`версии ${version} нет среди новых в канале`);
     const dir = join(this.dataDir, 'update');

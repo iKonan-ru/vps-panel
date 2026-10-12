@@ -118,7 +118,7 @@ func Upgrade(ctx context.Context, stream func(channel, chunk string)) error {
 		return fmt.Errorf("apt-get завершился с кодом %d", res.ExitCode)
 	}
 	if _, err := os.Stat("/var/run/reboot-required"); err == nil {
-		log("== Готово. Требуется перезагрузка (обновлено ядро или libc) - в удобное окно, кнопкой в карточке.")
+		log("== Готово. Требуется перезагрузка (обновлено ядро или libc): \"Перезагрузить сервер\" в меню сервера")
 	} else {
 		log("== Готово")
 	}

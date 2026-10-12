@@ -340,8 +340,7 @@ export class ServiceUpdates {
     const say = (t: string) => action.stream('log', `${t}\n`);
     try {
       const target = (await this.load())[serverId]?.xray;
-      if (!target?.available || !target.latest)
-        throw new Error('обновления Xray нет: проверь ещё раз');
+      if (!target?.available || !target.latest) throw new Error('обновления Xray нет');
       const tag = `v${target.latest}`;
       const call = await this.xui(serverId);
       const before = await this.xrayVersion(call);

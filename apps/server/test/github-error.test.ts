@@ -11,7 +11,7 @@ describe('ошибка GitHub API', () => {
       res(403, { 'x-ratelimit-remaining': '0', 'x-ratelimit-reset': reset }),
     ).message;
     expect(m).toContain('лимит запросов GitHub исчерпан');
-    expect(m).toMatch(/сбросится через 2[56] мин/);
+    expect(m).toMatch(/сбросится через 2[56]\u00a0мин/);
     expect(githubError(res(429, { 'x-ratelimit-remaining': '0' })).message).toContain('лимит');
   });
 

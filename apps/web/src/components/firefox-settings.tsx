@@ -68,7 +68,7 @@ export function FirefoxSettings() {
     if (
       !(await ask({
         title: 'Удалить ключ Mozilla?',
-        text: 'Уже подписанное расширение останется на личных страницах, новые версии подписываться не будут.',
+        text: 'Новые версии расширения не будут подписываться.',
         okLabel: 'Удалить',
         danger: true,
       }))
@@ -81,7 +81,9 @@ export function FirefoxSettings() {
   return (
     <Section
       title="Расширение Firefox"
-      info="Firefox ставит только расширения, подписанные Mozilla. Ключ API - на addons.mozilla.org: войти, Tools -> Manage API Keys (JWT issuer и JWT secret). Панель подписывает расширение как unlisted (в каталоге его нет) со своим ID и адресом обновлений; новая версия после обновления панели подписывается сама. Без ключа на личных страницах только Chrome."
+      info={
+        'Firefox устанавливает только расширения, подписанные Mozilla. Ключ выдаётся на addons.mozilla.org: Tools\u00a0\u2192 Manage API Keys. Без ключа на личных страницах доступно только расширение для Chrome'
+      }
       extra={
         <>
           {st.busy ? (
@@ -90,7 +92,7 @@ export function FirefoxSettings() {
             <Chip tone="ok">подписано {st.signed}</Chip>
           ) : st.keySet ? (
             <Chip tone="warn">
-              {st.signed ? `подписано ${st.signed}, есть ${st.version}` : 'не подписано'}
+              {st.signed ? `подписано ${st.signed}, доступна ${st.version}` : 'не подписано'}
             </Chip>
           ) : (
             <Chip>ключ не задан</Chip>
@@ -133,7 +135,7 @@ export function FirefoxSettings() {
               autoComplete="off"
               value={issuer}
               onChange={(e) => setIssuer(e.target.value)}
-              placeholder={st.keySet ? 'задан; вставь новый, чтобы заменить' : 'user:12345:678'}
+              placeholder={st.keySet ? 'задан' : 'user:12345:678'}
             />
           </Field>
           <Field label="JWT secret" htmlFor="ff-secret">

@@ -29,11 +29,10 @@ export function AppLinks({ appId, os }: { appId: string; os: AppOs | null | unde
   if (!platform)
     return (
       <div className="text-xs text-muted">
-        Приложение {app.name} для любой ОС - на странице{' '}
+        Приложение {app.name} для любой ОС&nbsp;&mdash; на странице{' '}
         <Link to="/apps" className="text-accent hover:underline">
-          Приложения
+          &laquo;Приложения&raquo;
         </Link>
-        .
       </div>
     );
   return (

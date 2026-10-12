@@ -477,7 +477,7 @@ func ofDownloadInstaller(ctx context.Context) ([]byte, error) {
 	}
 	sum := sha256.Sum256(b)
 	if hex.EncodeToString(sum[:]) != ofInstallerSHA256 {
-		return nil, errors.New("установщик: sha256 не совпал - файл подменён или версия сменилась")
+		return nil, errors.New("установщик: sha256 не совпал, файл подменён или версия сменилась")
 	}
 	return b, nil
 }
@@ -571,7 +571,7 @@ func ofFreePort() (int, error) {
 		_ = l.Close()
 		return p, nil
 	}
-	return 0, errors.New("не нашёл свободный порт")
+	return 0, errors.New("нет свободного порта")
 }
 
 func randAlnum(n int) string {
@@ -645,7 +645,7 @@ func ofRooms(ctx context.Context, log func(string)) (string, error) {
 	}
 	if len(ids) == 0 {
 		if lastErr != nil && limited(lastErr) {
-			return "", errors.New("cups.online не даёт новых комнат этому адресу (ограничение частоты), позже")
+			return "", errors.New("cups.online временно не даёт новых комнат этому адресу (ограничение частоты)")
 		}
 		return "", fmt.Errorf("комнаты cups.online не созданы: %v", lastErr)
 	}

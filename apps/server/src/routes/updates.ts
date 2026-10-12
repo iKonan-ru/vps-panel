@@ -22,7 +22,7 @@ export async function updateRoutes(
   /** Проверить сервер сейчас: кнопка во вкладке и после обновления сервиса. */
   app.post('/api/servers/:id/updates/check', async (req, reply) => {
     const { id } = req.params as { id: string };
-    if (!registry.isOnline(id)) return reply.code(409).send({ error: 'Агент не подключён' });
+    if (!registry.isOnline(id)) return reply.code(409).send({ error: 'сервер не в сети' });
     return updates.recheck(id);
   });
 
@@ -36,7 +36,7 @@ export async function updateRoutes(
   /** Обновить Xray внутри 3X-UI до версии из последней проверки: действие с выводом. */
   app.post('/api/servers/:id/xray/update', async (req, reply) => {
     const { id } = req.params as { id: string };
-    if (!registry.isOnline(id)) return reply.code(409).send({ error: 'Агент не подключён' });
+    if (!registry.isOnline(id)) return reply.code(409).send({ error: 'сервер не в сети' });
     const action = journal.open(id, 'xui:xray');
     void updates.installXray(id, action);
     return { actionId: action.id };

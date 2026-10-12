@@ -81,11 +81,7 @@ export function FirewallTab({ s }: { s: ServerDetail }) {
   }
 
   if (!fw) {
-    return (
-      <Card className="p-8 text-[13px] text-muted">
-        Состояние firewall появится после первого подключения агента.
-      </Card>
-    );
+    return <Card className="p-8 text-[13px] text-muted">Нет данных: агент ещё не подключался</Card>;
   }
 
   const manualComment = new Map((manual.data ?? []).map((r) => [r.id, r.comment]));
@@ -137,7 +133,7 @@ export function FirewallTab({ s }: { s: ServerDetail }) {
           action={
             <Switch
               checked={fw.ufwActive}
-              label={fw.ufwActive ? 'Выключить firewall' : 'Включить firewall'}
+              label="Firewall"
               disabled={!canAct || busy !== null}
               onChange={() => (fw.ufwActive ? setDisableOpen(true) : void enable())}
             />
@@ -151,8 +147,8 @@ export function FirewallTab({ s }: { s: ServerDetail }) {
           tone={!fw.portsyncInstalled ? 'warn' : fw.portsyncActive ? 'ok' : 'bad'}
           note={
             fw.portsyncLastRun
-              ? `последний прогон ${ago(fw.portsyncLastRun)}`
-              : 'ставится кнопкой "Исправить проблемы" в обзоре'
+              ? `последний запуск ${ago(fw.portsyncLastRun)}`
+              : 'устанавливается в \u00abОбзоре\u00bb'
           }
           action={
             <Button
@@ -180,7 +176,7 @@ export function FirewallTab({ s }: { s: ServerDetail }) {
           tone={!s.inventory?.host.dockerVersion ? 'muted' : fw.dockerFiltered ? 'ok' : 'warn'}
           note={
             s.inventory?.host.dockerVersion
-              ? `цепочка DOCKER-USER, контейнеров с портами: ${dockerWithPorts}`
+              ? `контейнеров с портами: ${dockerWithPorts}`
               : 'docker не установлен'
           }
         />
@@ -231,7 +227,7 @@ export function FirewallTab({ s }: { s: ServerDetail }) {
                 <th>Протокол</th>
                 <th>Источник</th>
                 <th>Действие</th>
-                <th>Откуда взялось</th>
+                <th>Происхождение</th>
                 <th>Комментарий</th>
                 <th />
               </tr>
@@ -251,9 +247,7 @@ export function FirewallTab({ s }: { s: ServerDetail }) {
               {rules.length === 0 && (
                 <tr>
                   <td colSpan={7} className="py-4 text-center text-muted">
-                    {fw.ufwActive
-                      ? 'Правил нет'
-                      : 'Firewall выключен, правил нет. Включи его здесь или через "Исправить проблемы" в обзоре.'}
+                    {fw.ufwActive ? 'Правил нет' : 'Firewall выключен'}
                   </td>
                 </tr>
               )}
@@ -276,16 +270,14 @@ export function FirewallTab({ s }: { s: ServerDetail }) {
                 {ruleAction(r)}
               </div>
               <div className="text-xs text-muted">
-                <span className="font-mono">{sourceText(r)}</span> - {originTitle[r.origin]}
-                {r.comment && ` - ${r.comment}`}
+                <span className="font-mono">{sourceText(r)}</span>, {originTitle[r.origin]}
+                {r.comment && `, ${r.comment}`}
               </div>
             </div>
           ))}
           {rules.length === 0 && (
             <div className="px-4 py-4 text-center text-muted">
-              {fw.ufwActive
-                ? 'Правил нет'
-                : 'Firewall выключен, правил нет. Включи его здесь или через "Исправить проблемы" в обзоре.'}
+              {fw.ufwActive ? 'Правил нет' : 'Firewall выключен'}
             </div>
           )}
         </div>
@@ -296,8 +288,8 @@ export function FirewallTab({ s }: { s: ServerDetail }) {
           <div className="flex items-center gap-1 font-semibold">
             Слушает наружу
             <InfoTip>
-              Зачёркнутое закрыто firewall-ом; чтобы открыть, добавь процесс в известные или порт в
-              правила.
+              Зачёркнутое закрыто firewall. Открывается правилом или известным процессом в
+              настройках port-sync.
             </InfoTip>
           </div>
         </div>
@@ -317,11 +309,10 @@ export function FirewallTab({ s }: { s: ServerDetail }) {
         </div>
       </Card>
 
-      <Dialog open={disableOpen} onClose={() => setDisableOpen(false)} title="Выключить firewall">
+      <Dialog open={disableOpen} onClose={() => setDisableOpen(false)} title="Выключить firewall?">
         <div className="text-sm text-muted">
-          После выключения все порты сервера будут открыты снаружи. Docker-правила в цепочке
-          DOCKER-USER остаются, чтобы не трогать работающие контейнеры; их можно сбросить
-          перезапуском docker (обрывает VPN-соединения).
+          Все порты сервера откроются снаружи. Правила DOCKER-USER останутся; сбросить их можно
+          перезапуском docker, он обрывает VPN-соединения.
         </div>
         <div className="flex justify-end gap-2">
           <Button onClick={() => setDisableOpen(false)}>Отмена</Button>
@@ -379,7 +370,7 @@ function RuleDialog({
   async function submit(e: FormEvent) {
     e.preventDefault();
     const m = /^(\d+)(?:\s*[-:]\s*(\d+))?$/.exec(f.port.trim());
-    if (!m) return setError('Порт: число или диапазон, например 5432 или 56000-56003');
+    if (!m) return setError('Порт: число или диапазон, например 56000-56003');
     setBusy(true);
     setError(null);
     try {
@@ -402,7 +393,7 @@ function RuleDialog({
     }
   }
   return (
-    <Dialog open={open} onClose={onClose} title="Добавить правило">
+    <Dialog open={open} onClose={onClose} title="Новое правило">
       <form onSubmit={submit} className="flex flex-col gap-4">
         <div className="grid gap-3 sm:grid-cols-2">
           <Field label="Порт или диапазон" htmlFor="r-port">
@@ -430,7 +421,7 @@ function RuleDialog({
               id="r-src"
               value={f.source}
               onChange={(e) => setF({ ...f, source: e.target.value })}
-              placeholder="любой, IP или сеть 10.0.0.0/8"
+              placeholder="любой"
             />
           </Field>
           <Field label="Действие" htmlFor="r-act">
@@ -439,8 +430,8 @@ function RuleDialog({
               value={f.action}
               onChange={(e) => setF({ ...f, action: e.target.value as RuleInput['action'] })}
             >
-              <option value="allow">allow - разрешить</option>
-              <option value="deny">deny - запретить</option>
+              <option value="allow">разрешить (allow)</option>
+              <option value="deny">запретить (deny)</option>
             </Select>
           </Field>
         </div>
@@ -449,7 +440,6 @@ function RuleDialog({
             id="r-comment"
             value={f.comment}
             onChange={(e) => setF({ ...f, comment: e.target.value })}
-            placeholder="зачем нужно"
           />
         </Field>
         {error && <Alert tone="bad">{error}</Alert>}
@@ -521,19 +511,19 @@ function PortsyncDialog({
   }
   return (
     <Dialog open={open} onClose={onClose} title="Настройки port-sync" wide>
-      {!cfg && !error && <div className="text-sm text-muted">Загрузка...</div>}
+      {!cfg && !error && <div className="text-sm text-muted">Загрузка&hellip;</div>}
       {error && <Alert tone="bad">{error}</Alert>}
       {cfg && (
         <form onSubmit={submit} className="flex flex-col gap-4">
           <div className="flex items-center gap-1 text-[13px] text-muted">
-            По одному значению в строке.
+            По одному значению в строке
             <InfoTip>
-              port-sync сам открывает порты SSH, 3X-UI, MTProxyL, WireGuard и опубликованные порты
-              контейнеров. Здесь - то, что он не может узнать сам.
+              Порты SSH, 3X-UI, MTProxyL, WireGuard и опубликованные порты контейнеров port-sync
+              открывает сам
             </InfoTip>
           </div>
           <div className="grid gap-3 sm:grid-cols-2">
-            <Field label="Известные процессы (открываются, если слушают порт)" htmlFor="p-known">
+            <Field label="Известные процессы" htmlFor="p-known" hint="их порты открываются">
               <Textarea
                 id="p-known"
                 value={f.known}
@@ -541,7 +531,11 @@ function PortsyncDialog({
                 className="font-mono text-xs"
               />
             </Field>
-            <Field label="Запретить снаружи (порты, даже если процесс известен)" htmlFor="p-deny">
+            <Field
+              label="Закрытые снаружи порты"
+              htmlFor="p-deny"
+              hint="даже для известных процессов"
+            >
               <Textarea
                 id="p-deny"
                 value={f.deny}
@@ -550,7 +544,7 @@ function PortsyncDialog({
                 className="font-mono text-xs"
               />
             </Field>
-            <Field label="Всегда открыть (порт/протокол)" htmlFor="p-extra">
+            <Field label="Всегда открытые порты" htmlFor="p-extra">
               <Textarea
                 id="p-extra"
                 value={f.extra}
@@ -559,7 +553,7 @@ function PortsyncDialog({
                 className="font-mono text-xs"
               />
             </Field>
-            <Field label="IP администратора (для служебных портов, можно пусто)" htmlFor="p-admin">
+            <Field label="IP администратора" htmlFor="p-admin" hint="доступ к служебным портам">
               <Textarea
                 id="p-admin"
                 value={f.admin}
@@ -580,8 +574,8 @@ function PortsyncDialog({
                   })
                 }
               >
-                <option value="published">открывать опубликованные (-p) автоматически</option>
-                <option value="explicit">только из списка "всегда открыть"</option>
+                <option value="published">опубликованные (-p) открываются автоматически</option>
+                <option value="explicit">только из &laquo;Всегда открытые порты&raquo;</option>
               </Select>
             </Field>
             <Field label="Ping" htmlFor="p-ping">

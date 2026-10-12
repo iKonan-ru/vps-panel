@@ -157,7 +157,7 @@ func RunCmd(c context.Context, cmd *exec.Cmd, stream func(channel, chunk string)
 			} else if c.Err() != nil {
 				msg += " (остановлен)"
 			} else if ws.Signal() == syscall.SIGKILL {
-				msg += " (скорее всего нехватка памяти, смотри journalctl -k | grep -i oom)"
+				msg += " (скорее всего, нехватка памяти: journalctl -k | grep -i oom)"
 			}
 			errBuf.WriteString(msg + "\n")
 			if stream != nil {

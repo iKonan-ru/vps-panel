@@ -166,13 +166,13 @@ export async function buildApp(opts: AppOptions) {
 
   app.setErrorHandler((err: unknown, _req, reply) => {
     if (err instanceof ZodError) {
-      return reply.code(400).send({ error: 'Неверные данные', issues: err.issues });
+      return reply.code(400).send({ error: 'неверные данные', issues: err.issues });
     }
     app.log.error(err);
     const e = err as { statusCode?: unknown; message?: unknown };
     const status = typeof e.statusCode === 'number' ? e.statusCode : 500;
-    const message = typeof e.message === 'string' ? e.message : 'Ошибка';
-    return reply.code(status).send({ error: status === 500 ? 'Внутренняя ошибка' : message });
+    const message = typeof e.message === 'string' ? e.message : 'ошибка';
+    return reply.code(status).send({ error: status === 500 ? 'внутренняя ошибка' : message });
   });
 
   app.addHook('preHandler', requireAuth(db));
@@ -396,7 +396,7 @@ export async function buildApp(opts: AppOptions) {
   if (env.WEB_DIST && existsSync(env.WEB_DIST)) {
     await app.register(fastifyStatic, { root: env.WEB_DIST, wildcard: false });
     app.setNotFoundHandler(async (req, reply) => {
-      if (req.url.startsWith('/api/')) return reply.code(404).send({ error: 'Не найдено' });
+      if (req.url.startsWith('/api/')) return reply.code(404).send({ error: 'не найдено' });
       return reply.sendFile('index.html', join(env.WEB_DIST as string));
     });
   }

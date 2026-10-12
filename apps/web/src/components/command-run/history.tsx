@@ -28,7 +28,7 @@ export function History({
   });
   const rows = (data ?? []).filter((r: ActionRow) => showAll || r.kind === `command:${commandId}`);
   const paged = usePaged(rows);
-  if (!serverId) return <Card className="p-8 text-muted">Выбери сервер на вкладке "Форма"</Card>;
+  if (!serverId) return <Card className="p-8 text-muted">Сервер не выбран</Card>;
   return (
     <Card className="shrink-0 overflow-hidden">
       <div className="flex items-center gap-2.5 border-b border-border px-4 py-3">
@@ -81,7 +81,7 @@ export function History({
           {rows.length === 0 && (
             <tr>
               <td colSpan={4} className="py-4 text-center text-muted">
-                Запусков не было
+                Запусков пока нет
               </td>
             </tr>
           )}

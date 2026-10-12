@@ -18,7 +18,7 @@ export async function baselineFirewallRoutes(app: FastifyInstance, opts: ServerR
 
   app.post('/api/servers/:id/baseline/plan', async (req, reply) => {
     const { id } = Id.parse(req.params);
-    if (!registry.isOnline(id)) return reply.code(409).send({ error: 'Агент не подключён' });
+    if (!registry.isOnline(id)) return reply.code(409).send({ error: 'сервер не в сети' });
     return registry.request(id, 'baseline.plan', {}, { timeoutMs: 120_000 });
   });
   /** Исправление проблем: steps - какие шаги плана применить (пусто = все нужные). */
@@ -69,7 +69,7 @@ export async function baselineFirewallRoutes(app: FastifyInstance, opts: ServerR
       await db.select().from(portsyncConfigs).where(eq(portsyncConfigs.serverId, id)).limit(1)
     )[0];
     if (row) return row.config;
-    if (!registry.isOnline(id)) return reply.code(409).send({ error: 'Агент не подключён' });
+    if (!registry.isOnline(id)) return reply.code(409).send({ error: 'сервер не в сети' });
     return registry.request(id, 'firewall.portsync.config', {}, { timeoutMs: 30_000 });
   });
   app.put('/api/servers/:id/firewall/portsync', async (req) => {
@@ -103,7 +103,7 @@ export async function baselineFirewallRoutes(app: FastifyInstance, opts: ServerR
       return (
         mask === undefined || (/^\d{1,3}$/.test(mask) && Number(mask) <= (ver === 4 ? 32 : 128))
       );
-    }, 'Источник - any, IP-адрес или подсеть (например 203.0.113.0/24)');
+    }, 'источник: any, IP-адрес или подсеть (например, 203.0.113.0/24)');
   const RuleSchema = z.object({
     portFrom: z.number().int().min(1).max(65535),
     portTo: z.number().int().min(1).max(65535).optional(),

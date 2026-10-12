@@ -12,7 +12,6 @@ import { Checkbox } from '@/components/ui/checkbox';
 import { useConfirm } from '@/components/ui/confirm';
 import { Dialog } from '@/components/ui/dialog';
 import { Field } from '@/components/ui/field';
-import { InfoTip } from '@/components/ui/info-tip';
 import { Input } from '@/components/ui/input';
 import { LinkButton } from '@/components/ui/link-button';
 import { Num } from '@/components/ui/num';
@@ -201,13 +200,13 @@ export function XuiTab({ s }: { s: ServerDetail }) {
     }
   }
 
-  if (!online) return <Card className="p-8 text-[13px] text-muted">Агент не на связи.</Card>;
+  if (!online) return <Card className="p-8 text-[13px] text-muted">Сервер не в сети</Card>;
   if (loadError) return <Alert tone="bad">{loadError.message}</Alert>;
-  if (!data) return <Card className="p-8 text-[13px] text-muted">Читаю настройки 3X-UI...</Card>;
+  if (!data) return <Card className="p-8 text-[13px] text-muted">Загрузка&hellip;</Card>;
   if (!data.installed)
     return (
       <Card className="p-8 text-[13px] text-muted">
-        3X-UI на сервере не найден. Установить можно командой из каталога.
+        3X-UI не установлен: установка через каталог команд
       </Card>
     );
 
@@ -223,10 +222,9 @@ export function XuiTab({ s }: { s: ServerDetail }) {
     <>
       {xrayDown && (
         <Alert tone="bad">
-          xray не работает - VLESS на сервере недоступен.
+          Xray не работает, VLESS недоступен.
           {xrayError && <span className="block font-mono text-xs">{xrayError}</span>}
-          Исправьте inbound в панели 3X-UI (кнопка "Открыть панель 3X-UI" ниже) - например, порт
-          занят другим сервисом, - xray запустится сам.
+          После исправления inbound в панели 3X-UI (например, занятого порта) Xray запустится сам.
         </Alert>
       )}
       {error && <Alert tone="bad">{error}</Alert>}
@@ -267,7 +265,7 @@ export function XuiTab({ s }: { s: ServerDetail }) {
               : noToken
                 ? 'Нужен токен'
                 : apiStatus.isFetching
-                  ? '...'
+                  ? '\u2026'
                   : 'нет данных'
           }
           tone={obj?.xray ? (obj.xray.state === 'running' ? 'ok' : 'bad') : 'muted'}
@@ -279,7 +277,7 @@ export function XuiTab({ s }: { s: ServerDetail }) {
                 obj?.xray?.errorMsg ?? '',
               ]
                 .filter(Boolean)
-                .join(', ') || (noToken ? 'выпусти API-токен кнопкой ниже' : '-')}
+                .join(', ') || (noToken ? 'нужен API-токен' : '-')}
             </span>
           }
         />
@@ -296,9 +294,9 @@ export function XuiTab({ s }: { s: ServerDetail }) {
             .join(', ')}
         />
         <MetricCard
-          label="Inbound-ы"
+          label="Inbound"
           value={<Num value={data.inbounds} />}
-          note={`подписка 3X-UI ${data.subEnabled ? `на ${data.subPort}` : 'выключена'}`}
+          note={`подписка 3X-UI${data.subEnabled ? `: порт ${data.subPort}` : ' выключена'}`}
         />
       </div>
 
@@ -312,11 +310,7 @@ export function XuiTab({ s }: { s: ServerDetail }) {
             hidden: !panelUrl,
             ...(panelUrl ? { href: panelUrl } : {}),
             node: panelUrl && (
-              <LinkButton
-                href={panelUrl}
-                variant="primary"
-                title={data.version ? `Открыть панель 3X-UI (${data.version})` : panelUrl}
-              >
+              <LinkButton href={panelUrl} variant="primary" title={panelUrl}>
                 Открыть панель 3X-UI
               </LinkButton>
             ),
@@ -353,7 +347,7 @@ export function XuiTab({ s }: { s: ServerDetail }) {
             key: a,
             label,
             icon,
-            onClick: () => void start(`3X-UI: ${a}`, () => xuiApi.service(s.id, a)),
+            onClick: () => void start(label, () => xuiApi.service(s.id, a)),
             // стоп/старт и автозапуск выбраны по состоянию: пока оно перечитывается - нельзя
             disabled: busy || lock.busy || isFetching,
             title: lock.reason,
@@ -365,7 +359,7 @@ export function XuiTab({ s }: { s: ServerDetail }) {
             icon: <KeyRound className="size-3.5" />,
             onClick: () => void issueToken(),
             disabled: busy || lock.busy,
-            title: 'Токен для REST API 3X-UI: статус Xray, inbound-ы, клиенты панели',
+            title: 'Нужен для статуса Xray, inbound и клиентов панели',
             group: 'more',
           },
           {
@@ -373,7 +367,6 @@ export function XuiTab({ s }: { s: ServerDetail }) {
             label: 'Журнал 3X-UI',
             icon: <ScrollText className="size-3.5" />,
             onClick: () => setShowLog(true),
-            title: 'Последние строки журнала 3X-UI',
             group: 'more',
           },
         ]}
@@ -383,8 +376,8 @@ export function XuiTab({ s }: { s: ServerDetail }) {
             variant="ghost"
             disabled={isFetching}
             onClick={refresh}
-            title="Обновить данные вкладки"
-            aria-label="Обновить данные вкладки"
+            title="Обновить"
+            aria-label="Обновить"
           >
             <RefreshCw className={cn('size-3.5', isFetching && 'animate-spin')} />
           </Button>
@@ -405,13 +398,13 @@ export function XuiTab({ s }: { s: ServerDetail }) {
             kind: 'xui',
             title: '3X-UI',
             current: data.version,
-            hint: 'Официальным "x-ui update": inbound-ы и клиенты сохраняются, панель перезапустится',
+            hint: 'Через x-ui update: inbound и клиенты сохранятся, панель перезапустится',
           },
           {
             kind: 'xray',
             title: 'Xray',
             current: obj?.xray?.version,
-            hint: 'Через 3X-UI: подключения VLESS прервутся на несколько секунд',
+            hint: 'Подключения VLESS прервутся на несколько секунд',
           },
         ]}
         data={versions.data}
@@ -438,7 +431,7 @@ export function XuiTab({ s }: { s: ServerDetail }) {
         serverId={s.id}
         kind="xui"
         title="3X-UI"
-        loses="панель, Xray и все inbound-ы с их клиентами пропадут, привязки клиентов панели снимутся."
+        loses="Панель, Xray и все inbound с клиентами удалятся, привязки клиентов панели снимутся"
         disabled={busy || lock.busy}
         reason={lock.reason}
       />
@@ -484,7 +477,7 @@ function SettingsForm({
     if (body.port || body.basePath) {
       const ok = await ask({
         title: 'Изменить порт или путь панели?',
-        text: 'Старая ссылка перестанет работать, port-sync откроет новый порт.',
+        text: 'Старая ссылка перестанет работать, port-sync откроет новый порт',
         okLabel: 'Изменить',
       });
       if (!ok) return;
@@ -506,7 +499,7 @@ function SettingsForm({
               onChange={(e) => setPort(e.target.value)}
             />
           </Field>
-          <Field label="Listen IP (пусто = все)" htmlFor="xui-listen">
+          <Field label="Listen IP" htmlFor="xui-listen">
             <Input
               id="xui-listen"
               value={listen}
@@ -516,7 +509,7 @@ function SettingsForm({
             />
           </Field>
         </div>
-        <Field label="Путь панели (base path)" htmlFor="xui-path">
+        <Field label="Путь панели" htmlFor="xui-path">
           <div className="flex gap-2">
             <Input
               id="xui-path"
@@ -527,9 +520,9 @@ function SettingsForm({
             />
             <Button
               onClick={() => setBasePath(randomPath())}
-              title="Случайный длинный путь: панель не найти сканером"
+              title="Длинный случайный путь скрывает панель от сканеров"
             >
-              Случайный
+              Сгенерировать
             </Button>
           </div>
         </Field>
@@ -539,7 +532,7 @@ function SettingsForm({
               id="xui-user"
               value={username}
               onChange={(e) => setUsername(e.target.value)}
-              placeholder="оставить как есть"
+              placeholder="без изменений"
               autoComplete="off"
             />
           </Field>
@@ -549,21 +542,20 @@ function SettingsForm({
               type="password"
               value={password}
               onChange={(e) => setPassword(e.target.value)}
-              placeholder="оставить как есть"
+              placeholder="задан"
               autoComplete="new-password"
             />
           </Field>
         </div>
         {info.twoFactor && (
           <Checkbox
-            label="Сбросить 2FA (если потерян аутентификатор)"
+            label="Сбросить 2FA"
             checked={reset2fa}
             onChange={(e) => setReset2fa(e.target.checked)}
           />
         )}
         <div className="flex items-center gap-2">
-          <span className="text-xs text-muted">После сохранения 3X-UI перезапускается.</span>
-          <InfoTip>Сертификат панели - во вкладке Сертификаты.</InfoTip>
+          <span className="text-xs text-muted">После сохранения 3X-UI перезапустится</span>
           <div className="grow" />
           <Button type="submit" variant="primary" disabled={busy || !changed}>
             Сохранить

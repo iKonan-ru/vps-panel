@@ -62,7 +62,7 @@ export function LinkButton({
           variant={variant}
           size={size}
           label={label}
-          title="Ссылка с недопустимой схемой - не открывается"
+          title="Ссылка не открывается: недопустимая схема"
           className={cls}
         >
           <ExternalLink className={iconCls} />

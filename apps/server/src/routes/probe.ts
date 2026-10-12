@@ -34,12 +34,12 @@ export async function probeRoutes(app: FastifyInstance) {
         steps.push({
           name: 'DNS',
           ok: false,
-          detail: `имя не резолвится: ${(e as Error).message}`,
+          detail: `имя не найдено в DNS: ${(e as Error).message}`,
         });
         return { ok: false, steps };
       }
     } else {
-      steps.push({ name: 'DNS', ok: true, detail: 'указан IP, резолвить не нужно' });
+      steps.push({ name: 'DNS', ok: true, detail: 'указан IP' });
     }
 
     const t = Date.now();
@@ -55,8 +55,8 @@ export async function probeRoutes(app: FastifyInstance) {
         name: 'Подсказка',
         ok: false,
         detail: tcp.error?.includes('ECONNREFUSED')
-          ? 'порт закрыт или sshd не слушает на нём: проверь порт SSH'
-          : 'таймаут: сервер выключен, firewall режет входящие с адреса панели, или порт другой',
+          ? 'порт закрыт или sshd на нём не слушает: возможно, указан не тот порт SSH'
+          : 'таймаут: сервер выключен, firewall блокирует входящие с адреса панели или указан не тот порт',
       });
       return { ok: false, steps };
     }
@@ -71,10 +71,14 @@ export async function probeRoutes(app: FastifyInstance) {
       steps.push({
         name: 'SSH',
         ok: isSsh,
-        detail: isSsh ? tcp.banner : `на порту не sshd: "${tcp.banner.slice(0, 40)}"`,
+        detail: isSsh ? tcp.banner : `на порту не sshd: \u00ab${tcp.banner.slice(0, 40)}\u00bb`,
       });
     } else {
-      steps.push({ name: 'SSH', ok: false, detail: 'порт открыт, но баннер SSH не пришёл за 3 с' });
+      steps.push({
+        name: 'SSH',
+        ok: false,
+        detail: 'порт открыт, но баннер SSH не пришёл за 3\u00a0с',
+      });
     }
     return { ok: steps.every((s) => s.ok), steps };
   });

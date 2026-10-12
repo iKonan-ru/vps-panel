@@ -11,7 +11,7 @@ const agentError = (message: string, statusCode: number) =>
   Object.assign(new Error(message), { statusCode });
 
 /** Агент не знает операции: её нет в списке из hello (или агент ответил, что не умеет). */
-export const AGENT_OUTDATED = 'Агент устарел: обнови его кнопкой "Обновить агента"';
+export const AGENT_OUTDATED = 'агент устарел: нужно обновить агент';
 
 /**
  * Соединение с агентом, как его видит реестр: SecureAgentSocket (lib/agent-channel.ts) -
@@ -153,7 +153,7 @@ export class AgentRegistry extends EventEmitter<RegistryEvents> {
     for (const [id, p] of this.pending) {
       if (id.startsWith(`${conn.serverId}:`)) {
         clearTimeout(p.timer);
-        p.reject(agentError('Агент отключился', 502));
+        p.reject(agentError('агент отключился', 502));
         this.pending.delete(id);
       }
     }
@@ -202,7 +202,7 @@ export class AgentRegistry extends EventEmitter<RegistryEvents> {
         if (msg.ok) p.resolve(msg.data);
         else if (msg.error?.startsWith('метод пока не поддерживается'))
           p.reject(agentError(AGENT_OUTDATED, 409));
-        else p.reject(agentError(msg.error ?? 'Ошибка агента', 502));
+        else p.reject(agentError(msg.error ?? 'ошибка агента', 502));
         return;
       }
       case 'hello':
@@ -218,14 +218,14 @@ export class AgentRegistry extends EventEmitter<RegistryEvents> {
     opts: { timeoutMs?: number; onStream?: (channel: string, chunk: string) => void } = {},
   ): Promise<T> {
     const conn = this.conns.get(serverId);
-    if (!conn) return Promise.reject(agentError('Агент не подключён', 409));
+    if (!conn) return Promise.reject(agentError('сервер не в сети', 409));
     if (!this.supports(serverId, method)) return Promise.reject(agentError(AGENT_OUTDATED, 409));
     const id = newId();
     const key = `${serverId}:${id}`;
     return new Promise<T>((resolve, reject) => {
       const timer = setTimeout(() => {
         this.pending.delete(key);
-        reject(agentError('Агент не ответил вовремя', 504));
+        reject(agentError('агент не ответил вовремя', 504));
       }, opts.timeoutMs ?? 60_000);
       const entry: Pending = { resolve: (v) => resolve(v as T), reject, timer };
       if (opts.onStream) entry.onStream = opts.onStream;

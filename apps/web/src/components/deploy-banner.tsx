@@ -111,7 +111,6 @@ export function DeployBanner() {
 
   if (!data || !st || hidden === st.startedAt) return null;
   const restarted = firstBoot.current !== null && data.bootedAt !== firstBoot.current;
-  const took = mmss(st.updatedAt - st.startedAt);
 
   if (building) {
     const pct = Math.round((st.step / Math.max(1, st.total)) * 100);
@@ -120,14 +119,10 @@ export function DeployBanner() {
         <RefreshCw className="size-4 shrink-0 animate-spin" />
         <div className="min-w-0 grow">
           <div>
-            Панель обновляется до {st.commit}: шаг {st.step} из {st.total}, {st.stepName},{' '}
+            Обновление до {st.commit}: шаг {st.step} из {st.total}, {st.stepName},{' '}
             {mmss(Math.round(now / 1000) - st.startedAt)}
           </div>
           <Meter pct={pct} className="mt-1.5 h-1 bg-accent/20" fill="bg-accent" />
-          <div className="mt-1 text-xs opacity-80">
-            Пока готовится новая версия, работает прежняя; после перезапуска здесь появится кнопка
-            обновить страницу.
-          </div>
         </div>
       </Bar>
     );
@@ -137,13 +132,13 @@ export function DeployBanner() {
       <Bar tone="bad" onClose={() => hide(st.startedAt)}>
         <div className="min-w-0 grow">
           <div>
-            Обновление до {st.commit} не удалось на шаге "{st.stepName}" за {took}: работает прежняя
-            версия
-            {st.running ? ` (${st.running})` : ''}.
+            Обновление до {st.commit} не удалось на шаге &laquo;{st.stepName}&raquo;, работает
+            прежняя версия
+            {st.running ? ` (${st.running})` : ''}
           </div>
           {st.tail && (
             <Button variant="link" className="text-xs" onClick={() => setShowLog(!showLog)}>
-              {showLog ? 'Скрыть лог' : 'Показать конец лога'}
+              {showLog ? 'Скрыть журнал' : 'Показать журнал'}
             </Button>
           )}
           {showLog && (
@@ -158,10 +153,7 @@ export function DeployBanner() {
   if (st.state === 'done' && restarted) {
     return (
       <Bar tone="ok" onClose={() => hide(st.startedAt)}>
-        <div className="min-w-0 grow">
-          Панель обновлена до {st.commit} (за {took}). Обнови страницу, чтобы загрузить новую версию
-          интерфейса.
-        </div>
+        <div className="min-w-0 grow">Панель обновлена до {st.commit}. Обновите страницу</div>
         <Button
           size="sm"
           variant="primary"

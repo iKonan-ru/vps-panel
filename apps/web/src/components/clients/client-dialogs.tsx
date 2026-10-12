@@ -42,7 +42,7 @@ export function ProxyLinks({
     gcTime: 0,
   });
   if (error) return <Alert tone="bad">{error.message}</Alert>;
-  if (!data) return <div className="text-sm text-muted">Загружаю...</div>;
+  if (!data) return <div className="text-sm text-muted">Загрузка&hellip;</div>;
   if (data.wdtt) return <WdttLinksView links={data.wdtt} />;
   if (binding.service === 'naive') {
     const link = data.links[0] ?? '';
@@ -50,9 +50,8 @@ export function ProxyLinks({
       <div className="flex flex-col gap-4">
         <BrowserExtList exts={exts} serverId={binding.serverId} />
         <div className="text-[13px] text-muted">
-          Расширение для Chrome и Firefox клиент ставит с личной страницы (блок "Расширение для
-          браузера"), адрес и пароль оно берёт из подписки само. Ссылка ниже - для приложений
-          NaiveProxy (NekoBox и др.), в ней пароль.
+          Расширение для Chrome и Firefox устанавливается с личной страницы клиента и настраивается
+          само. Ссылка для приложений NaiveProxy (NekoBox и&nbsp;др.) содержит пароль.
         </div>
         <LinkButton href={link} size="md" wide copyTitle="Скопировать ссылку">
           naive+https
@@ -65,8 +64,7 @@ export function ProxyLinks({
     return (
       <div className="flex flex-col gap-3">
         <div className="text-[13px] text-muted">
-          Профиль для приложения OpenFlux: ссылка или QR-код. В ссылке ключ канала, канал - для
-          одного устройства.
+          Ссылка содержит ключ канала; канал рассчитан на одно устройство
         </div>
         <QrCode text={link} alt="QR-код ссылки OpenFlux" level="L" />
         <LinkButton href={link} variant="primary" size="md" wide copyTitle="Скопировать ссылку">
@@ -152,13 +150,13 @@ export function DeviceForm({
           value={d.name}
           onChange={(e) => setD({ ...d, name: e.target.value })}
           maxLength={64}
-          placeholder="например, iPhone 15"
+          placeholder="iPhone 15"
         />
       </Field>
       <Checkbox
         checked={d.awg20}
         onChange={(e) => setD({ ...d, awg20: e.target.checked })}
-        label="Ещё AWG 2.0 (старые приложения, роутеры)"
+        label="AWG 2.0 для старых приложений и роутеров"
       />
       {save.error && <Alert tone="bad">{save.error}</Alert>}
       <div className="flex justify-end">
@@ -216,7 +214,7 @@ export function AccessForm({
             removes.length > 0 &&
             !(await ask({
               title: 'Убрать с серверов?',
-              text: 'Отмеченное ниже сверка удалит с серверов. Вернёшь доступ - заведётся заново: конфиг AWG и ссылка MTProxy будут новыми.',
+              text: 'Снятые сервисы будут удалены с серверов. При возврате доступа конфиг AWG и ссылка MTProxy будут новыми.',
               okLabel: 'Убрать',
               danger: true,
             }))

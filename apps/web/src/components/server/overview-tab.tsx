@@ -53,7 +53,7 @@ function SeverityChip({ severity }: { severity: Finding['severity'] }) {
 
 function mbps(bps: number): string {
   const m = (bps * 8) / 1_000_000;
-  return m >= 10 ? String(Math.round(m)) : m.toFixed(1);
+  return m >= 10 ? String(Math.round(m)) : m.toFixed(1).replace('.', ',');
 }
 
 /** Вкладка "Обзор": метрики, сервисы, хостинг, обслуживание (обновления и проверки безопасности). */
@@ -130,7 +130,7 @@ export function OverviewTab({ s, onTab }: { s: ServerDetail; onTab?: (tab: strin
       key: `update-${u.kind}`,
       chip: <Chip tone="update">обновление</Chip>,
       text: `${u.title}: доступна версия ${u.latest}`,
-      hint: u.current ? `сейчас ${u.current}` : undefined,
+      hint: u.current ? `установлена ${u.current}` : undefined,
       action: (
         <Button
           size="sm"
@@ -234,8 +234,8 @@ export function OverviewTab({ s, onTab }: { s: ServerDetail; onTab?: (tab: strin
           value={m ? <Num value={m.cpuPercent} format={(v) => `${Math.round(v)}%`} /> : '-'}
           note={
             m ? (
-              <span title="Средняя нагрузка (load average) за 1 минуту">
-                нагрузка <Num value={m.load1} format={(v) => v.toFixed(2)} />
+              <span title={'Load average за 1\u00a0мин'}>
+                нагрузка <Num value={m.load1} format={(v) => v.toFixed(2).replace('.', ',')} />
               </span>
             ) : (
               'нет данных'
@@ -251,7 +251,8 @@ export function OverviewTab({ s, onTab }: { s: ServerDetail; onTab?: (tab: strin
           note={
             m ? (
               <>
-                свободно <Num value={(m.memTotalMb - m.memUsedMb) / 1024} format={gb} /> ГБ
+                свободно <Num value={(m.memTotalMb - m.memUsedMb) / 1024} format={gb} />
+                &nbsp;ГБ
               </>
             ) : (
               'нет данных'
@@ -266,7 +267,8 @@ export function OverviewTab({ s, onTab }: { s: ServerDetail; onTab?: (tab: strin
           note={
             m ? (
               <>
-                свободно <Num value={m.diskTotalGb - m.diskUsedGb} format={gb} /> ГБ
+                свободно <Num value={m.diskTotalGb - m.diskUsedGb} format={gb} />
+                &nbsp;ГБ
               </>
             ) : (
               'нет данных'
@@ -278,7 +280,7 @@ export function OverviewTab({ s, onTab }: { s: ServerDetail; onTab?: (tab: strin
               variant="link"
               className="text-xs"
               disabled={!canAct}
-              title={lock.reason ?? 'Найти и удалить мусор: кэш docker и apt, старые логи, /tmp'}
+              title={lock.reason ?? 'Кэш docker и apt, старые логи, /tmp'}
               aria-label="Очистить диск"
               onClick={() => setCleanup(true)}
             >
@@ -290,7 +292,7 @@ export function OverviewTab({ s, onTab }: { s: ServerDetail; onTab?: (tab: strin
         <MetricCard
           label={
             <>
-              Сеть<span className="hidden md:inline"> - вход / выход</span>
+              Сеть<span className="hidden md:inline">: вход / выход</span>
             </>
           }
           value={m ? <Num value={m.netRxBps} format={mbps} /> : '-'}
@@ -298,7 +300,7 @@ export function OverviewTab({ s, onTab }: { s: ServerDetail; onTab?: (tab: strin
           note={
             <>
               <span className="md:hidden">вход / выход</span>
-              <span className="hidden md:inline">среднее за 30 с</span>
+              <span className="hidden md:inline">среднее за 30&nbsp;с</span>
             </>
           }
         />
@@ -314,7 +316,6 @@ export function OverviewTab({ s, onTab }: { s: ServerDetail; onTab?: (tab: strin
                 to="/commands"
                 search={{ server: s.id }}
                 size="sm"
-                title="Каталог команд: установка и удаление сервисов"
                 label="Установить сервис"
               >
                 <Plus className="size-3.5" />
@@ -322,7 +323,7 @@ export function OverviewTab({ s, onTab }: { s: ServerDetail; onTab?: (tab: strin
             }
           >
             {s.services.length === 0 && (
-              <div className="px-4 py-3 text-[13px] text-muted">Сервисы не обнаружены.</div>
+              <div className="px-4 py-3 text-[13px] text-muted">Сервисов нет</div>
             )}
             {s.services.map((sv, i) => (
               // по верхнему краю и кнопки не сжимаются: при длинном списке портов (перенос на
@@ -351,7 +352,7 @@ export function OverviewTab({ s, onTab }: { s: ServerDetail; onTab?: (tab: strin
                     </div>
                   )}
                   <div className="mt-0.5 break-words text-xs text-muted">
-                    {sv.ports.join(' - ') || 'порты не определены'}
+                    {sv.ports.join(', ') || 'порты не определены'}
                   </div>
                 </div>
                 <div className="mt-0.5 flex shrink-0 items-center gap-1.5">
@@ -365,7 +366,7 @@ export function OverviewTab({ s, onTab }: { s: ServerDetail; onTab?: (tab: strin
                       search={{ server: s.id, run: undefined, tab: undefined }}
                       size="icon-sm"
                       variant="ghost"
-                      title="Удалить с сервера (команда каталога с подтверждением)"
+                      title="Удалить с сервера"
                       aria-label="Удалить с сервера"
                     >
                       <Trash2 className="size-3.5 text-bad" />
@@ -383,11 +384,11 @@ export function OverviewTab({ s, onTab }: { s: ServerDetail; onTab?: (tab: strin
                 Обслуживание
               </span>
             }
-            info="Обновления сервисов и пакетов и проверки безопасности: SSH без паролей, ufw + port-sync, fail2ban, автообновления безопасности, сертификаты, настройки панелей. Перед исправлением покажет, что именно изменится."
+            info="Перед исправлением показывается, что изменится"
             extra={
               <>
-                {high > 0 && <Chip tone="bad">{high} критичных</Chip>}
-                {medium > 0 && <Chip tone="warn">{medium} средних</Chip>}
+                {high > 0 && <Chip tone="bad">критичных: {high}</Chip>}
+                {medium > 0 && <Chip tone="warn">средних: {medium}</Chip>}
               </>
             }
             actions={
@@ -395,8 +396,8 @@ export function OverviewTab({ s, onTab }: { s: ServerDetail; onTab?: (tab: strin
                 actions={[
                   {
                     key: 'fix',
-                    label: `Исправить проблемы (${fixable})`,
-                    short: `Исправить (${fixable})`,
+                    label: `Исправить всё: ${fixable}`,
+                    short: `Исправить: ${fixable}`,
                     icon: <Wrench className="size-3.5" />,
                     variant: 'primary',
                     hidden: fixable === 0,
@@ -436,7 +437,7 @@ export function OverviewTab({ s, onTab }: { s: ServerDetail; onTab?: (tab: strin
             )}
             {!s.audit ? (
               <div className="px-4 py-3 text-[13px] text-muted">
-                Аудит появится после первого подключения агента.
+                Нет данных: агент ещё не подключался
               </div>
             ) : (
               <Table>

@@ -136,7 +136,11 @@ export const APPS: AppDef[] = [
         },
       ],
       ios: [
-        { url: 'https://testflight.apple.com/join/BwnAcdus', label: 'TestFlight', note: 'бета' },
+        {
+          url: 'https://testflight.apple.com/join/BwnAcdus',
+          label: 'TestFlight',
+          note: 'предварительная версия',
+        },
       ],
       windows: [
         {
@@ -332,7 +336,7 @@ export class AppReleases {
             label: l.label,
             url: latest.htmlUrl,
             version: latest.tag,
-            note: 'файл не найден - страница релиза',
+            note: 'файл не найден, ссылка на страницу релиза',
           }
         : {
             label: l.label,

@@ -59,11 +59,11 @@ export function OpenfluxDocsSettings() {
         r.bad.length
           ? {
               tone: 'bad',
-              text: `Добавлено: ${r.added}. Не подошли (оставлены в поле): ${r.bad.length} - нужна ссылка https://docs.yandex.ru/edit/d/... или https://cloud.mail.ru/public/.../...`,
+              text: `Добавлено: ${r.added}. Не подошли: ${r.bad.length}\u00a0\u2014 нужны ссылки docs.yandex.ru/edit/d/\u2026 или cloud.mail.ru/public/\u2026`,
             }
           : {
               tone: 'ok',
-              text: `Добавлено: ${r.added}. Каналы клиентов получат документы при сверке.`,
+              text: `Добавлено: ${r.added}`,
             },
       );
     } catch (x) {
@@ -97,11 +97,11 @@ export function OpenfluxDocsSettings() {
 
   async function remove(d: OfDoc) {
     const ok = await ask({
-      title: 'Убрать документ из пула?',
+      title: 'Удалить документ из пула?',
       text: d.usedBy
-        ? `Канал ${d.usedBy.client} на ${d.usedBy.server} перенастроится без него (ссылка у клиента сменится).`
-        : 'Документ больше не будет выдаваться каналам.',
-      okLabel: 'Убрать',
+        ? `У клиента ${d.usedBy.client} на ${d.usedBy.server} сменится ссылка.`
+        : undefined,
+      okLabel: 'Удалить',
       danger: Boolean(d.usedBy),
     });
     if (!ok) return;
@@ -115,12 +115,14 @@ export function OpenfluxDocsSettings() {
 
   return (
     <Section
-      title="OpenFlux: документы для каналов клиентов"
-      info="У каждого канала клиента - прямое подключение и комнаты cups.online (их сервер создаёт сам). Документы - ещё два запасных транспорта, но создать их можно только из своего аккаунта: Яндекс Документ или документ в Облаке Mail.ru с доступом на редактирование для всех по ссылке. Один документ - один канал (общий теряет ответы): нужно по документу на устройство на каждом сервере. Нет свободных - канал работает без документа."
+      title="OpenFlux: документы"
+      info={
+        'Запасной транспорт каналов клиентов: Яндекс Документ или документ Облака Mail.ru с доступом на редактирование по ссылке. Один документ\u00a0\u2014 один канал. Без свободных документов канал работает без них'
+      }
     >
       <div className="flex flex-wrap items-center gap-2 px-4 py-3 text-[13px]">
         {data === undefined ? (
-          <span className="text-muted">Загрузка...</span>
+          <span className="text-muted">Загрузка&hellip;</span>
         ) : (
           <>
             {(
@@ -244,7 +246,7 @@ export function OpenfluxDocsSettings() {
               <Button
                 size="icon-sm"
                 variant="ghost"
-                title="Убрать из пула"
+                title="Удалить из пула"
                 onClick={() => remove(d)}
               >
                 <Trash2 className="size-3.5 text-bad" />

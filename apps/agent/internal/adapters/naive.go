@@ -82,7 +82,7 @@ func (c NaiveConfig) check() error {
 		return errors.New("443: либо Caddy, либо маска MTProxyL")
 	}
 	if c.ExternalCert && (c.Listen443 || c.Mask443 || c.HTTP80) {
-		return errors.New("сертификат от Caddy панели: 443 и 80 держит она, прокси - только на своём порту")
+		return errors.New("сертификат от Caddy панели: порты 443 и 80 заняты ею, прокси работает только на своём порту")
 	}
 	return nil
 }

@@ -49,7 +49,18 @@ export function usePanelUpdate(refetchMs = 10 * 60_000) {
     refetchInterval: refetchMs,
   });
 }
-const HOURS = [...Array(24).keys()];
+/**
+ * Час автообновления хранится в UTC; в списке - местное время браузера (со смещением пояса,
+ * в том числе нецелым), по порядку суток.
+ */
+const localTime = (utcHour: number) =>
+  new Date(Date.UTC(2020, 0, 1, utcHour)).toLocaleTimeString('ru-RU', {
+    hour: '2-digit',
+    minute: '2-digit',
+  });
+const HOURS = [...Array(24).keys()]
+  .map((h) => ({ h, label: localTime(h) }))
+  .sort((a, b) => a.label.localeCompare(b.label));
 
 /**
  * Версия панели: новые релизы в своём канале со списком изменений, обновление по кнопке (его
@@ -90,7 +101,7 @@ export function PanelVersionSettings() {
     if (
       !(await ask({
         title: `Обновить панель до ${v}?`,
-        text: 'Панель перезапустится и около минуты будет недоступна (VPN на серверах это не затрагивает). Если новая версия не поднимется, служба вернёт прежнюю.',
+        text: 'Панель будет недоступна около минуты, VPN на серверах продолжит работать. При сбое вернётся прежняя версия.',
         okLabel: 'Обновить',
       }))
     )
@@ -111,14 +122,14 @@ export function PanelVersionSettings() {
   return (
     <Section
       title="Версия панели"
-      info='Новые версии - релизы на GitHub (iKonan-ru/vps-panel). Канал "бета" получает и пре-релизы. Обновление ставит служба на сервере панели (команда vps-panel): скачивает образы, перезапускает и проверяет панель, при неудаче возвращает прежнюю версию. Из консоли - vps-panel update.'
+      info="Предварительный канал получает и предварительные версии. Из консоли: vps-panel update"
       extra={
         <>
           <Chip>{st.current}</Chip>
           {top ? (
-            <Chip tone="update">есть {top.version}</Chip>
+            <Chip tone="update">доступна {top.version}</Chip>
           ) : (
-            st.checkedAt && !st.error && <Chip tone="ok">свежая</Chip>
+            st.checkedAt && !st.error && <Chip tone="ok">актуальная</Chip>
           )}
           {st.checkedAt && (
             <span className="text-xs text-muted">проверено {ago(st.checkedAt)}</span>
@@ -127,11 +138,7 @@ export function PanelVersionSettings() {
       }
       actions={
         <>
-          <LinkButton
-            href={REPO_URL}
-            label="GitHub"
-            title="Панель на GitHub: исходники, релизы, документация, вопросы"
-          />
+          <LinkButton href={REPO_URL} label="GitHub" />
           <Button
             size="sm"
             disabled={busy}
@@ -147,10 +154,7 @@ export function PanelVersionSettings() {
     >
       <div className="flex flex-col gap-4 p-4">
         {!st.managed && (
-          <Alert>
-            Панель поставлена не из релиза (сборка из исходников): обновлять её отсюда нельзя. Новые
-            версии видны ниже; установка из релиза - командой из README.
-          </Alert>
+          <Alert>Панель собрана из исходников: обновление из интерфейса недоступно</Alert>
         )}
         {st.error && <Alert tone="bad">Проверка версий: {st.error}</Alert>}
         {top && (
@@ -162,7 +166,7 @@ export function PanelVersionSettings() {
               {updating ? (
                 <Chip tone="accent">обновляется до {deploy?.status?.commit}</Chip>
               ) : st.requested ? (
-                <Chip tone="accent">обновление до {st.requested} запрошено</Chip>
+                <Chip tone="accent">запрошено обновление до {st.requested}</Chip>
               ) : (
                 st.managed && (
                   <Button
@@ -182,7 +186,7 @@ export function PanelVersionSettings() {
                 <div key={r.version} className="flex flex-col gap-1">
                   <div className="flex flex-wrap items-center gap-2 text-[13px] font-medium">
                     {r.version}
-                    {r.prerelease && <Chip>бета</Chip>}
+                    {r.prerelease && <Chip>предварительная</Chip>}
                     <span className="text-xs font-normal text-muted">{ago(r.publishedAt)}</span>
                     <a
                       href={r.url}
@@ -203,62 +207,49 @@ export function PanelVersionSettings() {
         <div className="flex flex-col gap-3 text-[13px]">
           <div className="flex items-center gap-3">
             <label htmlFor="panel-channel" className="grow">
-              Канал
-              <span className="block text-xs text-muted">
-                бета - пре-релизы раньше всех, для проверки новых версий
-              </span>
+              Канал обновлений
             </label>
             <Select
               id="panel-channel"
               size="sm"
-              className="w-36 shrink-0"
+              className="w-40 shrink-0"
               value={st.channel}
               disabled={busy}
               onChange={(e) => save({ channel: e.target.value as 'stable' | 'beta' })}
             >
               <option value="stable">стабильный</option>
-              <option value="beta">бета</option>
+              <option value="beta">предварительный</option>
             </Select>
           </div>
           <div className="flex items-center gap-3">
-            <div className="grow">
-              Обновлять панель самой
-              <span className="block text-xs text-muted">
-                новая версия канала ставится в заданный час (UTC)
-              </span>
-            </div>
+            <div className="grow">Автоматическое обновление панели</div>
             {st.autoUpdate && (
               <Select
                 size="sm"
                 className="w-24 shrink-0"
-                aria-label="Час обновления (UTC)"
+                aria-label="Время обновления"
                 value={st.autoHour}
                 disabled={busy}
                 onChange={(e) => save({ autoHour: Number(e.target.value) })}
               >
-                {HOURS.map((h) => (
+                {HOURS.map(({ h, label }) => (
                   <option key={h} value={h}>
-                    {String(h).padStart(2, '0')}:00
+                    {label}
                   </option>
                 ))}
               </Select>
             )}
             <Switch
-              label="Обновлять панель самой"
+              label="Автоматическое обновление панели"
               checked={st.autoUpdate}
               disabled={busy || !st.managed}
               onChange={() => save({ autoUpdate: !st.autoUpdate })}
             />
           </div>
           <div className="flex items-center gap-3">
-            <div className="grow">
-              Обновлять агентов за панелью
-              <span className="block text-xs text-muted">
-                после обновления панели - по одному серверу, ошибка останавливает раскатку
-              </span>
-            </div>
+            <div className="grow">Автоматическое обновление агентов</div>
             <Switch
-              label="Обновлять агентов за панелью"
+              label="Автоматическое обновление агентов"
               checked={st.agentsAuto}
               disabled={busy}
               onChange={() => save({ agentsAuto: !st.agentsAuto })}

@@ -65,23 +65,23 @@ export const NOTIFY_GROUPS: NotifyGroup[] = [
       {
         key: 'offline',
         title: 'Сервер пропал',
-        hint: 'агент не на связи дольше заданного времени (перезагрузку и обновление агента не считаем)',
+        hint: 'сервер не в сети дольше заданного времени; перезагрузка и обновление агента не в счёт',
         param: { key: 'offlineMinutes', label: 'через, мин' },
       },
       {
         key: 'online',
-        title: 'Сервер снова на связи',
-        hint: 'после отправленного "сервер пропал"',
+        title: 'Сервер снова в сети',
+        hint: 'после уведомления \u00abСервер пропал\u00bb',
       },
       {
         key: 'serviceDown',
         title: 'Сервис упал',
-        hint: 'xray 3X-UI, MTProxyL, контейнер AWG, WDTT, naive, OpenFlux - не работает дольше 2 минут',
+        hint: 'не работает дольше 2\u00a0минут',
       },
       {
         key: 'serviceUp',
         title: 'Сервис снова работает',
-        hint: 'после отправленного "сервис упал"',
+        hint: 'после уведомления \u00abСервис упал\u00bb',
       },
     ],
   },
@@ -95,8 +95,8 @@ export const NOTIFY_GROUPS: NotifyGroup[] = [
         title: 'Inbound 3X-UI не виден',
         hint: 'две проверки подряд ниже 50%',
       },
-      { key: 'reachMtproxy', title: 'MTProxyL не виден', hint: 'по проверке самого MTProxyL' },
-      { key: 'reachBack', title: 'Снова виден', hint: 'после отправленного "не виден"' },
+      { key: 'reachMtproxy', title: 'MTProxyL не виден', hint: 'по проверке MTProxyL' },
+      { key: 'reachBack', title: 'Снова виден', hint: 'после уведомления \u00abне виден\u00bb' },
     ],
   },
   {
@@ -104,12 +104,12 @@ export const NOTIFY_GROUPS: NotifyGroup[] = [
     title: 'Безопасность',
     events: [
       { key: 'auditNew', title: 'Новые критичные замечания аудита' },
-      { key: 'auditClosed', title: 'Критичные замечания закрыты' },
+      { key: 'auditClosed', title: 'Критичные замечания устранены' },
       {
         key: 'bans',
-        title: 'Рост банов fail2ban',
+        title: 'Рост блокировок fail2ban',
         hint: 'не чаще раза в час на сервер',
-        param: { key: 'banThreshold', label: 'банов в час' },
+        param: { key: 'banThreshold', label: 'блокировок в час' },
       },
       {
         key: 'pkgUpdates',
@@ -147,12 +147,11 @@ export const NOTIFY_GROUPS: NotifyGroup[] = [
       {
         key: 'updPanel',
         title: 'Вышла новая версия панели',
-        hint: 'в своём канале (стабильный или бета)',
+        hint: 'в выбранном канале обновлений',
       },
       {
         key: 'backupFail',
-        title: 'Бэкап панели не создан или не отправлен',
-        hint: 'сам бэкап в Telegram - в блоке "Бэкап панели"',
+        title: 'Резервная копия панели не создана или не отправлена',
       },
     ],
   },

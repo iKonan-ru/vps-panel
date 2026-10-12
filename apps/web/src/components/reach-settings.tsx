@@ -30,7 +30,7 @@ export function ReachSettings() {
       await api('/api/reach/settings', { method: 'PUT', json: { token: value } });
       setToken('');
       await qc.invalidateQueries({ queryKey: ['reach-settings'] });
-      setMsg({ tone: 'ok', text: value ? 'Токен сохранён' : 'Токен убран' });
+      setMsg({ tone: 'ok', text: value ? 'Токен сохранён' : 'Токен удалён' });
     } catch (x) {
       setMsg({ tone: 'bad', text: (x as Error).message });
     } finally {
@@ -41,7 +41,9 @@ export function ReachSettings() {
   return (
     <Section
       title="Доступность из России"
-      info="Проверки адресов и inbound-ов серверов из российских домашних сетей заказывает агент каждого сервера у Globalping со своего адреса: без токена - 250 зондов в час на сервер, с бесплатным токеном (dash.globalping.io, раздел Tokens) - 500. Токен необязателен; хватает и без него."
+      info={
+        'Проверки идут через Globalping из домашних сетей России. Без токена\u00a0\u2014 250\u00a0проверок в час на сервер, с бесплатным токеном (dash.globalping.io)\u00a0\u2014 500.'
+      }
       extra={
         data && (
           <Chip tone={data.tokenSet ? 'ok' : 'muted'}>
@@ -61,7 +63,7 @@ export function ReachSettings() {
             autoComplete="off"
             value={token}
             onChange={(e) => setToken(e.target.value)}
-            placeholder={data?.tokenSet ? 'задан; новый заменит его' : 'необязательно'}
+            placeholder={data?.tokenSet ? 'задан' : 'необязательно'}
           />
         </Field>
         <Button type="submit" variant="primary" disabled={busy || !token.trim()}>
@@ -69,7 +71,7 @@ export function ReachSettings() {
         </Button>
         {data?.tokenSet && (
           <Button variant="ghost" disabled={busy} onClick={() => void save('')}>
-            Убрать
+            Удалить
           </Button>
         )}
       </form>

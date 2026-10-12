@@ -29,9 +29,7 @@ export function UninstallBlock({
   return (
     <Section title="Удаление">
       <div className="flex flex-col gap-3 px-4 py-3 md:flex-row md:items-center">
-        <div className="min-w-0 grow text-[13px] text-muted">
-          Удалить {title} с сервера: {loses} Перед удалением - план и подтверждение.
-        </div>
+        <div className="min-w-0 grow text-[13px] text-muted">{loses}</div>
         <Button
           size="sm"
           variant="danger"

@@ -82,7 +82,7 @@ export function BaselineDialog({
     chosen.has('ufw') && !chosen.has('portsync') && needed.some((s) => s.id === 'portsync');
 
   return (
-    <Dialog open={open} onClose={onClose} title="Исправить проблемы" wide>
+    <Dialog open={open} onClose={onClose} title="Исправление замечаний" wide>
       {error && <Alert tone="bad">{error}</Alert>}
       {actionId ? (
         <>
@@ -92,14 +92,12 @@ export function BaselineDialog({
           </div>
         </>
       ) : !plan ? (
-        <div className="text-sm text-muted">Агент проверяет сервер...</div>
+        <div className="text-sm text-muted">Проверка сервера&hellip;</div>
       ) : (
         <>
-          <div className="text-[13px] text-muted">
-            Отметь, что исправить. Работающие контейнеры и VPN не трогаются.
-          </div>
+          <div className="text-[13px] text-muted">Работающие контейнеры и VPN не затрагиваются</div>
           {needed.length === 0 ? (
-            <div className="text-sm text-ok">Проблем нет, исправлять нечего.</div>
+            <div className="text-sm text-ok">Исправлять нечего</div>
           ) : (
             <div className="flex flex-col gap-2">
               {needed.map((s) => (
@@ -158,19 +156,19 @@ export function BaselineDialog({
                     tone={p.action === 'open' ? 'ok' : 'bad'}
                     className="font-mono"
                   >
-                    {p.action === 'open' ? 'открыт' : 'ЗАКРОЕТСЯ'} {p.port}/{p.proto} {p.process}
+                    {p.action === 'open' ? 'открыт' : 'закроется'} {p.port}/{p.proto} {p.process}
                   </Chip>
                 ))}
               </div>
             </div>
           )}
           <div className="text-xs text-muted">
-            SSH-порт {plan.sshPort}, ключей у root: {plan.rootKeys}
+            Порт SSH: {plan.sshPort}, ключей у root: {plan.rootKeys}
           </div>
           <div className="flex justify-end gap-2">
             <Button onClick={onClose}>Отмена</Button>
             <Button variant="primary" disabled={chosen.size === 0 || busy} onClick={apply}>
-              Исправить ({chosen.size + (impliedPortsync ? 1 : 0)})
+              Исправить: {chosen.size + (impliedPortsync ? 1 : 0)}
             </Button>
           </div>
         </>

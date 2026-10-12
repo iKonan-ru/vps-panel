@@ -33,5 +33,5 @@ while [ $i -lt 180 ]; do
   i=$((i + 1))
   sleep 5
 done
-echo "сборка не завершилась за 15 минут, смотри /tmp/panel-build.log на сервере"
+echo "сборка не завершилась за 15 минут, журнал: /tmp/panel-build.log на сервере"
 exit 1

@@ -88,7 +88,7 @@ export function ClientPage() {
   }
 
   if (error) return <Alert tone="bad">{error.message}</Alert>;
-  if (!data) return <Card className="p-8 text-[13px] text-muted">Загружаю...</Card>;
+  if (!data) return <Card className="p-8 text-[13px] text-muted">Загрузка&hellip;</Card>;
   const c = data.client;
   const syncing = syncAsked || data.syncing;
 
@@ -111,7 +111,7 @@ export function ClientPage() {
                 <LinkButton
                   href={data.subscription.page}
                   variant="primary"
-                  title="Личная страница клиента: подписка, прокси для Telegram, конфиги AWG и приложения - одной ссылкой"
+                  title="Подписка, прокси, конфиги и приложения клиента на одной странице"
                   copyTitle="Скопировать ссылку на личную страницу"
                 >
                   Личная страница
@@ -124,12 +124,11 @@ export function ClientPage() {
               key: 'rotate',
               label: 'Новая ссылка',
               icon: <KeyRound className="size-3.5" />,
-              title:
-                'Перевыпустить ссылку на подписку и личную страницу: старые перестанут работать',
+              title: 'Перевыпустить ссылки на подписку и личную страницу',
               onClick: async () => {
                 const ok = await ask({
-                  title: `Новая ссылка для ${c.name}?`,
-                  text: 'Старые ссылки на подписку и личную страницу перестанут работать сразу: подписка в приложениях клиента перестанет обновляться, пока он не добавит новую. Подключения на серверах не меняются.',
+                  title: `Перевыпустить ссылки для ${c.name}?`,
+                  text: 'Старые ссылки на подписку и личную страницу перестанут работать: подписка в приложениях клиента не будет обновляться до добавления новой. Подключения на серверах не изменятся.',
                   okLabel: 'Перевыпустить',
                   danger: true,
                 });
@@ -163,7 +162,7 @@ export function ClientPage() {
               onClick: async () => {
                 const ok = await ask({
                   title: `Удалить клиента ${c.name}?`,
-                  text: 'Его клиенты VLESS, MTProxy, WDTT и AWG будут удалены со всех серверов, подписка и конфиги перестанут работать.',
+                  text: 'Все его подключения будут удалены с серверов, подписка и конфиги перестанут работать.',
                   okLabel: 'Удалить',
                   danger: true,
                 });
@@ -184,11 +183,11 @@ export function ClientPage() {
 
       {data.subscription.temporary && (
         <Alert tone="info">
-          Адрес временный (адрес панели): после настройки SUB_DOMAIN ссылки поменяются. Клиентам
+          Ссылки временные, на адресе панели: после настройки SUB_DOMAIN они изменятся. Клиентам их
           пока не раздавать.
         </Alert>
       )}
-      {!c.enabled && <Alert tone="info">Клиент выключен: подписка отдаёт пустой список.</Alert>}
+      {!c.enabled && <Alert tone="info">Клиент выключен: подписка отдаёт пустой список</Alert>}
       <div className="grid items-start gap-4 lg:grid-cols-[minmax(0,1fr)_minmax(0,2fr)]">
         <div className="flex min-w-0 flex-col gap-4">
           <Section
@@ -202,7 +201,7 @@ export function ClientPage() {
           >
             {data.devices.length === 0 && (
               <div className="px-4 py-3 text-[13px] text-muted">
-                Устройств нет: AWG заводится на устройство, VLESS и MTProxy - на человека.
+                Устройств нет: AWG заводится на каждое устройство
               </div>
             )}
             {data.devices.map((d) => (
@@ -258,7 +257,7 @@ export function ClientPage() {
               />
               <LiveSummary live={live} />
               {c.access !== null && <Chip tone="accent">выборочный доступ</Chip>}
-              {syncing && <span className="text-xs text-muted">идёт сверка...</span>}
+              {syncing && <span className="text-xs text-muted">идёт синхронизация</span>}
             </>
           }
           actions={
@@ -268,18 +267,15 @@ export function ClientPage() {
                   key: 'access',
                   label: 'Доступ',
                   icon: <SlidersHorizontal className="size-3.5" />,
-                  title: 'На каких серверах какие сервисы заводятся клиенту',
+                  title: 'Серверы и сервисы клиента',
                   onClick: () => setAccessOpen(true),
                 },
                 {
                   key: 'sync',
-                  label: 'Сверить сейчас',
-                  short: 'Сверить',
+                  label: 'Синхронизировать',
                   icon: <RefreshCw className={cn('size-3.5', syncing && 'animate-spin')} />,
                   disabled: syncing,
-                  title: syncing
-                    ? 'Сверка с серверами идёт: кнопка освободится, когда она закончится'
-                    : 'Полная сверка этого клиента: все его записи на всех серверах приводятся к панели',
+                  title: syncing ? undefined : 'Полная синхронизация клиента на всех серверах',
                   onClick: () => void sync(),
                 },
               ]}
@@ -289,8 +285,8 @@ export function ClientPage() {
           {data.bindings.length === 0 && (
             <div className="px-4 py-3 text-[13px] text-muted">
               {c.access?.length === 0
-                ? 'Доступ не выдан ни к одному сервису: кнопка "Доступ".'
-                : 'Пока ничего не заведено: сверка идёт в фоне, обычно в течение минуты.'}
+                ? 'Доступ не выдан ни к одному сервису'
+                : 'Пока ничего не заведено: синхронизация обычно занимает до минуты'}
             </div>
           )}
           {byServer(data.bindings).map(([serverId, list]) => (
@@ -302,7 +298,7 @@ export function ClientPage() {
                 <Link
                   to="/clients/$id/servers/$serverId"
                   params={{ id, serverId }}
-                  title="Статистика клиента на этом сервере: подключение и трафик по сервисам"
+                  title="Подключение и трафик клиента на сервере"
                   className="max-w-full pt-1 text-[13px] font-medium hover:text-accent sm:truncate"
                 >
                   {list[0]?.serverName}
@@ -378,10 +374,10 @@ export function ClientPage() {
       <Dialog open={qr} onClose={() => setQr(false)} title="Подписка VLESS">
         <div className="flex flex-col items-center gap-3">
           <div className="flex items-center gap-1 self-stretch text-[13px] text-muted">
-            Одна подписка на все серверы.
+            Одна подписка на все серверы
             <InfoTip>
-              Happ, v2rayNG, Hiddify и другие: добавить кнопкой, скопированной ссылкой или по QR.
-              Серверы обновляются в приложении сами.
+              Для Happ, v2rayNG, Hiddify и других. Список серверов обновляется в приложении
+              автоматически.
             </InfoTip>
           </div>
           <QrCode text={data.subscription.url} alt="QR-код подписки VLESS" />

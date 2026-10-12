@@ -82,7 +82,7 @@ curl --proto '=https' -fsSL https://<панель>/agent/install.sh | sh -s -- \
 | сервер | `inventory.get`, `metrics.interval`, `system.upgrade`, `system.reboot`, `disk.cleanup.scan`, `disk.cleanup.run` |
 | безопасность | `baseline.plan`, `baseline.apply`, `firewall.enable`, `firewall.disable`, `firewall.rules.set`, `firewall.portsync.config`, `firewall.portsync.run`, `ssh.keys.list`, `ssh.keys.add`, `ssh.keys.remove`, `ssh.keys.comment` |
 | docker | `docker.action`, `docker.logs` |
-| бэкапы | `backup.detect`, `backup.create`, `backup.restore` |
+| резервные копии | `backup.detect`, `backup.create`, `backup.restore` |
 | команды каталога | `command.run`, `command.cancel` |
 | 3X-UI | `xui.info`, `xui.api`, `xui.set`, `xui.token`, `xui.service`, `xui.update` |
 | MTProxyL | `mtproxyl.status`, `mtproxyl.exec` |
@@ -146,7 +146,7 @@ systemctl daemon-reload
 | `internal/adapters` | 3X-UI, MTProxyL, AmneziaWG, WDTT, OpenFlux, naive, Telegram |
 | `internal/command` | запуск команд каталога |
 | `internal/certs` | поиск сертификатов (только чтение) |
-| `internal/backup` | бэкап и восстановление конфигураций сервисов |
+| `internal/backup` | резервное копирование и восстановление конфигураций сервисов |
 | `internal/cleanup` | чистка диска |
 | `internal/selfupdate` | самообновление |
 | `internal/terminal`, `internal/tunnel` | терминал и туннель к панелям сервисов |

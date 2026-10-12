@@ -53,7 +53,7 @@ export function TotpEnroll({
       <div className="flex flex-col items-center gap-5">
         <QrCode text={setup.totpUri} alt="QR для аутентификатора" />
         <div className="flex min-w-0 flex-col gap-2 text-[13px]">
-          <Label>Секрет вручную</Label>
+          <Label>Секрет для ручного ввода</Label>
           <code className="break-all font-mono text-xs">{setup.totpSecret}</code>
           <Label className="mt-2">Резервные коды (показываются один раз)</Label>
           <BackupCodes codes={setup.backupCodes} />
@@ -62,7 +62,7 @@ export function TotpEnroll({
       <Checkbox
         checked={saved}
         onChange={(e) => setSaved(e.target.checked)}
-        label="Резервные коды сохранил в надёжном месте"
+        label="Резервные коды сохранены в надёжном месте"
       />
       <Field label="Код из приложения" htmlFor="enroll-code">
         <Input

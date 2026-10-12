@@ -64,9 +64,9 @@ export function AwgTab({ s }: { s: ServerDetail }) {
     }
   }
 
-  if (!online) return <Card className="p-8 text-[13px] text-muted">Агент не на связи.</Card>;
+  if (!online) return <Card className="p-8 text-[13px] text-muted">Сервер не в сети</Card>;
   if (error) return <Alert tone="bad">{error.message}</Alert>;
-  if (!data) return <Card className="p-8 text-[13px] text-muted">Опрашиваю контейнеры AWG...</Card>;
+  if (!data) return <Card className="p-8 text-[13px] text-muted">Загрузка&hellip;</Card>;
   const openClient = open
     ? data.instances
         .find((i) => i.container === open.container)
@@ -77,9 +77,7 @@ export function AwgTab({ s }: { s: ServerDetail }) {
     <>
       <div className="flex flex-wrap items-center gap-2">
         {data.hostModule && (
-          <span className="text-xs text-muted" title="Модуль amneziawg в ядре хоста">
-            модуль ядра хоста {data.hostModule}
-          </span>
+          <span className="text-xs text-muted">модуль ядра amneziawg {data.hostModule}</span>
         )}
         <div className="grow" />
         {data.instances.length > 0 && (
@@ -90,7 +88,7 @@ export function AwgTab({ s }: { s: ServerDetail }) {
             size="sm"
             variant="ghost"
             label="Новый экземпляр"
-            title="Ещё один экземпляр со своей версией, портом и подсетью (команда Amnezia AWG)"
+            title="Со своей версией, портом и подсетью"
           >
             <Plus className="size-3.5" />
           </ButtonLink>
@@ -100,8 +98,8 @@ export function AwgTab({ s }: { s: ServerDetail }) {
           variant="ghost"
           disabled={isFetching}
           onClick={() => void qc.invalidateQueries({ queryKey: ['awg', s.id] })}
-          title="Обновить данные"
-          aria-label="Обновить данные"
+          title="Обновить"
+          aria-label="Обновить"
         >
           <RefreshCw className={cn('size-3.5', isFetching && 'animate-spin')} />
         </Button>
@@ -109,7 +107,7 @@ export function AwgTab({ s }: { s: ServerDetail }) {
 
       {data.instances.length === 0 && (
         <Card className="flex flex-col items-start gap-3 p-6 text-[13px] text-muted">
-          Контейнеров AmneziaWG на сервере не найдено.
+          AmneziaWG не установлен
           <ButtonLink
             to="/commands/$id"
             params={{ id: 'awg' }}

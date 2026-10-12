@@ -189,10 +189,10 @@ export function reachError(raw: string): string {
   const code = Number(m[1]);
   const detail = /"message"\s*:\s*"([^"]{1,200})"/.exec(m[2] ?? '')?.[1];
   if (code === 401 || code === 403)
-    return 'Globalping не принял токен - проверь его в Настройках, блок "Доступность из России" (или убери: без токена лимит меньше)';
-  if (code === 429) return 'лимит проверок Globalping исчерпан - повтор при следующей проверке';
+    return 'Globalping не принял токен: его нужно заменить или удалить в \u00abНастройки\u00bb\u00a0\u2014 \u00abДоступность из России\u00bb';
+  if (code === 429) return 'лимит проверок Globalping исчерпан, повтор при следующей проверке';
   if (code >= 500)
-    return `Globalping временно недоступен (HTTP ${code}) - повтор при следующей проверке`;
+    return `Globalping временно недоступен (HTTP ${code}), повтор при следующей проверке`;
   return `Globalping отклонил запрос (HTTP ${code})${detail ? `: ${detail}` : ''}`;
 }
 
@@ -217,8 +217,8 @@ export function apply(
       t.notified = true;
       return {
         back: false,
-        text: `${t.title} не виден из России: дошли ${r.ok} из ${r.total} зондов (${r.percent}%).${
-          r.errors[0] ? ` ${r.errors[0]}` : ''
+        text: `${t.title} не виден из России: дошли ${r.ok} из ${r.total}\u00a0зондов (${r.percent}%)${
+          r.errors[0] ? `; ${r.errors[0]}` : ''
         }`,
       };
     }
@@ -229,7 +229,7 @@ export function apply(
     t.notified = false;
     return {
       back: true,
-      text: `${t.title} снова виден из России: ${r.ok} из ${r.total} зондов (${r.percent}%).`,
+      text: `${t.title} снова виден из России: ${r.ok} из ${r.total}\u00a0зондов (${r.percent}%)`,
     };
   }
   return null;
@@ -490,7 +490,7 @@ export class RuReach {
     if (wait > 0)
       throw Object.assign(
         new Error(
-          `проверка была только что: каждый зонд - из квоты Globalping, повтори через ${Math.ceil(wait / 1000)} с`,
+          `следующая проверка\u00a0\u2014 через ${Math.ceil(wait / 1000)}\u00a0с: зонды расходуют квоту Globalping`,
         ),
         { statusCode: 429 },
       );
@@ -510,7 +510,7 @@ export class RuReach {
 
   private async run(serverId: string): Promise<ServerReach> {
     const row = (await this.db.select().from(servers).where(eq(servers.id, serverId)).limit(1))[0];
-    if (!row) throw Object.assign(new Error('Сервер не найден'), { statusCode: 404 });
+    if (!row) throw Object.assign(new Error('сервер не найден'), { statusCode: 404 });
     const inv = (row.statusCache as StatusCache | null)?.inventory;
     const now = new Date().toISOString();
     const prev = this.load()[serverId];
@@ -560,14 +560,14 @@ export class RuReach {
           >[]) ?? [];
         agentTargets.push(...inboundTargets(list, row.host));
       } catch (e) {
-        out.error = `inbound-ы 3X-UI: ${(e as Error).message}`;
+        out.error = `inbound 3X-UI: ${(e as Error).message}`;
       }
     }
     const targets = agentTargets.map((t) => make(t.key, t.title, t.kind, t.port, 'agent', t.sni));
     if (!this.registry.isOnline(serverId)) {
-      out.error = 'агент не на связи';
+      out.error = 'сервер не в сети';
     } else if (!this.registry.supports(serverId, 'reach.check')) {
-      out.error = 'агент устарел: обнови агента, чтобы проверять адрес и inbound-ы';
+      out.error = 'агент устарел: для проверки адреса и inbound нужно обновить агент';
     } else {
       try {
         const token = this.token();

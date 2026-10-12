@@ -84,7 +84,7 @@ export function SshKeysTab({ s }: { s: ServerDetail }) {
     <>
       <Section
         title="Ключи root"
-        info="Ключи из /root/.ssh/authorized_keys. Эталон отключает вход по паролю, поэтому у root должен быть хотя бы один ключ. Перед каждым изменением прежний файл сохраняется в authorized_keys.vps-panel.bak."
+        info="Исправление SSH отключает вход по паролю: у root нужен хотя бы один ключ. Прежний файл сохраняется в authorized_keys.vps-panel.bak."
         actions={
           <Button
             size="sm"
@@ -99,7 +99,7 @@ export function SshKeysTab({ s }: { s: ServerDetail }) {
       >
         <div className="p-4">
           {!online ? (
-            <div className="text-sm text-muted">Агент не на связи.</div>
+            <div className="text-sm text-muted">Сервер не в сети</div>
           ) : (
             <KeyList serverId={s.id} query={list} busy={busy} run={run} />
           )}
@@ -110,12 +110,12 @@ export function SshKeysTab({ s }: { s: ServerDetail }) {
           )}
         </div>
       </Section>
-      <Section title="Добавить ключи">
+      <Section title="Новые ключи">
         <form onSubmit={submit} className="flex flex-col gap-4 p-4">
           <Checkbox
             checked={panel}
             onChange={(e) => setPanel(e.target.checked)}
-            label="Ключ панели - чтобы панель могла переустанавливать агента без пароля"
+            label="Ключ панели: переустановка агента без пароля"
             hint={
               key.data ? (
                 <span className="break-all font-mono">{key.data.publicKey}</span>
@@ -123,8 +123,9 @@ export function SshKeysTab({ s }: { s: ServerDetail }) {
             }
           />
           <Field
-            label="Свои публичные ключи (по одному в строке, содержимое ~/.ssh/id_ed25519.pub)"
+            label="Свои публичные ключи"
             htmlFor="own-keys"
+            hint="по одному в строке, например из ~/.ssh/id_ed25519.pub"
           >
             <Textarea
               id="own-keys"
@@ -137,7 +138,7 @@ export function SshKeysTab({ s }: { s: ServerDetail }) {
           </Field>
           {result !== null && (
             <Alert tone="ok">
-              Добавлено ключей: {result}. Проверь вход по ключу до отключения паролей.
+              Добавлено ключей: {result}. Вход по ключу стоит проверить до отключения паролей.
             </Alert>
           )}
           <div className="flex justify-end">
@@ -177,23 +178,23 @@ function KeyList({
 
   async function remove(k: SshKey) {
     const ok = await ask({
-      title: `Удалить ключ ${k.comment || keyType(k.type)}?`,
+      title: `Удалить ключ \u00ab${k.comment || keyType(k.type)}\u00bb?`,
       text: k.panel
-        ? 'Это ключ панели: без него панель не сможет заходить на сервер по SSH (переустановка агента - только с паролем root).'
-        : 'Вход по этому ключу перестанет работать.',
+        ? 'Без ключа панели переустановка агента возможна только с паролем root'
+        : 'Вход по этому ключу перестанет работать',
       okLabel: 'Удалить',
       danger: true,
     });
     if (ok) await run(() => actions.sshKeysRemove(serverId, k.fingerprint));
   }
 
-  if (query.isLoading) return <div className="text-sm text-muted">Читаю ключи...</div>;
+  if (query.isLoading) return <div className="text-sm text-muted">Загрузка&hellip;</div>;
   if (query.error) return <Alert tone="bad">{query.error.message}</Alert>;
   const data = query.data;
   if (!data) return null;
   return (
     <div className="flex flex-col gap-2">
-      {data.keys.length === 0 && <div className="text-sm text-muted">Ключей у root нет.</div>}
+      {data.keys.length === 0 && <div className="text-sm text-muted">Ключей у root нет</div>}
       {data.keys.map((k) => (
         <div
           key={k.fingerprint}
@@ -214,7 +215,7 @@ function KeyList({
                 maxLength={200}
                 autoFocus
                 aria-label="Комментарий ключа"
-                placeholder="например, ноутбук"
+                placeholder="ноутбук"
                 className="min-w-0 basis-full sm:basis-0 sm:grow"
               />
               <Button type="submit" variant="primary" disabled={busy}>
@@ -263,8 +264,8 @@ function KeyList({
       ))}
       <div className="text-xs text-muted">
         {data.passwordLogin
-          ? 'Root может войти по паролю.'
-          : 'Вход root по паролю выключен: последний ключ удалить нельзя.'}
+          ? 'Вход root по паролю включён'
+          : 'Вход root по паролю выключен: последний ключ удалить нельзя'}
       </div>
     </div>
   );

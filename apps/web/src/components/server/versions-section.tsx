@@ -100,7 +100,7 @@ export function VersionsSection<K extends string>({
               </div>
               <div className="text-xs text-muted">
                 {!v
-                  ? `установлена ${installed}, обновления ещё не проверялись`
+                  ? `установлена ${installed}, обновления не проверялись`
                   : `установлена ${installed}${v.latest ? `, последняя ${v.latest}` : ''}`}
               </div>
               {v?.error && (

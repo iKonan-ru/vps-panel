@@ -74,17 +74,15 @@ export function ClientsPage() {
               key: 'servers',
               label: 'Серверы клиентов',
               icon: <Server className="size-3.5" />,
-              title: 'На каких серверах заводятся глобальные клиенты и в какие inbound-ы 3X-UI',
+              title: 'На каких серверах и в каких inbound 3X-UI заводятся клиенты',
               onClick: () => setServersOpen(true),
             },
             {
               key: 'sync',
-              label: syncing ? 'Сверка идёт...' : 'Сверить всех',
+              label: syncing ? 'Синхронизация\u2026' : 'Синхронизировать',
               icon: <RefreshCw className={syncing ? 'size-3.5 animate-spin' : 'size-3.5'} />,
               disabled: syncing,
-              title: syncing
-                ? 'Сверка с серверами идёт: кнопка освободится, когда она закончится'
-                : 'Полная сверка всех клиентов на всех серверах: каждая запись каждого сервиса приводится к панели',
+              title: syncing ? undefined : 'Полная синхронизация всех клиентов на всех серверах',
               onClick: () =>
                 void sync.run(async () => {
                   setSyncAsked(true);
@@ -110,11 +108,7 @@ export function ClientsPage() {
       {sync.error && <Alert tone="bad">{sync.error}</Alert>}
       <SyncPanel />
       {data && data.length === 0 && (
-        <Card className="p-8 text-[13px] text-muted">
-          Клиентов пока нет. Клиент - это человек: ему на серверах заводятся VLESS (одна подписка),
-          MTProxy, WDTT и AWG на каждое его устройство - везде или только на выбранных серверах и
-          сервисах (доступ клиента).
-        </Card>
+        <Card className="p-8 text-[13px] text-muted">Клиентов пока нет</Card>
       )}
       {/* колонок - сколько влезает карточек от 300px: на телефоне одна, на широком экране 3-5 */}
       <div className="grid grid-cols-[repeat(auto-fill,minmax(min(300px,100%),1fr))] gap-2">
@@ -159,7 +153,7 @@ export function ClientsPage() {
           </Link>
         ))}
       </div>
-      <Dialog open={serversOpen} onClose={() => setServersOpen(false)} title="Серверы">
+      <Dialog open={serversOpen} onClose={() => setServersOpen(false)} title="Серверы клиентов">
         <ServersList />
       </Dialog>
       <Dialog open={adding} onClose={() => setAdding(false)} title="Новый клиент">
@@ -205,7 +199,7 @@ function AddClientForm({ onDone }: { onDone: (id: string) => void }) {
   }
   return (
     <form className="flex flex-col gap-3" onSubmit={submit}>
-      <Field label="Имя" htmlFor="gc-name" hint="видно только в панели; клиенту - нет">
+      <Field label="Имя" htmlFor="gc-name" hint="клиент его не видит">
         <Input
           id="gc-name"
           value={name}
@@ -213,7 +207,7 @@ function AddClientForm({ onDone }: { onDone: (id: string) => void }) {
           maxLength={64}
           required
           autoFocus
-          placeholder="например, Иван"
+          placeholder="Иван"
         />
       </Field>
       <Field label="Заметка" htmlFor="gc-note">
@@ -224,7 +218,7 @@ function AddClientForm({ onDone }: { onDone: (id: string) => void }) {
           maxLength={500}
         />
       </Field>
-      <div className="text-[13px] font-medium">Первое устройство (можно добавить позже)</div>
+      <div className="text-[13px] font-medium">Первое устройство (необязательно)</div>
       <div className="flex flex-wrap gap-2">
         <DeviceSelect
           value={dev.type}
@@ -235,7 +229,7 @@ function AddClientForm({ onDone }: { onDone: (id: string) => void }) {
           value={dev.name}
           onChange={(e) => setDev({ ...dev, name: e.target.value })}
           maxLength={64}
-          placeholder="название, например iPhone 15"
+          placeholder="iPhone 15"
           aria-label="Название устройства"
           className="min-w-0 basis-full sm:basis-0 sm:grow"
         />
@@ -243,7 +237,7 @@ function AddClientForm({ onDone }: { onDone: (id: string) => void }) {
       <Checkbox
         checked={dev.awg20}
         onChange={(e) => setDev({ ...dev, awg20: e.target.checked })}
-        label="Ещё AWG 2.0 (старые приложения, роутеры)"
+        label="AWG 2.0 для старых приложений и роутеров"
       />
       <div className="text-[13px] font-medium">Доступ</div>
       <AccessEditor value={access} onChange={setAccess} servers={servers ?? []} />
@@ -269,13 +263,9 @@ function ServersList() {
   // inbound-ы сервера разворачиваются под его строкой
   const [openId, setOpenId] = useState<string | null>(null);
   const toggle = useAction();
-  if (!data) return <div className="text-[13px] text-muted">Загружаю...</div>;
+  if (!data) return <div className="text-[13px] text-muted">Загрузка&hellip;</div>;
   return (
     <div className="flex flex-col">
-      <div className="pb-2 text-[13px] text-muted">
-        Где заводятся глобальные клиенты. Выключенный сервер исключается: заведённое на нём
-        удаляется. Сервер панели участвует, только если включить его здесь.
-      </div>
       {toggle.error && <Alert tone="bad">{toggle.error}</Alert>}
       {data.map((s) => {
         const panelHost = s.panelHost;
@@ -286,7 +276,7 @@ function ServersList() {
               <Switch
                 checked={s.enabled}
                 disabled={toggle.busy}
-                label={`Глобальные клиенты на ${s.name}`}
+                label={`Клиенты на ${s.name}`}
                 onChange={() =>
                   void toggle.run(async () => {
                     // сервер панели: включение заводит на нём всех клиентов - спросить
@@ -295,7 +285,7 @@ function ServersList() {
                       !s.enabled &&
                       !(await ask({
                         title: `Заводить клиентов на сервере панели ${s.name}?`,
-                        text: 'Сверка заведёт на нём глобальных клиентов во всех его сервисах (AWG, 3X-UI, MTProxy, WDTT, OpenFlux - что установлено). Порты 80 и 443 держит панель: сервисы здесь - только на других портах. Нагрузка клиентов ложится на тот же сервер, что и панель.',
+                        text: 'Клиенты будут заведены во всех установленных сервисах. Порты 80 и 443 заняты панелью, а нагрузка клиентов ляжет на её сервер.',
                         okLabel: 'Заводить',
                       }))
                     )
@@ -312,16 +302,16 @@ function ServersList() {
                 <div className="text-[13px] font-medium">{s.name}</div>
                 <div className="text-xs text-muted">
                   {panelHost && !s.enabled
-                    ? 'сервер панели: клиенты не заводятся, пока не включишь'
+                    ? 'сервер панели: клиенты не заводятся'
                     : !s.enabled
-                      ? 'исключён: клиенты здесь не заводятся, заведённые удаляются'
+                      ? 'исключён: клиенты не заводятся, заведённые удаляются'
                       : !s.xui
                         ? '3X-UI нет'
                         : s.online
                           ? panelHost
-                            ? 'сервер панели, участвует: 80 и 443 держит панель'
+                            ? 'сервер панели, участвует; порты 80 и 443 заняты панелью'
                             : 'участвует'
-                          : 'участвует, сейчас не в сети'}
+                          : 'участвует, не в сети'}
                 </div>
               </div>
               {s.active && s.xui && (
@@ -331,8 +321,8 @@ function ServersList() {
                   aria-expanded={Boolean(open)}
                   variant={open ? 'primary' : 'default'}
                   onClick={() => setOpenId(open ? null : s.id)}
-                  label="Inbound-ы"
-                  title="В какие VLESS-inbound-ы добавлять глобальных клиентов"
+                  label="Inbound"
+                  title="В какие inbound VLESS добавлять клиентов"
                 >
                   <ListChecks className="size-3.5" />
                 </Button>
@@ -359,15 +349,14 @@ function InboundsForm({ server, onDone }: { server: GServer; onDone: () => void 
   const [excluded, setExcluded] = useState<number[] | null>(null);
   const save = useAction();
   if (error) return <Alert tone="bad">{error.message}</Alert>;
-  if (!data) return <div className="text-sm text-muted">Спрашиваю 3X-UI...</div>;
+  if (!data) return <div className="text-sm text-muted">Загрузка&hellip;</div>;
   const ex = excluded ?? data.filter((i) => i.excluded).map((i) => i.id);
   return (
     <div className="flex flex-col gap-3">
       <div className="text-[13px] text-muted">
-        Глобальные клиенты добавляются в отмеченные VLESS-inbound-ы. Новые inbound-ы отмечены сразу;
-        с тестовых и служебных галочку сними.
+        Клиенты добавляются в отмеченные inbound VLESS; новые inbound отмечаются автоматически
       </div>
-      {data.length === 0 && <div className="text-sm text-muted">VLESS-inbound-ов нет.</div>}
+      {data.length === 0 && <div className="text-sm text-muted">Inbound VLESS нет</div>}
       {data.map((i) => (
         <Checkbox
           key={i.id}
@@ -376,7 +365,7 @@ function InboundsForm({ server, onDone }: { server: GServer; onDone: () => void 
             setExcluded(e.target.checked ? ex.filter((x) => x !== i.id) : [...ex, i.id])
           }
           label={i.remark || `inbound ${i.id}`}
-          hint={`порт ${i.port}${i.security ? `, ${i.security}` : ''}${i.enable ? '' : ', выключен в 3X-UI: клиенты в него не добавляются'}`}
+          hint={`порт ${i.port}${i.security ? `, ${i.security}` : ''}${i.enable ? '' : ', выключен в 3X-UI: клиенты не добавляются'}`}
         />
       ))}
       {save.error && <Alert tone="bad">{save.error}</Alert>}

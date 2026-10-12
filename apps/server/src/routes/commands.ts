@@ -88,7 +88,7 @@ export async function commandRoutes(
   app.get('/api/servers/:id/commands/:cmd/defaults', async (req, reply) => {
     const { id, cmd } = z.object({ id: z.string(), cmd: z.string() }).parse(req.params);
     const c = findCommand(cmd);
-    if (!c) return reply.code(404).send({ error: 'Команда не найдена' });
+    if (!c) return reply.code(404).send({ error: 'команда не найдена' });
     const saved = (
       await db
         .select()
@@ -112,7 +112,7 @@ export async function commandRoutes(
   app.post('/api/servers/:id/commands/:cmd/plan', async (req, reply) => {
     const { cmd } = z.object({ id: z.string(), cmd: z.string() }).parse(req.params);
     const c = findCommand(cmd);
-    if (!c) return reply.code(404).send({ error: 'Команда не найдена' });
+    if (!c) return reply.code(404).send({ error: 'команда не найдена' });
     const answers = Answers.parse(req.body ?? {});
     return { steps: c.plan(answers), errors: validateAnswers(c, answers) };
   });
@@ -121,8 +121,8 @@ export async function commandRoutes(
   app.post('/api/servers/:id/commands/:cmd/preflight', async (req, reply) => {
     const { id, cmd } = z.object({ id: z.string(), cmd: z.string() }).parse(req.params);
     const c = findCommand(cmd);
-    if (!c) return reply.code(404).send({ error: 'Команда не найдена' });
-    if (!registry.isOnline(id)) return reply.code(409).send({ error: 'Агент не подключён' });
+    if (!c) return reply.code(404).send({ error: 'команда не найдена' });
+    if (!registry.isOnline(id)) return reply.code(409).send({ error: 'сервер не в сети' });
     const answers = Answers.parse(req.body ?? {});
     const errors = validateAnswers(c, answers);
     const checks: { level: 'ok' | 'warn' | 'fail'; text: string }[] = errors.map((e) => ({
@@ -130,13 +130,13 @@ export async function commandRoutes(
       text: e,
     }));
     const row = await serverRow(id);
-    if (!row) return reply.code(404).send({ error: 'Сервер не найден' });
+    if (!row) return reply.code(404).send({ error: 'сервер не найден' });
     const certName = c.panelCertParam ? answers[c.panelCertParam]?.trim() : '';
     if (row.panelHost && certName) certs?.allow(certName);
     checks.push(
       row.agentUpdateAvailable
-        ? { level: 'warn', text: 'Агент устарел - обнови его перед запуском' }
-        : { level: 'ok', text: 'Агент в сети' },
+        ? { level: 'warn', text: 'агент устарел: перед запуском нужно обновить агент' }
+        : { level: 'ok', text: 'сервер в сети' },
     );
     if (c.preflight) {
       const res = await registry.request<{ exitCode: number; tail: string }>(
@@ -169,13 +169,13 @@ export async function commandRoutes(
   app.post('/api/servers/:id/commands/:cmd/run', async (req, reply) => {
     const { id, cmd } = z.object({ id: z.string(), cmd: z.string() }).parse(req.params);
     const c = findCommand(cmd);
-    if (!c) return reply.code(404).send({ error: 'Команда не найдена' });
-    if (!registry.isOnline(id)) return reply.code(409).send({ error: 'Агент не подключён' });
+    if (!c) return reply.code(404).send({ error: 'команда не найдена' });
+    if (!registry.isOnline(id)) return reply.code(409).send({ error: 'сервер не в сети' });
     const answers = Answers.parse(req.body ?? {});
     const errors = validateAnswers(c, answers);
     if (errors.length) return reply.code(400).send({ error: errors.join('; ') });
     const row = await serverRow(id);
-    if (!row) return reply.code(404).send({ error: 'Сервер не найден' });
+    if (!row) return reply.code(404).send({ error: 'сервер не найден' });
     const certName = c.panelCertParam ? answers[c.panelCertParam]?.trim() : '';
     if (row.panelHost && certName) certs?.allow(certName);
 
@@ -275,10 +275,10 @@ export async function commandRoutes(
   app.post('/api/actions/:aid/cancel', async (req, reply) => {
     const { aid } = z.object({ aid: z.string() }).parse(req.params);
     const row = (await db.select().from(actionLog).where(eq(actionLog.id, aid)).limit(1))[0];
-    if (!row || !row.serverId) return reply.code(404).send({ error: 'Действие не найдено' });
+    if (!row || !row.serverId) return reply.code(404).send({ error: 'действие не найдено' });
     if (row.finishedAt) return { cancelled: false, reason: 'уже завершено' };
     if (!registry.isOnline(row.serverId))
-      return reply.code(409).send({ error: 'Агент не подключён' });
+      return reply.code(409).send({ error: 'сервер не в сети' });
     return registry.request(row.serverId, 'command.cancel', { runId: aid }, { timeoutMs: 15_000 });
   });
 
@@ -302,12 +302,12 @@ export async function commandRoutes(
   // ---- файлы для скриптов: deploy.sh и бинарник WDTT и т.п. Без авторизации, как бинарники агента.
   app.get('/files/sha256/*', { config: downloadRateLimit }, async (req, reply) => {
     const f = safeFile((req.params as { '*': string })['*']);
-    if (!f) return reply.code(404).send({ error: 'нет файла' });
+    if (!f) return reply.code(404).send({ error: 'файл не найден' });
     return { sha256: await fileSha256(f) };
   });
   app.get('/files/*', { config: downloadRateLimit }, async (req, reply) => {
     const f = safeFile((req.params as { '*': string })['*']);
-    if (!f) return reply.code(404).send({ error: 'нет файла' });
+    if (!f) return reply.code(404).send({ error: 'файл не найден' });
     return sendFile(req, reply, f);
   });
 

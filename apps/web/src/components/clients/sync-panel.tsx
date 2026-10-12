@@ -35,8 +35,8 @@ export function SyncPanel() {
   const done = data.progress.reduce((n, p) => n + p.done, 0);
   return (
     <Section
-      title="Сверка с серверами"
-      info="Панель приводит записи на серверах к своим клиентам. Долгое - каналы OpenFlux новым устройствам (комнаты cups.online). Прервать: каждый сервер закончит текущую операцию и остановится; необработанное возьмёт следующая сверка (по расписанию раз в 5 минут или кнопкой)."
+      title="Синхронизация с серверами"
+      info="Дольше всего заводятся каналы OpenFlux для новых устройств. Прерванное доделает следующая синхронизация: автоматическая раз в 5&nbsp;мин или по кнопке."
       extra={
         <>
           <Chip tone="accent" dot pulse>
@@ -66,7 +66,7 @@ export function SyncPanel() {
               setErr((e as Error).message);
             }
           }}
-          label={data.stopping ? 'Прерываю...' : 'Прервать'}
+          label="Прервать"
           title="Каждый сервер закончит текущую операцию и остановится"
         >
           <Square className="size-3.5" />
@@ -79,7 +79,7 @@ export function SyncPanel() {
         </div>
       )}
       {data.progress.length === 0 && (
-        <div className="px-4 py-3 text-[13px] text-muted">Собираю, что нужно сверить...</div>
+        <div className="px-4 py-3 text-[13px] text-muted">Подготовка&hellip;</div>
       )}
       {data.progress.map((p) => {
         const pct = p.total ? Math.round((p.done / p.total) * 100) : 100;
@@ -104,7 +104,7 @@ export function SyncPanel() {
                   className="text-xs"
                   onClick={() => setOpen(open === p.server ? null : p.server)}
                 >
-                  {open === p.server ? 'скрыть' : 'последние итоги'}
+                  {open === p.server ? 'Скрыть' : 'Последние итоги'}
                 </Button>
               )}
             </div>

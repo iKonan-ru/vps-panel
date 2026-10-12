@@ -19,7 +19,7 @@ export async function xuiRoutes(app: FastifyInstance, opts: ServerRouteOpts) {
 
   app.get('/api/servers/:id/xui', async (req, reply) => {
     const { id } = Id.parse(req.params);
-    if (!registry.isOnline(id)) return reply.code(409).send({ error: 'Агент не подключён' });
+    if (!registry.isOnline(id)) return reply.code(409).send({ error: 'сервер не в сети' });
     return registry.request(id, 'xui.info', {}, { timeoutMs: 60_000 });
   });
   app.post('/api/servers/:id/xui/set', async (req) => {
@@ -71,7 +71,7 @@ export async function xuiRoutes(app: FastifyInstance, opts: ServerRouteOpts) {
   /** Мусор на диске: категории с размерами (агент считает по факту). */
   app.get('/api/servers/:id/cleanup', async (req, reply) => {
     const { id } = Id.parse(req.params);
-    if (!registry.isOnline(id)) return reply.code(409).send({ error: 'Агент не подключён' });
+    if (!registry.isOnline(id)) return reply.code(409).send({ error: 'сервер не в сети' });
     return registry.request(id, 'disk.cleanup.scan', {}, { timeoutMs: 120_000 });
   });
   /** Очистка выбранных категорий: длинное действие с выводом. */
@@ -102,10 +102,10 @@ export async function xuiRoutes(app: FastifyInstance, opts: ServerRouteOpts) {
   /** Вызов REST 3X-UI с сохранённым токеном; нет токена - 409 no-token (вкладка предложит выпустить). */
   function apiFor(id: string) {
     if (!registry.isOnline(id))
-      throw Object.assign(new Error('Агент не подключён'), { statusCode: 409 });
+      throw Object.assign(new Error('сервер не в сети'), { statusCode: 409 });
     const token = savedXuiToken(db, box, id);
     if (!token)
-      throw Object.assign(new Error('Нет API-токена 3X-UI: выпусти его кнопкой'), {
+      throw Object.assign(new Error('нет API-токена 3X-UI: его нужно выпустить на вкладке 3X-UI'), {
         statusCode: 409,
         code: 'no-token',
       });
@@ -119,7 +119,7 @@ export async function xuiRoutes(app: FastifyInstance, opts: ServerRouteOpts) {
   app.get('/api/servers/:id/xui/inbound-list', async (req, reply) => {
     const { id } = Id.parse(req.params);
     const row = db.select().from(servers).where(eq(servers.id, id)).get();
-    if (!row) return reply.code(404).send({ error: 'Сервер не найден' });
+    if (!row) return reply.code(404).send({ error: 'сервер не найден' });
     let api: ReturnType<typeof xuiApi>;
     try {
       api = apiFor(id);
@@ -219,7 +219,9 @@ export async function xuiRoutes(app: FastifyInstance, opts: ServerRouteOpts) {
           const other = list.find((x) => Number(x.id) !== iid && Number(x.port) === body.port);
           if (other)
             throw Object.assign(
-              new Error(`порт ${body.port} уже у inbound-а "${String(other.remark ?? other.id)}"`),
+              new Error(
+                `порт ${body.port} уже занят inbound \u00ab${String(other.remark ?? other.id)}\u00bb`,
+              ),
               { statusCode: 409 },
             );
           const row = db.select().from(servers).where(eq(servers.id, id)).get();
@@ -262,12 +264,13 @@ export async function xuiRoutes(app: FastifyInstance, opts: ServerRouteOpts) {
    */
   app.get('/api/servers/:id/xui/status', async (req, reply) => {
     const { id } = Id.parse(req.params);
-    if (!registry.isOnline(id)) return reply.code(409).send({ error: 'Агент не подключён' });
+    if (!registry.isOnline(id)) return reply.code(409).send({ error: 'сервер не в сети' });
     const token = savedXuiToken(db, box, id);
     if (!token)
-      return reply
-        .code(409)
-        .send({ error: 'Нет API-токена 3X-UI: выпусти его кнопкой', code: 'no-token' });
+      return reply.code(409).send({
+        error: 'нет API-токена 3X-UI: его нужно выпустить на вкладке 3X-UI',
+        code: 'no-token',
+      });
     return unwrap(await xuiApi(registry, id, token)('GET', 'server/status'), 'server/status');
   });
 }

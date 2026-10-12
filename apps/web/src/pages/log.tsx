@@ -24,7 +24,7 @@ export function LogPage() {
       {error ? (
         <Alert tone="bad">{error.message}</Alert>
       ) : isLoading ? (
-        <Card className="p-8 text-muted">Загрузка...</Card>
+        <Card className="p-8 text-muted">Загрузка&hellip;</Card>
       ) : (
         <ActionsTable title="Действия" rows={data ?? []} serverNames={names} />
       )}

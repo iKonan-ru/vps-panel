@@ -206,7 +206,7 @@ var reAPIPath = regexp.MustCompile(`^[A-Za-z0-9_./:-]{1,200}$`)
 
 func XuiAPI(ctx context.Context, p XuiAPIRequest) (map[string]any, error) {
 	if p.Token == "" {
-		return nil, errors.New("нет API-токена 3X-UI: выпусти его кнопкой во вкладке 3X-UI")
+		return nil, errors.New("нет API-токена 3X-UI: его выпускает кнопка во вкладке 3X-UI")
 	}
 	if !reAPIPath.MatchString(p.Path) || strings.Contains(p.Path, "..") {
 		return nil, errors.New("неверный путь API")
@@ -249,7 +249,7 @@ func XuiAPI(ctx context.Context, p XuiAPIRequest) (map[string]any, error) {
 	defer resp.Body.Close()
 	raw, _ := io.ReadAll(io.LimitReader(resp.Body, 4<<20))
 	if resp.StatusCode == 401 || resp.StatusCode == 403 {
-		return nil, errors.New("3X-UI отверг API-токен: выпусти новый во вкладке 3X-UI")
+		return nil, errors.New("3X-UI отверг API-токен: нужно перевыпустить его во вкладке 3X-UI")
 	}
 	out := map[string]any{"status": resp.StatusCode}
 	if json.Valid(raw) {

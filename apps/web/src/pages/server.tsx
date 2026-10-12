@@ -31,7 +31,7 @@ import { Tabs } from '@/components/ui/tabs';
 import { actions } from '@/lib/actions';
 import { loadChunk } from '@/lib/chunk';
 import { cn } from '@/lib/cn';
-import { agentVersionShort, uptime } from '@/lib/format';
+import { agentVersionShort, cap, uptime } from '@/lib/format';
 import { serverLock, useServer } from '@/lib/servers';
 import { useCopy } from '@/lib/use-copy';
 import { useQueryClient } from '@tanstack/react-query';
@@ -83,7 +83,7 @@ const tabs: { id: Tab; title: string; service?: string }[] = [
   { id: 'keys', title: 'Ключи' },
   { id: 'firewall', title: 'Firewall' },
   { id: 'certs', title: 'Сертификаты' },
-  { id: 'backups', title: 'Бэкапы' },
+  { id: 'backups', title: 'Резервные копии' },
   { id: 'log', title: 'Журнал' },
 ];
 
@@ -128,15 +128,15 @@ export function ServerPage() {
       setAgentAction(r.actionId);
       setAgentRunning(true);
     } catch (e) {
-      setAgentMsg(`Не удалось обновить агента: ${(e as Error).message}`);
+      setAgentMsg(`Не удалось обновить агент: ${(e as Error).message}`);
     } finally {
       setAgentBusy(false);
     }
   }
 
-  if (isLoading) return <Card className="p-8 text-muted">Загрузка...</Card>;
+  if (isLoading) return <Card className="p-8 text-muted">Загрузка&hellip;</Card>;
   if (error || !s)
-    return <Card className="p-8 text-bad">{error?.message ?? 'Сервер не найден'}</Card>;
+    return <Card className="p-8 text-bad">{cap(error?.message ?? 'сервер не найден')}</Card>;
   const inv = s.inventory;
   const online = s.status === 'online';
   const lock = serverLock(s);
@@ -151,7 +151,7 @@ export function ServerPage() {
             <PageTitle hero>{s.name}</PageTitle>
             <ServerStatusChip s={s} />
             {s.panelHost && (
-              <Chip tone="accent" title="На этом сервере стоит панель">
+              <Chip tone="accent" title="Сервер панели">
                 панель
               </Chip>
             )}
@@ -197,8 +197,7 @@ export function ServerPage() {
           actions={[
             {
               key: 'agent',
-              label: s.agentUpdating || agentRunning ? 'Агент обновляется...' : 'Обновить агента',
-              short: s.agentUpdating || agentRunning ? 'Обновляется...' : 'Обновить агента',
+              label: 'Обновить агент',
               icon: (
                 <RefreshCw
                   className={cn(
@@ -209,13 +208,13 @@ export function ServerPage() {
               ),
               onClick: () => void updateAgent(),
               disabled: !online || lock.busy || agentBusy || s.agentUpdating || agentRunning,
-              title: lock.reason ?? 'Скачать свежий бинарник агента с панели и перезапустить',
+              title: lock.reason,
               // на узком экране кнопкой - только когда есть что обновлять
               mobile: Boolean(s.agentUpdateAvailable || s.agentUpdating || agentRunning),
             },
             {
               key: 'reinstall',
-              label: 'Переустановить агента',
+              label: 'Переустановить агент',
               icon: <Wrench className="size-4" />,
               onClick: () => setReinstall(true),
               // переустановка - и для зависшего агента, но не поверх своего обновления
@@ -225,9 +224,7 @@ export function ServerPage() {
               key: 'ip',
               label: 'Сменить IP-адрес',
               icon: <ArrowLeftRight className="size-4" />,
-              title:
-                lock.reason ??
-                'Хостер выдал новый адрес: проверка DNS и агента, затем переключение',
+              title: lock.reason ?? 'Перевести сервер на новый адрес от хостера',
               onClick: () => setIpChange(true),
               disabled: lock.busy || agentBusy || agentRunning || s.agentUpdating,
             },
@@ -295,15 +292,14 @@ export function ServerPage() {
       {!online && s.status !== 'no-agent' && tab !== 'log' && (
         <Alert>
           {s.agentUpdating
-            ? 'Агент обновляется и перезапускается, через несколько секунд снова будет online.'
-            : 'Агент не на связи: показаны последние известные данные, действия недоступны.'}
+            ? 'Агент обновляется, связь восстановится через несколько секунд'
+            : 'Сервер не в сети: показаны последние данные, действия недоступны'}
         </Alert>
       )}
       <ActiveActions s={s} />
       {s.status === 'no-agent' && tab !== 'log' && (
         <Alert>
-          Агент ещё не подключался. Нажми "Переустановить", чтобы поставить его по SSH или получить
-          команду.
+          Агент ещё не подключался. Установить его можно через &laquo;Переустановить агент&raquo;.
         </Alert>
       )}
 
@@ -320,7 +316,7 @@ export function ServerPage() {
         {tab === 'wdtt' && <WdttTab s={s} />}
         {tab === 'openflux' && <OpenfluxTab s={s} />}
         {tab === 'terminal' && (
-          <Suspense fallback={<Card className="p-8 text-[13px] text-muted">Загрузка...</Card>}>
+          <Suspense fallback={<Card className="p-8 text-[13px] text-muted">Загрузка&hellip;</Card>}>
             <TerminalTab s={s} />
           </Suspense>
         )}
@@ -414,10 +410,8 @@ function ReinstallDialog({
 }: { serverId: string; host: string; open: boolean; onClose: () => void }) {
   const qc = useQueryClient();
   return (
-    <Dialog open={open} onClose={onClose} title="Переустановить агента" wide>
-      <div className="text-sm text-muted">
-        Агент будет скачан заново и перепривязан к панели. Работающие сервисы не трогаются.
-      </div>
+    <Dialog open={open} onClose={onClose} title="Переустановка агента" wide>
+      <div className="text-sm text-muted">Сервисы на сервере продолжат работать</div>
       <InstallAgent
         serverId={serverId}
         host={host}
@@ -455,13 +449,18 @@ function RemoveDialog({
     void qc.invalidateQueries({ queryKey: ['servers'], exact: true });
   }
   return (
-    <Dialog open={open} onClose={onClose} title="Удалить из панели">
+    <Dialog open={open} onClose={onClose} title={`Удалить \u00ab${name}\u00bb из панели?`}>
       <div className="text-sm text-muted">
-        Сервер исчезнет из панели вместе с журналом и ручными правилами. На самом сервере ничего не
-        меняется: агент, firewall и контейнеры продолжат работать. Введи имя сервера:{' '}
-        <span className="font-mono text-text">{name}</span>
+        Журнал и ручные правила firewall удалятся из панели. На самом сервере ничего не изменится.
       </div>
-      <Field label="Имя сервера" htmlFor="rm-name">
+      <Field
+        label={
+          <>
+            Имя для подтверждения: <span className="font-mono">{name}</span>
+          </>
+        }
+        htmlFor="rm-name"
+      >
         <Input
           id="rm-name"
           value={typed}

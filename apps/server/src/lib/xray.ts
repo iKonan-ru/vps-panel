@@ -280,7 +280,7 @@ export class XrayManager {
     await this.stop();
     if (!this.outbound) return;
     if (!this.hasBinary()) {
-      this.lastError = `нет бинарника xray (${this.bin})`;
+      this.lastError = `не найден исполняемый файл xray (${this.bin})`;
       this.log.warn({ bin: this.bin }, 'xray: бинарник не найден');
       return;
     }

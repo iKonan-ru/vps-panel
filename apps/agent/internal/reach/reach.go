@@ -237,7 +237,7 @@ func create(ctx context.Context, token string, body map[string]any) (string, int
 	if resp.StatusCode == http.StatusTooManyRequests {
 		msg := "исчерпана с адреса сервера"
 		if v, e := strconv.Atoi(resp.Header.Get("X-RateLimit-Reset")); e == nil && v > 0 {
-			msg = fmt.Sprintf("%s, вернётся через %d мин", msg, (v+59)/60)
+			msg = fmt.Sprintf("%s, вернётся через %d\u00a0мин", msg, (v+59)/60)
 		}
 		return "", 0, fmt.Errorf("%w %s", errLimited, msg)
 	}

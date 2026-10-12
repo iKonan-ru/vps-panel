@@ -11,7 +11,7 @@ export const mtproxylHostCmd: CommandDef = {
   title: 'MTProxyL: адрес в ссылках',
   group: 'maintain',
   description:
-    'Какой адрес MTProxyL ставит в ссылки tg://proxy: имя сервера из "Адреса для клиентов" (смена IP - правка DNS, ссылки у людей работают), свой адрес или автоопределение (внешний IP). Прокси не перезапускается; уже выданные ссылки со старым адресом работают, пока он жив.',
+    'Адрес в ссылках tg://proxy: \u00abАдрес для клиентов\u00bb сервера, свой адрес или внешний IP. С именем вместо IP ссылки клиентов переживут смену IP. Прокси не перезапускается.',
   params: [
     {
       name: 'MT_HOST_MODE',
@@ -20,15 +20,16 @@ export const mtproxylHostCmd: CommandDef = {
       default: 'client',
       required: true,
       options: [
-        { value: 'client', label: 'адрес для клиентов сервера (имя из "Обзора")' },
+        { value: 'client', label: '\u00abАдрес для клиентов\u00bb сервера' },
         { value: 'custom', label: 'свой адрес' },
-        { value: 'auto', label: 'автоопределение (внешний IP)' },
+        { value: 'auto', label: 'внешний IP' },
       ],
     },
     {
       name: 'MT_HOST',
-      label: 'Свой адрес (имя или IPv4)',
+      label: 'Свой адрес',
       type: 'string',
+      hint: 'имя или IPv4',
       pattern: '^([a-zA-Z0-9-]+\\.)+[a-zA-Z0-9-]+$',
       showIf: { MT_HOST_MODE: 'custom' },
     },
@@ -43,23 +44,23 @@ esac
 say "MTProxyL: адрес в ссылках - \${h:-автоопределение}"
 MTPROXYL_ASSUME_YES=1 MTPROXYL_NONINTERACTIVE=true mtproxyl settings set CUSTOM_IP "$h"
 mtproxyl settings list 2>/dev/null | grep -i custom_ip || true
-say "Ссылки MTProxy на личных страницах обновит сверка (в течение нескольких минут)"
+say "Ссылки MTProxy на личных страницах обновятся при синхронизации в течение нескольких минут"
 `,
-  preflight: `if command -v mtproxyl >/dev/null 2>&1; then echo "OK|MTProxyL установлен"; else echo "FAIL|MTProxyL на сервере нет"; fi
+  preflight: `if command -v mtproxyl >/dev/null 2>&1; then echo "OK|MTProxyL установлен"; else echo "FAIL|MTProxyL не установлен"; fi
 case "$MT_HOST_MODE" in
   client)
-    if [ "$CLIENT_HOST" = "$SERVER_HOST" ]; then echo "WARN|у сервера не задано имя в \\"Адресе для клиентов\\" (Обзор): в ссылки пойдёт IP $SERVER_HOST"
+    if [ "$CLIENT_HOST" = "$SERVER_HOST" ]; then echo "WARN|у сервера не задан \u00abАдрес для клиентов\u00bb: в ссылках будет IP $SERVER_HOST"
     else ip=$(getent ahostsv4 "$CLIENT_HOST" 2>/dev/null | awk '{print $1; exit}')
-      if [ "$ip" = "$SERVER_HOST" ]; then echo "OK|$CLIENT_HOST указывает на этот сервер"; else echo "WARN|$CLIENT_HOST указывает на \${ip:-ничто}, а сервер - $SERVER_HOST"; fi
+      if [ "$ip" = "$SERVER_HOST" ]; then echo "OK|$CLIENT_HOST указывает на этот сервер"; else echo "WARN|$CLIENT_HOST указывает не на этот сервер ($SERVER_HOST)"; fi
     fi ;;
   custom) [ -n "$MT_HOST" ] && echo "OK|адрес $MT_HOST" || echo "FAIL|не задан свой адрес" ;;
-  *) echo "OK|автоопределение: внешний адрес сервера" ;;
+  *) echo "OK|в ссылках будет внешний IP сервера" ;;
 esac`,
   plan: (a) => [
-    `mtproxyl settings set CUSTOM_IP ${a.MT_HOST_MODE === 'client' ? '<адрес для клиентов>' : a.MT_HOST_MODE === 'custom' ? a.MT_HOST || '<адрес>' : '"" (автоопределение)'}: движок перечитывает конфиг, соединения не рвутся`,
-    'Сверка перевыпустит ссылки MTProxy на личных страницах клиентов этого сервера',
+    `Указать в ссылках ${a.MT_HOST_MODE === 'client' ? '\u00abАдрес для клиентов\u00bb' : a.MT_HOST_MODE === 'custom' ? a.MT_HOST || '<адрес>' : 'внешний IP'}; соединения не прерываются`,
+    'Обновить ссылки MTProxy на личных страницах клиентов при синхронизации',
   ],
   resync: ['mtproxyl'],
   after:
-    'Ссылки MTProxy на личных страницах обновятся сверкой; люди со старой ссылкой работают, пока жив прежний адрес.',
+    'Ссылки MTProxy на личных страницах обновятся при синхронизации. Старые ссылки работают, пока прежний адрес указывает на сервер.',
 };

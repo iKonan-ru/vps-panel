@@ -33,7 +33,7 @@ export async function installRoutes(
     const { id } = z.object({ id: z.string() }).parse(req.params);
     const auth = AuthSchema.parse(req.body);
     const row = (await db.select().from(servers).where(eq(servers.id, id)).limit(1))[0];
-    if (!row) return reply.code(404).send({ error: 'Сервер не найден' });
+    if (!row) return reply.code(404).send({ error: 'сервер не найден' });
 
     // Новый одноразовый токен регистрации на каждую установку.
     const registrationToken = (await issueRegistration(db, id)) ?? '';
@@ -77,7 +77,7 @@ export async function installRoutes(
         out(
           okOnline
             ? 'Агент на связи.\n'
-            : 'Агент не подключился за минуту. Проверь, доступен ли адрес панели с этого сервера.\n',
+            : 'Агент не подключился за минуту: возможно, адрес панели недоступен с этого сервера.\n',
         );
         await finish(okOnline ? 0 : 2);
       } catch (e) {

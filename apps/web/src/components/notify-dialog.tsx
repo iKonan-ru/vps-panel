@@ -90,7 +90,7 @@ export function NotifyDialog({
     setEv({ ...ev, ...Object.fromEntries(keys.map((k) => [k, on])) });
 
   return (
-    <Dialog open={open} onClose={onClose} title="Какие уведомления присылать">
+    <Dialog open={open} onClose={onClose} title="События">
       {NOTIFY_GROUPS.map((g) => {
         const keys = g.events.map((e) => e.key);
         const on = keys.filter((k) => ev[k]).length;
@@ -161,7 +161,7 @@ export function NotifyDialog({
             </span>
           </div>
           <div className="pt-1 pl-3 text-xs text-muted">
-            Отключённый сервер молчит во всех событиях (тестовый, выводимый из работы).
+            Об отключённых серверах уведомления не приходят
           </div>
           {servers.map((s) => {
             const on = !muted.includes(s.id);

@@ -49,7 +49,7 @@ export function UserInfo({
   const validName = (v: string) => /^[a-zA-Z0-9_-]{1,32}$/.test(v);
   const rows: [string, string][] = [
     ['Трафик', bytes(traffic?.total ?? u.total_bytes)],
-    ['Сейчас онлайн', `${traffic?.connections ?? 0} подкл., ${traffic?.unique_ips ?? 0} IP`],
+    ['Сейчас онлайн', `подключений: ${traffic?.connections ?? 0}, IP: ${traffic?.unique_ips ?? 0}`],
     ['Создан', createdAt(u.created)],
     ...(u.ad_tag ? ([['Рекламный тег', u.ad_tag]] as [string, string][]) : []),
   ];
@@ -121,9 +121,7 @@ export function UserInfo({
               Сохранить
             </Button>
             <Button onClick={() => setRename(null)}>Отмена</Button>
-            <InfoTip>
-              Латиница, цифры, _ и -, до 32 символов; ссылки пользователя не изменятся.
-            </InfoTip>
+            <InfoTip>Латиница, цифры, _ и -, до 32&nbsp;символов. Ссылки не изменятся.</InfoTip>
           </div>
           {renameError && <Alert tone="bad">{renameError}</Alert>}
         </form>
@@ -152,7 +150,7 @@ export function UserLinks({ serverId, label }: { serverId: string; label: string
     queryFn: () => mtApi.exec(serverId, 'secret.link', { label }),
     gcTime: 0,
   });
-  if (isLoading) return <div className="text-sm text-muted">Получаю ссылку...</div>;
+  if (isLoading) return <div className="text-sm text-muted">Загрузка&hellip;</div>;
   if (error) return <Alert tone="bad">{error.message}</Alert>;
   const text = data?.output ?? '';
   return <MtLinksView links={parseMtLinks(text)} label={label} raw={text} />;
@@ -170,7 +168,7 @@ export function AddForm({
   };
   return (
     <form onSubmit={submit} className="flex flex-col gap-3">
-      <Field label="Метка" htmlFor="mt-label" hint="латиница, цифры, _ и -, до 32 символов">
+      <Field label="Метка" htmlFor="mt-label" hint={'латиница, цифры, _ и -, до 32\u00a0символов'}>
         <Input
           id="mt-label"
           value={label}
@@ -181,7 +179,7 @@ export function AddForm({
           className="font-mono"
         />
       </Field>
-      <Field label="Секрет (пусто = сгенерировать)" htmlFor="mt-secret">
+      <Field label="Секрет" htmlFor="mt-secret" hint="если пусто, сгенерируется">
         <Input
           id="mt-secret"
           value={secret}

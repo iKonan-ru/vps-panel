@@ -132,7 +132,7 @@ describe('поддомены панелей сервисов', () => {
       cookie: cookie.split(';')[0] ?? '',
     });
     expect(off.status).toBe(502);
-    expect(off.body).toContain('Сервер не на связи');
+    expect(off.body).toContain('Сервер не в сети');
     // подделанная cookie - как без входа
     const forged = await get('netcore-xui.panel.example', '/x', {
       cookie: `__Host-vps_proxy=netcore-xui.${'a'.repeat(64)}.${Date.now() + 1e6}.bad`,

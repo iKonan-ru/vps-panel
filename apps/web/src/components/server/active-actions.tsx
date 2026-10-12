@@ -58,7 +58,7 @@ export function ActiveActions({ s }: { s: ServerDetail }) {
               <Button
                 size="sm"
                 onClick={() => setClosed((c) => new Set(c).add(id))}
-                title={code === undefined ? 'Скрыть: действие продолжится' : 'Закрыть'}
+                title={code === undefined ? 'Действие продолжится' : undefined}
                 label={code === undefined ? 'Скрыть' : 'Закрыть'}
               >
                 <X className="size-3.5" />

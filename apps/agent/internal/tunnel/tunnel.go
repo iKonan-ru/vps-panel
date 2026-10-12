@@ -51,7 +51,7 @@ func Open(ctx context.Context, p OpenParams, allowed func(ctx context.Context, p
 		return nil, errors.New("неверный id туннеля")
 	}
 	if p.Port < 1 || p.Port > 65535 || !allowed(ctx, p.Port) {
-		return nil, fmt.Errorf("порт %d - не панель сервиса на этом сервере", p.Port)
+		return nil, fmt.Errorf("порт %d не относится к панели сервиса на этом сервере", p.Port)
 	}
 	mu.Lock()
 	n := len(tunnels)

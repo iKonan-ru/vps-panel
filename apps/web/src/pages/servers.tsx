@@ -13,6 +13,7 @@ import { cn } from '@/lib/cn';
 import { countryLabel, countryName } from '@/lib/countries';
 import {
   ago,
+  cap,
   dateShort,
   daysUntil,
   daysWord,
@@ -56,15 +57,15 @@ export function ServersPage() {
       <div className="flex flex-wrap items-center gap-3">
         <PageTitle>Серверы</PageTitle>
         <div className="flex flex-wrap gap-2">
-          <Chip>всего {data?.length ?? 0}</Chip>
-          <Chip tone="ok">в сети {online}</Chip>
-          {problems > 0 && <Chip tone="bad">с проблемами {problems}</Chip>}
+          <Chip>всего: {data?.length ?? 0}</Chip>
+          <Chip tone="ok">в сети: {online}</Chip>
+          {problems > 0 && <Chip tone="bad">с проблемами: {problems}</Chip>}
           {rollout.button}
         </div>
         <div className="grow" />
         <Input
           type="search"
-          placeholder="Поиск по имени, адресу, тегу"
+          placeholder="Имя, адрес или тег"
           aria-label="Поиск"
           className="hidden w-[260px] md:block"
           value={q}
@@ -96,7 +97,7 @@ export function ServersPage() {
       {searchOpen && (
         <Input
           type="search"
-          placeholder="Поиск по имени, адресу, тегу"
+          placeholder="Имя, адрес или тег"
           aria-label="Поиск"
           className="md:hidden"
           autoFocus
@@ -106,15 +107,11 @@ export function ServersPage() {
       )}
 
       {rollout.card}
-      {error && <Card className="p-4 text-bad">{error.message}</Card>}
-      {isLoading && <Card className="p-8 text-muted">Загрузка...</Card>}
+      {error && <Card className="p-4 text-bad">{cap(error.message)}</Card>}
+      {isLoading && <Card className="p-8 text-muted">Загрузка&hellip;</Card>}
       {data && data.length === 0 && (
         <Card className="flex flex-col items-center gap-2 p-12 text-center">
           <div className="text-base font-medium">Серверов пока нет</div>
-          <div className="max-w-md text-[13px] text-muted">
-            Добавь первый сервер: панель выдаст команду установки агента, а дальше покажет
-            состояние, firewall и контейнеры.
-          </div>
         </Card>
       )}
       {data && data.length > 0 && (
@@ -228,7 +225,7 @@ function attention(
       tab: t.key === 'mtproxyl' ? 'mtproxyl' : 'overview',
       tone: reachLevel(t.percent) === 'bad' ? 'bad' : 'warn',
       text: `из РФ: ${reachShort(t)} ${t.percent}%`,
-      title: `${t.title}: из России дошли ${t.ok} из ${t.total} зондов${t.errors[0] ? ` (${t.errors[0]})` : ''}`,
+      title: `${t.title}: из России дошли ${t.ok} из ${t.total}\u00a0зондов${t.errors[0] ? ` (${t.errors[0]})` : ''}`,
     });
   if (s.audit?.rebootRequired)
     out.push({
@@ -251,7 +248,7 @@ function attention(
       key: `svc-${u.kind}`,
       tone: 'update',
       text: `${u.title} ${u.latest}`,
-      title: `Доступна версия ${u.title} ${u.latest}: обновить на вкладке сервиса`,
+      title: `Доступна версия ${u.title} ${u.latest}`,
       tab: updateTab[u.kind],
     });
   if (s.agentUpdating)
@@ -267,7 +264,7 @@ function attention(
       key: 'agent',
       tone: 'warn',
       text: 'агент устарел',
-      title: `Агент ${s.agentVersion ?? ''}: обновить - кнопкой над списком или в карточке`,
+      title: `Версия агента: ${s.agentVersion ?? ''}`,
       tab: 'overview',
     });
   if (mobile) {
@@ -446,7 +443,7 @@ function Row({ s }: { s: ServerSummary }) {
 /** Сервер, на котором стоит сама панель: глобальные клиенты на нём - только если включить. */
 function PanelHostChip() {
   return (
-    <Chip tone="accent" className="font-sans" title="На этом сервере стоит панель">
+    <Chip tone="accent" className="font-sans" title="Сервер панели">
       панель
     </Chip>
   );

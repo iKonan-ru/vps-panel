@@ -100,9 +100,9 @@ export function OpenfluxTab({ s }: { s: ServerDetail }) {
   }
   const blocked = lock.busy || op.busy;
 
-  if (!online) return <Card className="p-8 text-[13px] text-muted">Агент не на связи.</Card>;
+  if (!online) return <Card className="p-8 text-[13px] text-muted">Сервер не в сети</Card>;
   if (error) return <Alert tone="bad">{error.message}</Alert>;
-  if (!data) return <Card className="p-8 text-[13px] text-muted">Опрашиваю OpenFlux...</Card>;
+  if (!data) return <Card className="p-8 text-[13px] text-muted">Загрузка&hellip;</Card>;
 
   return (
     <>
@@ -123,7 +123,7 @@ export function OpenfluxTab({ s }: { s: ServerDetail }) {
           <Switch
             checked={data.autoupdate}
             disabled={blocked}
-            label="автообновление ядра (раз в 6 часов)"
+            label="Автообновление ядра"
             onChange={() =>
               void call('OpenFlux: автообновление', {
                 op: data.autoupdate ? 'autoupdate-off' : 'autoupdate-on',
@@ -134,7 +134,7 @@ export function OpenfluxTab({ s }: { s: ServerDetail }) {
           <Button
             size="sm"
             disabled={blocked}
-            title={lock.reason ?? 'Поставить новейшее ядро node-v* и перезапустить каналы'}
+            title={lock.reason ?? 'Каналы перезапустятся'}
             onClick={() => void call('OpenFlux: обновление ядра', { op: 'update' })}
             label="Обновить ядро"
             short="Обновить ядро"
@@ -145,7 +145,7 @@ export function OpenfluxTab({ s }: { s: ServerDetail }) {
       )}
       <Section
         title="Каналы OpenFlux"
-        info="Канал - ключ и набор транспортов (Яндекс Документ, Mail.ru Документ, cups.online и всегда прямое подключение). Пользователей у OpenFlux нет: ссылка канала - профиль для приложения, в ней ключ. По документации OpenFlux на каждое одновременно работающее устройство нужен свой канал."
+        info="Канал: ключ и набор транспортов, ссылка канала содержит ключ. На каждое одновременно работающее устройство нужен свой канал."
         extra={<Chip>{data.channels.length}</Chip>}
         actions={
           <Button
@@ -162,8 +162,7 @@ export function OpenfluxTab({ s }: { s: ServerDetail }) {
       >
         {data.channels.length === 0 && (
           <div className="px-4 py-3 text-[13px] text-muted">
-            Каналов нет. "Новый канал" поставит OpenFlux (если его ещё нет) и канал с прямым
-            подключением и комнатами cups.online; документы Яндекса и Mail.ru - по желанию.
+            Каналов нет. &laquo;Новый канал&raquo; установит OpenFlux, если его ещё нет.
           </div>
         )}
         {data.channels.map((c) => {
@@ -196,8 +195,8 @@ export function OpenfluxTab({ s }: { s: ServerDetail }) {
                     .sort((a, b) => b.priority - a.priority)
                     .map((t) => transportTitle[t.type] ?? t.type)
                     .join(', ')}
-                  {active && c.since && ` - работает ${ago(c.since).replace(' назад', '')}`}
-                  {c.memoryMb > 0 && `, ${c.memoryMb} МБ`}
+                  {active && c.since && `, работает ${ago(c.since).replace(' назад', '')}`}
+                  {c.memoryMb > 0 && `, ${c.memoryMb}\u00a0МБ`}
                 </div>
               </div>
               <ActionBar
@@ -267,10 +266,10 @@ export function OpenfluxTab({ s }: { s: ServerDetail }) {
                     onClick: async () => {
                       const last = data.channels.length === 1;
                       const ok = await ask({
-                        title: `Удалить канал ${c.channel}?`,
+                        title: `Удалить канал \u00ab${c.channel}\u00bb?`,
                         text: last
-                          ? 'Это последний канал: установщик OpenFlux удалит вместе с ним и ядро, и службу обновлений. Приложения с этим каналом перестанут подключаться.'
-                          : 'Приложения с этим каналом перестанут подключаться, ключ и порт удаляются.',
+                          ? 'Последний канал: вместе с ним удалятся ядро OpenFlux и служба обновлений. Приложения с этим каналом перестанут подключаться.'
+                          : 'Приложения с этим каналом перестанут подключаться',
                         okLabel: 'Удалить',
                         danger: true,
                       });
@@ -292,7 +291,7 @@ export function OpenfluxTab({ s }: { s: ServerDetail }) {
         serverId={s.id}
         kind="openflux"
         title="OpenFlux"
-        loses="все каналы пропадут, их ссылки в приложениях перестанут работать."
+        loses="Все каналы удалятся, их ссылки в приложениях перестанут работать"
         disabled={blocked}
         reason={lock.reason}
       />
@@ -310,8 +309,7 @@ export function OpenfluxTab({ s }: { s: ServerDetail }) {
         {link && (
           <div className="flex flex-col gap-3">
             <Alert tone="info">
-              В ссылке - ключ канала: передавайте её только тому, кто будет подключаться. В
-              приложении OpenFlux - добавить профиль по ссылке или QR-коду.
+              В ссылке ключ канала: её стоит передавать только тому, кто будет подключаться
             </Alert>
             <QrCode text={link} alt="QR-код ссылки канала OpenFlux" level="L" />
             <LinkButton href={link} variant="primary" size="md" wide copyTitle="Скопировать ссылку">
@@ -324,7 +322,7 @@ export function OpenfluxTab({ s }: { s: ServerDetail }) {
         <pre className="max-h-[60vh] overflow-auto whitespace-pre-wrap rounded-lg bg-surface-2 p-3 font-mono text-xs">
           {logs}
         </pre>
-        <div className="mt-2 text-xs text-muted">Ссылки на документы и ключи скрыты.</div>
+        <div className="mt-2 text-xs text-muted">Ссылки на документы и ключи скрыты</div>
       </Dialog>
     </>
   );
@@ -348,15 +346,10 @@ function ChannelForm({
   return (
     <form className="flex flex-col gap-3" onSubmit={submit}>
       <div className="text-[13px] text-muted">
-        Имя, ключ и порт канала сервер придумает сам; прямое подключение есть всегда. Документы -
-        запасные транспорты: документ с редактированием по ссылке из своего аккаунта, один документ
-        - один канал.
+        Прямое подключение есть всегда. Документы служат запасными транспортами: нужен документ с
+        редактированием по ссылке, один документ на канал.
       </div>
-      <Checkbox
-        checked={cups}
-        onChange={() => setCups(!cups)}
-        label="Комнаты cups.online (создаст сервер)"
-      />
+      <Checkbox checked={cups} onChange={() => setCups(!cups)} label="Комнаты cups.online" />
       <Field label="Яндекс Документ (необязательно)" htmlFor="of-ya">
         <Input
           id="of-ya"
@@ -375,7 +368,7 @@ function ChannelForm({
       </Field>
       {save.error && <Alert tone="bad">{save.error}</Alert>}
       <Button type="submit" variant="primary" disabled={save.busy}>
-        {save.busy ? 'Создаю...' : 'Создать канал'}
+        Создать канал
       </Button>
     </form>
   );

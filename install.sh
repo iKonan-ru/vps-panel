@@ -6,7 +6,7 @@
 # Скачивает команду vps-panel из релиза и запускает "vps-panel install" с теми же ключами:
 #   -y              без вопросов (из окружения: PANEL_DOMAIN - пусто значит панель по IP,
 #                   ACME_EMAIL, SUB_DOMAIN, PANEL_LOGIN - пусто значит случайный)
-#   --beta          канал "бета": пре-релизы тоже
+#   --beta          предварительный канал (beta): и предварительные версии
 #   --version X.Y.Z конкретная версия
 set -euo pipefail
 REPO="iKonan-ru/vps-panel"

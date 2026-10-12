@@ -103,14 +103,14 @@ export function xuiTargets(
     list.map((i) => String(i.remark || `inbound ${i.id}`)).join(', ');
   const target = own.filter((i) => i.enable !== false && !isExcluded(i)).map((i) => Number(i.id));
   if (target.length) return { target, reason: '' };
-  if (!own.length) return { target, reason: 'в 3X-UI нет своих VLESS-inbound-ов' };
+  if (!own.length) return { target, reason: 'в 3X-UI нет своих inbound VLESS' };
   const off = own.filter((i) => i.enable === false && !isExcluded(i));
   const ex = own.filter(isExcluded);
   const parts = [
-    ...(ex.length ? [`исключены в панели (Клиенты, Серверы, Inbound-ы): ${names(ex)}`] : []),
+    ...(ex.length ? [`исключены на странице \u00abКлиенты\u00bb: ${names(ex)}`] : []),
     ...(off.length ? [`выключены в 3X-UI: ${names(off)}`] : []),
   ];
-  return { target, reason: `некуда добавить VLESS - ${parts.join('; ')}` };
+  return { target, reason: `некуда добавить VLESS\u00a0\u2014 ${parts.join('; ')}` };
 }
 
 /**
@@ -167,7 +167,9 @@ export async function awgEnsure(
     st.instances?.find((i) => fits(i) && i.state === 'running') ??
     st.instances?.find(fits);
   if (!inst)
-    throw new Error(`на сервере нет экземпляра AWG ${major}.x: поставь командой "Amnezia AWG"`);
+    throw new Error(
+      `на сервере нет экземпляра AWG ${major}.x: его ставит команда \u00abAmnezia AWG\u00bb`,
+    );
   const name = peerName(c, d);
   const exec = (op: string, args: Record<string, string>) =>
     deps.registry.request(
@@ -338,7 +340,8 @@ export async function awgRemove(deps: ServiceDeps, serverId: string, ref: string
  */
 export async function xuiEnsure(api: XuiCall, c: Client, email: string, target: number[]) {
   const got = await api('GET', `clients/get/${encodeURIComponent(email)}`);
-  if (got.status === 404) throw new Error('3X-UI старше 3.1 (нет API клиентов): обнови 3X-UI');
+  if (got.status === 404)
+    throw new Error('3X-UI старше 3.1 (нет API клиентов): нужно обновить 3X-UI');
   let existing = (got.data as { success?: boolean } | undefined)?.success
     ? readClient((got.data as { obj?: unknown }).obj)
     : null;
@@ -429,7 +432,7 @@ export async function ofEnsure(
   let ch = st.channels?.find((x) => x.channel === b.ref);
   let links = b.links;
   let warning = '';
-  const cupsLater = 'cups.online ограничил частоту - канал пока без комнат, повтор позже';
+  const cupsLater = 'cups.online ограничил частоту, канал пока без комнат, повтор позже';
   if (!ch) {
     try {
       const r = await exec({
@@ -441,7 +444,7 @@ export async function ofEnsure(
       if (r.cupsonline !== true) {
         warning = pass.cupsOff
           ? cupsLater
-          : 'cups.online не дал комнат - канал без них, повтор позже';
+          : 'cups.online не выдал комнаты, канал пока без них, повтор позже';
         pass.cupsOff = true;
       }
       if (!c.enabled) await exec({ op: 'disable', channel: b.ref });

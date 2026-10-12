@@ -64,7 +64,7 @@ function parseRule(line) {
     } catch {
       return { error: 'неверный адрес страницы' };
     }
-    if (!/^https?:$/.test(u.protocol) || !u.hostname) return { error: 'страница - только http или https' };
+    if (!/^https?:$/.test(u.protocol) || !u.hostname) return { error: 'страница: только http или https' };
     const path = u.pathname + u.search;
     // адрес без пути - это просто сайт
     if (path === '/' || path === '') return { kind: 'hosts', value: u.hostname.replace(/^\[|\]$/g, '') };

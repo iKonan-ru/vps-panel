@@ -60,11 +60,11 @@ label.chk{display:flex;align-items:center;gap:8px;cursor:pointer}
   <h1>VPS Panel: прокси для браузера</h1>
   <section class="card upd" id="update" hidden>
     <div><b id="updTitle"></b></div>
-    <div class="muted">Скачайте архив, распакуйте его поверх папки расширения (с заменой файлов) и нажмите "Перезапустить".</div>
+    <div class="muted">Скачайте архив, распакуйте его поверх папки расширения (с заменой файлов) и нажмите &laquo;Перезапустить&raquo;</div>
     <div class="row"><button class="primary" id="updDownload">Скачать</button><button id="updRestart">Перезапустить</button></div>
   </section>
   <section class="card" id="setup" hidden>
-    <div class="muted">Вставьте ссылку с вашей личной страницы VPS Panel (или ссылку подписки).</div>
+    <div class="muted">Вставьте ссылку с личной страницы VPS Panel или ссылку подписки</div>
     <input type="text" id="link" placeholder="https://sub.example.com/c/..." autocomplete="off" spellcheck="false">
     <div class="row"><button class="primary" id="save">Подключить</button><button id="cancel" hidden>Отмена</button></div>
   </section>
@@ -81,14 +81,14 @@ label.chk{display:flex;align-items:center;gap:8px;cursor:pointer}
       </div>
     </div>
     <div>
-      <label class="chk"><input type="checkbox" id="ru">Российские сайты - напрямую</label>
-      <div class="muted small">Напрямую, мимо сервера, идут сайты в зонах .ru, .рф и .su; всё остальное - через сервер.</div>
+      <label class="chk"><input type="checkbox" id="ru">Российские сайты напрямую</label>
+      <div class="muted small">Сайты в зонах .ru, .рф и .su открываются мимо сервера</div>
     </div>
     <details class="own" id="own">
       <summary>Свои адреса напрямую <span class="muted" id="ownCount"></span></summary>
       <textarea id="ownText" rows="6" spellcheck="false" autocomplete="off" placeholder="example.com&#10;*.example.com&#10;10.0.0.0/8"></textarea>
-      <div class="muted hint">По одному в строке: <code>example.com</code> - только он; <code>*.example.com</code> - он и поддомены; маски вроде <code>cdn*.example.com</code>; IP и подсети: <code>1.2.3.4</code>, <code>10.0.0.0/8</code>, <code>2001:db8::/32</code>; страницы: <code>https://example.com/page</code>. После <code>#</code> - комментарий.</div>
-      <div class="muted hint">Подсети действуют на адреса, набранные цифрами (имена сайтов в адреса не переводятся). Страница https идёт напрямую вместе со всем сайтом: Chrome не показывает расширению путь https-адреса.</div>
+      <div class="muted hint">По одному в строке: <code>example.com</code>&nbsp;&mdash; только он; <code>*.example.com</code>&nbsp;&mdash; он и поддомены; маски вроде <code>cdn*.example.com</code>; IP и подсети: <code>1.2.3.4</code>, <code>10.0.0.0/8</code>, <code>2001:db8::/32</code>; страницы: <code>https://example.com/page</code>. После <code>#</code>&nbsp;&mdash; комментарий.</div>
+      <div class="muted hint">Подсети действуют только на адреса, набранные цифрами. Страница https идёт напрямую вместе со всем сайтом: Chrome не показывает расширению путь https-адреса.</div>
       <div class="err" id="ownErr" hidden></div>
       <div class="row"><button id="ownSave">Сохранить</button><span class="muted" id="ownSaved"></span></div>
     </details>
@@ -98,7 +98,7 @@ label.chk{display:flex;align-items:center;gap:8px;cursor:pointer}
   <div class="row muted" id="foot" hidden>
     <span class="grow" id="updated"></span>
     <button class="link" id="refresh">Обновить</button>
-    <button class="link" id="change">Ссылка</button>
+    <button class="link" id="change">Сменить ссылку</button>
   </div>
 </main>
 <script src="rules.js"></script>

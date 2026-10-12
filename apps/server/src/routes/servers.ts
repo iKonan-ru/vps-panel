@@ -85,7 +85,7 @@ export async function serverRoutes(
   app.get('/api/servers/:id', async (req, reply) => {
     const { id } = z.object({ id: z.string() }).parse(req.params);
     const row = (await db.select().from(servers).where(eq(servers.id, id)).limit(1))[0];
-    if (!row) return reply.code(404).send({ error: 'Сервер не найден' });
+    if (!row) return reply.code(404).send({ error: 'сервер не найден' });
     const cache = (row.statusCache ?? {}) as StatusCache;
     // незавершённые действия: после перезагрузки страницы их вывод показывается снова
     const activeActions = (
@@ -122,7 +122,7 @@ export async function serverRoutes(
       .set(patch)
       .where(eq(servers.id, id))
       .returning({ id: servers.id });
-    if (res.length === 0) return reply.code(404).send({ error: 'Сервер не найден' });
+    if (res.length === 0) return reply.code(404).send({ error: 'сервер не найден' });
     hub.broadcast({ type: 'server.changed', serverId: id });
     return { ok: true };
   });
@@ -131,7 +131,7 @@ export async function serverRoutes(
     const { id } = z.object({ id: z.string() }).parse(req.params);
     registry.get(id)?.ws.close(4005, 'server removed');
     const res = await db.delete(servers).where(eq(servers.id, id)).returning({ id: servers.id });
-    if (res.length === 0) return reply.code(404).send({ error: 'Сервер не найден' });
+    if (res.length === 0) return reply.code(404).send({ error: 'сервер не найден' });
     hub.broadcast({ type: 'server.changed', serverId: id });
     return { ok: true };
   });
@@ -140,7 +140,7 @@ export async function serverRoutes(
   app.post('/api/servers/:id/registration', async (req, reply) => {
     const { id } = z.object({ id: z.string() }).parse(req.params);
     const registrationToken = await issueRegistration(db, id);
-    if (!registrationToken) return reply.code(404).send({ error: 'Сервер не найден' });
+    if (!registrationToken) return reply.code(404).send({ error: 'сервер не найден' });
     return { registrationToken, installCommand: installCommand(env, registrationToken) };
   });
 

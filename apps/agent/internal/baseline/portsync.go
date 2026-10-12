@@ -67,7 +67,7 @@ func CheckPortsyncConfig(cfg PortsyncConfig) error {
 	for _, ip := range cfg.AdminIPs {
 		if net.ParseIP(ip) == nil {
 			if _, _, err := net.ParseCIDR(ip); err != nil {
-				return fmt.Errorf("admin_ips: %q - не IP и не подсеть", ip)
+				return fmt.Errorf("admin_ips: %q не IP и не подсеть", ip)
 			}
 		}
 	}

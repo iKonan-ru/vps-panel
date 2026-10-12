@@ -45,7 +45,7 @@ export function Instance({
       variant="link"
       className="text-xs text-bad"
       disabled={addDisabled}
-      title={addTitle ?? `Удалить контейнер ${inst.container} со всеми его клиентами`}
+      title={addTitle ?? 'Клиенты экземпляра удалятся вместе с ним'}
       onClick={onUninstall}
     >
       Удалить экземпляр
@@ -102,7 +102,7 @@ export function Instance({
           <dl className="grid grid-cols-2 gap-x-4 gap-y-2 border-b border-border px-4 py-3 text-[13px] sm:grid-cols-4">
             <Fact label="Порт" value={inst.port ? `${inst.port}/udp` : '-'} />
             <Fact label="Подсеть" value={inst.address || '-'} />
-            <Fact label="Клиенты" value={`${inst.clients.length}, онлайн ${onlineCount}`} />
+            <Fact label="Клиенты" value={`${inst.clients.length}, онлайн: ${onlineCount}`} />
             <Fact label="Реализация" value={impl} title={inst.tools} />
           </dl>
           {inst.tableError && (
@@ -123,7 +123,7 @@ export function Instance({
                   <button
                     key={c.publicKey}
                     type="button"
-                    title={`${state}${panel ? `, клиент панели ${panel.client}` : ''}: подробности`}
+                    title={`${state}${panel ? `, клиент панели ${panel.client}` : ''}`}
                     onClick={() => onClient(c)}
                     className={cn(
                       'flex min-w-0 items-center gap-2 rounded-lg border border-border bg-surface-2 px-3 py-2 text-left hover:border-accent',
@@ -200,19 +200,17 @@ export function Instance({
               title={`Параметры ${inst.container}`}
             >
               <div className="text-[13px]">
-                Панель сгенерирует новые параметры обфускации выбранной версии и перезапустит
-                интерфейс. Ключ сервера, порт, подсеть и клиенты останутся, но{' '}
-                <b>все клиенты перестанут подключаться, пока не импортируют новый конфиг</b>.
-                Конфиги клиентов, чей ключ у панели, соберутся заново в окне клиента; клиентам
-                приложения Amnezia - переподключить сервер в приложении. Если интерфейс не
-                поднимется, вернутся прежние параметры.
+                Ключ сервера, порт, подсеть и клиенты сохранятся, но{' '}
+                <b>клиенты не подключатся, пока не импортируют новый конфиг</b>. Новые конфиги
+                &mdash; в окне клиента, в приложении Amnezia нужно переподключить сервер. При ошибке
+                вернутся прежние параметры.
               </div>
               <Field
                 label="Версия"
                 htmlFor={`awg-profile-${inst.container}`}
                 hint={
                   legacy
-                    ? 'Легаси-контейнер amnezia-awg (образ amnezia-wg) умеет только 1.0; для новых версий - новый экземпляр.'
+                    ? 'контейнер amnezia-awg поддерживает только 1.0, для новых версий нужен новый экземпляр'
                     : undefined
                 }
               >
@@ -222,12 +220,12 @@ export function Instance({
                   onChange={(e) => setProfile(e.target.value)}
                 >
                   <option value="3.1" disabled={legacy}>
-                    3.1 - последняя
+                    3.1 (последняя)
                   </option>
                   <option value="2.0" disabled={legacy}>
-                    2.0 - для клиентов до 3.x
+                    2.0 (для клиентов до 3.x)
                   </option>
-                  <option value="1.0">1.0 - для старых клиентов и роутеров</option>
+                  <option value="1.0">1.0 (для старых клиентов и роутеров)</option>
                 </Select>
               </Field>
               {paramsError && <Alert tone="bad">{paramsError}</Alert>}

@@ -8,10 +8,10 @@ import { PROLOGUE, XUI_FUNCS } from './util.js';
  */
 export const panelsLocalCmd: CommandDef = {
   id: 'panels-local',
-  title: 'Панели сервисов - только через VPS Panel',
+  title: 'Закрыть панели сервисов снаружи',
   group: 'maintain',
   description:
-    'Панели 3X-UI и MTProxyL на этом сервере - только на 127.0.0.1: снаружи их больше нет, вход через VPS Panel (поддомен с её входом). Свой сервер подписок 3X-UI выключается - подписку отдаёт VPS Panel. Нужен агент 0.3.0+ (туннель).',
+    'Панели 3X-UI и MTProxyL станут доступны только через VPS Panel, сервер подписок 3X-UI выключится. Нужен агент 0.3.0 или новее.',
   params: [],
   timeoutSec: 10 * 60,
   script: `${PROLOGUE}
@@ -23,7 +23,7 @@ if [ -x /usr/local/x-ui/x-ui ]; then
   port=$(/usr/local/x-ui/x-ui setting -show 2>/dev/null | awk -F': *' 'tolower($1) ~ /^[[:space:]]*port$/ {print $2; exit}' | tr -dc '0-9')
   systemctl stop x-ui
   /usr/local/x-ui/x-ui setting -listenIP 127.0.0.1 || echo "ВНИМАНИЕ: listenIP не задан" >&2
-  xui_sub_off || echo "ВНИМАНИЕ: сервер подписок 3X-UI не выключен - выключи в её настройках" >&2
+  xui_sub_off || echo "ВНИМАНИЕ: сервер подписок 3X-UI не выключен, выключите его в настройках 3X-UI" >&2
   systemctl start x-ui
   xui_panel_ufw_close "$port"
   xui_panel_ufw_close 2096
@@ -48,17 +48,17 @@ if [ -x /usr/local/sbin/vps-portsync ]; then
   say "port-sync: закрываю ставшие ненужными порты панелей"
   /usr/local/sbin/vps-portsync | tail -n 20
 fi
-say "Готово: кнопка \\"Открыть панель\\" в VPS Panel ведёт на поддомен"
+say "Готово: панели открываются кнопкой \\"Открыть\\" на странице сервера"
 `,
-  preflight: `if [ -x /usr/local/x-ui/x-ui ]; then echo "WARN|3X-UI будет перезапущена: соединения VPN через неё прервутся на несколько секунд"; else echo "OK|3X-UI нет"; fi
-if [ -f /etc/mtproxyl-panel/config.toml ]; then echo "OK|панель MTProxyL найдена: $(grep -E '^[[:space:]]*listen' /etc/mtproxyl-panel/config.toml | head -1 | tr -d ' ')"; else echo "OK|панели MTProxyL нет"; fi`,
+  preflight: `if [ -x /usr/local/x-ui/x-ui ]; then echo "WARN|3X-UI перезапустится, соединения VPN прервутся на несколько секунд"; else echo "OK|3X-UI не установлен"; fi
+if [ -f /etc/mtproxyl-panel/config.toml ]; then echo "OK|панель MTProxyL найдена: $(grep -E '^[[:space:]]*listen' /etc/mtproxyl-panel/config.toml | head -1 | tr -d ' ')"; else echo "OK|панель MTProxyL не установлена"; fi`,
   plan: () => [
-    '3X-UI (если есть): webListen = 127.0.0.1, свой сервер подписок выключить, перезапуск (VPN прервётся на несколько секунд)',
-    'Панель MTProxyL (если есть): listen = 127.0.0.1:<порт> в /etc/mtproxyl-panel/config.toml (копия рядом), перезапуск панели; сам прокси не трогается',
-    'port-sync: закрыть порты панелей снаружи',
+    'Закрыть панель 3X-UI снаружи и выключить её сервер подписок; VPN прервётся на несколько секунд',
+    'Закрыть панель MTProxyL снаружи; прокси продолжит работать',
+    'Закрыть порты панелей',
   ],
   after:
-    'Через минуту-другую (следующий снимок) "Открыть панель" в карточке сервера откроет панель через поддомен VPS Panel; прямой адрес по IP больше не работает.',
+    'Кнопка \u00abОткрыть\u00bb у панелей на странице сервера заработает в течение 5\u00a0минут. Прямой адрес по IP больше не работает.',
 };
 
 /**
@@ -70,10 +70,10 @@ if [ -f /etc/mtproxyl-panel/config.toml ]; then echo "OK|панель MTProxyL �
  */
 export const legacyCertsCmd: CommandDef = {
   id: 'legacy-certs',
-  title: 'Убрать старые сертификаты',
+  title: 'Удалить старые сертификаты',
   group: 'maintain',
   description:
-    'Снять IP-сертификаты, которые агент выпускал раньше (/etc/vps-certs, acme.sh, хук vps-cert-reload): панели 3X-UI и MTProxyL переходят на HTTP на 127.0.0.1 (вход через VPS Panel, как на новых серверах), затем сертификаты и хук удаляются.',
+    'Удаляет IP-сертификаты, которые агент выпускал раньше. Панели 3X-UI и MTProxyL открываются через VPS Panel, как на новых серверах.',
   params: [],
   timeoutSec: 10 * 60,
   script: `${PROLOGUE}
@@ -127,18 +127,17 @@ if [ "$found" = 0 ]; then
   say "Старых сертификатов на сервере нет - менять нечего"
   exit 0
 fi
-say "Готово: через минуту-другую (следующий снимок) панели откроются через VPS Panel по HTTP на 127.0.0.1"
+say "Готово: в течение 5 минут панели будут открываться через VPS Panel"
 `,
-  preflight: `if [ -x /usr/local/x-ui/x-ui ] && /usr/local/x-ui/x-ui setting -getCert 2>/dev/null | grep -q /etc/vps-certs; then echo "WARN|3X-UI использует старый сертификат: перейдёт на HTTP, перезапуск - VPN прервётся на несколько секунд"; else echo "OK|3X-UI старый сертификат не использует"; fi
-if [ -f /etc/mtproxyl-panel/config.toml ] && grep -q '^\\[tls\\]' /etc/mtproxyl-panel/config.toml; then echo "WARN|панель MTProxyL перейдёт на HTTP (перезапуск панели; сам прокси Telegram не трогается)"; else echo "OK|панель MTProxyL уже без HTTPS (или её нет)"; fi
-if [ -d /etc/vps-certs ]; then echo "OK|старые сертификаты: $(ls /etc/vps-certs | tr '\\n' ' ')"; else echo "OK|/etc/vps-certs нет"; fi
-if [ -e /usr/local/bin/vps-cert-reload ]; then echo "OK|хук vps-cert-reload есть - будет удалён"; fi`,
+  preflight: `if [ -x /usr/local/x-ui/x-ui ] && /usr/local/x-ui/x-ui setting -getCert 2>/dev/null | grep -q /etc/vps-certs; then echo "WARN|3X-UI использует старый сертификат: она перезапустится, соединения VPN прервутся на несколько секунд"; else echo "OK|3X-UI не использует старый сертификат"; fi
+if [ -f /etc/mtproxyl-panel/config.toml ] && grep -q '^\\[tls\\]' /etc/mtproxyl-panel/config.toml; then echo "WARN|панель MTProxyL перезапустится, прокси продолжит работать"; else echo "OK|панель MTProxyL не использует старый сертификат"; fi
+if [ -d /etc/vps-certs ]; then echo "OK|старые сертификаты: $(ls /etc/vps-certs | tr '\\n' ' ')"; else echo "OK|старых сертификатов нет"; fi
+if [ -e /usr/local/bin/vps-cert-reload ]; then echo "OK|хук продления vps-cert-reload будет удалён"; fi`,
   plan: () => [
-    '3X-UI (если указывает на /etc/vps-certs): x-ui cert -reset, перезапуск - VPN прервётся на несколько секунд',
-    'Панель MTProxyL (если есть [tls]): секция [tls] убирается (копия конфига рядом), перезапуск панели; прокси Telegram не трогается',
-    'acme.sh: снять сертификаты из /etc/vps-certs, удалить /etc/vps-certs и хук /usr/local/bin/vps-cert-reload',
-    'acme.sh без сертификатов - удалить вместе с заданием в cron',
+    'Отключить старый сертификат в 3X-UI; VPN прервётся на несколько секунд',
+    'Отключить старый сертификат в панели MTProxyL; прокси продолжит работать',
+    'Удалить старые сертификаты и хук продления',
+    'Удалить acme.sh, если в нём не осталось сертификатов',
   ],
-  after:
-    'Через минуту-другую "Открыть панель" откроет панели через VPS Panel по HTTP; во вкладке "Сертификаты" старых IP-сертификатов больше не будет.',
+  after: 'Старые IP-сертификаты пропадут с вкладки \u00abСертификаты\u00bb в течение 5\u00a0минут.',
 };

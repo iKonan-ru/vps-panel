@@ -23,7 +23,7 @@ export async function agentUpdateRoutes(
   /** Отмена идущего обновления агента (загрузка на узком канале). */
   app.post('/api/servers/:id/agent/update/cancel', async (req, reply) => {
     const { id } = Id.parse(req.params);
-    if (!registry.isOnline(id)) return reply.code(409).send({ error: 'Агент не подключён' });
+    if (!registry.isOnline(id)) return reply.code(409).send({ error: 'сервер не в сети' });
     return registry.request(id, 'agent.update.cancel', {}, { timeoutMs: 15_000 });
   });
 
@@ -59,7 +59,7 @@ export async function agentUpdateRoutes(
   ): Promise<{ actionId: string; done: Promise<number> }> {
     const row = (await db.select().from(servers).where(eq(servers.id, id)).limit(1))[0];
     if (!registry.isOnline(id))
-      throw Object.assign(new Error('Агент не подключён'), { statusCode: 409 });
+      throw Object.assign(new Error('сервер не в сети'), { statusCode: 409 });
     const action = journal.open(id, 'agent.update');
     const actionId = action.id;
     const onStream = action.stream;
@@ -92,7 +92,7 @@ export async function agentUpdateRoutes(
         const back = await waitAgentReturn(id, 3 * 60_000);
         if (!back) {
           say(
-            'ОШИБКА: агент не вернулся за 3 минуты. Проверь на сервере: journalctl -u vps-agent -n 20',
+            'ОШИБКА: агент не вернулся за 3 минуты. Журнал на сервере: journalctl -u vps-agent -n 20',
           );
           return finish(1);
         }
@@ -136,7 +136,7 @@ export async function agentUpdateRoutes(
       return reply.code(r === 'busy' ? 409 : 400).send({ error: errors[r] });
     return r;
   });
-  const errors = { busy: 'Раскатка агентов уже идёт', fresh: 'Все агенты уже свежие' };
+  const errors = { busy: 'обновление агентов уже идёт', fresh: 'все агенты уже последней версии' };
 
   // панель обновилась (релиз) и включено "обновлять агентов": через 90 с - агенты успевают
   // переподключиться к новой панели
@@ -194,7 +194,7 @@ export async function agentUpdateRoutes(
         rolloutChanged();
         if (it.status === 'error') {
           for (const rest of cur.items.slice(i + 1))
-            Object.assign(rest, { status: 'skipped', note: 'раскатка остановлена после ошибки' });
+            Object.assign(rest, { status: 'skipped', note: 'обновление остановлено после ошибки' });
           break;
         }
       }

@@ -61,7 +61,7 @@ export async function subscriptionRoutes(
     if (!s) return reply.code(404).type('text/plain').send('not found');
     return {
       subscriptionName: TITLE,
-      description: 'Серверы и пароли обновляются сами',
+      description: 'Серверы и пароли обновляются автоматически',
       updatedAt: new Date().toISOString(),
       version: 1,
       profiles: s.profiles,

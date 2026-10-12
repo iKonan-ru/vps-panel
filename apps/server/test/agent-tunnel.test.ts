@@ -31,7 +31,7 @@ function fakeRegistry() {
     calls,
     emit: (ch: string, chunk: string) => stream?.(ch, chunk),
     finish: () => finishOpen?.(),
-    fail: () => failOpen?.(new Error('Агент отключился')),
+    fail: () => failOpen?.(new Error('агент отключился')),
   };
 }
 

@@ -144,7 +144,7 @@ export function liveBinding(b: LiveRef, samples: Sample[]): GLiveBinding {
     case 'xui': {
       if (!snap.xui) return down('xui', '3X-UI не отвечает');
       const s = snap.xui[b.key];
-      if (!s) return set('missing', 'клиента нет в 3X-UI: ждёт сверки');
+      if (!s) return set('missing', 'клиента нет в 3X-UI: ждёт синхронизации');
       withCounters();
       if (s.lastOnline > 0) out.lastSeen = iso(s.lastOnline);
       return set(s.online ? 'online' : s.lastOnline > 0 ? 'idle' : 'never');
@@ -156,7 +156,7 @@ export function liveBinding(b: LiveRef, samples: Sample[]): GLiveBinding {
       const peers = snap.awg[container];
       if (!peers) return set('down', `контейнер ${container} не запущен`);
       const p = peers[publicKey];
-      if (!p) return set('missing', 'пира нет на сервере: ждёт сверки');
+      if (!p) return set('missing', 'пира нет на сервере: ждёт синхронизации');
       withCounters();
       out.sinceStart = true;
       if (p.handshake > 0) out.lastSeen = iso(p.handshake * 1000);
@@ -175,7 +175,7 @@ export function liveBinding(b: LiveRef, samples: Sample[]): GLiveBinding {
     case 'wdtt': {
       if (!snap.wdtt) return down('wdtt', 'WDTT не отвечает');
       const w = b.key ? snap.wdtt[b.key] : undefined;
-      if (!w) return set('missing', 'пароля нет на сервере: ждёт сверки');
+      if (!w) return set('missing', 'пароля нет на сервере: ждёт синхронизации');
       withCounters();
       out.devices = w.devices;
       return set(w.devices > 0 ? 'online' : 'idle');
@@ -183,16 +183,16 @@ export function liveBinding(b: LiveRef, samples: Sample[]): GLiveBinding {
     case 'openflux': {
       if (!snap.openflux) return down('openflux', 'OpenFlux не отвечает');
       const ch = snap.openflux[b.key];
-      if (!ch) return set('missing', 'канала нет на сервере: ждёт сверки');
+      if (!ch) return set('missing', 'канала нет на сервере: ждёт синхронизации');
       if (!ch.active) return set('down', 'канал остановлен');
       out.conns = ch.conns;
       if (ch.conns > 0) return set('online', 'прямое подключение');
-      return set('running', 'канал работает; подключение через документы и cups.online не видно');
+      return set('running', 'канал работает; подключения через документы и cups.online не видны');
     }
     case 'naive': {
       if (snap.naive === undefined) return down('naive', 'прокси для браузера не отвечает');
       if (!snap.naive) return set('down', 'служба не работает');
-      return set('running', 'служба работает; подключения прокси для браузера не видны');
+      return set('running', 'служба работает; подключения не видны');
     }
   }
   return out;
@@ -206,7 +206,7 @@ export function liveOnServer(
   const empty = liveBinding(b, []);
   if (!s.info.online) return { ...empty, state: 'offline', note: 'сервер не в сети' };
   if (s.info.outdated)
-    return { ...empty, state: 'outdated', note: 'агент устарел: нужно обновить агента' };
+    return { ...empty, state: 'outdated', note: 'агент устарел: нужно обновить агент' };
   if (s.info.error) return { ...empty, state: 'down', note: `агент не ответил: ${s.info.error}` };
   return liveBinding(b, s.samples);
 }

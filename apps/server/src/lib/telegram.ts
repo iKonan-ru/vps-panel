@@ -284,7 +284,7 @@ export class Telegram {
     const first = list[0]?.at ?? new Date().toISOString();
     const head = await this.deliver(
       st,
-      `VPS Panel: уведомления не доходили с ${tgTime(first)} по ${tgTime(new Date().toISOString())}. Отложенных сообщений: ${list.length}, ниже они.`,
+      `VPS Panel: уведомления не доходили с ${tgTime(first)} по ${tgTime(new Date().toISOString())} (МСК). Отложенных сообщений: ${list.length}, они ниже.`,
     );
     // getMe проходит и при неверном chat id: доставку решает сама отправка
     if (head.err) {
@@ -314,14 +314,14 @@ export class Telegram {
     }
     const d = desc.toLowerCase();
     if (status === 401 || d.includes('unauthorized')) {
-      return 'Telegram не принял токен бота (401): проверь токен из @BotFather';
+      return 'Telegram не принял токен бота (401)';
     }
     if (d.includes('chat not found')) {
-      return 'Telegram: чат не найден (400). Напиши боту любое сообщение и нажми "Найти chat id"';
+      return 'Telegram не нашёл чат (400): отправьте боту любое сообщение и нажмите \u00abНайти chat id\u00bb';
     }
-    if (d.includes('blocked by the user')) return 'Telegram: ты заблокировал этого бота (403)';
+    if (d.includes('blocked by the user')) return 'Telegram: бот заблокирован в чате (403)';
     if (d.includes("can't initiate") || (status === 403 && d.includes('forbidden'))) {
-      return 'Telegram: бот не может писать первым (403). Открой чат с ботом, нажми Start и повтори';
+      return 'Telegram: бот не может писать первым (403), отправьте боту любое сообщение';
     }
     return `Telegram ответил ${status}: ${desc || body.slice(0, 200)}`;
   }
@@ -354,7 +354,7 @@ export class Telegram {
     } catch (e) {
       const err = e as Error & { cause?: Error };
       return {
-        err: `${proxy ? 'через прокси' : 'с хоста панели'}: ${err.cause?.message ?? err.message}`,
+        err: `${proxy ? 'через прокси' : 'с сервера панели'}: ${err.cause?.message ?? err.message}`,
       };
     }
   }
@@ -453,11 +453,11 @@ export class Telegram {
     const agentErrors = errors.filter((e) => !e.startsWith('proxy:') && !e.startsWith('direct:'));
     if (agentErrors.length > 0 && agentErrors.every((e) => e.includes(AGENT_OUTDATED))) {
       return {
-        err: 'Telegram недоступен с хоста панели, а агенты на серверах старые: обнови агентов и повтори',
+        err: 'Telegram недоступен с сервера панели, а агенты на серверах устарели: нужно обновить агенты',
       };
     }
     return {
-      err: `Telegram недоступен ни с панели, ни через агенты: ${errors.slice(0, 3).join('; ')}`,
+      err: `Telegram недоступен ни с сервера панели, ни через агенты: ${errors.slice(0, 3).join('; ')}`,
     };
   }
 
@@ -497,10 +497,10 @@ export class Telegram {
         // ответ самого Telegram окончательный: другой путь не поможет
         return res.ok ? null : this.explain(res.status, raw);
       } catch (e) {
-        errors.push(`${p ? 'через прокси' : 'с хоста панели'}: ${(e as Error).message}`);
+        errors.push(`${p ? 'через прокси' : 'с сервера панели'}: ${(e as Error).message}`);
       }
     }
-    return `Telegram недоступен: ${errors.join('; ')} (через агентов файлы не пересылаются)`;
+    return `Telegram недоступен: ${errors.join('; ')} (через агенты файлы не передаются)`;
   }
 
   private async deliver(
@@ -521,7 +521,7 @@ export class Telegram {
     tokenFromForm?: string,
   ): Promise<{ chats?: { id: string; title: string; when: string }[]; err?: string }> {
     const token = tokenFromForm || (await this.settings()).token;
-    if (!token) return { err: 'сначала вставь токен бота' };
+    if (!token) return { err: 'не задан токен бота' };
     const r = await this.call(token, 'getUpdates', {
       limit: 100,
       allowed_updates: ['message', 'my_chat_member', 'channel_post'],

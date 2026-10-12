@@ -92,7 +92,7 @@ export async function awgClientConfigs(o: {
   if (!saved)
     throw Object.assign(
       new Error(
-        'Приватного ключа клиента у панели нет (создан приложением Amnezia): конфиг выдать нельзя',
+        'у панели нет приватного ключа клиента (клиент создан в приложении Amnezia), конфиг недоступен',
       ),
       { statusCode: 409 },
     );

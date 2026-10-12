@@ -1,58 +1,77 @@
 /** Человеческие форматы для интерфейса. */
 
+/** Неразрывный пробел: число и единица (5 мин, 1,5 ГБ) не разрываются переносом. */
+const NB = '\u00a0';
+
+/** Дробное число с запятой: 1,5. */
+const comma = (v: number, digits: number) => v.toFixed(digits).replace('.', ',');
+
 export function ago(iso: string | null | undefined): string {
   if (!iso) return '';
   const s = Math.max(0, Math.round((Date.now() - new Date(iso).getTime()) / 1000));
   if (s < 60) return 'только что';
   const m = Math.round(s / 60);
-  if (m < 60) return `${m} мин назад`;
+  if (m < 60) return `${m}${NB}мин назад`;
   const h = Math.round(m / 60);
-  if (h < 48) return `${h} ч назад`;
-  return `${Math.round(h / 24)} дн назад`;
+  if (h < 48) return `${h}${NB}ч назад`;
+  const days = Math.round(h / 24);
+  return `${days}${NB}${plural(days, 'день', 'дня', 'дней')} назад`;
 }
 
 export function uptime(sec: number): string {
-  if (sec < 3600) return `${Math.round(sec / 60)} мин`;
-  if (sec < 86_400) return `${Math.round(sec / 3600)} ч`;
-  return `${Math.round(sec / 86_400)} дн`;
+  if (sec < 3600) return `${Math.round(sec / 60)}${NB}мин`;
+  if (sec < 86_400) return `${Math.round(sec / 3600)}${NB}ч`;
+  return `${Math.round(sec / 86_400)}${NB}сут.`;
 }
 
 export function gb(v: number): string {
-  return v >= 100 ? String(Math.round(v)) : v.toFixed(1);
+  return v >= 100 ? String(Math.round(v)) : comma(v, 1);
 }
 
-/** Период оплаты словами: 1 - мес, 3 - 3 мес, 12 - год. */
+/** Период оплаты словами: 1 - мес., 3 - 3 мес., 12 - год, 24 - 2 года. */
 export function periodLabel(months: number): string {
-  if (months === 1) return 'мес';
+  if (months === 1) return 'мес.';
   if (months === 12) return 'год';
-  if (months % 12 === 0) return `${months / 12} г.`;
-  return `${months} мес`;
+  if (months % 12 === 0) {
+    const years = months / 12;
+    return `${years}${NB}${plural(years, 'год', 'года', 'лет')}`;
+  }
+  return `${months}${NB}мес.`;
 }
+
+/** Знак валюты: 500 \u20bd/мес. */
+const CURRENCY: Record<string, string> = { RUB: '\u20bd', EUR: '\u20ac', USD: '$' };
 
 export function money(price: number | null, currency: string, months: number): string {
   if (price === null) return '';
-  const sym = { RUB: 'руб.', EUR: 'EUR', USD: 'USD' }[currency] ?? currency;
-  return `${price.toLocaleString('ru-RU')} ${sym}/${periodLabel(months)}`;
+  const sym = CURRENCY[currency] ?? currency;
+  return `${price.toLocaleString('ru-RU')}${NB}${sym}/${periodLabel(months)}`;
 }
 
 /** Сумма в пересчёте на месяц, для сравнения серверов. */
 export function perMonth(price: number | null, currency: string, months: number): string {
   if (price === null || months <= 1) return '';
-  const sym = { RUB: 'руб.', EUR: 'EUR', USD: 'USD' }[currency] ?? currency;
-  return `${(price / months).toLocaleString('ru-RU', { maximumFractionDigits: 0 })} ${sym}/мес`;
+  const sym = CURRENCY[currency] ?? currency;
+  return `${(price / months).toLocaleString('ru-RU', { maximumFractionDigits: 0 })}${NB}${sym}/мес.`;
 }
 
-/** Дата и время для журналов: 03.10 21:15. */
+const pad2 = (n: number) => String(n).padStart(2, '0');
+
+/** День и месяц, год - только если не текущий: 22.10, 22.10.2025 (местное время). */
+function dayMonth(d: Date): string {
+  const dm = `${pad2(d.getDate())}.${pad2(d.getMonth() + 1)}`;
+  return d.getFullYear() === new Date().getFullYear() ? dm : `${dm}.${d.getFullYear()}`;
+}
+
+/** Дата и время для журналов: 03.10 21:15, в другом году - 03.10.2025 21:15. */
 export function dateTime(iso: string): string {
   const d = new Date(iso);
-  const p = (n: number) => String(n).padStart(2, '0');
-  return `${p(d.getDate())}.${p(d.getMonth() + 1)} ${p(d.getHours())}:${p(d.getMinutes())}`;
+  return `${dayMonth(d)} ${pad2(d.getHours())}:${pad2(d.getMinutes())}`;
 }
 
 export function dateShort(iso: string | null): string {
   if (!iso) return '';
-  const d = new Date(iso);
-  return `${String(d.getDate()).padStart(2, '0')}.${String(d.getMonth() + 1).padStart(2, '0')}`;
+  return dayMonth(new Date(iso));
 }
 
 /** Календарных дней до даты (по местному времени): 0 - сегодня, 1 - завтра. */
@@ -82,11 +101,11 @@ export function plural(n: number, one: string, few: string, many: string): strin
   return many;
 }
 
-/** "сегодня", "завтра", "через 2 дн". */
+/** "сегодня", "завтра", "через 2 дня". */
 export function daysWord(days: number): string {
   if (days <= 0) return 'сегодня';
   if (days === 1) return 'завтра';
-  return `через ${days} дн`;
+  return `через ${days}${NB}${plural(days, 'день', 'дня', 'дней')}`;
 }
 
 /** Версия агента "0.2.0+20260926.0145.abc1234" -> "0.2.0 (26.09 01:45)". */
@@ -97,9 +116,9 @@ export function agentVersionShort(v: string | null | undefined): string {
   return `${m[1]} (${m[4]}.${m[3]} ${m[5]}:${m[6]})`;
 }
 
-/** Байты в человеческий вид: 12.3 МБ, 1.2 ГБ. */
+/** Байты в человеческий вид: 12 МБ, 1,2 ГБ. */
 export function bytes(n: number): string {
-  if (!n) return '0 Б';
+  if (!n) return `0${NB}Б`;
   const units = ['Б', 'КБ', 'МБ', 'ГБ', 'ТБ'];
   let i = 0;
   let v = n;
@@ -107,5 +126,8 @@ export function bytes(n: number): string {
     v /= 1024;
     i++;
   }
-  return `${v >= 10 || i === 0 ? Math.round(v) : v.toFixed(1)} ${units[i]}`;
+  return `${v >= 10 || i === 0 ? Math.round(v) : comma(v, 1)}${NB}${units[i]}`;
 }
+
+/** Первая буква - прописная: ошибка API (со строчной) показана сама по себе, не после двоеточия. */
+export const cap = (s: string): string => (s ? s[0]?.toUpperCase() + s.slice(1) : s);

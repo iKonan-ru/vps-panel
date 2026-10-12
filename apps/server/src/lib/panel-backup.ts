@@ -57,24 +57,29 @@ function run(cmd: string, args: string[]): Promise<void> {
   });
 }
 
-const README = (panelUrl: string) => `Бэкап VPS Panel (${panelUrl}).
+const README = (panelUrl: string) => `Резервная копия VPS Panel (${panelUrl}).
 
-Внутри: panel.db - база панели (снимок), panel.env - SESSION_SECRET (ключ, которым в
-базе зашифрованы доступы, ключи клиентов AWG, токены), panel_ssh_ed25519 - ключ, которым
-панель заходит на серверы, panel_agent_ed25519.pem - ключ, которому верят агенты (без него
-восстановленной панели не поверит ни один агент), xray/config.json - выход панели в Telegram.
+Внутри:
+- panel.db - база панели (снимок);
+- panel.env - SESSION_SECRET: ключ, которым в базе зашифрованы доступы, ключи клиентов AWG
+  и токены;
+- panel_ssh_ed25519 - ключ, которым панель заходит на серверы;
+- panel_agent_ed25519.pem - ключ, которому верят агенты: без него восстановленной панели
+  не поверит ни один агент;
+- xray/config.json - выход панели в Telegram.
 
 Восстановление: установить панель и выполнить на её сервере
   vps-panel restore <этот файл>
-(спросит пароль бэкапа и сделает всё сам). Вручную - по шагам ниже.
+Команда спросит пароль резервной копии и сделает остальное.
 
-По шагам (подробно - docs/install.md, раздел
-"Бэкап и восстановление"; каталог установки из релиза - /opt/vps-panel, из исходников - deploy):
+Вручную (подробно - docs/install.md, раздел "Резервная копия и восстановление"; каталог
+установки из релиза - /opt/vps-panel, из исходников - deploy):
 1. ${DECRYPT_HINT}
 2. cd /opt/vps-panel && docker compose stop panel
-3. panel.db, panel_agent_ed25519.pem, panel_ssh_ed25519(.pub) (если есть в архиве - панель
-   создаёт его при первом входе на сервер по ключу), xray/ - в data
-   (владелец uid 1000, ключи - права 600); старые panel.db-wal и panel.db-shm удалить.
+3. panel.db, panel_agent_ed25519.pem, panel_ssh_ed25519(.pub) и xray/ - в data (владелец
+   uid 1000, у ключей права 600); старые panel.db-wal и panel.db-shm удалить.
+   panel_ssh_ed25519 есть в архиве не всегда: панель создаёт его при первом входе на сервер
+   по ключу.
 4. SESSION_SECRET из panel.env - в .env (без него зашифрованное в базе не прочитать).
 5. docker compose up -d panel
 `;
@@ -199,7 +204,8 @@ export class PanelBackups {
   /** Собрать зашифрованный архив; без пароля - ошибка 409. */
   async build(to: PanelBackupLast['to']) {
     const sealed = this.get(K_PASS);
-    if (!sealed) throw Object.assign(new Error('Сначала задай пароль бэкапа'), { statusCode: 409 });
+    if (!sealed)
+      throw Object.assign(new Error('не задан пароль резервной копии'), { statusCode: 409 });
     const startedAt = new Date().toISOString();
     try {
       const b = await createPanelBackup({
@@ -235,7 +241,7 @@ export class PanelBackups {
         finishedAt: new Date().toISOString(),
         exitCode: ok ? 0 : 1,
         output: ok
-          ? `${to === 'telegram' ? 'отправлен в Telegram' : 'скачан'}, ${size ?? 0} байт`
+          ? `${to === 'telegram' ? 'отправлена в Telegram' : 'скачана'}, ${size ?? 0} байт`
           : (error ?? ''),
       })
       .run();
@@ -249,7 +255,7 @@ export class PanelBackups {
     const err = await this.telegram.sendDocument(
       b.name,
       b.data,
-      `Бэкап VPS Panel ${esc(this.opts.panelUrl)}\n\nРасшифровать и распаковать:\n<pre>${esc(decryptCommand(b.name))}</pre>\nДальше - README.txt в архиве.`,
+      `Резервная копия VPS Panel ${esc(this.opts.panelUrl)}\n\nРасшифровка и распаковка:\n<pre>${esc(decryptCommand(b.name))}</pre>\nВосстановление\u00a0\u2014 по README.txt в архиве.`,
     );
     return this.finish(b.startedAt, 'telegram', !err, b.data.length, err ?? undefined);
   }
@@ -262,10 +268,11 @@ export class PanelBackups {
     if (Date.now() - lastTg < DAY_MS) return;
     try {
       const r = await this.sendToTelegram();
-      if (!r.ok) await this.telegram.send(`Бэкап панели не отправлен: ${esc(r.error ?? '')}`);
+      if (!r.ok)
+        await this.telegram.send(`Резервная копия панели не отправлена: ${esc(r.error ?? '')}`);
     } catch (e) {
       this.log.warn({ err: (e as Error).message }, 'panel backup');
-      await this.telegram.send(`Бэкап панели не создан: ${esc((e as Error).message)}`);
+      await this.telegram.send(`Резервная копия панели не создана: ${esc((e as Error).message)}`);
     }
   }
 }

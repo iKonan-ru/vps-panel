@@ -29,7 +29,7 @@ rsync -rlt --delete --chmod=D755,F644 --chown=root:root -e "$SSH" \
   "$ROOT/" "$HOST:/opt/vps-panel/"
 rsync -rlt --chmod=D755,F644 --chown=root:root -e "$SSH" "$ROOT/dist/" "$HOST:/opt/vps-panel/deploy/agent-dist/"
 
-echo "код на сервере, ставлю агента и запускаю сборку"
+echo "код на сервере, ставлю агент и запускаю сборку"
 # Сборка образа идёт в фоне на сервере (2-5 минут, ssh-сессия может не дожить): лог в
 # /tmp/panel-build.log, ход - в data/deploy.json (полоса в панели), ожидание с ходом - deploy/wait.sh
 # <ключ>. Агент ставится сразу.

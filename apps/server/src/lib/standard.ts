@@ -14,7 +14,7 @@ export const STANDARD: StdItem[] = [
     key: 'awg-2.0',
     title: 'AWG 2.0',
     install: 'awg',
-    installHint: 'версия 2.0, экземпляр дополнительный',
+    installHint: 'версия 2.0, дополнительный экземпляр',
   },
   { key: 'wdtt', title: 'WDTT', install: 'wdtt' },
   { key: 'openflux', title: 'OpenFlux', install: 'openflux' },
@@ -42,7 +42,7 @@ export function standardCells(o: {
   const svc = (kind: string) => o.services.find((s) => s.kind === kind);
   const upd = (kinds: string[]) => o.updates.filter((u) => kinds.includes(u.kind));
   const updHint = (list: ServiceUpdate[]) =>
-    list.map((u) => `${u.title}: ${u.current} -> ${u.latest}`).join('; ');
+    list.map((u) => `${u.title} ${u.latest} (сейчас ${u.current})`).join('; ');
 
   const xui = svc('xui');
   let xuiCell: StdCell = { state: 'missing', text: 'нет' };
@@ -53,14 +53,14 @@ export function standardCells(o: {
     const nodes = num(xui.details?.remoteNodes);
     const u = upd(['xui', 'xray']);
     const notes = [
-      ...(own === 0 ? ['нет своих inbound-ов'] : []),
+      ...(own === 0 ? ['нет своих inbound'] : []),
       ...(nodes > 0 ? [`узлов группы 3X-UI: ${nodes}`] : []),
       ...(u.length ? ['есть обновление'] : []),
     ];
     xuiCell = {
       state: notes.length ? 'warn' : 'ok',
-      text: [xui.version ?? '?', `inbound-ов ${own}`].join(', '),
-      ...(notes.length ? { hint: [notes.join(', '), updHint(u)].filter(Boolean).join('. ') } : {}),
+      text: [xui.version ?? '?', `inbound: ${own}`].join(', '),
+      ...(notes.length ? { hint: [notes.join(', '), updHint(u)].filter(Boolean).join(': ') } : {}),
     };
   }
 
@@ -71,7 +71,7 @@ export function standardCells(o: {
     mtCell = {
       state: u.length ? 'warn' : 'ok',
       text: `${mt.version ?? '?'}${mt.panelUrl ? ', с панелью' : ''}`,
-      ...(u.length ? { hint: `есть обновления. ${updHint(u)}` } : {}),
+      ...(u.length ? { hint: `есть обновления: ${updHint(u)}` } : {}),
     };
   }
 
@@ -105,7 +105,7 @@ export function standardCells(o: {
     ];
     ofCell = {
       state: notes.length ? 'warn' : 'ok',
-      text: [of.version ?? '?', `каналов ${chans}`].join(', '),
+      text: [of.version ?? '?', `каналов: ${chans}`].join(', '),
       ...(notes.length ? { hint: notes.join(', ') } : {}),
     };
   }

@@ -73,12 +73,14 @@ export async function authRoutes(app: FastifyInstance, opts: { db: Db; secure: b
         .object({ login: z.string().min(1).max(64), password: z.string().min(1).max(200) })
         .parse(req.body);
       if (await tooManyAttempts(db, req.ip)) {
-        return reply.code(429).send({ error: 'Слишком много попыток, подожди 15 минут' });
+        return reply
+          .code(429)
+          .send({ error: 'слишком много попыток, следующая\u00a0\u2014 через 15\u00a0минут' });
       }
       const admin = await findAdminByLogin(db, login);
       const ok = admin ? await verifyPassword(admin.passwordHash, password) : false;
       await recordAttempt(db, req.ip, login, ok);
-      if (!admin || !ok) return reply.code(401).send({ error: 'Неверный логин или пароль' });
+      if (!admin || !ok) return reply.code(401).send({ error: 'неверный логин или пароль' });
       sweep();
       const p = newToken();
       if (admin.totpEnabled && admin.totpSecret) {
@@ -112,11 +114,11 @@ export async function authRoutes(app: FastifyInstance, opts: { db: Db; secure: b
       const p = req.cookies[pendingCookie()];
       const pend = p ? pending.get(p) : undefined;
       if (!p || !pend?.enroll || pend.expires < Date.now())
-        return reply.code(401).send({ error: 'Начни вход заново' });
+        return reply.code(401).send({ error: 'время входа истекло, нужно войти заново' });
       const { code } = z.object({ code: z.string().min(6).max(8) }).parse(req.body);
       const ok = verifyTotp(pend.enroll.secret, code);
       await recordAttempt(db, req.ip, pend.login, ok);
-      if (!ok) return reply.code(400).send({ error: 'Неверный код' });
+      if (!ok) return reply.code(400).send({ error: 'неверный код' });
       await saveTotp(db, pend.adminId, pend.enroll.secret, pend.enroll.codes);
       pending.delete(p);
       reply.clearCookie(pendingCookie(), { path: '/', secure });
@@ -132,15 +134,15 @@ export async function authRoutes(app: FastifyInstance, opts: { db: Db; secure: b
       const p = req.cookies[pendingCookie()];
       const pend = p ? pending.get(p) : undefined;
       if (!p || !pend || pend.expires < Date.now())
-        return reply.code(401).send({ error: 'Начни вход заново' });
+        return reply.code(401).send({ error: 'время входа истекло, нужно войти заново' });
       const { code } = z.object({ code: z.string().min(6).max(12) }).parse(req.body);
       const admin = await findAdminByLogin(db, pend.login);
       if (!admin?.totpEnabled || pend.enroll)
-        return reply.code(401).send({ error: 'Начни вход заново' });
+        return reply.code(401).send({ error: 'время входа истекло, нужно войти заново' });
       const okTotp = admin.totpSecret ? verifyTotp(admin.totpSecret, code) : false;
       const okBackup = okTotp ? false : await consumeBackupCode(db, admin.id, code);
       await recordAttempt(db, req.ip, admin.login, okTotp || okBackup);
-      if (!okTotp && !okBackup) return reply.code(401).send({ error: 'Неверный код' });
+      if (!okTotp && !okBackup) return reply.code(401).send({ error: 'неверный код' });
       pending.delete(p);
       reply.clearCookie(pendingCookie(), { path: '/', secure });
       return openSession(db, reply, admin.id, req.ip, req.headers['user-agent'] ?? '', secure);
@@ -149,7 +151,7 @@ export async function authRoutes(app: FastifyInstance, opts: { db: Db; secure: b
 
   app.get('/api/auth/me', async (req, reply) => {
     const s = await sessionOf(db, sessionToken(req));
-    if (!s) return reply.code(401).send({ error: 'Не авторизован' });
+    if (!s) return reply.code(401).send({ error: 'вход не выполнен' });
     return { login: s.login, expiresAt: s.expiresAt };
   });
 
@@ -162,7 +164,7 @@ export async function authRoutes(app: FastifyInstance, opts: { db: Db; secure: b
 
   app.post('/api/auth/logout-all', async (req, reply) => {
     const s = await sessionOf(db, sessionToken(req));
-    if (!s) return reply.code(401).send({ error: 'Не авторизован' });
+    if (!s) return reply.code(401).send({ error: 'вход не выполнен' });
     await deleteAllSessions(db, s.adminId);
     reply.clearCookie(sessionCookie(), { path: '/', secure });
     return { ok: true };
@@ -237,9 +239,9 @@ export function requireAuth(db: Db) {
       url !== '/api/csp-report' &&
       foreignOrigin(req)
     )
-      return reply.code(403).send({ error: 'Запрос с чужой страницы' });
+      return reply.code(403).send({ error: 'запрос с чужой страницы' });
     if (!url.startsWith('/api/') || OPEN_API.has(url)) return;
     const s = await sessionOf(db, sessionToken(req));
-    if (!s) return reply.code(401).send({ error: 'Не авторизован' });
+    if (!s) return reply.code(401).send({ error: 'вход не выполнен' });
   };
 }

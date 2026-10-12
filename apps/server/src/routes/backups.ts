@@ -69,7 +69,7 @@ export async function backupRoutes(
 
   app.get('/api/servers/:id/backups/components', async (req, reply) => {
     const { id } = z.object({ id: z.string() }).parse(req.params);
-    if (!registry.isOnline(id)) return reply.code(409).send({ error: 'Агент не подключён' });
+    if (!registry.isOnline(id)) return reply.code(409).send({ error: 'сервер не в сети' });
     return registry.request(id, 'backup.detect', {}, { timeoutMs: 60_000 });
   });
 
@@ -83,11 +83,11 @@ export async function backupRoutes(
     const { components } = z
       .object({ components: z.array(z.string().max(32)).default([]) })
       .parse(req.body ?? {});
-    if (!registry.isOnline(id)) return reply.code(409).send({ error: 'Агент не подключён' });
+    if (!registry.isOnline(id)) return reply.code(409).send({ error: 'сервер не в сети' });
     const row = (
       await db.select({ name: servers.name }).from(servers).where(eq(servers.id, id)).limit(1)
     )[0];
-    if (!row) return reply.code(404).send({ error: 'Сервер не найден' });
+    if (!row) return reply.code(404).send({ error: 'сервер не найден' });
     sweep();
     const backupId = newId();
     const token = randomBytes(24).toString('base64url');
@@ -158,7 +158,7 @@ export async function backupRoutes(
         if (!String(req.headers['content-type'] ?? '').startsWith('application/gzip'))
           return reply.code(415).send({ error: 'ожидается application/gzip' });
         if (Number(req.headers['content-length'] ?? 0) > MAX_BACKUP_BYTES)
-          return reply.code(413).send({ error: 'архив больше 2 ГБ' });
+          return reply.code(413).send({ error: 'архив больше 2\u00a0ГБ' });
         u.busy = true;
       },
     },
@@ -174,7 +174,7 @@ export async function backupRoutes(
         transform(d: Buffer, _enc, cb) {
           bytes += d.length;
           if (bytes > MAX_BACKUP_BYTES)
-            return cb(Object.assign(new Error('архив больше 2 ГБ'), { statusCode: 413 }));
+            return cb(Object.assign(new Error('архив больше 2\u00a0ГБ'), { statusCode: 413 }));
           hash.update(d);
           cb(null, d);
         },
@@ -195,7 +195,8 @@ export async function backupRoutes(
   app.get('/api/backups/:bid/download', async (req, reply) => {
     const { bid } = z.object({ bid: z.string() }).parse(req.params);
     const row = (await db.select().from(backups).where(eq(backups.id, bid)).limit(1))[0];
-    if (!row || !existsSync(file(bid))) return reply.code(404).send({ error: 'Бэкап не найден' });
+    if (!row || !existsSync(file(bid)))
+      return reply.code(404).send({ error: 'резервная копия не найдена' });
     const name =
       `${row.serverName || row.hostname || 'server'}-${row.createdAt.slice(0, 10)}.tar.gz`.replace(
         /[^\w.-]+/g,
@@ -210,7 +211,7 @@ export async function backupRoutes(
   app.delete('/api/backups/:bid', async (req, reply) => {
     const { bid } = z.object({ bid: z.string() }).parse(req.params);
     const res = await db.delete(backups).where(eq(backups.id, bid)).returning({ id: backups.id });
-    if (res.length === 0) return reply.code(404).send({ error: 'Бэкап не найден' });
+    if (res.length === 0) return reply.code(404).send({ error: 'резервная копия не найдена' });
     if (existsSync(file(bid))) unlinkSync(file(bid));
     return { ok: true };
   });
@@ -222,8 +223,9 @@ export async function backupRoutes(
       .object({ serverId: z.string(), components: z.array(z.string().max(32)).default([]) })
       .parse(req.body);
     const row = (await db.select().from(backups).where(eq(backups.id, bid)).limit(1))[0];
-    if (!row || !existsSync(file(bid))) return reply.code(404).send({ error: 'Бэкап не найден' });
-    if (!registry.isOnline(serverId)) return reply.code(409).send({ error: 'Агент не подключён' });
+    if (!row || !existsSync(file(bid)))
+      return reply.code(404).send({ error: 'резервная копия не найдена' });
+    if (!registry.isOnline(serverId)) return reply.code(409).send({ error: 'сервер не в сети' });
     sweep();
     const token = randomBytes(24).toString('base64url');
     downloads.set(token, { backupId: bid, expires: Date.now() + 30 * 60_000 });

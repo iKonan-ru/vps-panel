@@ -31,13 +31,13 @@ export async function systemRoutes(app: FastifyInstance, opts: ServerRouteOpts) 
       .parse(req.body);
     const keys = body.keys.map((k) => k.trim()).filter(Boolean);
     if (body.panelKey) keys.push(loadPanelKey(env.DATA_DIR).publicKey);
-    if (keys.length === 0) return reply.code(400).send({ error: 'Нет ни одного ключа' });
+    if (keys.length === 0) return reply.code(400).send({ error: 'нет ни одного ключа' });
     return quickAction<{ added: number }>(id, 'ssh.keys.add', 'ssh.keys.add', { keys }, 30_000);
   });
   /** Ключи root на сервере (чтение, не действие); ключ панели помечен. */
   app.get('/api/servers/:id/ssh-keys', async (req, reply) => {
     const { id } = Id.parse(req.params);
-    if (!registry.isOnline(id)) return reply.code(409).send({ error: 'Агент не подключён' });
+    if (!registry.isOnline(id)) return reply.code(409).send({ error: 'сервер не в сети' });
     const res: { keys: { fingerprint: string; panel?: boolean }[]; passwordLogin: boolean } =
       await registry.request(id, 'ssh.keys.list', {}, { timeoutMs: 30_000 });
     // отпечаток как у ssh-keygen -l: sha256 от тела ключа, base64 без "="
@@ -66,10 +66,10 @@ export async function systemRoutes(app: FastifyInstance, opts: ServerRouteOpts) 
     const row = (
       await db.select({ name: servers.name }).from(servers).where(eq(servers.id, id)).limit(1)
     )[0];
-    if (!row) return reply.code(404).send({ error: 'Сервер не найден' });
+    if (!row) return reply.code(404).send({ error: 'сервер не найден' });
     const { confirmName } = z.object({ confirmName: z.string() }).parse(req.body);
     if (confirmName !== row.name)
-      return reply.code(400).send({ error: 'Имя сервера не совпадает' });
+      return reply.code(400).send({ error: 'имя сервера не совпадает' });
     await quickAction(id, 'system.reboot', 'system.reboot', {}, 15_000);
     return { ok: true };
   });

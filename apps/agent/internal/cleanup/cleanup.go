@@ -39,18 +39,18 @@ func Scan(ctx context.Context) ([]Item, error) {
 	}
 	if shell.Has("docker") {
 		bc, di, ui, sc, _ := dockerUsage(ctx)
-		add(Item{ID: "docker-build-cache", Title: "Кэш сборки docker", Detail: "слои buildkit от старых сборок образов; пересборка займёт дольше, ничего не сломает", Bytes: bc, Safe: true})
+		add(Item{ID: "docker-build-cache", Title: "Кэш сборки docker", Detail: "слои buildkit от старых сборок; следующая сборка будет дольше", Bytes: bc, Safe: true})
 		add(Item{ID: "docker-dangling", Title: "Безымянные образы docker", Detail: "слои <none>, оставшиеся после пересборок", Bytes: di, Safe: true})
-		add(Item{ID: "docker-unused-images", Title: "Неиспользуемые образы docker", Detail: "образы, из которых не запущен ни один контейнер (кроме базовых node и alpine для сборки панели); при следующем запуске скачаются заново", Bytes: ui, Safe: false})
-		add(Item{ID: "docker-stopped", Title: "Остановленные контейнеры", Detail: "контейнеры в состоянии exited/created вместе с их слоем записи", Bytes: sc, Safe: false})
+		add(Item{ID: "docker-unused-images", Title: "Неиспользуемые образы docker", Detail: "образы без запущенных контейнеров (кроме node и alpine для сборки панели); при следующем запуске скачаются заново", Bytes: ui, Safe: false})
+		add(Item{ID: "docker-stopped", Title: "Остановленные контейнеры", Detail: "контейнеры exited и created вместе со слоем записи", Bytes: sc, Safe: false})
 	}
-	add(Item{ID: "apt-cache", Title: "Кэш пакетов apt", Detail: "/var/cache/apt: скачанные .deb, apt-get clean", Bytes: dirSize("/var/cache/apt"), Safe: true})
+	add(Item{ID: "apt-cache", Title: "Кэш пакетов apt", Detail: "/var/cache/apt: скачанные .deb", Bytes: dirSize("/var/cache/apt"), Safe: true})
 	add(Item{ID: "apt-lists", Title: "Индексы репозиториев apt", Detail: "/var/lib/apt/lists: пересоздаются при apt-get update", Bytes: dirSize("/var/lib/apt/lists"), Safe: true})
 	if j := journalSize(ctx); j > 64<<20 {
-		add(Item{ID: "journal", Title: "Журнал systemd старше 7 дней", Detail: fmt.Sprintf("journalctl --vacuum-time=7d, сейчас журнал занимает %s", human(j)), Bytes: j - 64<<20, Safe: true})
+		add(Item{ID: "journal", Title: "Журнал systemd старше 7\u00a0дней", Detail: fmt.Sprintf("журнал сейчас занимает %s", human(j)), Bytes: j - 64<<20, Safe: true})
 	}
-	add(Item{ID: "logs-rotated", Title: "Ротированные логи", Detail: "/var/log/*.1, *.gz, *.old: старые копии, текущие логи не трогаются", Bytes: rotatedLogsSize(), Safe: true})
-	add(Item{ID: "tmp-old", Title: "Файлы в /tmp и /var/tmp старше 7 дней", Detail: "временные файлы, к которым неделю никто не обращался", Bytes: oldTmpSize(7 * 24 * time.Hour), Safe: true})
+	add(Item{ID: "logs-rotated", Title: "Ротированные логи", Detail: "/var/log/*.1, *.gz, *.old; текущие логи не трогаются", Bytes: rotatedLogsSize(), Safe: true})
+	add(Item{ID: "tmp-old", Title: "Файлы в /tmp и /var/tmp старше 7\u00a0дней", Detail: "к ним неделю никто не обращался", Bytes: oldTmpSize(7 * 24 * time.Hour), Safe: true})
 	sort.Slice(out, func(i, j int) bool { return out[i].Bytes > out[j].Bytes })
 	if out == nil {
 		out = []Item{}
@@ -210,11 +210,11 @@ func parseHuman(s string) int64 {
 func human(b int64) string {
 	switch {
 	case b >= 1<<30:
-		return fmt.Sprintf("%.1f ГБ", float64(b)/(1<<30))
+		return strings.Replace(fmt.Sprintf("%.1f", float64(b)/(1<<30)), ".", ",", 1) + "\u00a0ГБ"
 	case b >= 1<<20:
-		return fmt.Sprintf("%.0f МБ", float64(b)/(1<<20))
+		return fmt.Sprintf("%.0f\u00a0МБ", float64(b)/(1<<20))
 	default:
-		return fmt.Sprintf("%d КБ", b/1024)
+		return fmt.Sprintf("%d\u00a0КБ", b/1024)
 	}
 }
 

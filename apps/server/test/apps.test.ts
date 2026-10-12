@@ -50,7 +50,7 @@ describe('AppReleases', () => {
     });
     expect(link('windows')).toMatchObject({ version: '5.0.3.1' });
     expect(link('macos')).toMatchObject({
-      note: 'файл не найден - страница релиза',
+      note: 'файл не найден, ссылка на страницу релиза',
       version: '5.0.3.1',
     });
     // сбой сети не стирает найденное

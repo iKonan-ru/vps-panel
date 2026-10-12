@@ -36,7 +36,7 @@ describe('beginAction', () => {
   });
   it('у команды каталога в сообщении её заголовок', () => {
     beginAction(db, { id: 'c1', serverId: 's1', kind: 'command:xui', params: { title: '3X-UI' } });
-    expect(() => start('a1', 'cleanup')).toThrow('уже выполняется: команда "3X-UI"');
+    expect(() => start('a1', 'cleanup')).toThrow('уже выполняется: команда \u00ab3X-UI\u00bb');
   });
   it('после завершения и на другом сервере - можно', () => {
     start('a1', 'system.upgrade');

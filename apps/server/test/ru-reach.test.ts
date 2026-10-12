@@ -124,7 +124,7 @@ describe('ошибки Globalping', () => {
       ),
     ).toMatch(/отклонил запрос \(HTTP 400\): Parameter/);
     expect(reachError('Globalping ответил 503: bad gateway')).toMatch(/временно недоступен/);
-    expect(reachError('агент не на связи')).toBe('агент не на связи');
+    expect(reachError('сервер не в сети')).toBe('сервер не в сети');
   });
 });
 

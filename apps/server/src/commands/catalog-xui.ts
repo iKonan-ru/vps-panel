@@ -7,7 +7,7 @@ export const xuiCmd: CommandDef = {
   group: 'install',
   service: '3X-UI',
   description:
-    'Панель Xray (3X-UI) официальным установщиком в неинтерактивном режиме: логин, пароль, порт и путь задаются сразу. Панель слушает только 127.0.0.1 без HTTPS - вход через VPS Panel (поддомен с её входом и сертификатом), снаружи её нет; свой сервер подписок 3X-UI выключен - подписку отдаёт VPS Panel.',
+    'Панель 3X-UI с Xray. Панель доступна только через VPS Panel, подписки клиентам выдаёт VPS Panel.',
   params: [
     {
       name: 'XUI_USERNAME',
@@ -24,7 +24,7 @@ export const xuiCmd: CommandDef = {
       generate: rndPassword,
       required: true,
       secret: true,
-      hint: 'сгенерирован; сохрани, панель его не хранит',
+      hint: 'VPS Panel его не хранит',
     },
     {
       name: 'XUI_PANEL_PORT',
@@ -40,7 +40,7 @@ export const xuiCmd: CommandDef = {
       generate: rndPath,
       required: true,
       pattern: '^/[A-Za-z0-9_-]{6,64}/$',
-      hint: 'длинный случайный, чтобы панель не нашли сканером',
+      hint: 'случайный, чтобы панель не нашли сканером',
     },
   ],
   timeoutSec: 20 * 60,
@@ -68,7 +68,7 @@ rm -f /etc/x-ui/install-result.env
 say "Панель - только на 127.0.0.1, свой сервер подписок 3X-UI - выключен"
 systemctl stop x-ui
 /usr/local/x-ui/x-ui setting -listenIP 127.0.0.1 || echo "ВНИМАНИЕ: listenIP не задан" >&2
-xui_sub_off || echo "ВНИМАНИЕ: сервер подписок 3X-UI не выключен - выключи в её настройках" >&2
+xui_sub_off || echo "ВНИМАНИЕ: сервер подписок 3X-UI не выключен, выключите его в настройках 3X-UI" >&2
 systemctl start x-ui
 xui_panel_ufw_close "$XUI_PANEL_PORT"
 xui_panel_ufw_close 2096
@@ -78,16 +78,15 @@ systemctl is-active x-ui
 /usr/local/x-ui/x-ui setting -show 2>/dev/null | grep -Ei 'port|webBasePath' || true
 say "Готово"
 `,
-  preflight: `if [ -x /usr/local/x-ui/x-ui ]; then echo "FAIL|3X-UI уже установлен: переустановка через этот скрипт перезапишет настройки; удали 3X-UI или используй обновление из меню x-ui"; else echo "OK|3X-UI не установлен"; fi
-if ss -ltn | awk '{print $4}' | grep -q ":$XUI_PANEL_PORT$"; then echo "FAIL|порт $XUI_PANEL_PORT уже занят"; else echo "OK|порт $XUI_PANEL_PORT свободен"; fi
-if command -v python3 >/dev/null 2>&1; then echo "OK|python3 есть (выключить сервер подписок 3X-UI)"; else echo "WARN|python3 нет - будет поставлен"; fi`,
+  preflight: `if [ -x /usr/local/x-ui/x-ui ]; then echo "FAIL|3X-UI уже установлен: удалите его или обновите из меню x-ui"; else echo "OK|3X-UI не установлен"; fi
+if ss -ltn | awk '{print $4}' | grep -q ":$XUI_PANEL_PORT$"; then echo "FAIL|порт $XUI_PANEL_PORT занят"; else echo "OK|порт $XUI_PANEL_PORT свободен"; fi
+if command -v python3 >/dev/null 2>&1; then echo "OK|python3 установлен"; else echo "WARN|python3 не установлен, будет установлен"; fi`,
   plan: (a) => [
-    'Скачать официальный install.sh 3X-UI и запустить в неинтерактивном режиме',
+    'Установить 3X-UI официальным установщиком',
     `Логин ${a.XUI_USERNAME}, порт ${a.XUI_PANEL_PORT}, путь ${a.XUI_WEB_BASE_PATH}`,
-    'Панель - только на 127.0.0.1 без HTTPS: вход через VPS Panel (поддомен), снаружи панели нет',
-    'Свой сервер подписок 3X-UI выключить: подписку клиентам отдаёт VPS Panel',
-    'fail2ban для панели не ставить установщиком (jail xui-panel настраивает панель через "Исправить проблемы")',
-    'port-sync откроет порты inbound-ов автоматически (порт панели - нет: она на 127.0.0.1)',
+    'Закрыть панель снаружи: вход только через VPS Panel',
+    'Выключить сервер подписок 3X-UI',
+    'Открывать порты inbound автоматически',
   ],
   access: ({ server, answers, panelUrl }) => ({
     kind: 'xui',
@@ -101,6 +100,5 @@ if command -v python3 >/dev/null 2>&1; then echo "OK|python3 есть (выкл�
   }),
   // новая база 3X-UI: прежний API-токен панели не подходит, он выпустится заново при первом обращении
   forgetsAccess: ['xui-api'],
-  after:
-    'Кнопка "Открыть панель" появится в карточке сервера после следующего снимка (до 5 минут) или по кнопке обновления: вход через VPS Panel, затем логин и пароль 3X-UI из формы.',
+  after: 'Кнопка \u00abОткрыть\u00bb у 3X-UI на странице сервера появится в течение 5\u00a0минут.',
 };

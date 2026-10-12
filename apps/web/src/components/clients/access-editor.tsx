@@ -67,7 +67,7 @@ export function AccessEditor({
           <div className="text-xs text-muted">
             {value === null
               ? 'новые серверы и сервисы тоже попадут к клиенту'
-              : 'только выбранное ниже; новые серверы и сервисы сами не добавятся'}
+              : 'новые серверы и сервисы не добавятся'}
           </div>
         </div>
         <Switch
@@ -81,9 +81,7 @@ export function AccessEditor({
         />
       </div>
       {value !== null && list.length === 0 && (
-        <div className="text-[13px] text-muted">
-          Нет серверов, на которых заводятся глобальные клиенты.
-        </div>
+        <div className="text-[13px] text-muted">Нет серверов для клиентов</div>
       )}
       {value !== null &&
         list.map((s) => {
@@ -131,7 +129,7 @@ export function AccessEditor({
                 <div className="text-xs text-muted">
                   {`Нет на сервере: ${missing.map((x) => x.title).join(', ')}`}
                   {missing.some((x) => on.includes(x.id)) &&
-                    ' - выбранные заведутся после установки'}
+                    '; выбранные добавятся после установки'}
                 </div>
               )}
             </div>
