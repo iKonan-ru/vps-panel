@@ -1,0 +1,76 @@
+# VPS Panel из релиза: готовые образы ghcr.io, версия - PANEL_VERSION в .env (её меняет
+# "vps-panel update"). Файл заменяется при каждом обновлении - свои правки держите в
+# compose.override.yml рядом (docker compose подхватит его сам).
+name: vps-panel
+
+x-logging: &logging
+  driver: json-file
+  options:
+    max-size: 10m
+    max-file: "3"
+
+services:
+  panel:
+    image: ghcr.io/ikonan-ru/vps-panel:${PANEL_VERSION:?PANEL_VERSION не задан в .env}
+    restart: unless-stopped
+    environment:
+      NODE_ENV: production
+      PANEL_HOST: 0.0.0.0
+      PANEL_PORT: "3000"
+      PANEL_PUBLIC_URL: https://${PANEL_DOMAIN}
+      SUB_DOMAIN: ${SUB_DOMAIN:-}
+      SESSION_SECRET: ${SESSION_SECRET}
+      DATA_DIR: /data
+      WEB_DIST: /app/web
+      LOG_LEVEL: ${LOG_LEVEL:-info}
+      TG_PROXY_URL: ${TG_PROXY_URL:-}
+    volumes:
+      - ./data:/data
+    expose:
+      - "3000"
+    cap_drop: [ALL]
+    security_opt: ["no-new-privileges:true"]
+    read_only: true
+    tmpfs:
+      - /tmp:size=64m,mode=1777
+    mem_limit: 320m
+    logging: *logging
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:3000/api/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+
+  caddy:
+    image: ghcr.io/ikonan-ru/vps-panel-caddy:${PANEL_VERSION}
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+      - "443:443/udp"
+    environment:
+      PANEL_DOMAIN: ${PANEL_DOMAIN}
+      SUB_DOMAIN: ${SUB_DOMAIN:-sub.localhost}
+      ACME_EMAIL: ${ACME_EMAIL}
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    depends_on:
+      - panel
+    cap_drop: [ALL]
+    cap_add: [NET_BIND_SERVICE]
+    security_opt: ["no-new-privileges:true"]
+    read_only: true
+    tmpfs:
+      - /tmp:size=16m
+    mem_limit: 128m
+    logging: *logging
+
+# Имена томов - из .env: при переезде со сборки из исходников остаются прежние (deploy_*),
+# и сертификаты Caddy не выпускаются заново.
+volumes:
+  caddy_data:
+    name: ${CADDY_DATA_VOLUME:-vps-panel_caddy_data}
+  caddy_config:
+    name: ${CADDY_CONFIG_VOLUME:-vps-panel_caddy_config}

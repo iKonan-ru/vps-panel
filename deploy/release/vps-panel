@@ -1,0 +1,460 @@
+#!/bin/bash
+# vps-panel - установка, обновление и обслуживание VPS Panel из релизов GitHub.
+#
+#   vps-panel install [-y] [--beta] [--version X.Y.Z]   установка (вопросы: домен, подписки, почта)
+#   vps-panel update [X.Y.Z] [--beta] [--force]          обновление до версии или до последней
+#   vps-panel rollback                                   вернуть прошлую версию
+#   vps-panel status | version | logs [panel|caddy] | restart
+#   vps-panel channel [stable|beta]                      канал для "update" без версии
+#   vps-panel uninstall [--purge]                        снять (данные - только с --purge)
+#   vps-panel serve-request                              запрос обновления из панели (служба)
+#
+# Каталог - /opt/vps-panel (VPS_PANEL_ROOT): compose.yml, Caddyfile, .env, data. Образы -
+# ghcr.io/ikonan-ru/vps-panel и vps-panel-caddy, файлы релиза - с GitHub. Ход обновления
+# пишется в data/deploy.json: его показывает панель полосой сверху.
+set -euo pipefail
+
+REPO="iKonan-ru/vps-panel"
+ROOT="${VPS_PANEL_ROOT:-/opt/vps-panel}"
+ENV_FILE="$ROOT/.env"
+DATA="$ROOT/data"
+STATUS="$DATA/deploy.json"
+REQUEST="$DATA/update/request.json"
+CLI_PATH=/usr/local/bin/vps-panel
+SEMVER='^[0-9]+\.[0-9]+\.[0-9]+(-beta\.[0-9]+)?$'
+YES=0
+
+say() { printf '\n== %s\n' "$*"; }
+warn() { printf '!! %s\n' "$*" >&2; }
+die() {
+  printf 'ОШИБКА: %s\n' "$*" >&2
+  exit 1
+}
+need_root() { [ "$(id -u)" = 0 ] || die "запускать от root (sudo vps-panel ...)"; }
+ask() { # ask <вопрос> <по умолчанию> - ответ в $REPLY
+  if [ "$YES" = 1 ]; then REPLY="$2"; return; fi
+  read -r -p "$1${2:+ [$2]}: " REPLY </dev/tty 2>/dev/null ||
+    die "нет терминала для вопросов: задайте PANEL_DOMAIN, ACME_EMAIL, SUB_DOMAIN и запустите с -y"
+  [ -n "$REPLY" ] || REPLY="$2"
+}
+confirm() {
+  [ "$YES" = 1 ] && return 0
+  local a
+  read -r -p "$1 [y/N]: " a </dev/tty 2>/dev/null || die "нет терминала для вопроса: запустите с -y"
+  case "$a" in [yYдД]*) return 0 ;; *) return 1 ;; esac
+}
+env_get() { [ -f "$ENV_FILE" ] && sed -n "s/^$1=//p" "$ENV_FILE" | tail -1 || true; }
+env_set() { # env_set <ключ> <значение>
+  if grep -q "^$1=" "$ENV_FILE"; then
+    python3 - "$ENV_FILE" "$1" "$2" <<'PY'
+import sys
+p, k, v = sys.argv[1:4]
+lines = open(p, encoding="utf-8").read().splitlines(True)
+open(p, "w", encoding="utf-8").write("".join(f"{k}={v}\n" if l.split("=", 1)[0] == k else l for l in lines))
+PY
+  else
+    printf '%s=%s\n' "$1" "$2" >>"$ENV_FILE"
+  fi
+}
+resolve4() { { getent ahostsv4 "$1" 2>/dev/null || true; } | awk '{print $1}' | sort -u | tr '\n' ' '; }
+compose() { docker compose --project-directory "$ROOT" -f "$ROOT/compose.yml" --env-file "$ENV_FILE" "$@"; }
+
+# Последняя версия канала: stable - только релизы, beta - и пре-релизы. Наибольшая по semver.
+latest_version() { # latest_version <stable|beta>
+  curl -fsSL -m 30 -H 'Accept: application/vnd.github+json' "https://api.github.com/repos/$REPO/releases?per_page=50" |
+    python3 -c '
+import json, re, sys
+beta = sys.argv[1] == "beta"
+def key(v):
+    m = re.match(r"^(\d+)\.(\d+)\.(\d+)(?:-beta\.(\d+))?$", v)
+    return (int(m[1]), int(m[2]), int(m[3]), 1 if m[4] is None else 0, int(m[4] or 0))
+best = None
+for r in json.load(sys.stdin):
+    v = r.get("tag_name", "").lstrip("v")
+    if r.get("draft") or not re.match(r"^\d+\.\d+\.\d+(-beta\.\d+)?$", v):
+        continue
+    if (r.get("prerelease") or "-" in v) and not beta:
+        continue
+    if best is None or key(v) > key(best):
+        best = v
+if not best:
+    sys.exit(1)
+print(best)' "$1" || die "не удалось узнать последнюю версию на GitHub (api.github.com)"
+}
+
+# Файлы релиза версии в каталог: compose.yml, Caddyfile, fail2ban, сам vps-panel; сверка с
+# release.sha256 того же релиза.
+fetch_release() { # fetch_release <версия> <каталог>
+  local v="$1" dir="$2" f
+  local base="https://github.com/$REPO/releases/download/v$v"
+  for f in release.sha256 vps-panel compose.yml Caddyfile fail2ban-panel.conf fail2ban-panel.jail; do
+    curl -fsSL -m 60 --retry 3 "$base/$f" -o "$dir/$f" || die "не скачался $f релиза v$v"
+  done
+  (cd "$dir" && sha256sum -c --quiet release.sha256) || die "файлы релиза v$v не сходятся с release.sha256"
+}
+
+# Ход обновления для панели (тот же формат, что у сборки из исходников, deploy/build.py)
+STARTED=0
+status() { # status <state> <шаг> <всего> <название> [running]
+  [ -d "$DATA" ] || return 0
+  python3 - "$STATUS" "$1" "$2" "$3" "$4" "${TARGET:-?}" "${5:-${CURRENT:-}}" "$STARTED" "${TAIL_FILE:-}" <<'PY'
+import json, os, sys, time
+p, state, step, total, name, target, running, started, tail = sys.argv[1:10]
+d = {"state": state, "commit": target, "startedAt": int(started), "updatedAt": int(time.time()),
+     "step": int(step), "total": int(total), "stepName": name, "running": running or None}
+if tail and os.path.exists(tail):
+    d["tail"] = [l for l in open(tail, encoding="utf-8", errors="replace").read().splitlines() if l.strip()][-25:]
+tmp = p + ".tmp"
+with open(tmp, "w") as f:
+    json.dump(d, f, ensure_ascii=False)
+os.chmod(tmp, 0o644)
+os.replace(tmp, p)
+PY
+}
+
+wait_health() { # wait_health <версия> <секунд>: /api/health отвечает этой версией
+  local v="$1" n=$(($2 / 5)) dom
+  dom="$(env_get PANEL_DOMAIN)"
+  for _ in $(seq 1 "$n"); do
+    if curl -fsS -m 8 --resolve "$dom:443:127.0.0.1" "https://$dom/api/health" 2>/dev/null | grep -q "\"version\":\"$v\""; then
+      return 0
+    fi
+    sleep 5
+  done
+  return 1
+}
+
+install_units() {
+  cat >/etc/systemd/system/vps-panel-update.service <<UNIT
+[Unit]
+Description=VPS Panel: обновление по запросу из панели
+After=docker.service
+
+[Service]
+Type=oneshot
+ExecStart=$CLI_PATH serve-request
+UNIT
+  cat >/etc/systemd/system/vps-panel-update.path <<UNIT
+[Unit]
+Description=VPS Panel: запрос обновления из панели
+
+[Path]
+PathExists=$REQUEST
+Unit=vps-panel-update.service
+
+[Install]
+WantedBy=multi-user.target
+UNIT
+  systemctl daemon-reload
+  systemctl enable --now vps-panel-update.path >/dev/null 2>&1
+}
+
+install_fail2ban() {
+  local vol log
+  vol="$(env_get CADDY_DATA_VOLUME)"
+  vol="${vol:-vps-panel_caddy_data}"
+  log="$(docker volume inspect -f '{{.Mountpoint}}' "$vol" 2>/dev/null || true)/access.log"
+  dpkg -s fail2ban >/dev/null 2>&1 || {
+    command -v apt-get >/dev/null || { warn "fail2ban не установлен - защита входа в панель от перебора выключена"; return 0; }
+    DEBIAN_FRONTEND=noninteractive apt-get install -y -qq fail2ban iptables >/dev/null
+  }
+  cp "$ROOT/fail2ban-panel.conf" /etc/fail2ban/filter.d/vps-panel.conf
+  sed "s|__CADDY_LOG__|$log|" "$ROOT/fail2ban-panel.jail" >/etc/fail2ban/jail.d/vps-panel.conf
+  if [ -f "$log" ]; then
+    systemctl restart fail2ban && echo "fail2ban: jail vps-panel включён" || warn "fail2ban не перезапустился: journalctl -u fail2ban"
+  else
+    warn "лога Caddy ($log) ещё нет: после первого входа в панель - systemctl restart fail2ban"
+  fi
+}
+
+# ---------------------------------------------------------------- install
+cmd_install() {
+  need_root
+  local VERSION="" CHANNEL=stable
+  while [ $# -gt 0 ]; do
+    case "$1" in
+      -y) YES=1 ;;
+      --beta) CHANNEL=beta ;;
+      --version) VERSION="${2:-}"; shift ;;
+      *) die "install: неизвестный ключ $1" ;;
+    esac
+    shift
+  done
+  [ -f "$ENV_FILE" ] && die "панель уже установлена в $ROOT: обновление - vps-panel update"
+  [ -f "$DATA/panel.db" ] && die "в $DATA уже есть база панели, а $ENV_FILE нет: верните прежний .env (или panel.env из бэкапа панели) - новый SESSION_SECRET сделает зашифрованные в базе доступы нечитаемыми"
+  command -v apt-get >/dev/null || warn "не Debian/Ubuntu: недостающие пакеты ставить руками"
+  local miss=() p
+  for p in curl python3 openssl ca-certificates iproute2; do dpkg -s "$p" >/dev/null 2>&1 || miss+=("$p"); done
+  if [ "${#miss[@]}" -gt 0 ]; then
+    say "ставлю пакеты: ${miss[*]}"
+    DEBIAN_FRONTEND=noninteractive apt-get update -qq
+    DEBIAN_FRONTEND=noninteractive apt-get install -y -qq "${miss[@]}" >/dev/null
+  fi
+  [ -n "$VERSION" ] || VERSION="$(latest_version "$CHANNEL")"
+  echo "$VERSION" | grep -qE "$SEMVER" || die "версия $VERSION: нужна вида X.Y.Z или X.Y.Z-beta.N"
+  say "установка VPS Panel $VERSION в $ROOT"
+
+  local DOMAIN="${PANEL_DOMAIN:-}" SUB EMAIL
+  while :; do
+    ask "Домен панели (A-запись на этот сервер)" "$DOMAIN"
+    DOMAIN="$(echo "$REPLY" | tr 'A-Z' 'a-z')"
+    echo "$DOMAIN" | grep -qE '^([a-z0-9]([a-z0-9-]*[a-z0-9])?\.)+[a-z0-9-]{2,}$' && break
+    [ "$YES" = 1 ] && die "PANEL_DOMAIN не задан или неверный: '$DOMAIN'"
+    warn "нужен домен вида panel.example.com (IDN - в punycode, xn--...)"
+  done
+  SUB="${SUB_DOMAIN-sub.$DOMAIN}"
+  ask "Имя для подписок и личных страниц клиентов (своя A-запись; - = на домене панели)" "${SUB:--}"
+  SUB="$(echo "$REPLY" | tr 'A-Z' 'a-z')"
+  [ "$SUB" = "-" ] && SUB=""
+  EMAIL="${ACME_EMAIL:-}"
+  while :; do
+    ask "Почта для Let's Encrypt (письма об истечении сертификатов)" "$EMAIL"
+    EMAIL="$REPLY"
+    echo "$EMAIL" | grep -qE '^[^@ ]+@[^@ ]+\.[^@ ]+$' && break
+    [ "$YES" = 1 ] && die "ACME_EMAIL не задан или неверный"
+    warn "нужен адрес почты"
+  done
+
+  say "проверка DNS"
+  local IP got name dns_bad=0
+  IP="$(curl -4 -fsS -m 10 https://api.ipify.org 2>/dev/null || curl -4 -fsS -m 10 https://ifconfig.me 2>/dev/null || true)"
+  [ -n "$IP" ] && echo "внешний адрес сервера: $IP" || warn "внешний адрес сервера определить не удалось"
+  for name in "$DOMAIN" ${SUB:+"$SUB"}; do
+    got="$(resolve4 "$name")"
+    if [ -z "$got" ]; then
+      warn "$name: A-записи нет"
+      dns_bad=1
+    elif [ -n "$IP" ] && ! echo " $got" | grep -q " $IP "; then
+      warn "$name указывает на $got, а не на $IP"
+      dns_bad=1
+    else
+      echo "$name -> $got ок"
+    fi
+  done
+  if [ -n "$(resolve4 "vpsp-check-$RANDOM.$DOMAIN")" ]; then
+    echo "*.$DOMAIN есть: панели сервисов через поддомены будут работать"
+  else
+    warn "*.$DOMAIN в DNS нет: панели сервисов (3X-UI, MTProxyL) через поддомены не откроются, пока не заведена wildcard-запись на этот сервер"
+  fi
+  if [ "$dns_bad" = 1 ]; then
+    warn "Caddy не получит сертификат, пока имена не указывают на этот сервер"
+    confirm "Продолжить всё равно?" || exit 1
+  fi
+
+  say "проверка портов 80 и 443"
+  local busy
+  busy="$(ss -ltnupH 2>/dev/null | awk '$5 ~ /:(80|443)$/' || true)"
+  if [ -n "$busy" ]; then
+    echo "$busy"
+    die "порты 80 или 443 заняты: их должен слушать Caddy панели"
+  fi
+  echo "свободны"
+
+  if ! command -v docker >/dev/null; then
+    say "docker не установлен"
+    confirm "Поставить docker официальным скриптом get.docker.com?" || die "нужен docker с compose plugin"
+    curl -fsSL https://get.docker.com | sh
+  fi
+  docker compose version >/dev/null 2>&1 || die "нет docker compose plugin (пакет docker-compose-plugin)"
+
+  say "файлы релиза $VERSION"
+  mkdir -p "$ROOT" "$DATA/update"
+  local tmp
+  tmp="$(mktemp -d)"
+  trap 'rm -rf "$tmp"' EXIT
+  fetch_release "$VERSION" "$tmp"
+  install -m 644 "$tmp/compose.yml" "$tmp/Caddyfile" "$tmp/fail2ban-panel.conf" "$tmp/fail2ban-panel.jail" "$ROOT/"
+  install -m 755 "$tmp/vps-panel" "$CLI_PATH"
+  umask 077
+  cat >"$ENV_FILE" <<ENV
+# VPS Panel: настройки установки. SESSION_SECRET - ключ шифрования данных в базе: храните
+# копию этого файла (или бэкап панели) отдельно от сервера.
+PANEL_DOMAIN=$DOMAIN
+SUB_DOMAIN=$SUB
+ACME_EMAIL=$EMAIL
+SESSION_SECRET=$(openssl rand -base64 48 | tr -d '\n')
+LOG_LEVEL=info
+# внешний HTTP-прокси для api.telegram.org вместо встроенного xray; пусто - без него
+TG_PROXY_URL=
+# версия меняет "vps-panel update"; канал - для обновления без версии (stable или beta)
+PANEL_VERSION=$VERSION
+PANEL_CHANNEL=$CHANNEL
+ENV
+  umask 022
+  chmod 600 "$ENV_FILE"
+  chown -R 1000:1000 "$DATA"
+  chmod 700 "$DATA"
+
+  say "образы и запуск (первый раз - минута-две)"
+  compose pull || die "образы не скачались с ghcr.io: проверьте доступ к ghcr.io и pkg-containers.githubusercontent.com"
+  compose up -d
+  say "жду ответа https://$DOMAIN/api/health"
+  if wait_health "$VERSION" 300; then echo "панель отвечает"; else warn "за 5 минут панель не ответила: vps-panel logs"; fi
+
+  if command -v ufw >/dev/null && ufw status 2>/dev/null | grep -q '^Status: active'; then
+    say "ufw: разрешаю 80/tcp, 443/tcp, 443/udp"
+    ufw allow 80/tcp >/dev/null
+    ufw allow 443/tcp >/dev/null
+    ufw allow 443/udp >/dev/null
+  fi
+  say "fail2ban для входа в панель"
+  install_fail2ban
+  install_units
+
+  say "готово"
+  cat <<MSG
+Панель: https://$DOMAIN
+${SUB:+Подписки и личные страницы: https://$SUB
+}Сразу откройте панель и пройдите мастер первой настройки (администратор, пароль, 2FA):
+до этого он открыт любому, кто первым зайдёт на адрес.
+Затем - "Серверы" -> "Добавить сервер". Бэкап панели (Настройки) - включить сразу.
+Обновления приходят в саму панель (Настройки -> Версия панели); из консоли - vps-panel update.
+MSG
+}
+
+# ---------------------------------------------------------------- update
+CURRENT=""
+TARGET=""
+cmd_update() {
+  need_root
+  local force=0 channel
+  channel="$(env_get PANEL_CHANNEL)"
+  while [ $# -gt 0 ]; do
+    case "$1" in
+      --force) force=1 ;;
+      --beta) channel=beta ;;
+      -y) YES=1 ;;
+      *) TARGET="$1" ;;
+    esac
+    shift
+  done
+  [ -f "$ENV_FILE" ] || die "панель не установлена в $ROOT (vps-panel install)"
+  exec 9>/run/vps-panel-update.lock
+  flock -n 9 || die "обновление уже идёт"
+  CURRENT="$(env_get PANEL_VERSION)"
+  [ -n "$TARGET" ] || TARGET="$(latest_version "${channel:-stable}")"
+  echo "$TARGET" | grep -qE "$SEMVER" || die "версия $TARGET: нужна вида X.Y.Z или X.Y.Z-beta.N"
+  if [ "$TARGET" = "$CURRENT" ] && [ "$force" = 0 ]; then
+    echo "уже $CURRENT"
+    return 0
+  fi
+  STARTED="$(date +%s)"
+  TAIL_FILE="$(mktemp)"
+  local tmp prev
+  tmp="$(mktemp -d)"
+  prev="$ROOT/.prev"
+  trap 'rm -rf "$tmp" "$TAIL_FILE"' EXIT
+  say "обновление $CURRENT -> $TARGET"
+  status building 1 4 "файлы релиза"
+  ( fetch_release "$TARGET" "$tmp" ) >>"$TAIL_FILE" 2>&1 || { status failed 1 4 "файлы релиза"; cat "$TAIL_FILE" >&2; exit 1; }
+
+  # прежние файлы - для отката
+  rm -rf "$prev"
+  mkdir -p "$prev"
+  cp -p "$ROOT/compose.yml" "$ROOT/Caddyfile" "$ENV_FILE" "$prev/"
+  restore() {
+    cp -p "$prev/compose.yml" "$prev/Caddyfile" "$ROOT/"
+    cp -p "$prev/.env" "$ENV_FILE"
+    compose up -d >>"$TAIL_FILE" 2>&1 || true
+  }
+  install -m 644 "$tmp/compose.yml" "$tmp/Caddyfile" "$tmp/fail2ban-panel.conf" "$tmp/fail2ban-panel.jail" "$ROOT/"
+  env_set PANEL_VERSION "$TARGET"
+  env_set PANEL_PREV_VERSION "$CURRENT"
+
+  status building 2 4 "загрузка образов"
+  if ! compose pull >>"$TAIL_FILE" 2>&1; then
+    restore
+    status failed 2 4 "загрузка образов"
+    die "образы $TARGET не скачались - осталась $CURRENT"
+  fi
+  if ! compose run --rm --no-deps -T --entrypoint caddy caddy validate --config /etc/caddy/Caddyfile --adapter caddyfile >>"$TAIL_FILE" 2>&1; then
+    restore
+    status failed 2 4 "проверка Caddyfile"
+    die "Caddyfile релиза $TARGET не прошёл проверку - осталась $CURRENT"
+  fi
+
+  status building 3 4 "перезапуск"
+  # статус пишется до перезапуска: прежняя панель успевает показать полосу
+  compose up -d --remove-orphans >>"$TAIL_FILE" 2>&1 || true
+  status building 4 4 "проверка новой версии"
+  if ! wait_health "$TARGET" 180; then
+    restore
+    status failed 4 4 "проверка новой версии" "$CURRENT"
+    die "$TARGET не ответила за 3 минуты - вернул $CURRENT (vps-panel logs)"
+  fi
+  install -m 755 "$tmp/vps-panel" "$CLI_PATH"
+  status done 4 4 "готово" "$TARGET"
+  # старые образы - в мусор (остаётся текущий и прошлый для отката)
+  docker image prune -f >/dev/null 2>&1 || true
+  echo "обновлено: $TARGET"
+}
+
+cmd_rollback() {
+  local p
+  p="$(env_get PANEL_PREV_VERSION)"
+  [ -n "$p" ] || die "прошлой версии нет"
+  cmd_update "$p" --force
+}
+
+# Запрос из панели: data/update/request.json {"version": "X.Y.Z"} - пишет панель (uid 1000),
+# здесь только версия вида semver; всё остальное в файле не читается.
+cmd_serve_request() {
+  need_root
+  local v
+  [ -f "$REQUEST" ] || return 0
+  v="$(python3 -c 'import json,sys; print(str(json.load(open(sys.argv[1])).get("version","")))' "$REQUEST" 2>/dev/null || true)"
+  rm -f "$REQUEST"
+  echo "$v" | grep -qE "$SEMVER" || { warn "запрос обновления без верной версии: '$v'"; exit 1; }
+  cmd_update "$v"
+}
+
+cmd_status() {
+  [ -f "$ENV_FILE" ] || die "панель не установлена в $ROOT"
+  echo "версия: $(env_get PANEL_VERSION), канал: $(env_get PANEL_CHANNEL)"
+  compose ps
+}
+
+cmd_channel() {
+  need_root
+  case "${1:-}" in
+    stable | beta) env_set PANEL_CHANNEL "$1"; echo "канал: $1" ;;
+    "") echo "канал: $(env_get PANEL_CHANNEL)" ;;
+    *) die "канал: stable или beta" ;;
+  esac
+}
+
+cmd_uninstall() {
+  need_root
+  local purge=0
+  [ "${1:-}" = "--purge" ] && purge=1
+  confirm "Остановить и снять VPS Panel?" || exit 1
+  systemctl disable --now vps-panel-update.path >/dev/null 2>&1 || true
+  rm -f /etc/systemd/system/vps-panel-update.path /etc/systemd/system/vps-panel-update.service
+  systemctl daemon-reload
+  compose down || true
+  rm -f /etc/fail2ban/jail.d/vps-panel.conf /etc/fail2ban/filter.d/vps-panel.conf
+  systemctl restart fail2ban >/dev/null 2>&1 || true
+  if [ "$purge" = 1 ]; then
+    confirm "Удалить и данные ($DATA, сертификаты Caddy)? Без бэкапа их не вернуть" || exit 1
+    compose down -v || true
+    rm -rf "$ROOT"
+    rm -f "$CLI_PATH"
+    echo "снято вместе с данными"
+  else
+    echo "снято; данные остались в $ROOT (vps-panel uninstall --purge - удалить и их)"
+  fi
+}
+
+case "${1:-}" in
+  install) shift; cmd_install "$@" ;;
+  update) shift; cmd_update "$@" ;;
+  rollback) cmd_rollback ;;
+  serve-request) cmd_serve_request ;;
+  status) cmd_status ;;
+  version) env_get PANEL_VERSION ;;
+  channel) shift; cmd_channel "$@" ;;
+  logs) shift; compose logs --tail 200 -f "$@" ;;
+  restart) need_root; compose restart ;;
+  uninstall) shift; cmd_uninstall "$@" ;;
+  *) sed -n '2,12p' "$0" | sed 's/^# \{0,1\}//'; exit 1 ;;
+esac

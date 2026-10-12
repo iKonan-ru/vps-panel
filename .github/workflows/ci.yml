@@ -38,9 +38,10 @@ jobs:
         working-directory: apps/agent
     steps:
       - uses: actions/checkout@v4
+      # последний стабильный Go: им собираются и установки (сборка Caddy naive требует новый)
       - uses: actions/setup-go@v5
         with:
-          go-version-file: apps/agent/go.mod
+          go-version: stable
           cache-dependency-path: apps/agent/go.sum
       - name: gofmt
         run: test -z "$(gofmt -l .)" || { gofmt -l .; exit 1; }
