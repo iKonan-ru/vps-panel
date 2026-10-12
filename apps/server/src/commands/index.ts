@@ -1,4 +1,5 @@
 import { awgCmd } from './catalog-awg.js';
+import { mtproxylHostCmd } from './catalog-mtproxyl-host.js';
 import { mtproxylCmd } from './catalog-mtproxyl.js';
 import { naiveCmd, naiveUninstallCmd } from './catalog-naive.js';
 import { openfluxCmd, openfluxUninstallCmd } from './catalog-openflux.js';
@@ -28,6 +29,7 @@ export const CATALOG: CommandDef[] = [
   openfluxUninstallCmd,
   naiveUninstallCmd,
   panelsLocalCmd,
+  mtproxylHostCmd,
   legacyCertsCmd,
 ];
 

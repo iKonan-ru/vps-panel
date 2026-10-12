@@ -48,6 +48,7 @@ import { deployRoutes } from './routes/deploy.js';
 import { dockerRoutes } from './routes/docker.js';
 import { gclientRoutes } from './routes/gclients.js';
 import { installRoutes } from './routes/install.js';
+import { ipChangeRoutes } from './routes/ip-change.js';
 import { journalRoutes } from './routes/journal.js';
 import { mtproxylRoutes } from './routes/mtproxyl.js';
 import { notifyRoutes } from './routes/notify.js';
@@ -282,6 +283,15 @@ export async function buildApp(opts: AppOptions) {
   stops.push(startMetricsPace(registry, hub, app.log));
   await app.register(gclientRoutes, { db, registry, box, gc, env, hub });
   await app.register(clientHostRoutes, { db, gc, hub, panelUrl: env.PANEL_PUBLIC_URL });
+  await app.register(ipChangeRoutes, {
+    db,
+    registry,
+    hub,
+    gc,
+    xray,
+    reach: ruReach,
+    journal: actionJournal(db, hub, registry),
+  });
   await app.register(wdttRoutes, { db, registry, hub, gc });
   await app.register(subscriptionRoutes, { db, env });
   // бэкап самой панели: раз в сутки в Telegram, по кнопке - сразу или скачиванием

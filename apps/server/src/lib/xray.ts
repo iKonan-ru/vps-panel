@@ -186,6 +186,23 @@ export class XrayManager {
     return changed;
   }
 
+  /** Сервер сменил IP: выходы через него - на новый адрес, xray перезапускается. */
+  async retarget(serverId: string, address: string): Promise<boolean> {
+    let changed = false;
+    if (this.outbound?.serverId === serverId && this.outbound.address !== address) {
+      this.outbound = { ...this.outbound, address };
+      putSetting(this.db, SETTING_KEY, JSON.stringify(this.outbound));
+      changed = true;
+    }
+    if (this.spares.some((x) => x.serverId === serverId && x.address !== address)) {
+      this.spares = this.spares.map((x) => (x.serverId === serverId ? { ...x, address } : x));
+      putSetting(this.db, SPARES_KEY, JSON.stringify(this.spares));
+      changed = true;
+    }
+    if (changed) await this.start();
+    return changed;
+  }
+
   private view(x: XrayOutbound, primary: boolean): XrayExitView {
     const { uuid, publicKey: _, shortId: __, ...rest } = x;
     return {

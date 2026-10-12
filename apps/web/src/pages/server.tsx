@@ -8,6 +8,7 @@ import { CertsTab } from '@/components/server/certs/certs-tab';
 import { DockerTab } from '@/components/server/docker-tab';
 import { FirewallTab } from '@/components/server/firewall-tab';
 import { InstallAgent } from '@/components/server/install-agent';
+import { IpChangeDialog } from '@/components/server/ip-change-dialog';
 import { LogTab } from '@/components/server/log-tab';
 import { MtproxylTab } from '@/components/server/mtproxyl/mtproxyl-tab';
 import { OpenfluxTab } from '@/components/server/openflux-tab';
@@ -34,7 +35,17 @@ import { serverLock, useServer } from '@/lib/servers';
 import { useCopy } from '@/lib/use-copy';
 import { useQueryClient } from '@tanstack/react-query';
 import { useNavigate, useParams } from '@tanstack/react-router';
-import { Check, Copy, Pencil, Power, RefreshCw, Trash2, Wrench, X } from 'lucide-react';
+import {
+  ArrowLeftRight,
+  Check,
+  Copy,
+  Pencil,
+  Power,
+  RefreshCw,
+  Trash2,
+  Wrench,
+  X,
+} from 'lucide-react';
 import { type FormEvent, Suspense, lazy, useState } from 'react';
 
 // терминал (xterm, около 300 КБ) - отдельным куском, по открытию вкладки
@@ -95,6 +106,7 @@ export function ServerPage() {
   const setTab = (t: Tab) =>
     void navigate({ to: '/servers/$id/$tab', params: { id, tab: t }, replace: false });
   const [reboot, setReboot] = useState(false);
+  const [ipChange, setIpChange] = useState(false);
   const [rename, setRename] = useState(false);
   const [reinstall, setReinstall] = useState(false);
   const [remove, setRemove] = useState(false);
@@ -205,6 +217,13 @@ export function ServerPage() {
               onClick: () => setReinstall(true),
             },
             {
+              key: 'ip',
+              label: 'Сменить IP-адрес',
+              icon: <ArrowLeftRight className="size-4" />,
+              title: 'Хостер выдал новый адрес: проверка DNS и агента, затем переключение',
+              onClick: () => setIpChange(true),
+            },
+            {
               key: 'reboot',
               label: 'Перезагрузить сервер',
               icon: <Power className="size-4" />,
@@ -296,6 +315,12 @@ export function ServerPage() {
       </div>
 
       <RebootDialog serverId={s.id} name={s.name} open={reboot} onClose={() => setReboot(false)} />
+      <IpChangeDialog
+        serverId={s.id}
+        host={s.host}
+        open={ipChange}
+        onClose={() => setIpChange(false)}
+      />
       <RenameDialog serverId={s.id} name={s.name} open={rename} onClose={() => setRename(false)} />
       <ReinstallDialog
         serverId={s.id}

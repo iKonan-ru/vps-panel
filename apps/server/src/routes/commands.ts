@@ -14,12 +14,14 @@ import {
 import { type RunContext, toInfo } from '../commands/types.js';
 import type { Env } from '../config.js';
 import type { Db } from '../db/index.js';
-import { access, actionLog, commandDefaults, servers } from '../db/schema.js';
+import { access, actionLog, commandDefaults, gclientBindings, servers } from '../db/schema.js';
 import { upsertAccess } from '../lib/access.js';
 import { actionJournal } from '../lib/action-journal.js';
 import { latestAgentVersion } from '../lib/agent-dist.js';
 import { awgLiveDefaults } from '../lib/awg-alloc.js';
+import { clientHost } from '../lib/client-host.js';
 import { downloadRateLimit, fileSha256, sendFile } from '../lib/file-send.js';
+import { queued } from '../lib/gclients.js';
 import { slugify } from '../lib/panel-proxy.js';
 import { redactOutput } from '../lib/redact.js';
 import type { SecretBox } from '../lib/secret-box.js';
@@ -171,6 +173,11 @@ export async function commandRoutes(
           .filter(([k]) => /(TOKEN|SECRET|PASSWORD)$/.test(k))
           .map(([, v]) => v),
       ].filter((v): v is string => Boolean(v));
+      if (exitCode === 0 && c.resync?.length)
+        db.update(gclientBindings)
+          .set(queued())
+          .where(and(eq(gclientBindings.serverId, id), inArray(gclientBindings.service, c.resync)))
+          .run();
       if (exitCode === 0 && c.forgetsAccess?.length)
         db.delete(access)
           .where(and(eq(access.serverId, id), inArray(access.kind, c.forgetsAccess)))
@@ -275,7 +282,7 @@ export async function commandRoutes(
     };
   }
   function baseEnv(
-    row: { host: string; name: string; sshPort: number },
+    row: { host: string; name: string; sshPort: number; clientHost?: string | null },
     answers: Record<string, string>,
     extra: Record<string, string>,
     params: { name: string; type: string }[] = [],
@@ -293,6 +300,8 @@ export async function commandRoutes(
       ...extra,
       PANEL_URL: env.PANEL_PUBLIC_URL,
       SERVER_HOST: row.host,
+      // адрес сервера в конфигах людей (имя из "Адреса для клиентов" или IP)
+      CLIENT_HOST: clientHost(row),
       SERVER_NAME: row.name,
       SERVER_SSH_PORT: String(row.sshPort),
     };
