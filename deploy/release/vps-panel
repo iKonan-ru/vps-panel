@@ -11,6 +11,8 @@
 #   vps-panel update [X.Y.Z] [--beta] [--force]          обновление до версии или до последней
 #   vps-panel rollback                                   вернуть прошлую версию
 #   vps-panel status | version | logs [panel|caddy] | restart
+#   vps-panel fail2ban                                   jail fail2ban входа в панель заново
+#                                                        (обновление делает это само)
 #   vps-panel channel [stable|beta]                      канал для "update" без версии
 #   vps-panel uninstall [--purge | --full] [-y]           снять панель (данные - с --purge);
 #                                                        --full - всё, что ставила панель,
@@ -196,7 +198,7 @@ install_fail2ban() {
       { warn "fail2ban не поставился - защита входа в панель от перебора выключена"; return 0; }
   }
   cp "$ROOT/fail2ban-panel.conf" /etc/fail2ban/filter.d/vps-panel.conf
-  sed "s|__CADDY_LOG__|$log|" "$ROOT/fail2ban-panel.jail" >/etc/fail2ban/jail.d/vps-panel.conf
+  sed -e "s|__CADDY_LOG__|$log|" -e "s|__DATA__|$DATA|" "$ROOT/fail2ban-panel.jail" >/etc/fail2ban/jail.d/vps-panel.conf
   if [ -f "$log" ]; then
     systemctl restart fail2ban && echo "fail2ban: jail vps-panel включён" || warn "fail2ban не перезапустился: journalctl -u fail2ban"
   else
@@ -494,6 +496,10 @@ cmd_update() {
     die "$TARGET не ответила за 3 минуты - вернул $CURRENT (vps-panel logs)"
   fi
   install -m 755 "$tmp/vps-panel" "$CLI_PATH"
+  # jail fail2ban - по правилам нового релиза (его же командой), там, где jail уже стоял
+  if [ -f /etc/fail2ban/jail.d/vps-panel.conf ]; then
+    "$CLI_PATH" fail2ban >>"$TAIL_FILE" 2>&1 || warn "jail fail2ban не обновился: vps-panel fail2ban"
+  fi
   status done 4 4 "готово" "$TARGET"
   # старые образы - в мусор (остаётся текущий и прошлый для отката)
   docker image prune -f >/dev/null 2>&1 || true
@@ -941,7 +947,8 @@ case "${1:-}" in
   channel) shift; cmd_channel "$@" ;;
   logs) shift; compose logs --tail 200 -f "$@" ;;
   restart) need_root; compose restart ;;
+  fail2ban) need_root; install_fail2ban ;;
   uninstall) shift; cmd_uninstall "$@" ;;
-  help | -h | --help) sed -n '2,23p' "$0" | sed 's/^# \{0,1\}//' ;;
-  *) sed -n '2,23p' "$0" | sed 's/^# \{0,1\}//'; exit 1 ;;
+  help | -h | --help) sed -n '2,26p' "$0" | sed 's/^# \{0,1\}//' ;;
+  *) sed -n '2,26p' "$0" | sed 's/^# \{0,1\}//'; exit 1 ;;
 esac

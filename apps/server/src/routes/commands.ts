@@ -4,6 +4,7 @@ import { and, desc, eq, inArray, like, sql } from 'drizzle-orm';
 import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
 import type { AgentRegistry } from '../agents/registry.js';
+import type { StatusCache } from '../agents/state.js';
 import {
   CATALOG,
   defaultsFor,
@@ -61,6 +62,28 @@ export async function commandRoutes(
     return { NAIVE_DOMAIN: `${slugify(row.name)}.${domain}` };
   }
 
+  /**
+   * Порт MTProxyL: 443 лучше всего для маскировки, но если его (или сохранённый порт) уже слушает
+   * другой процесс (Xray 3X-UI, Caddy сервера панели), форма сразу предлагает свободный - раньше
+   * это ловила только проверка перед запуском. 443 прокси для браузера (caddy на хосте) занятым
+   * не считается: MTProxyL забирает его сам (catalog-mtproxyl.ts).
+   */
+  async function mtproxylLiveDefaults(id: string, want: string): Promise<Record<string, string>> {
+    const row = (
+      await db.select({ cache: servers.statusCache }).from(servers).where(eq(servers.id, id))
+    )[0];
+    const inv = (row?.cache as StatusCache | null)?.inventory;
+    if (!inv || inv.services.some((s) => s.kind === 'mtproxyl')) return {};
+    const naive = inv.services.some((s) => s.kind === 'naive');
+    const busy = (port: number) =>
+      inv.firewall.listeners.some(
+        (l) => l.proto === 'tcp' && l.port === port && !(naive && l.process === 'caddy'),
+      );
+    if (!busy(Number(want))) return {};
+    const free = [443, 993, 8443, 2083, 2087].find((p) => !busy(p));
+    return free ? { MT_PORT: String(free) } : {};
+  }
+
   /** Значения по умолчанию для формы: сохранённые ответы для сервера поверх default/generate. */
   app.get('/api/servers/:id/commands/:cmd/defaults', async (req, reply) => {
     const { id, cmd } = z.object({ id: z.string(), cmd: z.string() }).parse(req.params);
@@ -73,13 +96,16 @@ export async function commandRoutes(
         .where(and(eq(commandDefaults.serverId, id), eq(commandDefaults.commandId, cmd)))
         .limit(1)
     )[0];
+    const base = { ...defaultsFor(c), ...(saved?.answers ?? {}) };
     const live =
       c.liveDefaults === 'awg'
         ? await awgLiveDefaults(db, registry, id)
         : c.liveDefaults === 'naive'
           ? await naiveLiveDefaults(id)
-          : {};
-    return { ...defaultsFor(c), ...(saved?.answers ?? {}), ...live };
+          : c.liveDefaults === 'mtproxyl'
+            ? await mtproxylLiveDefaults(id, base.MT_PORT ?? '443')
+            : {};
+    return { ...base, ...live };
   });
 
   /** План "что будет сделано" по текущим ответам. */
