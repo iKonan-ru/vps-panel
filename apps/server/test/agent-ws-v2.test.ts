@@ -192,6 +192,22 @@ describe('канал агента v2', () => {
     a.ws.close();
   });
 
+  it('обработчик online может сразу писать агенту: welcome уходит первым', async () => {
+    // агент рвёт связь, если запрос панели пришёл до welcome (так панель потеряла все агенты)
+    const onOnline = (id: string) => {
+      if (id === 's1')
+        void built.registry.request('s1', 'inventory.get', {}, { timeoutMs: 500 }).catch(() => {});
+    };
+    built.registry.on('online', onOnline);
+    try {
+      const a = await agent('agent-made-token');
+      expect(a.welcome?.type).toBe('welcome');
+      a.ws.close();
+    } finally {
+      built.registry.off('online', onOnline);
+    }
+  });
+
   it('повторное подключение постоянным токеном', async () => {
     const a = await agent('agent-made-token');
     expect(a.welcome?.proof).toBe(proof(sha256('agent-made-token'), 'panel', a.th));

@@ -139,7 +139,12 @@ export class AgentRegistry extends EventEmitter<RegistryEvents> {
     }, 30_000);
     conn.ws.once('close', () => clearInterval(ping));
     this.updating.delete(conn.serverId);
-    this.emit('online', conn.serverId);
+    // "online" - после welcome: attach вызывают до отправки welcome, а агент рвёт связь, если
+    // запрос панели пришёл раньше него. Обработчики online сразу пишут агенту (частота метрик,
+    // адрес панели), поэтому событие - в следующем обороте цикла, когда welcome уже ушёл.
+    setImmediate(() => {
+      if (this.conns.get(conn.serverId)?.ws === conn.ws) this.emit('online', conn.serverId);
+    });
   }
 
   private detach(conn: AgentConn) {

@@ -366,15 +366,20 @@ export async function buildApp(opts: AppOptions) {
   // Адрес панели сменился (vps-panel domain: у панели появился домен): агент, подключившийся по
   // старому адресу, получает новый и переподключается (старый Caddy тоже обслуживает). Адрес тот
   // же - агент ничего не делает.
+  // Через 5 с после подключения: сначала welcome и первый снимок (запрос до welcome агент
+  // считает нарушением и рвёт связь - так 12.10 отвалились все агенты).
   registry.on('online', (serverId) => {
-    if (!secure || !registry.supports(serverId, 'panel.url')) return;
-    registry
-      .request(serverId, 'panel.url', { url: env.PANEL_PUBLIC_URL }, { timeoutMs: 15_000 })
-      .then((r) => {
-        if ((r as { changed?: boolean }).changed)
-          app.log.info({ serverId, url: env.PANEL_PUBLIC_URL }, 'agent: новый адрес панели');
-      })
-      .catch(() => undefined);
+    if (!secure) return;
+    setTimeout(() => {
+      if (!registry.isOnline(serverId) || !registry.supports(serverId, 'panel.url')) return;
+      registry
+        .request(serverId, 'panel.url', { url: env.PANEL_PUBLIC_URL }, { timeoutMs: 15_000 })
+        .then((r) => {
+          if ((r as { changed?: boolean }).changed)
+            app.log.info({ serverId, url: env.PANEL_PUBLIC_URL }, 'agent: новый адрес панели');
+        })
+        .catch(() => undefined);
+    }, 5_000).unref();
   });
 
   // Собранный фронтенд в проде; в dev его отдаёт Vite с прокси на /api.
