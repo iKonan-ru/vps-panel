@@ -2,8 +2,9 @@
 # Релиз: tools/release.sh <X.Y.Z | X.Y.Z-beta.N> [update]
 #
 # Раздел "## <версия>" в CHANGELOG.md должен быть (его текст - описание релиза на GitHub);
-# пометка "не выпущена" в заголовке меняется на сегодняшнюю дату. Затем tools/check.sh,
-# коммит CHANGELOG, push main, тег v<версия>, push тега - дальше работает
+# пометка "не выпущена" в заголовке меняется на сегодняшнюю дату, версия в README и
+# docs/install.md (пример сводки установки " VPS Panel X установлена") - на новую. Затем
+# tools/check.sh, коммит этих файлов, push main, тег v<версия>, push тега - дальше работает
 # .github/workflows/release.yml (образы ghcr.io и релиз). Скрипт ждёт её и печатает итог.
 # update - после релиза обновить свою панель: ssh на PANEL_HOST и "vps-panel update <версия>".
 # nowait - только тег, без ожидания сборки (за ней смотреть в Actions).
@@ -22,16 +23,23 @@ token="${GITHUB_TOKEN_FILE:?GITHUB_TOKEN_FILE не задан (.ship.env)}"
 
 git rev-parse -q --verify "refs/tags/v$ver" >/dev/null && { echo "тег v$ver уже есть"; exit 1; }
 grep -qE "^## $ver( |$)" CHANGELOG.md || { echo "в CHANGELOG.md нет раздела ## $ver"; exit 1; }
-[ -z "$(git status --porcelain --untracked-files=no -- . ':!CHANGELOG.md')" ] ||
+# файлы с версией в примере сводки установки: при релизе - на новую
+docs_ver="README.md docs/install.md"
+[ -z "$(git status --porcelain --untracked-files=no -- . ':!CHANGELOG.md' ':!README.md' ':!docs/install.md')" ] ||
   { echo "есть незакоммиченные правки - сначала tools/ship.sh"; exit 1; }
 today="$(date +%d.%m.%Y)"
 sed -i -E "s/^## $ver - не выпущена$/## $ver - $today/" CHANGELOG.md
+for f in $docs_ver; do
+  grep -qE '^ VPS Panel [^ ]+ установлена$' "$f" ||
+    { echo "в $f нет строки ' VPS Panel <версия> установлена' (пример сводки)"; exit 1; }
+  sed -i -E "s/^ VPS Panel [^ ]+ установлена$/ VPS Panel $ver установлена/" "$f"
+done
 
 tools/check.sh
 helper="!f() { if [ \"\$1\" = get ]; then echo username=x-access-token; echo \"password=\$(tr -d '[:space:]' <\"$token\")\"; fi; }; f"
 g() { GIT_TERMINAL_PROMPT=0 git -c credential.helper= -c "credential.helper=$helper" "$@"; }
-if [ -n "$(git status --porcelain CHANGELOG.md)" ]; then
-  git add CHANGELOG.md
+if [ -n "$(git status --porcelain CHANGELOG.md $docs_ver)" ]; then
+  git add CHANGELOG.md $docs_ver
   git commit -q -m "Релиз $ver"
 fi
 g push -q origin HEAD
