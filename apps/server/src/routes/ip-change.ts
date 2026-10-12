@@ -152,7 +152,7 @@ export async function ipChangeRoutes(
       [
         `Адрес сервера: ${row.host} -> ${ip}`,
         ...steps.map((s) => `${s.name}: ${s.detail}`),
-        xrayMoved ? 'Выход в Telegram через этот сервер - на новый адрес' : '',
+        xrayMoved ? 'Маршрут до Telegram через этот сервер - на новый адрес' : '',
       ]
         .filter(Boolean)
         .join('\n'),

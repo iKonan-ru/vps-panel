@@ -1,7 +1,7 @@
+import { type NotifyChoice, NotifyDialog, notifySummary } from '@/components/notify-dialog';
 import { type TgHealth, failingFor } from '@/components/telegram-banner';
 import { Alert } from '@/components/ui/alert';
 import { Button } from '@/components/ui/button';
-import { Checkbox } from '@/components/ui/checkbox';
 import { Chip } from '@/components/ui/chip';
 import { useConfirm } from '@/components/ui/confirm';
 import { Field } from '@/components/ui/field';
@@ -11,16 +11,13 @@ import { api } from '@/lib/api';
 import { ago } from '@/lib/format';
 import { useServers } from '@/lib/servers';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { Power, Search, Send } from 'lucide-react';
+import { Power, Search, Send, SlidersHorizontal } from 'lucide-react';
 import { type FormEvent, useState } from 'react';
 
-interface TgSettings {
+interface TgSettings extends NotifyChoice {
   token: string;
   tokenSet: boolean;
   chatId: string;
-  events: { offline: boolean; audit: boolean; bans: boolean; updates: boolean; reach: boolean };
-  banThreshold: number;
-  paymentDays: number;
   lastRoute: { via: string; at: string } | null;
   health: TgHealth;
 }
@@ -34,14 +31,6 @@ function routeTitle(via: string, servers: { id: string; name: string }[] | undef
   return `через агент ${name(via.replace(/^agent:/, ''))}`;
 }
 
-const eventTitles: Record<keyof TgSettings['events'], string> = {
-  offline: 'Сервер пропал (3 минуты без агента) и вернулся',
-  audit: 'Новые и закрытые критичные замечания аудита',
-  bans: 'Рост банов fail2ban (порог ниже)',
-  updates: 'Обновления пакетов и сервисов (3X-UI, Xray, MTProxyL), платежи хостингу',
-  reach: 'Доступность из России: адрес, inbound или MTProxyL не виден и снова виден',
-};
-
 /** Настройки Telegram-уведомлений: бот, чат, какие события, тест. */
 export function TelegramSettings() {
   const ask = useConfirm();
@@ -53,15 +42,12 @@ export function TelegramSettings() {
   });
   const [token, setToken] = useState('');
   const [chatId, setChatId] = useState<string | null>(null);
-  const [events, setEvents] = useState<TgSettings['events'] | null>(null);
-  const [banThreshold, setBanThreshold] = useState<string | null>(null);
-  const [paymentDays, setPaymentDays] = useState<string | null>(null);
+  const [choose, setChoose] = useState(false);
   const [busy, setBusy] = useState(false);
   const [msg, setMsg] = useState<{ tone: 'ok' | 'bad'; text: string } | null>(null);
   const [found, setFound] = useState<{ id: string; title: string; when: string }[] | null>(null);
 
   if (!st) return null;
-  const ev = events ?? st.events;
 
   async function save(e: FormEvent) {
     e.preventDefault();
@@ -73,9 +59,6 @@ export function TelegramSettings() {
         json: {
           token: token.trim() || undefined,
           chatId: (chatId ?? st?.chatId ?? '').trim(),
-          events: ev,
-          banThreshold: Number(banThreshold ?? st?.banThreshold ?? 10),
-          paymentDays: Number(paymentDays ?? st?.paymentDays ?? 3),
         },
       });
       setToken('');
@@ -150,7 +133,7 @@ export function TelegramSettings() {
   return (
     <Section
       title="Уведомления в Telegram"
-      info='Создай бота у @BotFather и вставь его токен. Chat id - это номер чата, куда бот будет писать (твой личный чат с ботом, группа или канал). Открой чат с ботом, нажми Start, затем нажми "Найти chat id" - панель подставит номер сама. Панель шлёт только выбранные события, не чаще раза в час на сервер для банов и раза в сутки для обновлений.'
+      info='Создай бота у @BotFather и вставь его токен. Chat id - это номер чата, куда бот будет писать (твой личный чат с ботом, группа или канал). Открой чат с ботом, нажми Start, затем нажми "Найти chat id" - панель подставит номер сама. Какие события присылать и о каких серверах молчать - в окне "Какие уведомления".'
       extra={
         <>
           {!st.tokenSet ? (
@@ -172,24 +155,11 @@ export function TelegramSettings() {
       }
       actions={
         <>
-          <Button
-            size="sm"
-            disabled={busy || !st.tokenSet}
-            onClick={test}
-            label="Тест"
-            short="Тест"
-          >
+          <Button size="sm" disabled={busy || !st.tokenSet} onClick={test} label="Тест">
             <Send className="size-3.5" />
           </Button>
           {st.tokenSet && (
-            <Button
-              size="sm"
-              variant="ghost"
-              disabled={busy}
-              onClick={clear}
-              label="Отключить"
-              short="Отключить"
-            >
+            <Button size="sm" variant="ghost" disabled={busy} onClick={clear} label="Отключить">
               <Power className="size-3.5" />
             </Button>
           )}
@@ -226,7 +196,6 @@ export function TelegramSettings() {
                 onClick={detect}
                 title="Спросить у Telegram, кто писал боту"
                 label="Найти chat id"
-                short="Найти chat id"
               >
                 <Search className="size-4" />
               </Button>
@@ -252,36 +221,14 @@ export function TelegramSettings() {
             <div className="text-xs text-muted">После выбора нажми "Сохранить", затем "Тест".</div>
           </div>
         )}
-        <div className="flex flex-col gap-2">
-          {(Object.keys(eventTitles) as (keyof TgSettings['events'])[]).map((k) => (
-            <Checkbox
-              key={k}
-              label={eventTitles[k]}
-              checked={ev[k]}
-              onChange={(e) => setEvents({ ...ev, [k]: e.target.checked })}
-            />
-          ))}
-        </div>
-        <div className="grid gap-3 sm:grid-cols-2">
-          <Field label="Порог банов fail2ban в час" htmlFor="tg-bans">
-            <Input
-              id="tg-bans"
-              type="number"
-              min={1}
-              value={banThreshold ?? String(st.banThreshold)}
-              onChange={(e) => setBanThreshold(e.target.value)}
-            />
-          </Field>
-          <Field label="Напоминать о платеже за N дней" htmlFor="tg-pay">
-            <Input
-              id="tg-pay"
-              type="number"
-              min={0}
-              max={60}
-              value={paymentDays ?? String(st.paymentDays)}
-              onChange={(e) => setPaymentDays(e.target.value)}
-            />
-          </Field>
+        <div className="flex flex-wrap items-center gap-x-3 gap-y-1 rounded-lg border border-border px-3 py-2">
+          <div className="min-w-0 grow">
+            <div className="text-[13px]">Какие уведомления</div>
+            <div className="text-xs text-muted">{notifySummary(st)}</div>
+          </div>
+          <Button type="button" size="sm" onClick={() => setChoose(true)} label="Настроить">
+            <SlidersHorizontal className="size-3.5" />
+          </Button>
         </div>
         {msg && <Alert tone={msg.tone}>{msg.text}</Alert>}
         <div className="flex justify-end">
@@ -290,6 +237,7 @@ export function TelegramSettings() {
           </Button>
         </div>
       </form>
+      <NotifyDialog open={choose} onClose={() => setChoose(false)} value={st} />
     </Section>
   );
 }

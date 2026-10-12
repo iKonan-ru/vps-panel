@@ -1,6 +1,10 @@
+import { NOTIFY_EVENTS, NOTIFY_PARAM_LIMITS, type NotifyParams } from '@vps/protocol';
 import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
 import type { Telegram } from '../lib/telegram.js';
+
+const param = (k: keyof NotifyParams) =>
+  z.number().int().min(NOTIFY_PARAM_LIMITS[k][0]).max(NOTIFY_PARAM_LIMITS[k][1]).optional();
 
 /** Настройки Telegram-уведомлений и тестовое сообщение. Токен наружу не отдаём целиком. */
 export async function notifyRoutes(app: FastifyInstance, opts: { telegram: Telegram }) {
@@ -28,22 +32,20 @@ export async function notifyRoutes(app: FastifyInstance, opts: { telegram: Teleg
       .object({
         token: z.string().max(200).optional(),
         chatId: z.string().max(64).optional(),
-        events: z
-          .object({
-            offline: z.boolean(),
-            audit: z.boolean(),
-            bans: z.boolean(),
-            updates: z.boolean(),
-            reach: z.boolean().default(true),
-          })
-          .optional(),
-        banThreshold: z.number().int().min(1).max(10_000).optional(),
-        paymentDays: z.number().int().min(0).max(60).optional(),
+        // события по одному: недостающие берём из сохранённых (частичная запись)
+        events: z.record(z.enum(NOTIFY_EVENTS), z.boolean()).optional(),
+        mutedServers: z.array(z.string().max(64)).max(500).optional(),
+        banThreshold: param('banThreshold'),
+        paymentDays: param('paymentDays'),
+        offlineMinutes: param('offlineMinutes'),
       })
       .parse(req.body ?? {});
     // пустой токен с формы = "не менять"; явное удаление токена - пустая строка через clearToken
     if (body.token === '') body.token = undefined;
-    await telegram.save(body);
+    const events = body.events
+      ? { ...(await telegram.settings()).events, ...body.events }
+      : undefined;
+    await telegram.save({ ...body, events });
     return { ok: true };
   });
 

@@ -31,7 +31,7 @@ interface Security {
   sessions: { id: string; ip: string; userAgent: string; createdAt: string; expiresAt: string }[];
 }
 
-/** Настройки: уведомления, бэкап панели, выход в Telegram, WDTT и безопасность самой панели. */
+/** Настройки: уведомления, бэкап панели, маршрут до Telegram, WDTT и безопасность самой панели. */
 export function SettingsPage() {
   const qc = useQueryClient();
   const navigate = useNavigate();
