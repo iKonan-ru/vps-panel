@@ -59,7 +59,11 @@ apt_wait
 bash /tmp/xui-install.sh </dev/null 2>&1 | sed -u -E 's/((Password|API Token)[^:]*:[[:space:]]*).*/\\1********/'
 rm -f /tmp/xui-install.sh
 # итог установщика 3.10+: логин, пароль и токен API открытым текстом. Панели он не нужен (токен
-# агент берёт сам, доступы - в "Доступах" панели), на диске не оставляем
+# агент берёт сам, доступы - в "Доступах" панели), на диске не оставляем. Токен "install"
+# перевыпускается с выбросом вывода - прежний недействителен, новый не знает никто
+if grep -q '^XUI_API_TOKEN=' /etc/x-ui/install-result.env 2>/dev/null; then
+  /usr/local/x-ui/x-ui setting -getApiToken -tokenName install >/dev/null 2>&1 || true
+fi
 rm -f /etc/x-ui/install-result.env
 say "Панель - только на 127.0.0.1, свой сервер подписок 3X-UI - выключен"
 systemctl stop x-ui
