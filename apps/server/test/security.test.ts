@@ -150,6 +150,9 @@ describe('redactOutput', () => {
   it('скрипт 3X-UI маскирует пароль и токен в выводе установщика', () => {
     const s = findCommand('xui')?.script ?? '';
     expect(s).toMatch(/xui-install\.sh <\/dev\/null 2>&1 \| sed -u -E .*Password\|API Token/);
+    // токен установщика ("install") перевыпускается с выбросом вывода, файл итога удаляется
+    expect(s).toContain('x-ui setting -getApiToken -tokenName install >/dev/null');
+    expect(s).toContain('rm -f /etc/x-ui/install-result.env');
   });
 });
 

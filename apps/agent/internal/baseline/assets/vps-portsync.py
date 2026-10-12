@@ -359,6 +359,23 @@ def wireguard_ports(labels):
     return ports
 
 
+def wdtt_internal_ports():
+    """WireGuard сервера WDTT (-wg-port в юните wdtt.service): только внутри сервера - снаружи
+    к нему ходят через DTLS-порт, а deploy.sh режет его своим правилом. wdtt-server слушает его
+    на 0.0.0.0, и без исключения порт открывался бы в ufw, как прочие порты процесса."""
+    ports = set()
+    for path in ("/etc/systemd/system/wdtt.service", "/lib/systemd/system/wdtt.service",
+                 "/usr/lib/systemd/system/wdtt.service"):
+        try:
+            with open(path) as f:
+                text = f.read()
+        except OSError:
+            continue
+        for m in re.finditer(r"-wg-port[ =](\d+)", text):
+            ports.add(("udp", int(m.group(1))))
+    return ports
+
+
 def openflux_ports(labels):
     """Каналы OpenFlux (node-install.sh): /etc/openflux-node/<канал>/port, TCP. Порт открыт
     и тогда, когда процесс упал: канал установлен, клиенты придут, как только он поднимется."""
@@ -497,6 +514,7 @@ def desired_state(conf):
     published = docker_published()
     listeners = listening_public()
     proc_ports, unknown = process_ports(conf.get("known_processes", []), listeners, labels)
+    proc_ports -= wdtt_internal_ports()
     for k in extra:
         labels.setdefault(k, "вручную (extra_allow)")
 
