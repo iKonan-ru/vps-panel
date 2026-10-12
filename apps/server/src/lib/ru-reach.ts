@@ -13,11 +13,28 @@ import { savedXuiToken } from './xui-token.js';
  * Доступность из России. Цели сервера: адрес (TCP до SSH) и inbound-ы 3X-UI (TLS с их SNI или
  * TCP до порта) - их проверяет агент сервера измерениями Globalping со своего адреса
  * (reach.check, раз в 30 минут); MTProxyL проверяет себя сам, его итог агент кладёт в снимок
- * (details.ruReach). Уровни как у MTProxyL: от 80% - видно, от 50% - частично, ниже - не видно.
- * Уведомление - цель не видна две проверки подряд и снова видна.
+ * (details.ruReach), панель забирает его итог раз в 3 минуты - каждую его проверку. Уровни как у
+ * MTProxyL: от 80% - видно, от 50% - частично, ниже - не видно. Уведомление - цель не видна две
+ * проверки подряд и снова видна.
+ *
+ * Время у всех целей общее: проверки агента - в :00 и :30, интерфейс рисует историю получасовыми
+ * интервалами (SLOT_MS), поэтому графики разных целей и серверов совпадают по времени. Зонды
+ * последних проверок (откуда дошли, откуда нет) - отдельно, по серверу: ru_reach_probes:<id>.
  */
 
 export type ReachLevel = 'ok' | 'partial' | 'bad';
+
+/** Зонд проверки: город, сеть и её AS, дошёл ли; ошибка - если нет. */
+export interface ReachProbe {
+  city: string;
+  asn: number;
+  network: string;
+  ok: boolean;
+  error?: string;
+}
+
+/** Зонды проверок цели по времени проверки (последние PROBES_MS). */
+export type ProbeStore = Record<string, { at: string; probes: ReachProbe[] }[]>;
 
 export interface ReachPoint {
   at: string;
@@ -72,21 +89,57 @@ interface AgentReply {
     percent: number;
     errors: string[];
     error?: string;
+    probes?: unknown;
   }[];
   remaining: number;
 }
 
+/** Итог проверки MTProxyL в снимке агента (details.ruReach). */
+interface MtReach {
+  checkedAt: string;
+  percent: number;
+  total: number;
+  ok: number;
+  error?: string;
+  target?: string;
+  probes?: unknown;
+}
+
 const KEY = 'ru_reach';
 const TOKEN_KEY = 'globalping_token';
-const EVERY_MS = 30 * 60_000;
+/** Интервал проверок агента и шаг графика: проверки в :00 и :30. */
+export const SLOT_MS = 30 * 60_000;
+/** Раз в сколько забирать итог MTProxyL из снимка (он проверяет себя раз в 15 минут). */
+const SYNC_MS = 3 * 60_000;
 const PROBES = 10;
-const HISTORY = 48;
+/** История: до 96 точек (MTProxyL - 4 в час) и не старше суток. */
+const HISTORY = 96;
+const HISTORY_MS = 24 * 3600_000;
+/** Зонды хранятся за 13 часов: график показывает 12. */
+const PROBES_MS = 13 * 3600_000;
 /** Ручная проверка не чаще раза в 2 минуты на сервер: каждый зонд - из квоты. */
 const MANUAL_COOLDOWN_MS = 2 * 60_000;
 /** Протоколы 3X-UI поверх TCP, которые можно проверить. */
 const TCP_NETWORKS = new Set(['tcp', 'raw', 'ws', 'grpc', 'httpupgrade', 'xhttp', 'splithttp']);
 const PROTOCOLS = new Set(['vless', 'vmess', 'trojan', 'shadowsocks']);
 const MAX_INBOUNDS = 6;
+
+/** Следующая проверка по часам: ближайшие :00 или :30 не раньше чем через минуту. */
+export function nextTick(now: number): number {
+  return Math.floor((now + 60_000) / SLOT_MS) * SLOT_MS + SLOT_MS;
+}
+
+/** Зонды из ответа агента или снимка: только известные поля, не больше 50. */
+export function readProbes(raw: unknown): ReachProbe[] {
+  if (!Array.isArray(raw)) return [];
+  return raw.slice(0, 50).map((p: Record<string, unknown>) => ({
+    city: String(p?.city ?? '').slice(0, 60),
+    asn: Number(p?.asn) || 0,
+    network: String(p?.network ?? '').slice(0, 60),
+    ok: p?.ok === true,
+    ...(p?.ok !== true && p?.error ? { error: String(p.error).slice(0, 160) } : {}),
+  }));
+}
 
 export function level(percent: number | null): ReachLevel | null {
   if (percent === null) return null;
@@ -153,7 +206,10 @@ export function apply(
   t.errors = r.errors;
   t.checkedAt = r.at;
   t.error = undefined;
-  t.history = [...t.history, { at: r.at, percent: r.percent, total: r.total }].slice(-HISTORY);
+  const since = Date.parse(r.at) - HISTORY_MS;
+  t.history = [...t.history, { at: r.at, percent: r.percent, total: r.total }]
+    .filter((p) => Date.parse(p.at) >= since)
+    .slice(-HISTORY);
   const lv = level(r.percent);
   if (lv === 'bad') {
     t.badStreak += 1;
@@ -179,6 +235,77 @@ export function apply(
   return null;
 }
 
+/** Новая цель без итогов. */
+export function blank(
+  key: string,
+  title: string,
+  kind: 'tcp' | 'tls',
+  port: number,
+  source: ReachTarget['source'],
+  sni?: string,
+): ReachTarget {
+  return {
+    key,
+    title,
+    kind,
+    port,
+    ...(sni ? { sni } : {}),
+    percent: null,
+    total: 0,
+    ok: 0,
+    errors: [],
+    checkedAt: null,
+    history: [],
+    badStreak: 0,
+    notified: false,
+    source,
+  };
+}
+
+/**
+ * MTProxyL в запись сервера: цель из его собственной проверки в снимке, новая точка - если
+ * проверка новая; нет MTProxyL - нет и цели. Возвращает уведомление и зонды новой проверки.
+ */
+export function mergeMt(
+  entry: ServerReach,
+  details: Record<string, unknown> | undefined | null,
+  installed: boolean,
+): {
+  note?: { key: string; text: string; back: boolean };
+  probes?: { at: string; probes: ReachProbe[] };
+} {
+  const i = entry.targets.findIndex((t) => t.key === 'mtproxyl');
+  const mr = details?.ruReach as MtReach | undefined;
+  if (!installed || !mr?.checkedAt) {
+    if (i >= 0) entry.targets.splice(i, 1);
+    return {};
+  }
+  const port = Number(/:(\d+)/.exec(mr.target ?? '')?.[1] ?? 443);
+  let t = entry.targets[i];
+  if (!t) {
+    t = blank('mtproxyl', 'MTProxyL', 'tls', port, 'mtproxyl');
+    entry.targets.push(t);
+  }
+  t.port = port;
+  if (mr.error) {
+    t.error = `проверка MTProxyL: ${mr.error}`;
+    return {};
+  }
+  t.error = undefined;
+  if (mr.checkedAt === t.checkedAt) return {};
+  const msg = apply(t, {
+    percent: Math.round(mr.percent * 10) / 10,
+    total: mr.total,
+    ok: mr.ok,
+    errors: [],
+    at: mr.checkedAt,
+  });
+  return {
+    ...(msg ? { note: { key: t.key, ...msg } } : {}),
+    probes: { at: mr.checkedAt, probes: readProbes(mr.probes) },
+  };
+}
+
 export class RuReach {
   private running = new Map<string, Promise<ServerReach>>();
   private manualAt = new Map<string, number>();
@@ -194,8 +321,28 @@ export class RuReach {
     ) => Promise<void>,
   ) {}
 
+  /**
+   * Проверки агентов - по часам в :00 и :30 (графики всех целей совпадают по времени); через
+   * 3 минуты после запуска - только серверы, у которых проверка пропущена (панель была выключена
+   * или обновлялась); итог MTProxyL - раз в 3 минуты.
+   */
   start() {
-    return schedule(() => void this.checkAll(), 3 * 60_000, EVERY_MS);
+    let tick: NodeJS.Timeout | undefined;
+    const arm = () => {
+      const now = Date.now();
+      tick = setTimeout(() => {
+        void this.checkAll();
+        arm();
+      }, nextTick(now) - now).unref();
+    };
+    arm();
+    const first = setTimeout(() => void this.checkAll(SLOT_MS - 5 * 60_000), 3 * 60_000).unref();
+    const stopSync = schedule(() => void this.syncAll(), 60_000, SYNC_MS);
+    return () => {
+      if (tick) clearTimeout(tick);
+      clearTimeout(first);
+      stopSync();
+    };
   }
 
   private load(): Store {
@@ -210,6 +357,34 @@ export class RuReach {
 
   private save(store: Store) {
     putSetting(this.db, KEY, JSON.stringify(store));
+  }
+
+  /** Зонды проверок цели за последние 13 часов (для окна подробностей). */
+  probes(serverId: string, key: string): { at: string; probes: ReachProbe[] }[] {
+    return getJsonSetting<ProbeStore>(this.db, `ru_reach_probes:${serverId}`, {})[key] ?? [];
+  }
+
+  /** Новые зонды в хранилище сервера; цели не из keep и старше 13 часов уходят. */
+  private addProbes(
+    serverId: string,
+    items: { key: string; at: string; probes: ReachProbe[] }[],
+    keep: Set<string>,
+  ) {
+    const name = `ru_reach_probes:${serverId}`;
+    const cur = getJsonSetting<ProbeStore>(this.db, name, {});
+    const since = Date.now() - PROBES_MS;
+    const out: ProbeStore = {};
+    for (const k of keep) {
+      const list = (cur[k] ?? []).filter((p) => Date.parse(p.at) >= since);
+      if (list.length) out[k] = list;
+    }
+    for (const it of items) {
+      if (!keep.has(it.key) || !it.probes.length) continue;
+      const list = out[it.key] ?? [];
+      list.push({ at: it.at, probes: it.probes });
+      out[it.key] = list;
+    }
+    putSetting(this.db, name, JSON.stringify(out));
   }
 
   /** Токен Globalping (необязательно): с ним квота 500 зондов в час вместо 250. */
@@ -235,17 +410,65 @@ export class RuReach {
     return this.load()[serverId] ?? null;
   }
 
-  private async checkAll() {
+  /** Проверка серверов на связи; staleMs - только тех, чей итог старше (пропущенные). */
+  private async checkAll(staleMs?: number) {
     const rows = await this.db.select({ id: servers.id }).from(servers);
+    const store = staleMs ? this.load() : {};
+    const fresh = (id: string) => {
+      const at = store[id]?.checkedAt;
+      return (
+        staleMs !== undefined &&
+        at !== null &&
+        at !== undefined &&
+        Date.now() - Date.parse(at) < staleMs
+      );
+    };
     await Promise.all(
       rows
-        .filter((r) => this.registry.isOnline(r.id))
+        .filter((r) => this.registry.isOnline(r.id) && !fresh(r.id))
         .map((r) =>
           this.check(r.id).catch((e: Error) =>
             this.log.warn({ serverId: r.id, err: e.message }, 'ru-reach'),
           ),
         ),
     );
+  }
+
+  /** Итоги MTProxyL из снимков: каждая его проверка - точка в истории, без запросов к агенту. */
+  private async syncAll() {
+    try {
+      const rows = await this.db
+        .select({ id: servers.id, statusCache: servers.statusCache })
+        .from(servers);
+      const store = this.load();
+      const notes: { serverId: string; note: { key: string; text: string; back: boolean } }[] = [];
+      let changed = false;
+      for (const row of rows) {
+        const inv = (row.statusCache as StatusCache | null)?.inventory;
+        if (!inv) continue;
+        const mt = inv.services.find((s) => s.kind === 'mtproxyl');
+        const entry = store[row.id] ?? { checkedAt: null, targets: [] };
+        const had = entry.targets.some((t) => t.key === 'mtproxyl');
+        if (!mt && !had) continue;
+        const before = JSON.stringify(entry.targets.find((t) => t.key === 'mtproxyl') ?? null);
+        const r = mergeMt(entry, mt?.details, Boolean(mt));
+        if (JSON.stringify(entry.targets.find((t) => t.key === 'mtproxyl') ?? null) === before)
+          continue;
+        store[row.id] = entry;
+        changed = true;
+        if (r.note) notes.push({ serverId: row.id, note: r.note });
+        if (r.probes)
+          this.addProbes(
+            row.id,
+            [{ key: 'mtproxyl', ...r.probes }],
+            new Set(entry.targets.map((t) => t.key)),
+          );
+      }
+      if (changed) this.save(store);
+      for (const n of notes) await this.notify(n.serverId, n.note).catch(() => undefined);
+    } catch (e) {
+      this.log.warn({ err: (e as Error).message }, 'ru-reach mtproxyl');
+    }
   }
 
   /** Проверка кнопкой: не чаще раза в 2 минуты на сервер. */
@@ -289,24 +512,22 @@ export class RuReach {
       sni?: string,
     ): ReachTarget => {
       const o = old.get(key);
+      const t = blank(key, title, kind, port, source, sni);
+      if (!o) return t;
       return {
-        key,
-        title,
-        kind,
-        port,
-        ...(sni ? { sni } : {}),
-        percent: o?.percent ?? null,
-        total: o?.total ?? 0,
-        ok: o?.ok ?? 0,
-        errors: o?.errors ?? [],
-        ...(o?.error ? { error: o.error } : {}),
-        checkedAt: o?.checkedAt ?? null,
-        history: o?.history ?? [],
-        badStreak: o?.badStreak ?? 0,
-        notified: o?.notified ?? false,
-        source,
+        ...t,
+        percent: o.percent,
+        total: o.total,
+        ok: o.ok,
+        errors: o.errors,
+        ...(o.error ? { error: o.error } : {}),
+        checkedAt: o.checkedAt,
+        history: o.history,
+        badStreak: o.badStreak,
+        notified: o.notified,
       };
     };
+    const probes: { key: string; at: string; probes: ReachProbe[] }[] = [];
     const messages: { key: string; text: string; back: boolean }[] = [];
     const out: ServerReach = { checkedAt: now, targets: [] };
 
@@ -358,6 +579,7 @@ export class RuReach {
           }
           const msg = apply(t, { ...res, at: now });
           if (msg) messages.push({ key: t.key, ...msg });
+          probes.push({ key: t.key, at: now, probes: readProbes(res.probes) });
         }
       } catch (e) {
         out.error = reachError((e as Error).message);
@@ -365,38 +587,19 @@ export class RuReach {
     }
     out.targets.push(...targets);
 
-    // MTProxyL: итог его собственной проверки из снимка
-    const mt = inv?.services.find((s) => s.kind === 'mtproxyl');
-    const mr = mt?.details?.ruReach as
-      | {
-          checkedAt: string;
-          percent: number;
-          total: number;
-          ok: number;
-          error?: string;
-          target?: string;
-        }
-      | undefined;
-    if (mt && mr) {
-      const port = Number(/:(\d+)/.exec(mr.target ?? '')?.[1] ?? 443);
-      const t = make('mtproxyl', 'MTProxyL', 'tls', port, 'mtproxyl');
-      if (mr.error) t.error = `проверка MTProxyL: ${mr.error}`;
-      else if (mr.checkedAt !== t.checkedAt) {
-        const msg = apply(t, {
-          percent: Math.round(mr.percent * 10) / 10,
-          total: mr.total,
-          ok: mr.ok,
-          errors: [],
-          at: mr.checkedAt,
-        });
-        if (msg) messages.push({ key: t.key, ...msg });
-      }
-      out.targets.push(t);
-    }
-
+    // MTProxyL: итог его собственной проверки из снимка - поверх свежей записи (его забирает и
+    // syncAll, пока шла проверка агента)
     const store = this.load();
+    const freshMt = store[serverId]?.targets.find((t) => t.key === 'mtproxyl');
+    if (freshMt) out.targets.push(freshMt);
+    const mt = inv?.services.find((s) => s.kind === 'mtproxyl');
+    const m = mergeMt(out, mt?.details, Boolean(mt));
+    if (m.note) messages.push(m.note);
+    if (m.probes) probes.push({ key: 'mtproxyl', ...m.probes });
+
     store[serverId] = out;
     this.save(store);
+    this.addProbes(serverId, probes, new Set(out.targets.map((t) => t.key)));
     for (const m of messages) await this.notify(serverId, m).catch(() => undefined);
     return out;
   }

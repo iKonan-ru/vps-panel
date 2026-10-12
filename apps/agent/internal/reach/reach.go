@@ -40,6 +40,15 @@ type Params struct {
 	Targets []Target `json:"targets"`
 }
 
+// Probe - откуда проверял зонд и дошёл ли: город, сеть и её AS, ошибка - если не дошёл.
+type Probe struct {
+	City    string `json:"city"`
+	ASN     int    `json:"asn"`
+	Network string `json:"network"`
+	OK      bool   `json:"ok"`
+	Error   string `json:"error,omitempty"`
+}
+
 // Result - итог по цели: сколько зондов ответило (без не успевших) и сколько дошло.
 type Result struct {
 	Key     string   `json:"key"`
@@ -47,6 +56,8 @@ type Result struct {
 	OK      int      `json:"ok"`
 	Percent float64  `json:"percent"`
 	Errors  []string `json:"errors"`
+	// Probes - ответившие зонды по отдельности (откуда видно, откуда нет).
+	Probes []Probe `json:"probes"`
 	// Error - проверка не состоялась (квота, сеть, Globalping); тогда Total = 0.
 	Error string `json:"error,omitempty"`
 }
@@ -135,7 +146,7 @@ func Check(ctx context.Context, p Params) (Reply, error) {
 	ids := make([]string, len(p.Targets))
 	var limited string
 	for i, t := range p.Targets {
-		reply.Results[i] = Result{Key: t.Key, Errors: []string{}}
+		reply.Results[i] = Result{Key: t.Key, Errors: []string{}, Probes: []Probe{}}
 		if limited != "" {
 			reply.Results[i].Error = limited
 			continue
@@ -273,6 +284,11 @@ func wait(ctx context.Context, token, id string) ([]byte, error) {
 func Parse(kind string, body []byte) Result {
 	var m struct {
 		Results []struct {
+			Probe struct {
+				City    string `json:"city"`
+				ASN     int    `json:"asn"`
+				Network string `json:"network"`
+			} `json:"probe"`
 			Result struct {
 				Status    string          `json:"status"`
 				RawOutput string          `json:"rawOutput"`
@@ -283,7 +299,7 @@ func Parse(kind string, body []byte) Result {
 			} `json:"result"`
 		} `json:"results"`
 	}
-	r := Result{Errors: []string{}}
+	r := Result{Errors: []string{}, Probes: []Probe{}}
 	if err := json.Unmarshal(body, &m); err != nil {
 		r.Error = "не удалось разобрать ответ Globalping"
 		return r
@@ -300,14 +316,18 @@ func Parse(kind string, body []byte) Result {
 		} else {
 			ok = ok && len(x.Result.TLS) > 0 && string(x.Result.TLS) != "null"
 		}
+		pr := Probe{City: Clip(x.Probe.City, 60), ASN: x.Probe.ASN, Network: Clip(x.Probe.Network, 60), OK: ok}
 		if ok {
 			r.OK++
+			r.Probes = append(r.Probes, pr)
 			continue
 		}
 		e := short(lastLine(x.Result.RawOutput))
 		if e == "" {
 			e = "соединение не установлено"
 		}
+		pr.Error = e
+		r.Probes = append(r.Probes, pr)
 		if !seen[e] && len(r.Errors) < 3 {
 			seen[e] = true
 			r.Errors = append(r.Errors, e)
@@ -327,6 +347,18 @@ func lastLine(s string) string {
 	lines := strings.Split(strings.TrimSpace(s), "\n")
 	return strings.TrimSpace(lines[len(lines)-1])
 }
+
+// Clip - строка не длиннее n символов, без пробелов по краям.
+func Clip(s string, n int) string {
+	s = strings.TrimSpace(s)
+	if r := []rune(s); len(r) > n {
+		s = string(r[:n])
+	}
+	return s
+}
+
+// LastLine - последняя непустая строка вывода (для ошибок из чужих итогов, например MTProxyL).
+func LastLine(s string) string { return lastLine(s) }
 
 func short(s string) string {
 	s = strings.TrimSpace(s)

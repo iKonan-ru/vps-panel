@@ -1,52 +1,89 @@
 import { Alert } from '@/components/ui/alert';
 import { Button } from '@/components/ui/button';
 import { Chip } from '@/components/ui/chip';
+import { Dialog } from '@/components/ui/dialog';
 import { Section } from '@/components/ui/section';
 import { api } from '@/lib/api';
 import { cn } from '@/lib/cn';
-import { ago } from '@/lib/format';
+import { ago, plural } from '@/lib/format';
 import {
+  type ReachProbe,
+  type ReachSlot,
   type ReachTarget,
+  SLOT_MS,
   type ServerReach,
+  hm,
   reachLevel,
+  reachSlots,
   reachTone,
+  useReachProbes,
   useServerReach,
 } from '@/lib/reach';
 import { useQueryClient } from '@tanstack/react-query';
 import { Radar } from 'lucide-react';
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 
 const barColor = { ok: 'bg-ok', partial: 'bg-warn', bad: 'bg-bad' } as const;
 
-/** История: столбик на проверку (высота - процент дошедших зондов), последние 24. */
-function History({ t }: { t: ReachTarget }) {
-  const pts = t.history.slice(-24);
-  if (pts.length < 2) return null;
+/** Текущее время раз в минуту: интервалы графика сдвигаются и без новых данных. */
+function useNow() {
+  const [now, setNow] = useState(() => Date.now());
+  useEffect(() => {
+    const t = setInterval(() => setNow(Date.now()), 60_000);
+    return () => clearInterval(t);
+  }, []);
+  return now;
+}
+
+function slotTitle(s: ReachSlot): string {
+  const range = `${hm(s.end - SLOT_MS)}-${hm(s.end)}`;
+  if (s.percent === null) return `${range}: проверок не было`;
+  const n = s.points.length;
+  return `${range}: ${s.percent}%${n > 1 ? ` (худшая из ${n} проверок)` : ''}`;
+}
+
+function Bar({ s, className }: { s: ReachSlot; className?: string }) {
+  const lv = s.percent === null ? null : (reachLevel(s.percent) ?? 'bad');
   return (
-    <span className="mt-1.5 flex h-5 items-end gap-px" aria-hidden="true">
-      {pts.map((p) => {
-        const lv = reachLevel(p.percent) ?? 'bad';
-        return (
-          <span
-            key={p.at}
-            title={`${ago(p.at)}: ${p.percent}% из ${p.total} зондов`}
-            className={cn('w-1 rounded-sm', barColor[lv])}
-            style={{ height: `${Math.max(12, p.percent)}%` }}
-          />
-        );
-      })}
-    </span>
+    <span
+      className={cn('block rounded-sm', lv ? barColor[lv] : 'bg-border', className)}
+      style={{ height: s.percent === null ? '12%' : `${Math.max(12, s.percent)}%` }}
+    />
   );
 }
 
-function Row({ t }: { t: ReachTarget }) {
+/**
+ * История: столбик на получасовой интервал (высота - худшая проверка за него), 12 часов. Шкала
+ * общая для всех целей: пустой столбик - в этот интервал проверки не было. Нажатие - подробности.
+ */
+function History({ t, now, onOpen }: { t: ReachTarget; now: number; onOpen: () => void }) {
+  if (t.history.length === 0) return null;
+  const slots = reachSlots(t.history, now);
+  return (
+    <button
+      type="button"
+      onClick={onOpen}
+      className="mt-1.5 flex h-5 cursor-pointer items-end gap-px rounded-sm hover:opacity-80"
+      aria-label={`${t.title}: откуда видно и откуда нет`}
+    >
+      {slots.map((s) => (
+        <span key={s.end} title={slotTitle(s)} className="flex h-full w-1 items-end">
+          <Bar s={s} className="w-full" />
+        </span>
+      ))}
+    </button>
+  );
+}
+
+function what(t: ReachTarget): string {
+  if (t.source === 'mtproxyl') return 'проверяет сам MTProxyL, раз в 15 минут';
+  return t.kind === 'tls'
+    ? `TLS на порт ${t.port}${t.sni ? `, SNI ${t.sni}` : ''}`
+    : `TCP до порта ${t.port}`;
+}
+
+function Row({ t, now, onOpen }: { t: ReachTarget; now: number; onOpen: () => void }) {
   const lv = reachLevel(t.percent);
-  const what =
-    t.source === 'mtproxyl'
-      ? 'проверяет сам MTProxyL, раз в 15 минут'
-      : t.kind === 'tls'
-        ? `TLS на порт ${t.port}${t.sni ? `, SNI ${t.sni}` : ''}`
-        : `TCP до порта ${t.port}`;
   // плашка всегда справа у названия: строка не переносится, длинное описание обрезается, история
   // - под описанием (на узком экране плашка иначе уезжала вниз то у одной строки, то у другой)
   return (
@@ -54,12 +91,12 @@ function Row({ t }: { t: ReachTarget }) {
       <span className="min-w-0 grow">
         <span className="block truncate font-medium">{t.title}</span>
         <span className="block truncate text-xs text-muted" title={t.errors.join('\n')}>
-          {what}
+          {what(t)}
           {t.checkedAt ? `, ${ago(t.checkedAt)}` : ''}
           {lv && lv !== 'ok' && t.errors[0] ? ` - ${t.errors[0]}` : ''}
         </span>
         {t.error && <span className="block text-xs text-warn">{t.error}</span>}
-        <History t={t} />
+        <History t={t} now={now} onOpen={onOpen} />
       </span>
       {lv ? (
         <Chip tone={reachTone[lv]} className="mt-px" title={`дошли ${t.ok} из ${t.total} зондов`}>
@@ -72,6 +109,162 @@ function Row({ t }: { t: ReachTarget }) {
   );
 }
 
+function ProbeItem({ p }: { p: ReachProbe }) {
+  return (
+    <li className="min-w-0 py-1">
+      <span className="font-medium">{p.city || 'город неизвестен'}</span>{' '}
+      <span className="text-muted">
+        {p.network}
+        {p.asn ? ` (AS${p.asn})` : ''}
+      </span>
+      {p.error && (
+        <span className="block truncate text-xs text-muted" title={p.error}>
+          {p.error}
+        </span>
+      )}
+    </li>
+  );
+}
+
+/** Одна проверка интервала: процент и зонды - откуда дошли, откуда нет. */
+function Check({
+  p,
+  probes,
+  loading,
+}: {
+  p: ReachSlot['points'][number];
+  probes: ReachProbe[] | undefined;
+  loading: boolean;
+}) {
+  const bad = probes?.filter((x) => !x.ok) ?? [];
+  const good = probes?.filter((x) => x.ok) ?? [];
+  const lv = reachLevel(p.percent) ?? 'bad';
+  return (
+    <div className="border-t border-border pt-3 first:border-t-0 first:pt-0">
+      <div className="flex items-center gap-2 text-[13px]">
+        <span className="font-medium">Проверка в {hm(p.at)}</span>
+        <Chip tone={reachTone[lv]}>
+          {p.percent}% из {p.total}
+        </Chip>
+      </div>
+      {probes ? (
+        <div className="mt-2 grid gap-y-2 text-[13px]">
+          <div className="min-w-0">
+            <div className="text-xs font-medium text-bad">Не дошли: {bad.length}</div>
+            {bad.length > 0 ? (
+              <ul>
+                {bad.map((x, i) => (
+                  // biome-ignore lint/suspicious/noArrayIndexKey: зонды одной проверки не переставляются
+                  <ProbeItem key={i} p={x} />
+                ))}
+              </ul>
+            ) : (
+              <div className="py-1 text-xs text-muted">все зонды дошли</div>
+            )}
+          </div>
+          <div className="min-w-0">
+            <div className="text-xs font-medium text-ok">Дошли: {good.length}</div>
+            {good.length > 0 ? (
+              // дошедших обычно большинство: коротко плашками, сеть и AS - в подсказке
+              <div className="mt-1 flex flex-wrap gap-1">
+                {good.map((x, i) => (
+                  <span
+                    // biome-ignore lint/suspicious/noArrayIndexKey: зонды одной проверки не переставляются
+                    key={i}
+                    title={`${x.network}${x.asn ? ` (AS${x.asn})` : ''}`}
+                    className="max-w-full truncate rounded-md bg-surface-2 px-1.5 py-0.5 text-xs sm:max-w-[16rem]"
+                  >
+                    {x.city || '?'}
+                    <span className="text-muted"> - {x.network}</span>
+                  </span>
+                ))}
+              </div>
+            ) : (
+              <div className="py-1 text-xs text-muted">ни один зонд не дошёл</div>
+            )}
+          </div>
+        </div>
+      ) : (
+        <div className="mt-1 text-xs text-muted">
+          {loading
+            ? 'Загружаю зонды...'
+            : 'Зондов этой проверки нет: они хранятся 13 часов, а проверки до обновления панели их не сохраняли.'}
+        </div>
+      )}
+    </div>
+  );
+}
+
+/** Окно подробностей цели: крупный график (интервал выбирается нажатием) и зонды его проверок. */
+function Details({
+  serverId,
+  t,
+  now,
+  onClose,
+}: {
+  serverId: string;
+  t: ReachTarget;
+  now: number;
+  onClose: () => void;
+}) {
+  const slots = reachSlots(t.history, now, true);
+  const lastWith = [...slots].reverse().find((s) => s.points.length > 0)?.end ?? null;
+  const [picked, setPicked] = useState<number | null>(null);
+  const sel = slots.find((s) => s.end === (picked ?? lastWith)) ?? null;
+  const probes = useReachProbes(serverId, t.key);
+  const byAt = new Map((probes.data ?? []).map((x) => [x.at, x.probes]));
+  const first = slots[0];
+  return (
+    <Dialog open onClose={onClose} title={`${t.title}: доступность из России`}>
+      <div className="space-y-4 px-5 py-4">
+        <div className="text-xs text-muted">
+          {what(t).charAt(0).toUpperCase() + what(t).slice(1)}. Столбик - полчаса, высота - худшая
+          проверка за это время (у MTProxyL их в получасе две). Нажми на столбик, чтобы увидеть, из
+          каких городов и сетей сервис виден, а из каких нет.
+        </div>
+        <div>
+          <div className="flex h-20 items-end gap-0.5">
+            {slots.map((s) => (
+              <button
+                key={s.end}
+                type="button"
+                title={slotTitle(s)}
+                disabled={s.points.length === 0}
+                onClick={() => setPicked(s.end)}
+                className={cn(
+                  'flex h-full min-w-0 flex-1 cursor-pointer items-end rounded-sm p-px disabled:cursor-default',
+                  sel?.end === s.end && 'bg-surface-2 outline outline-1 outline-accent',
+                  s.current && 'opacity-70',
+                )}
+              >
+                <Bar s={s} className="w-full" />
+              </button>
+            ))}
+          </div>
+          <div className="mt-1 flex justify-between text-[11px] text-muted">
+            <span>{first ? hm(first.end - SLOT_MS) : ''}</span>
+            <span>сейчас</span>
+          </div>
+        </div>
+        {sel ? (
+          <div className="space-y-3">
+            <div className="text-xs font-medium text-muted">
+              {hm(sel.end - SLOT_MS)}-{hm(sel.end)}
+              {sel.current ? ' (идёт сейчас)' : ''}: {sel.points.length}{' '}
+              {plural(sel.points.length, 'проверка', 'проверки', 'проверок')}
+            </div>
+            {sel.points.map((p) => (
+              <Check key={p.at} p={p} probes={byAt.get(p.at)} loading={probes.isLoading} />
+            ))}
+          </div>
+        ) : (
+          <div className="text-[13px] text-muted">Проверок за 12 часов не было.</div>
+        )}
+      </div>
+    </Dialog>
+  );
+}
+
 /**
  * Блок "Доступность из России" во вкладке "Обзор": адрес, inbound-ы 3X-UI, MTProxyL - видны ли
  * они из домашних сетей РФ (зонды Globalping), с историей и проверкой сейчас.
@@ -81,6 +274,9 @@ export function ReachCard({ serverId, online }: { serverId: string; online: bool
   const { data } = useServerReach(serverId);
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
+  const [open, setOpen] = useState<string | null>(null);
+  const now = useNow();
+  const opened = data?.targets.find((t) => t.key === open);
 
   async function check() {
     setBusy(true);
@@ -88,7 +284,10 @@ export function ReachCard({ serverId, online }: { serverId: string; online: bool
     try {
       const r = await api<ServerReach>(`/api/servers/${serverId}/reach/check`, { method: 'POST' });
       qc.setQueryData(['reach', serverId], r);
-      void qc.invalidateQueries({ queryKey: ['reach'], exact: true });
+      await Promise.all([
+        qc.invalidateQueries({ queryKey: ['reach'], exact: true }),
+        qc.invalidateQueries({ queryKey: ['reach-probes', serverId] }),
+      ]);
     } catch (e) {
       setErr((e as Error).message);
     } finally {
@@ -99,7 +298,7 @@ export function ReachCard({ serverId, online }: { serverId: string; online: bool
   return (
     <Section
       title="Доступность из России"
-      info="Видят ли сервер люди в России: 10 зондов Globalping в российских домашних сетях раз в 30 минут пробуют дойти до адреса (TCP до порта SSH) и до каждого inbound-а 3X-UI (TLS-рукопожатие с его SNI или TCP до порта). Заказывает проверки агент со своего адреса: квота Globalping - 250 зондов в час на адрес. MTProxyL проверяет себя сам. От 80% - виден, от 50% - частично, ниже - не виден; о сбое двух проверок подряд и о возврате приходит уведомление."
+      info="Видят ли сервер люди в России: 10 зондов Globalping в российских домашних сетях в :00 и :30 каждого часа пробуют дойти до адреса (TCP до порта SSH) и до каждого inbound-а 3X-UI (TLS-рукопожатие с его SNI или TCP до порта). Заказывает проверки агент со своего адреса: квота Globalping - 250 зондов в час на адрес. MTProxyL проверяет себя сам раз в 15 минут. От 80% - виден, от 50% - частично, ниже - не виден; о сбое двух проверок подряд и о возврате приходит уведомление. График - 12 часов по получасам, общий для всех строк; нажми на него - покажет, из каких городов и сетей видно, а из каких нет."
       extra={
         data?.remaining !== undefined && (
           <span className="text-xs text-muted">квота Globalping: осталось {data.remaining}</span>
@@ -128,8 +327,9 @@ export function ReachCard({ serverId, online }: { serverId: string; online: bool
           Проверок ещё не было: первая - в течение получаса после подключения агента.
         </div>
       ) : (
-        data.targets.map((t) => <Row key={t.key} t={t} />)
+        data.targets.map((t) => <Row key={t.key} t={t} now={now} onOpen={() => setOpen(t.key)} />)
       )}
+      {opened && <Details serverId={serverId} t={opened} now={now} onClose={() => setOpen(null)} />}
     </Section>
   );
 }

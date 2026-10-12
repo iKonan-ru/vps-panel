@@ -1,5 +1,11 @@
 import { describe, expect, it } from 'vitest';
-import { type ReachTarget, apply, inboundTargets, level } from '../src/lib/ru-reach.js';
+import {
+  type ReachTarget,
+  type ServerReach,
+  apply,
+  inboundTargets,
+  level,
+} from '../src/lib/ru-reach.js';
 
 describe('доступность из России', () => {
   it('цели inbound-ов: свои включённые поверх TCP, Reality и TLS - с SNI', () => {
@@ -119,5 +125,55 @@ describe('ошибки Globalping', () => {
     ).toMatch(/отклонил запрос \(HTTP 400\): Parameter/);
     expect(reachError('Globalping ответил 503: bad gateway')).toMatch(/временно недоступен/);
     expect(reachError('агент не на связи')).toBe('агент не на связи');
+  });
+});
+
+describe('общее время графиков и MTProxyL', () => {
+  it('проверки агента - в :00 и :30, не раньше чем через минуту', async () => {
+    const { nextTick } = await import('../src/lib/ru-reach.js');
+    const at = (s: string) => Date.parse(s);
+    expect(new Date(nextTick(at('2026-10-12T09:10:00Z'))).toISOString()).toBe(
+      '2026-10-12T09:30:00.000Z',
+    );
+    expect(new Date(nextTick(at('2026-10-12T09:29:30Z'))).toISOString()).toBe(
+      '2026-10-12T10:00:00.000Z',
+    );
+    expect(new Date(nextTick(at('2026-10-12T09:30:00.005Z'))).toISOString()).toBe(
+      '2026-10-12T10:00:00.000Z',
+    );
+  });
+
+  it('каждая новая проверка MTProxyL - точка с зондами; без MTProxyL цели нет', async () => {
+    const { mergeMt } = await import('../src/lib/ru-reach.js');
+    const entry: ServerReach = { checkedAt: null, targets: [] };
+    const details = (checkedAt: string, error?: string) => ({
+      ruReach: {
+        checkedAt,
+        target: '1.2.3.4:8443',
+        percent: 95,
+        total: 20,
+        ok: 19,
+        ...(error ? { error } : {}),
+        probes: [
+          { city: 'Tomsk', asn: 1, network: 'N', ok: true, raw: 'x' },
+          { city: 'Kursk', asn: 2, network: 'M', ok: false, error: 'timeout' },
+        ],
+      },
+    });
+    const r = mergeMt(entry, details('2026-10-12T09:03:00Z'), true);
+    expect(r.probes?.probes).toEqual([
+      { city: 'Tomsk', asn: 1, network: 'N', ok: true },
+      { city: 'Kursk', asn: 2, network: 'M', ok: false, error: 'timeout' },
+    ]);
+    expect(mergeMt(entry, details('2026-10-12T09:03:00Z'), true)).toEqual({});
+    mergeMt(entry, details('2026-10-12T09:18:00Z'), true);
+    const t = entry.targets[0];
+    expect(t?.port).toBe(8443);
+    expect(t?.history).toHaveLength(2);
+    mergeMt(entry, details('2026-10-12T09:33:00Z', 'quota'), true);
+    expect(entry.targets[0]?.error).toMatch(/quota/);
+    expect(t?.history).toHaveLength(2);
+    mergeMt(entry, undefined, false);
+    expect(entry.targets).toHaveLength(0);
   });
 });

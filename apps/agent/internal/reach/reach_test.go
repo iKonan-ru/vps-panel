@@ -12,8 +12,8 @@ import (
 )
 
 const measured = `{"status":"finished","results":[
- {"result":{"status":"finished","tls":{"protocol":"TLSv1.3"},"stats":{"rcv":3}}},
- {"result":{"status":"finished","tls":null,"rawOutput":"HEAD / HTTP/1.1\nconnect ETIMEDOUT 1.2.3.4:443"}},
+ {"probe":{"city":"Tomsk","asn":31357,"network":"Info"},"result":{"status":"finished","tls":{"protocol":"TLSv1.3"},"stats":{"rcv":3}}},
+ {"probe":{"city":"Samara","asn":3216,"network":"Vimpelcom"},"result":{"status":"finished","tls":null,"rawOutput":"HEAD / HTTP/1.1\nconnect ETIMEDOUT 1.2.3.4:443"}},
  {"result":{"status":"failed","rawOutput":"connect ETIMEDOUT 1.2.3.4:443"}},
  {"result":{"status":"finished","tls":{"protocol":"TLSv1.3"},"stats":{"rcv":0}}},
  {"result":{"status":"in-progress"}}
@@ -26,6 +26,12 @@ func TestParse(t *testing.T) {
 	}
 	if len(r.Errors) != 1 || r.Errors[0] != "connect ETIMEDOUT 1.2.3.4:443" {
 		t.Fatalf("ошибки без повторов, последняя строка: %q", r.Errors)
+	}
+	if len(r.Probes) != 4 || !r.Probes[0].OK || r.Probes[0].City != "Tomsk" || r.Probes[0].ASN != 31357 {
+		t.Fatalf("зонды: %+v", r.Probes)
+	}
+	if p := r.Probes[1]; p.OK || p.Network != "Vimpelcom" || p.Error != "connect ETIMEDOUT 1.2.3.4:443" {
+		t.Fatalf("не дошедший зонд: %+v", p)
 	}
 	r = Parse("tcp", []byte(measured))
 	if r.Total != 4 || r.OK != 1 {
