@@ -3,16 +3,19 @@ import type { AgentRegistry } from '../agents/registry.js';
 import type { StatusCache } from '../agents/state.js';
 import type { Db } from '../db/index.js';
 import { servers } from '../db/schema.js';
+import type { Action } from './action-journal.js';
 import { schedule } from './schedule.js';
 import type { SecretBox } from './secret-box.js';
 import { getJsonSetting, putSetting } from './settings.js';
+import { type XuiEnvelope, xuiApi } from './xui-api.js';
 import { xuiToken } from './xui-token.js';
 
 /**
- * 3X-UI, MTProxyL (менеджер) и его веб-панель. Движок telemt сюда не входит: его обновление
- * необязательно, версия меняется во вкладке MTProxyL (lib/mtproxyl-engine.ts).
+ * 3X-UI, ядро Xray внутри 3X-UI, MTProxyL (менеджер) и его веб-панель. Движок telemt сюда не
+ * входит: его обновление необязательно, версия меняется во вкладке MTProxyL
+ * (lib/mtproxyl-engine.ts).
  */
-export type ServiceUpdateKind = 'xui' | 'mtproxyl' | 'mtproxyl-panel';
+export type ServiceUpdateKind = 'xui' | 'xray' | 'mtproxyl' | 'mtproxyl-panel';
 
 /** Обновление установленного сервиса. */
 export interface ServiceUpdate {
@@ -40,14 +43,17 @@ type Store = Record<string, Partial<Record<ServiceUpdateKind, Checked>>>;
 
 const KEY = 'service_updates';
 const EVERY_MS = 6 * 60 * 60_000;
-const KINDS: ServiceUpdateKind[] = ['xui', 'mtproxyl', 'mtproxyl-panel'];
+const KINDS: ServiceUpdateKind[] = ['xui', 'xray', 'mtproxyl', 'mtproxyl-panel'];
 const TITLES: Record<ServiceUpdateKind, string> = {
   xui: '3X-UI',
+  xray: 'Xray',
   mtproxyl: 'MTProxyL',
   'mtproxyl-panel': 'MTProxyL: веб-панель',
 };
 /** Релизы веб-панели лежат в репозитории MTProxyL с этим префиксом тега. */
 const PANEL_TAG = 'mtproxyl-panel-v';
+/** Сколько ждать, пока 3X-UI поставит Xray и запустит его снова. */
+const XRAY_INSTALL_MS = 4 * 60_000;
 
 /** "v3.8.5", "3.8.5" и "3.8.5-1a2b3c4" (тег образа с коммитом) - одна версия. */
 const norm = (v: string) => v.trim().replace(/^v/i, '').split('-')[0] ?? '';
@@ -66,8 +72,9 @@ export function cmpVersion(a: string, b: string): number | null {
 
 /**
  * Проверка обновлений раз в 6 часов через агента: 3X-UI отвечает своим API
- * getPanelUpdateInfo, MTProxyL - командой update-check, веб-панель - версией из panel status
- * и последним релизом на GitHub. Результат
+ * getPanelUpdateInfo, Xray - версией из server/status 3X-UI и последним стабильным релизом
+ * XTLS/Xray-core, если 3X-UI предлагает его в getXrayVersion; MTProxyL - командой update-check,
+ * веб-панель - версией из panel status и последним релизом на GitHub. Результат
  * хранится в setting, чтобы уведомление о версии не повторялось после перезапуска.
  * После обновления сервис перепроверяется сразу (recheck).
  */
@@ -75,6 +82,7 @@ export class ServiceUpdates {
   /** Проверки по очереди: расписание и кнопка не затирают общий store друг друга. */
   private queue: Promise<unknown> = Promise.resolve();
   private panelRelease: { at: number; version: string } | null = null;
+  private xrayRelease: { at: number; tag: string } | null = null;
 
   constructor(
     private db: Db,
@@ -108,7 +116,9 @@ export class ServiceUpdates {
       const out: ServiceUpdate[] = [];
       for (const kind of KINDS) {
         const c = checked[kind];
-        const svc = services.find((s) => s.kind === (kind === 'xui' ? 'xui' : 'mtproxyl'));
+        const svc = services.find(
+          (s) => s.kind === (kind === 'xui' || kind === 'xray' ? 'xui' : 'mtproxyl'),
+        );
         if (!c?.available || !svc) continue;
         // у 3X-UI и MTProxyL версия из инвентаря свежее проверки: обновили - строка пропадает
         const current =
@@ -172,7 +182,10 @@ export class ServiceUpdates {
       ((row?.cache ?? {}) as StatusCache).inventory?.services.map((s) => s.kind) ?? [],
     );
     const results: Partial<Record<ServiceUpdateKind, Checked | null>> = {};
-    if (kinds.has('xui')) results.xui = await this.guard(id, 'xui', () => this.checkXui(id));
+    if (kinds.has('xui')) {
+      results.xui = await this.guard(id, 'xui', () => this.checkXui(id));
+      results.xray = await this.guard(id, 'xray', () => this.checkXray(id));
+    }
     if (kinds.has('mtproxyl')) Object.assign(results, await this.checkMtproxyl(id));
     const now = new Date().toISOString();
     for (const [k, res] of Object.entries(results) as [ServiceUpdateKind, Checked | null][]) {
@@ -232,6 +245,109 @@ export class ServiceUpdates {
       latest: info.latestVersion,
       available: info.updateAvailable,
     };
+  }
+
+  /** REST 3X-UI сервера с токеном панели (выпускается при первом вызове). */
+  private async xui(serverId: string) {
+    return xuiApi(
+      this.registry,
+      serverId,
+      await xuiToken(this.db, this.box, this.registry, serverId),
+    );
+  }
+
+  /** Текущая версия Xray по server/status 3X-UI ("26.6.27"). */
+  private async xrayVersion(call: Awaited<ReturnType<ServiceUpdates['xui']>>): Promise<string> {
+    const r = await call('GET', 'server/status');
+    const env = r.data as XuiEnvelope | undefined;
+    const x = (env?.obj as { xray?: { version?: string } } | undefined)?.xray;
+    if (r.status !== 200 || !env?.success || !x?.version)
+      throw new Error(`3X-UI server/status: ${env?.msg ?? r.status}`);
+    return x.version;
+  }
+
+  /**
+   * Xray внутри 3X-UI: последняя стабильная версия с GitHub; доступна, если она новее текущей и
+   * 3X-UI сам предлагает её поставить (getXrayVersion - список, который он умеет ставить).
+   */
+  private async checkXray(serverId: string): Promise<Checked> {
+    const call = await this.xui(serverId);
+    const current = await this.xrayVersion(call);
+    const latest = await this.latestXray();
+    const r = await call('GET', 'server/getXrayVersion');
+    const env = r.data as XuiEnvelope | undefined;
+    if (r.status !== 200 || !env?.success || !Array.isArray(env.obj))
+      throw new Error(`3X-UI getXrayVersion: ${env?.msg ?? r.status}`);
+    const offered = (env.obj as string[]).includes(latest);
+    const newer = cmpVersion(latest, current) === 1;
+    return {
+      current: norm(current),
+      latest: norm(latest),
+      available: newer && offered,
+      ...(newer && !offered ? { detail: `3X-UI пока не предлагает ${latest}: обнови 3X-UI` } : {}),
+    };
+  }
+
+  /** Последний стабильный релиз XTLS/Xray-core ("v26.7.15"): один запрос на все серверы, кэш на час. */
+  private async latestXray(): Promise<string> {
+    if (this.xrayRelease && Date.now() - this.xrayRelease.at < 60 * 60_000)
+      return this.xrayRelease.tag;
+    const r = await this.fetchOut('https://api.github.com/repos/XTLS/Xray-core/releases/latest', {
+      headers: { Accept: 'application/vnd.github+json', 'User-Agent': 'vps-panel' },
+    });
+    if (!r.ok) throw new Error(`GitHub: ${r.status}`);
+    const tag = ((await r.json()) as { tag_name?: string }).tag_name;
+    if (!tag) throw new Error('GitHub: нет релиза Xray');
+    this.xrayRelease = { at: Date.now(), tag };
+    return tag;
+  }
+
+  /**
+   * Поставить Xray последней проверенной версии через 3X-UI (server/installXray): 3X-UI
+   * останавливает Xray, качает релиз, сверяет sha256 и запускает снова. Ответ может не успеть
+   * за таймаут вызова - тогда ждём по server/status, пока версия не станет новой. Вывод - в
+   * действие журнала; в конце версия перепроверяется.
+   */
+  async installXray(serverId: string, action: Action): Promise<void> {
+    const say = (t: string) => action.stream('log', `${t}\n`);
+    try {
+      const target = (await this.load())[serverId]?.xray;
+      if (!target?.available || !target.latest)
+        throw new Error('обновления Xray нет: проверь ещё раз');
+      const tag = `v${target.latest}`;
+      const call = await this.xui(serverId);
+      const before = await this.xrayVersion(call);
+      say(`Xray ${before}: ставлю ${target.latest} через 3X-UI.`);
+      say('Xray перезапустится - подключения VLESS прервутся на несколько секунд.');
+      try {
+        const r = await call('POST', `server/installXray/${tag}`);
+        const env = r.data as XuiEnvelope | undefined;
+        if (r.status !== 200 || !env?.success)
+          throw Object.assign(new Error(`3X-UI: ${env?.msg ?? r.status}`), { final: true });
+        say('3X-UI: готово.');
+      } catch (e) {
+        if ((e as { final?: boolean }).final) throw e;
+        say(`3X-UI ещё ставит (${(e as Error).message}), жду...`);
+      }
+      const until = Date.now() + XRAY_INSTALL_MS;
+      let now = '';
+      while (Date.now() < until) {
+        now = await this.xrayVersion(call).catch(() => '');
+        if (now && norm(now) === target.latest) break;
+        await new Promise((r) => setTimeout(r, 5000));
+      }
+      if (norm(now) !== target.latest)
+        throw new Error(
+          `Xray не обновился: сейчас ${now || 'не отвечает'}, ждали ${target.latest}`,
+        );
+      say(`Xray ${now} работает.`);
+      await this.recheck(serverId);
+      await action.finish(0);
+    } catch (e) {
+      say(`ОШИБКА: ${(e as Error).message}`);
+      await this.recheck(serverId).catch(() => undefined);
+      await action.finish(1);
+    }
   }
 
   /** Менеджер и веб-панель - из одного mtproxyl.status. */

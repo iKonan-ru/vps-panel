@@ -35,6 +35,7 @@ export const actionTitles: Record<string, string> = {
   'xui:enable': '3X-UI: автозапуск',
   'xui:disable': '3X-UI: без автозапуска',
   'xui:update': '3X-UI: обновление',
+  'xui:xray': '3X-UI: обновление Xray',
   'xui:token': '3X-UI: API-токен',
   'awg:client.add': 'AWG: новый клиент',
   'wdtt:password.add': 'WDTT: новый пароль',

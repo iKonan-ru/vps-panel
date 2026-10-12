@@ -1,6 +1,6 @@
 import { api } from './api';
 
-export type ServiceUpdateKind = 'xui' | 'mtproxyl' | 'mtproxyl-panel';
+export type ServiceUpdateKind = 'xui' | 'xray' | 'mtproxyl' | 'mtproxyl-panel';
 
 const mtExec = (id: string, op: string) =>
   api<{ actionId: string }>(`/api/servers/${id}/mtproxyl/exec`, {
@@ -8,12 +8,13 @@ const mtExec = (id: string, op: string) =>
     json: { op, args: {} },
   });
 
-/** Запуск обновления сервиса: одно и то же из Обзора и со вкладок 3X-UI и MTProxyL. */
+/** Запуск обновления сервиса: одно и то же из Обзора и со вкладок 3X-UI и MTProxyL. Xray - ядро внутри 3X-UI. */
 export const startServiceUpdate: Record<
   ServiceUpdateKind,
   (serverId: string) => Promise<{ actionId: string }>
 > = {
   xui: (id) => api(`/api/servers/${id}/xui/update`, { method: 'POST' }),
+  xray: (id) => api(`/api/servers/${id}/xray/update`, { method: 'POST' }),
   mtproxyl: (id) => mtExec(id, 'update'),
   'mtproxyl-panel': (id) => mtExec(id, 'panel.update'),
 };

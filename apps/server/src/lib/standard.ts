@@ -51,7 +51,7 @@ export function standardCells(o: {
     const list = xui.details?.inbounds;
     const own = Array.isArray(list) ? list.length : 0;
     const nodes = num(xui.details?.remoteNodes);
-    const u = upd(['xui']);
+    const u = upd(['xui', 'xray']);
     const notes = [
       ...(own === 0 ? ['нет своих inbound-ов'] : []),
       ...(nodes > 0 ? [`узлов группы 3X-UI: ${nodes}`] : []),

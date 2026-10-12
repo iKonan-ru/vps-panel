@@ -1,13 +1,17 @@
 import type { FastifyInstance } from 'fastify';
 import type { AgentRegistry } from '../agents/registry.js';
+import type { Db } from '../db/index.js';
+import { actionJournal } from '../lib/action-journal.js';
 import type { ServiceUpdates } from '../lib/service-updates.js';
+import type { UiHub } from '../lib/ui-hub.js';
 
-/** Обновления 3X-UI и MTProxyL: блок "Обслуживание", версии во вкладке MTProxyL. */
+/** Обновления 3X-UI, Xray и MTProxyL: блок "Обслуживание", версии во вкладке MTProxyL. */
 export async function updateRoutes(
   app: FastifyInstance,
-  opts: { registry: AgentRegistry; updates: ServiceUpdates },
+  opts: { db: Db; hub: UiHub; registry: AgentRegistry; updates: ServiceUpdates },
 ) {
   const { registry, updates } = opts;
+  const journal = actionJournal(opts.db, opts.hub, registry);
 
   app.get('/api/updates', async () => updates.listAll());
 
@@ -25,4 +29,13 @@ export async function updateRoutes(
   app.get('/api/servers/:id/mtproxyl/versions', async (req) =>
     updates.versions((req.params as { id: string }).id),
   );
+
+  /** Обновить Xray внутри 3X-UI до версии из последней проверки: действие с выводом. */
+  app.post('/api/servers/:id/xray/update', async (req, reply) => {
+    const { id } = req.params as { id: string };
+    if (!registry.isOnline(id)) return reply.code(409).send({ error: 'Агент не подключён' });
+    const action = journal.open(id, 'xui:xray');
+    void updates.installXray(id, action);
+    return { actionId: action.id };
+  });
 }

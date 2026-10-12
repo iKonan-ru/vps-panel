@@ -151,7 +151,7 @@ export function ServersPage() {
 
 /** Обновление сервиса (lib/service-updates.ts на сервере). */
 interface ServiceUpdate {
-  kind: 'xui' | 'mtproxyl' | 'mtproxyl-panel';
+  kind: 'xui' | 'xray' | 'mtproxyl' | 'mtproxyl-panel';
   title: string;
   latest: string;
 }
@@ -159,6 +159,7 @@ interface ServiceUpdate {
 /** Вкладка сервера, где обновляется сервис: у 3X-UI - своя, движок и панель MTProxyL - MTProxyL. */
 const updateTab: Record<ServiceUpdate['kind'], string> = {
   xui: 'xui',
+  xray: 'xui',
   mtproxyl: 'mtproxyl',
   'mtproxyl-panel': 'mtproxyl',
 };
