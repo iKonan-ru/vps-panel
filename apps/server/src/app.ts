@@ -230,7 +230,7 @@ export async function buildApp(opts: AppOptions) {
       })),
     ),
   );
-  // обновления 3X-UI и MTProxyL (менеджер, веб-панель): проверка через агента,
+  // обновления 3X-UI, Xray в нём и MTProxyL (менеджер, веб-панель): проверка через агента,
   // строки в блоке "Обслуживание", версии во вкладке MTProxyL
   const serviceUpdates = new ServiceUpdates(
     db,
@@ -242,7 +242,7 @@ export async function buildApp(opts: AppOptions) {
   );
   stops.push(serviceUpdates.start());
   await app.register(standardRoutes, { db, registry, env, updates: serviceUpdates });
-  await app.register(updateRoutes, { registry, updates: serviceUpdates });
+  await app.register(updateRoutes, { db, hub, registry, updates: serviceUpdates });
   // глобальные клиенты: сверка с серверами в фоне
   const gc = new GClients(
     db,

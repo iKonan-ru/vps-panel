@@ -18,6 +18,7 @@ import { ApiError, api } from '@/lib/api';
 import { cn } from '@/lib/cn';
 import { uptime } from '@/lib/format';
 import { type ServerDetail, serverLock } from '@/lib/servers';
+import { startServiceUpdate } from '@/lib/service-update';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { Download, KeyRound, Play, Power, RefreshCw, ScrollText, Square } from 'lucide-react';
 import { type FormEvent, useState } from 'react';
@@ -102,6 +103,13 @@ export function XuiTab({ s }: { s: ServerDetail }) {
     staleTime: 20_000,
     retry: false,
   });
+  // обновления 3X-UI и Xray с последней проверки (раз в 6 часов) - то же, что в "Обслуживании"
+  const updates = useQuery({
+    queryKey: ['service-updates', s.id, 'xui-tab'],
+    queryFn: () => api<{ kind: string; latest: string }[]>(`/api/servers/${s.id}/updates`),
+    enabled: online,
+  });
+  const xrayUpdate = updates.data?.find((u) => u.kind === 'xray');
   const [action, setAction] = useState<{ id: string; title: string } | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [showLog, setShowLog] = useState(false);
@@ -183,7 +191,11 @@ export function XuiTab({ s }: { s: ServerDetail }) {
           title={action.title}
           actionId={action.id}
           onHide={() => setAction(null)}
-          onFinished={refresh}
+          onFinished={() => {
+            refresh();
+            void qc.invalidateQueries({ queryKey: ['service-updates'] });
+            void qc.invalidateQueries({ queryKey: ['service-updates-all'] });
+          }}
         />
       )}
 
@@ -223,6 +235,27 @@ export function XuiTab({ s }: { s: ServerDetail }) {
               ]
                 .filter(Boolean)
                 .join(', ') || (noToken ? 'выпусти API-токен кнопкой ниже' : '-')}
+              {xrayUpdate && (
+                <>
+                  {', '}
+                  <Button
+                    variant="link"
+                    className="text-update"
+                    disabled={busy || lock.busy}
+                    title={
+                      lock.reason ??
+                      `Поставить Xray ${xrayUpdate.latest} через 3X-UI: подключения VLESS прервутся на несколько секунд`
+                    }
+                    onClick={() =>
+                      start(`Обновление Xray до ${xrayUpdate.latest}`, () =>
+                        startServiceUpdate.xray(s.id),
+                      )
+                    }
+                  >
+                    обновить до {xrayUpdate.latest}
+                  </Button>
+                </>
+              )}
             </span>
           }
         />
