@@ -45,7 +45,7 @@ export const openfluxCmd: CommandDef = {
   group: 'install',
   service: 'OpenFlux',
   description:
-    'Нода OpenFlux (выход для приложения OpenFlux) установщиком проекта: ядро с GitHub со сверкой SHA-256, служба openflux-node@<канал> и первый канал. Канал работает напрямую по TCP и, по желанию, через комнаты cups.online и документы Яндекса и Mail.ru.',
+    'Нода для приложения OpenFlux с первым каналом. Канал работает напрямую по TCP и, если заданы, через комнаты cups.online и документы Яндекса и Mail.ru.',
   params: [
     {
       name: 'OF_CHANNEL',
@@ -54,16 +54,17 @@ export const openfluxCmd: CommandDef = {
       default: 'main',
       required: true,
       pattern: '^[a-z0-9][a-z0-9-]{0,30}$',
-      hint: 'a-z, 0-9 и дефис; каналы клиентов панели (vp-...) панель заведёт сама',
+      hint: 'a-z, 0-9 и дефис; каналы клиентов создаются автоматически',
     },
     {
       name: 'OF_CUPS',
       label: 'Комнаты cups.online',
       type: 'select',
       default: 'yes',
+      hint: 'запасной транспорт',
       options: [
-        { value: 'yes', label: 'создать (запасной транспорт)' },
-        { value: 'no', label: 'без них' },
+        { value: 'yes', label: 'создать' },
+        { value: 'no', label: 'не создавать' },
       ],
     },
     {
@@ -72,7 +73,7 @@ export const openfluxCmd: CommandDef = {
       type: 'string',
       secret: true,
       pattern: '^https://(docs|disk)\\.yandex\\.(ru|com|by|kz|uz)/edit/d/[A-Za-z0-9_-]{16,200}$',
-      hint: 'необязательно: https://docs.yandex.ru/edit/d/... с редактированием по ссылке',
+      hint: 'необязательно; ссылка https://docs.yandex.ru/edit/d/... с правом редактирования',
     },
     {
       name: 'OF_MAILRU',
@@ -80,16 +81,17 @@ export const openfluxCmd: CommandDef = {
       type: 'string',
       secret: true,
       pattern: '^https://cloud\\.mail\\.ru/public/[A-Za-z0-9_-]{2,64}/[A-Za-z0-9_-]{2,128}$',
-      hint: 'необязательно: https://cloud.mail.ru/public/... с редактированием по ссылке',
+      hint: 'необязательно; ссылка https://cloud.mail.ru/public/... с правом редактирования',
     },
     {
       name: 'OF_AUTOUPDATE',
       label: 'Автообновление ядра',
       type: 'select',
       default: 'yes',
+      hint: 'раз в 6\u00a0ч, с откатом при сбое',
       options: [
-        { value: 'yes', label: 'включить (раз в 6 часов, с откатом)' },
-        { value: 'no', label: 'выключить' },
+        { value: 'yes', label: 'включено' },
+        { value: 'no', label: 'выключено' },
       ],
     },
   ],
@@ -129,15 +131,13 @@ say "Готово"
 `,
   preflight: `if [ ! -d /run/systemd/system ]; then echo "FAIL|на сервере нет systemd"; fi
 if [ -d "/etc/openflux-node/$OF_CHANNEL" ]; then echo "FAIL|канал $OF_CHANNEL уже есть на сервере"
-elif [ -x ${INSTALLED} ]; then echo "WARN|OpenFlux уже установлен: добавится канал $OF_CHANNEL, остальные каналы не тронуты"
+elif [ -x ${INSTALLED} ]; then echo "WARN|OpenFlux уже установлен: будет добавлен канал $OF_CHANNEL, остальные не изменятся"
 else echo "OK|OpenFlux не установлен"; fi
 case "$(uname -m)" in x86_64|aarch64|armv7l) echo "OK|архитектура $(uname -m)";; *) echo "FAIL|архитектура $(uname -m) не поддерживается";; esac`,
   plan: (a) => [
-    'Скачать node-install.sh с GitHub (закреплённый коммит) и сверить SHA-256',
-    a.OF_CUPS === 'yes'
-      ? 'Создать 4 комнаты cups.online (не дал - канал без них)'
-      : 'Без комнат cups.online',
-    `Установщик: пользователь openflux-node, ядро OpenFlux с GitHub (SHA-256), шаблон openflux-node@.service, канал ${a.OF_CHANNEL} с новым ключом на свободном порту (ufw откроет порт)`,
+    'Скачать установщик OpenFlux и проверить контрольную сумму',
+    a.OF_CUPS === 'yes' ? 'Создать комнаты cups.online' : 'Без комнат cups.online',
+    `Установить OpenFlux и канал ${a.OF_CHANNEL} на свободном порту`,
     [
       'Транспорты: прямое подключение',
       a.OF_CUPS === 'yes' ? 'cups.online' : '',
@@ -147,11 +147,11 @@ case "$(uname -m)" in x86_64|aarch64|armv7l) echo "OK|архитектура $(u
       .filter(Boolean)
       .join(', '),
     a.OF_AUTOUPDATE === 'yes'
-      ? 'Автообновление ядра: таймер раз в 6 часов, откат, если нода не поднялась'
+      ? 'Автообновление ядра раз в 6\u00a0ч с откатом при сбое'
       : 'Без автообновления ядра',
   ],
   after:
-    'Ссылка на канал - во вкладке OpenFlux сервера. Если сервер участвует в глобальных клиентах, сверка заведёт каналы клиентам.',
+    'Ссылка на канал\u00a0\u2014 на вкладке OpenFlux сервера. Каналы клиентам создаются при синхронизации.',
 };
 
 export const openfluxUninstallCmd: CommandDef = {
@@ -160,7 +160,7 @@ export const openfluxUninstallCmd: CommandDef = {
   group: 'maintain',
   service: 'OpenFlux',
   description:
-    'Снести ноду OpenFlux установщиком проекта: все каналы (и клиентов панели), их порты в ufw, ядро, шаблон службы, таймер обновлений и пользователя openflux-node.',
+    'Удаляет OpenFlux со всеми каналами, включая каналы клиентов. Приложения перестанут подключаться к этому серверу.',
   params: [
     {
       name: 'CONFIRM',
@@ -169,8 +169,8 @@ export const openfluxUninstallCmd: CommandDef = {
       default: 'no',
       required: true,
       options: [
-        { value: 'no', label: 'нет, не удалять' },
-        { value: 'yes', label: 'да, удалить' },
+        { value: 'no', label: 'не удалять' },
+        { value: 'yes', label: 'удалить' },
       ],
     },
   ],
@@ -187,11 +187,11 @@ say "Удаляю OpenFlux (node-install.sh uninstall)"
 sh "$OF_INST" uninstall
 say "Готово"
 `,
-  preflight: `if [ -d /etc/openflux-node ]; then n=$(find /etc/openflux-node -mindepth 1 -maxdepth 1 -type d | wc -l); echo "WARN|OpenFlux установлен, каналов: $n - все пропадут, приложения перестанут подключаться"; else echo "FAIL|OpenFlux не установлен"; fi`,
+  preflight: `if [ -d /etc/openflux-node ]; then n=$(find /etc/openflux-node -mindepth 1 -maxdepth 1 -type d | wc -l); echo "WARN|каналов OpenFlux: $n, все будут удалены, приложения перестанут подключаться"; else echo "FAIL|OpenFlux не установлен"; fi`,
   plan: () => [
-    'node-install.sh uninstall: остановить и удалить все каналы openflux-node@*, закрыть их порты в ufw',
-    'Удалить /opt/openflux-node, /etc/openflux-node, /var/lib/openflux-node, шаблон службы, таймер обновлений и пользователя openflux-node',
-    'Привязки клиентов панели к OpenFlux на этом сервере снимутся при следующей сверке',
+    'Удалить все каналы и закрыть их порты',
+    'Удалить OpenFlux с настройками и автообновлением',
+    'Отключить клиентов от OpenFlux на этом сервере',
   ],
   dropsBindings: ['openflux'],
 };

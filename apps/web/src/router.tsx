@@ -40,7 +40,8 @@ function Root() {
 function Gate() {
   const setup = useSetupStatus();
   const me = useMe();
-  if (setup.isLoading || me.isLoading) return <div className="p-8 text-muted">Загрузка...</div>;
+  if (setup.isLoading || me.isLoading)
+    return <div className="p-8 text-muted">Загрузка&hellip;</div>;
   // панель не ответила (502 во время выкладки) - это не "не вошёл": на вход не уводим
   if (me.error)
     return (
@@ -60,7 +61,8 @@ const rootRoute = createRootRoute({ component: Root });
 function Entry() {
   const setup = useSetupStatus();
   const me = useMe();
-  if (setup.isLoading || me.isLoading) return <div className="p-8 text-muted">Загрузка...</div>;
+  if (setup.isLoading || me.isLoading)
+    return <div className="p-8 text-muted">Загрузка&hellip;</div>;
   if (me.data) return <Navigate to="/" />;
   if (setup.data && !setup.data.setupDone) return <NoAdminPage />;
   return <LoginPage />;

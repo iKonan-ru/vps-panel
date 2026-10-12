@@ -43,13 +43,13 @@ function Cell({
           params={{ id: install }}
           search={{ server: serverId, run: undefined, tab: undefined }}
           size="sm"
-          title={installHint ? `Установить: ${installHint}` : 'Установить командой каталога'}
+          title={installHint ? `Установить: ${installHint}` : undefined}
         >
           <Download className="size-3.5" />
           Установить
         </ButtonLink>
       ) : (
-        <Button size="sm" disabled title="Агент не на связи">
+        <Button size="sm" disabled title="Сервер не в сети">
           <Download className="size-3.5" />
           Установить
         </Button>
@@ -94,12 +94,12 @@ export function ServicesPage() {
       <div className="flex flex-wrap items-center gap-3">
         <PageTitle>Сервисы</PageTitle>
         <InfoTip>
-          Эталон: на каждом сервере 3X-UI (со своими inbound-ами), MTProxyL, AWG 3.1 и 2.0, WDTT и
-          OpenFlux. Сервер панели в матрицу не входит.
+          Эталон: 3X-UI со своими inbound, MTProxyL, AWG 3.1 и 2.0, WDTT и OpenFlux. Сервер панели
+          не входит.
         </InfoTip>
         {data && (
           <Chip>
-            по эталону {full} из {data.rows.length}
+            по эталону: {full} из {data.rows.length}
           </Chip>
         )}
         <div className="grow" />
@@ -108,7 +108,7 @@ export function ServicesPage() {
         </Button>
       </div>
       {error && <Alert tone="bad">{error.message}</Alert>}
-      {!data && !error && <Card className="p-8 text-[13px] text-muted">Опрашиваю серверы...</Card>}
+      {!data && !error && <Card className="p-8 text-[13px] text-muted">Загрузка&hellip;</Card>}
       {data && (
         <>
           <Card className="hidden overflow-hidden md:block">

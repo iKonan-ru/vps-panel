@@ -58,23 +58,19 @@ export function PanelBackupSettings() {
 
   return (
     <Section
-      title="Бэкап панели"
+      title="Резервная копия панели"
       info={
         <>
-          В бэкапе база панели, SESSION_SECRET (без него зашифрованные в базе доступы и ключи
-          клиентов не прочитать) и SSH-ключ панели; бэкапы серверов не входят. Файл шифруется
-          паролем. Расшифровать на любой машине:{' '}
-          <span className="break-all font-mono">{st.decryptHint}</span>. Восстановить панель:
-          установить её и на сервере выполнить{' '}
-          <span className="font-mono">vps-panel restore &lt;файл&gt;</span> (спросит пароль бэкапа);
-          по шагам - README.txt внутри архива.
+          База панели, её ключи шифрования и SSH-ключ. Восстановление:{' '}
+          <span className="font-mono">vps-panel restore &lt;файл&gt;</span>. Расшифровка вручную:{' '}
+          <span className="break-all font-mono">{st.decryptHint}</span>
         </>
       }
       extra={
         last &&
         (last.ok ? (
           <Chip tone="ok">
-            {last.to === 'telegram' ? 'в Telegram' : 'скачан'} {ago(last.at)}
+            {last.to === 'telegram' ? 'отправлена' : 'скачана'} {ago(last.at)}
           </Chip>
         ) : (
           <Chip tone="bad">ошибка {ago(last.at)}</Chip>
@@ -82,9 +78,6 @@ export function PanelBackupSettings() {
       }
     >
       <div className="flex flex-col gap-4 p-4">
-        <div className="text-[13px] text-muted">
-          Пароль храни отдельно (например, в менеджере паролей): без него бэкап не открыть.
-        </div>
         <form
           className="flex flex-col gap-2"
           onSubmit={(e: FormEvent) => {
@@ -96,13 +89,9 @@ export function PanelBackupSettings() {
           }}
         >
           <Field
-            label={st.passwordSet ? 'Новый пароль бэкапа' : 'Пароль бэкапа'}
+            label={st.passwordSet ? 'Новый пароль' : 'Пароль'}
             htmlFor="pb-pass"
-            hint={
-              st.passwordSet
-                ? 'пароль задан; новый будет применяться к следующим бэкапам, старые открываются прежним'
-                : 'не короче 8 символов'
-            }
+            hint={st.passwordSet ? 'действует для следующих копий' : 'не короче 8\u00a0символов'}
           >
             <div className="flex flex-wrap gap-2">
               <div className="min-w-0 grow basis-60">
@@ -123,7 +112,7 @@ export function PanelBackupSettings() {
           <Switch
             checked={st.telegram}
             disabled={busy || !st.passwordSet}
-            label="Раз в сутки отправлять в Telegram"
+            label="Ежедневная отправка в Telegram"
             onChange={() =>
               void call(
                 () =>
@@ -131,13 +120,11 @@ export function PanelBackupSettings() {
                     method: 'POST',
                     json: { telegram: !st.telegram },
                   }),
-                st.telegram ? 'Отправка выключена' : 'Бэкап будет уходить в Telegram раз в сутки',
+                st.telegram ? 'Отправка выключена' : 'Отправка включена',
               )
             }
           />
-          <span className="text-[13px]">
-            Раз в сутки отправлять файлом в чат с ботом (настройки Telegram выше)
-          </span>
+          <span className="text-[13px]">Ежедневная отправка в Telegram</span>
         </div>
         <div className="flex flex-wrap gap-2">
           <Button
@@ -148,11 +135,11 @@ export function PanelBackupSettings() {
                   method: 'POST',
                 });
                 if (!r.ok) throw new Error(r.error ?? 'не отправлен');
-              }, 'Бэкап отправлен в Telegram')
+              }, 'Отправлено')
             }
           >
             <Send className="size-4" />
-            Отправить в Telegram сейчас
+            Отправить в Telegram
           </Button>
           {st.passwordSet ? (
             <a href="/api/panel-backup/download" download className={buttonClass()}>
@@ -168,10 +155,10 @@ export function PanelBackupSettings() {
         </div>
         {/* ответ только что нажатой кнопки важнее: одну и ту же ошибку дважды не показываем */}
         {!msg && last && !last.ok && last.error && (
-          <Alert tone="bad">Последний бэкап не удался: {last.error}</Alert>
+          <Alert tone="bad">Последняя копия не создана: {last.error}</Alert>
         )}
         {last?.ok && last.size && (
-          <div className="text-xs text-muted">Последний бэкап: {bytes(last.size)}</div>
+          <div className="text-xs text-muted">Размер: {bytes(last.size)}</div>
         )}
         {msg && <Alert tone={msg.tone}>{msg.text}</Alert>}
       </div>

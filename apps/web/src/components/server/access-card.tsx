@@ -99,7 +99,13 @@ export function AccessCard({ serverId }: { serverId: string }) {
   const [error, setError] = useState<string | null>(null);
 
   async function remove(e: AccessEntry) {
-    if (!(await ask({ title: `Удалить доступ "${e.title}"?`, okLabel: 'Удалить', danger: true })))
+    if (
+      !(await ask({
+        title: `Удалить доступ \u00ab${e.title}\u00bb?`,
+        okLabel: 'Удалить',
+        danger: true,
+      }))
+    )
       return;
     try {
       await accessApi.remove(serverId, e.id);
@@ -148,8 +154,7 @@ export function AccessCard({ serverId }: { serverId: string }) {
       )}
       {list.length === 0 && (
         <div className="px-4 py-3 text-[13px] text-muted">
-          Пока пусто. Команды установки (3X-UI, MTProxy, WDTT) запишут сюда логины, пароли и ссылки
-          сами; остальное можно добавить вручную.
+          Доступов нет. Команды установки 3X-UI, MTProxy и WDTT добавляют их сами.
         </div>
       )}
       <div className="divide-y divide-border">
@@ -324,7 +329,7 @@ function AccessDialog({
             <Button
               size="sm"
               onClick={() => setFields((fs) => [...fs, row({ label: '', value: '' })])}
-              label="Поле"
+              label="Добавить поле"
             >
               <Plus className="size-3.5" />
             </Button>

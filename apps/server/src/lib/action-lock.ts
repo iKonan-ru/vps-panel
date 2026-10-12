@@ -37,9 +37,7 @@ export function beginAction(
     const busy = busyAction(db, a.serverId);
     if (busy)
       throw Object.assign(
-        new Error(
-          `На сервере уже выполняется: ${actionTitle(busy.kind, busy.params)}. Дождись окончания`,
-        ),
+        new Error(`на сервере уже выполняется: ${actionTitle(busy.kind, busy.params)}`),
         { statusCode: 409 },
       );
   }

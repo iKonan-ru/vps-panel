@@ -88,7 +88,7 @@ func TestCheck(t *testing.T) {
 		t.Fatalf("итоги: %+v", rep.Results)
 	}
 	for _, i := range []int{2, 3} {
-		if !strings.Contains(rep.Results[i].Error, "квота Globalping") || !strings.Contains(rep.Results[i].Error, "10 мин") {
+		if !strings.Contains(rep.Results[i].Error, "квота Globalping") || !strings.Contains(rep.Results[i].Error, "10\u00a0мин") {
 			t.Fatalf("цель %d: %q", i, rep.Results[i].Error)
 		}
 	}

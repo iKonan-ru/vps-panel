@@ -78,7 +78,7 @@ export function ClientConfig({
     return () => clearInterval(t);
   }, [format, frames.length]);
 
-  if (isLoading) return <div className="text-sm text-muted">Собираю конфиг...</div>;
+  if (isLoading) return <div className="text-sm text-muted">Загрузка&hellip;</div>;
   if (error) return <Alert tone="bad">{error.message}</Alert>;
   if (!data || !text) return null;
   const tabs: { id: Format; title: string }[] = [
@@ -88,10 +88,10 @@ export function ClientConfig({
   ];
   const hint =
     format === 'awg'
-      ? `Приложение AmneziaWG: импорт из файла (туннель будет называться ${data.fileName}) или QR - тогда приложение спросит имя, введи ${data.fileName}.`
+      ? `Импорт из файла или по QR. При импорте по QR приложение спросит имя: ${data.fileName}.`
       : format === 'amnezia'
-        ? `Приложение Amnezia VPN: "Добавить" - вставить ключ или сканировать QR. Подключение будет называться "${data.title}".`
-        : `Обычный WireGuard: сервер без обфускации. Имя туннеля - ${data.fileName}.`;
+        ? `В Amnezia VPN: \u00abДобавить\u00bb, затем вставить ключ или отсканировать QR. Подключение будет называться \u00ab${data.title}\u00bb.`
+        : `Обычный WireGuard без обфускации. Имя туннеля: ${data.fileName}.`;
   return (
     <div className="flex flex-col items-center gap-3">
       <div className="flex w-full flex-wrap items-center gap-3">
@@ -124,8 +124,8 @@ export function ClientConfig({
             format === 'amnezia' &&
             frames.length > 1 && (
               <div className="text-xs text-muted">
-                кадр {(frame % frames.length) + 1} из {frames.length}: держи камеру, пока приложение
-                не соберёт все
+                кадр {(frame % frames.length) + 1} из {frames.length}: камеру не убирать, пока
+                приложение не считает все
               </div>
             )
           }

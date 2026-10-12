@@ -98,14 +98,11 @@ export function CleanupDialog({
       ) : (
         <>
           <div className="text-[13px] text-muted">
-            Данные сервисов (тома docker, конфиги, базы) не трогаются. Безопасные категории отмечены
-            сразу; остальные помечены и требуют понимания последствий.
+            Данные сервисов (тома docker, конфиги, базы) не затрагиваются
           </div>
-          {scan.isLoading && <div className="text-sm text-muted">Считаю, что можно удалить...</div>}
+          {scan.isLoading && <div className="text-sm text-muted">Подсчёт&hellip;</div>}
           {scan.error && <Alert tone="bad">{(scan.error as Error).message}</Alert>}
-          {scan.data && items.length === 0 && (
-            <Alert tone="ok">Мусора не найдено, чистить нечего.</Alert>
-          )}
+          {scan.data && items.length === 0 && <Alert tone="ok">Очищать нечего</Alert>}
           {items.length > 0 && (
             <div className="flex flex-col gap-2.5">
               {items.map((i) => (
@@ -128,7 +125,9 @@ export function CleanupDialog({
           {error && <Alert tone="bad">{error}</Alert>}
           <div className="flex items-center gap-3">
             <span className="text-[13px] text-muted">
-              {chosen && chosen.size > 0 ? `к удалению около ${bytes(total)}` : 'ничего не выбрано'}
+              {chosen && chosen.size > 0
+                ? `освободится около ${bytes(total)}`
+                : 'ничего не выбрано'}
             </span>
             <div className="grow" />
             <Button onClick={onClose}>Отмена</Button>

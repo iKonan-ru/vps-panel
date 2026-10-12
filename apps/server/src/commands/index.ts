@@ -72,11 +72,11 @@ export function validateAnswers(c: CommandDef, answers: Record<string, string>):
     if (p.type === 'domain' && !/^([a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z]{2,63}$/i.test(v))
       errors.push(`${p.label}: неверное доменное имя`);
     if (p.type === 'awg-container' && !/^amnezia-awg[0-9]*(-[0-9]{1,5})?$/.test(v))
-      errors.push(`${p.label}: выбери контейнер AWG с этого сервера`);
+      errors.push(`${p.label}: неверное имя контейнера AWG`);
     if (p.type === 'select' && p.options && !p.options.some((o) => o.value === v))
       errors.push(`${p.label}: недопустимое значение`);
     if (p.pattern && !new RegExp(p.pattern).test(v)) errors.push(`${p.label}: неверный формат`);
-    if (v.length > 4000) errors.push(`${p.label}: слишком длинно`);
+    if (v.length > 4000) errors.push(`${p.label}: слишком длинное значение`);
   }
   return errors;
 }

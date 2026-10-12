@@ -22,7 +22,7 @@ export async function openfluxRoutes(app: FastifyInstance, opts: ServerRouteOpts
   const { runStreamed, quickAction } = actionRunners(registry, journal);
   const online = (id: string) => {
     if (!registry.isOnline(id))
-      throw Object.assign(new Error('Агент не подключён'), { statusCode: 409 });
+      throw Object.assign(new Error('сервер не в сети'), { statusCode: 409 });
   };
 
   app.get('/api/servers/:id/openflux', async (req) => {
@@ -45,7 +45,7 @@ export async function openfluxRoutes(app: FastifyInstance, opts: ServerRouteOpts
     const { id } = Id.parse(req.params);
     const { channel } = z.object({ channel: OfChannelName }).parse(req.body ?? {});
     const row = db.select().from(servers).where(eq(servers.id, id)).get();
-    if (!row) return reply.code(404).send({ error: 'Сервер не найден' });
+    if (!row) return reply.code(404).send({ error: 'сервер не найден' });
     online(id);
     reply.header('Cache-Control', 'no-store');
     // имя профиля в приложении - как у остальных сервисов: "флаг Страна :: Хостинг"

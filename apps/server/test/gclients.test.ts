@@ -409,7 +409,7 @@ describe('GClients.reconcile: 3X-UI', () => {
       .all()
       .find((x) => x.serverId === 's1' && x.service === 'xui');
     expect(b?.state).toBe('error');
-    expect(b?.error).toContain('своего набора');
+    expect(b?.error).toContain('из набора клиента');
     only(null);
     await g.reconcile();
     expect(xui.s1?.clients.get(c.slug)?.inboundIds.sort()).toEqual([1, 2]);
@@ -768,7 +768,7 @@ describe('GClients.stop', () => {
         .all()
         .some((b) => b.state === 'pending'),
     ).toBe(true);
-    expect(journal.log.some((x) => /сверка прервана/.test(x.output))).toBe(true);
+    expect(journal.log.some((x) => /синхронизация прервана/.test(x.output))).toBe(true);
   });
 });
 
@@ -844,7 +844,7 @@ describe('GClients.reconcile: сервис или агент не отвечае
       const s1 = journal.log.find((l) => l.serverId === 's1')?.output ?? '';
       expect(s1.match(/mtproxyl [a-z0-9-]+: ошибка: mtproxyl: не запущен/g)).toHaveLength(2);
 
-      fail = 'Агент не ответил вовремя';
+      fail = 'агент не ответил вовремя';
       calls = 0;
       journal.log = [];
       db.update(gclientBindings).set(queued()).run();

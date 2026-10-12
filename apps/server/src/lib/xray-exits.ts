@@ -70,32 +70,32 @@ export async function prepareExit(
 ): Promise<XrayOutbound> {
   const { db, registry, box } = deps;
   const row = (await db.select().from(servers).where(eq(servers.id, serverId)).limit(1))[0];
-  if (!row) throw fail(404, 'Сервер не найден');
-  if (!registry.isOnline(row.id)) throw fail(409, 'Агент не подключён');
+  if (!row) throw fail(404, 'сервер не найден');
+  if (!registry.isOnline(row.id)) throw fail(409, 'сервер не в сети');
   const inv = (row.statusCache as StatusCache | null)?.inventory;
-  if (!inv?.services.some((s) => s.kind === 'xui'))
-    throw fail(409, 'На этом сервере агент не нашёл 3X-UI');
+  if (!inv?.services.some((s) => s.kind === 'xui')) throw fail(409, 'на сервере нет 3X-UI');
   const api = xuiApi(registry, row.id, await xuiToken(db, box, registry, row.id));
 
   const inbound = unwrap(await api('GET', `inbounds/get/${inboundId}`), 'inbounds/get') as Record<
     string,
     unknown
   > | null;
-  if (!inbound) throw fail(502, '3X-UI не отдал inbound');
+  if (!inbound) throw fail(502, '3X-UI не вернула inbound');
   const ss = parseJson(inbound.streamSettings);
   const rs = parseJson(ss.realitySettings);
   const rsSettings = parseJson(rs.settings);
   if (inbound.protocol !== 'vless' || ss.security !== 'reality')
-    throw fail(409, 'Нужен inbound VLESS с security = reality');
+    throw fail(409, 'нужен inbound VLESS с security = reality');
   const publicKey = String(rsSettings.publicKey ?? '');
   const shortId = String((rs.shortIds as string[] | undefined)?.[0] ?? '');
   const sni = String((rs.serverNames as string[] | undefined)?.[0] ?? '');
   if (!publicKey || !sni)
-    throw fail(409, 'У inbound-а нет publicKey или serverNames в настройках Reality');
+    throw fail(409, 'у inbound нет publicKey или serverNames в настройках Reality');
 
   // клиент vps-panel (3X-UI 3.1+: клиенты - отдельные сущности, как у глобальных клиентов)
   const got = await api('GET', `clients/get/${EXIT_CLIENT}`);
-  if (got.status === 404) throw fail(409, '3X-UI старше 3.1 (нет API клиентов): обнови 3X-UI');
+  if (got.status === 404)
+    throw fail(409, '3X-UI старше 3.1 (нет API клиентов): нужно обновить 3X-UI');
   let client = (got.data as XuiEnvelope | undefined)?.success
     ? readClient((got.data as XuiEnvelope).obj)
     : null;
@@ -125,7 +125,7 @@ export async function prepareExit(
     );
   }
   const uuid = client?.uuid ?? '';
-  if (!uuid) throw fail(502, '3X-UI не вернул uuid клиента vps-panel');
+  if (!uuid) throw fail(502, '3X-UI не вернула uuid клиента vps-panel');
 
   return {
     serverId: row.id,
@@ -206,7 +206,7 @@ export class XraySpares {
         // прежний inbound, если он ещё подходит: клиент vps-panel уже на нём
         const keep = cands.find((i) => i.id === prev.get(r.id)?.inboundId) ?? cands[0];
         if (!keep) {
-          errors.push({ server: r.name, error: 'нет включённого VLESS Reality inbound-а по TCP' });
+          errors.push({ server: r.name, error: 'нет включённого inbound VLESS Reality по TCP' });
           continue;
         }
         list.push(await prepareExit(this.deps, r.id, keep.id));

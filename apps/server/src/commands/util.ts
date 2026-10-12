@@ -72,7 +72,7 @@ naive_443() {
   naive_cfg443 "$mode"
   /usr/local/bin/vps-agent -naive-render
   if [ "$mode" = listen ] && ! runuser -u vps-naive -- /opt/vps-naive/caddy validate --config /etc/vps-naive/Caddyfile --adapter caddyfile >/dev/null 2>&1; then
-    echo "ВНИМАНИЕ: Caddy не принял 443 (обнови агента сервера и повтори установку прокси для браузера) - прокси только на порту $(naive_get port)"
+    echo "ВНИМАНИЕ: Caddy не принял порт 443 (нужно обновить агент сервера и повторить установку прокси для браузера) - прокси только на порту $(naive_get port)"
     mode=none
     naive_cfg443 none
     /usr/local/bin/vps-agent -naive-render
@@ -98,7 +98,7 @@ naive_mask_on() {
 
 /** Скрипт установки docker (официальный установщик), если его ещё нет. */
 export const ENSURE_DOCKER = `if ! need docker; then
-  say "Docker не найден - ставлю официальным установщиком"
+  say "Docker не найден - устанавливаю официальным установщиком"
   fetch https://get.docker.com -o /tmp/get-docker.sh
   apt_wait
   sh /tmp/get-docker.sh

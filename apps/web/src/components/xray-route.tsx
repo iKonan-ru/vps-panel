@@ -121,8 +121,8 @@ export function XrayRouteDialog({ open, onClose }: { open: boolean; onClose: () 
       });
       setMsg(
         r.check.ok
-          ? { tone: 'ok', text: `Настроено, Telegram отвечает через прокси за ${r.check.ms} мс` }
-          : { tone: 'bad', text: `Настроено, но проверка не прошла: ${r.check.err ?? ''}` },
+          ? { tone: 'ok', text: `Настроено, Telegram отвечает за ${r.check.ms}\u00a0мс` }
+          : { tone: 'bad', text: `Настроено, проверка не прошла: ${r.check.err ?? ''}` },
       );
     });
 
@@ -133,18 +133,18 @@ export function XrayRouteDialog({ open, onClose }: { open: boolean; onClose: () 
       const ok = all.filter((x) => x.lastCheck?.ok).length;
       setMsg(
         ok > 0
-          ? { tone: 'ok', text: `Telegram отвечает через ${ok} из ${all.length} выходов` }
+          ? { tone: 'ok', text: `Отвечают выходы: ${ok} из ${all.length}` }
           : { tone: 'bad', text: `Ни один выход не отвечает: ${all[0]?.lastCheck?.err ?? ''}` },
       );
     });
 
   const prepareSpares = () =>
-    run('Запасные выходы подготовлены', () => api('/api/xray/spares', { method: 'POST' }));
+    run('Запасные выходы готовы', () => api('/api/xray/spares', { method: 'POST' }));
 
   const disable = async () => {
     const ok = await ask({
-      title: 'Отключить выход через xray?',
-      text: 'Основной и запасные выходы выключатся, уведомления пойдут напрямую или через агентов. Клиенты vps-panel в 3X-UI останутся.',
+      title: 'Отключить маршрут через xray?',
+      text: 'Уведомления пойдут напрямую или через агенты. Клиенты vps-panel в 3X-UI останутся.',
       okLabel: 'Отключить',
       danger: true,
     });
@@ -162,12 +162,9 @@ export function XrayRouteDialog({ open, onClose }: { open: boolean; onClose: () 
           {label}
         </Chip>
         <InfoTip>
-          С хоста панели Telegram недоступен, поэтому панель держит xray-клиент к твоему же 3X-UI на
-          заграничных серверах (VLESS-Reality) и ходит к Telegram через него. Основной выход
-          выбираешь ты, запасные панель готовит сама на остальных серверах с 3X-UI (раз в 6 часов):
-          клиент <span className="font-mono">vps-panel</span> на первом Reality-inbound-е по TCP.
-          Каждый выход проверяется раз в 5 минут; не отвечает основной - сообщение уйдёт через
-          следующий, затем напрямую и через агентов.
+          Панель отправляет сообщения через 3X-UI на зарубежных серверах. Если основной выход не
+          отвечает, используются запасные: клиент <span className="font-mono">vps-panel</span> на
+          остальных серверах с 3X-UI.
         </InfoTip>
         <div className="grow" />
         {st.configured && (
@@ -185,11 +182,8 @@ export function XrayRouteDialog({ open, onClose }: { open: boolean; onClose: () 
         {st.configured && (
           <div className="flex flex-col gap-2">
             <div className="text-[13px] text-muted">
-              Процесс:{' '}
-              {st.running
-                ? `pid ${st.pid}, запущен ${st.startedAt ? ago(st.startedAt) : ''}`
-                : 'не запущен'}
-              {st.restarts > 0 ? `, перезапусков ${st.restarts}` : ''}
+              Xray: {st.running ? `запущен ${st.startedAt ? ago(st.startedAt) : ''}` : 'не запущен'}
+              {st.restarts > 0 ? `, перезапусков: ${st.restarts}` : ''}
             </div>
             <div className="flex flex-col rounded-lg border border-border">
               {st.exits.map((x) => (
@@ -205,8 +199,7 @@ export function XrayRouteDialog({ open, onClose }: { open: boolean; onClose: () 
                       </Chip>
                     )}
                     <span className="block truncate text-xs text-muted">
-                      {x.inboundRemark || `#${x.inboundId}`}, порт {x.port}, SNI {x.sni}, клиент{' '}
-                      <span className="font-mono">vps-panel {x.uuid}</span>
+                      {x.inboundRemark || `#${x.inboundId}`}, порт {x.port}, SNI {x.sni}
                     </span>
                   </span>
                   {x.lastCheck ? (
@@ -218,7 +211,7 @@ export function XrayRouteDialog({ open, onClose }: { open: boolean; onClose: () 
                       {x.lastCheck.ok ? `${x.lastCheck.ms} мс` : 'не отвечает'}
                     </Chip>
                   ) : (
-                    <Chip className="mt-px">не проверялся</Chip>
+                    <Chip className="mt-px">не проверен</Chip>
                   )}
                 </div>
               ))}
@@ -226,14 +219,14 @@ export function XrayRouteDialog({ open, onClose }: { open: boolean; onClose: () 
             <div className="flex flex-wrap items-center gap-2 text-xs text-muted">
               <span className="grow">
                 Запасные: {st.exits.length > 1 ? st.exits.length - 1 : 'нет'}
-                {st.spares.at ? `, подготовлены ${ago(st.spares.at)}` : ''}
+                {st.spares.at ? `, обновлены ${ago(st.spares.at)}` : ''}
               </span>
               <Button
                 size="sm"
                 disabled={locked}
                 onClick={prepareSpares}
-                label="Подготовить запасные"
-                short="Подготовить"
+                label="Обновить запасные"
+                short="Обновить"
               >
                 <RefreshCw className="size-3.5" />
               </Button>
@@ -248,19 +241,15 @@ export function XrayRouteDialog({ open, onClose }: { open: boolean; onClose: () 
         )}
 
         {!st.binary && (
-          <Alert tone="bad">
-            В образе панели нет бинарника xray: пересобери контейнер (deploy/Dockerfile).
-          </Alert>
+          <Alert tone="bad">В образе панели нет xray: нужна пересборка контейнера</Alert>
         )}
 
         <div className="flex flex-col gap-2">
           <div className="text-[13px] font-medium">
-            {st.configured ? 'Сменить основной выход' : 'Настроить выход'}
+            {st.configured ? 'Основной выход' : 'Выход'}
           </div>
           {candidates.length === 0 ? (
-            <div className="text-[13px] text-muted">
-              Нет серверов на связи, где агент нашёл 3X-UI.
-            </div>
+            <div className="text-[13px] text-muted">Нет серверов с 3X-UI в сети</div>
           ) : (
             <div className="flex flex-wrap items-end gap-3">
               <Field label="Сервер" htmlFor="xray-server" className="min-w-[220px]">
@@ -272,7 +261,7 @@ export function XrayRouteDialog({ open, onClose }: { open: boolean; onClose: () 
                     setInboundId('');
                   }}
                 >
-                  <option value="">выбери сервер</option>
+                  <option value="">не выбран</option>
                   {candidates.map((s) => (
                     <option key={s.id} value={s.id}>
                       {s.name} ({s.hosting.country || s.host})
@@ -289,12 +278,12 @@ export function XrayRouteDialog({ open, onClose }: { open: boolean; onClose: () 
                 >
                   <option value="">
                     {!serverId
-                      ? 'сначала сервер'
+                      ? 'выберите сервер'
                       : inbounds.isLoading
-                        ? 'загружаю...'
+                        ? 'загрузка\u2026'
                         : inbounds.data?.inbounds.length === 0
-                          ? 'Reality-inbound-ов нет'
-                          : 'выбери inbound'}
+                          ? 'нет inbound с Reality'
+                          : 'не выбран'}
                   </option>
                   {inbounds.data?.inbounds.map((i) => (
                     <option key={i.id} value={i.id} disabled={!i.enable || !i.tcp}>
@@ -308,8 +297,8 @@ export function XrayRouteDialog({ open, onClose }: { open: boolean; onClose: () 
                 variant="primary"
                 disabled={locked || !serverId || inboundId === '' || !st.binary}
                 onClick={setup}
-                label={busy ? 'Настраиваю...' : 'Настроить'}
-                short={busy ? 'Настраиваю...' : 'Настроить'}
+                label="Настроить"
+                short="Настроить"
               >
                 <Route className="size-4" />
               </Button>

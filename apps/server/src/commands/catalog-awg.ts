@@ -105,7 +105,7 @@ export const awgCmd: CommandDef = {
   group: 'install',
   service: 'Amnezia AWG',
   description:
-    'Сервер AmneziaWG в контейнере, как у приложения Amnezia: версия 3.1, 2.0 или 1.0. Основной экземпляр amnezia-awg2 виден приложению; дополнительный amnezia-awg2-<порт> - ещё одна версия на том же сервере. Клиенты - во вкладке AWG.',
+    'Сервер AmneziaWG в контейнере, совместимый с приложением Amnezia. Дополнительный экземпляр нужен для второй версии протокола на том же сервере.',
   params: [
     {
       name: 'AWG_VERSION',
@@ -113,9 +113,9 @@ export const awgCmd: CommandDef = {
       type: 'select',
       default: '3.1',
       options: [
-        { value: '3.1', label: '3.1 - последняя (защита заголовков, случайные хвосты)' },
-        { value: '2.0', label: '2.0 - для клиентов до 3.x (Amnezia VPN 4.8.12+)' },
-        { value: '1.0', label: '1.0 - для старых клиентов и роутеров' },
+        { value: '3.1', label: '3.1 (последняя)' },
+        { value: '2.0', label: '2.0 (клиенты до 3.x, Amnezia VPN 4.8.12+)' },
+        { value: '1.0', label: '1.0 (старые клиенты и роутеры)' },
       ],
     },
     {
@@ -124,8 +124,8 @@ export const awgCmd: CommandDef = {
       type: 'select',
       default: 'main',
       options: [
-        { value: 'main', label: 'основной amnezia-awg2 (виден приложению Amnezia)' },
-        { value: 'extra', label: 'дополнительный amnezia-awg2-<порт> (ещё одна версия рядом)' },
+        { value: 'main', label: 'основной (виден приложению Amnezia)' },
+        { value: 'extra', label: 'дополнительный (вторая версия)' },
       ],
     },
     { name: 'AWG_SERVER_PORT', label: 'Порт UDP', type: 'port', default: '55424', required: true },
@@ -136,16 +136,16 @@ export const awgCmd: CommandDef = {
       default: '10.8.1.0',
       required: true,
       pattern: '^([0-9]{1,3}\\.){3}0$',
-      hint: 'маска /24; по умолчанию - первая свободная по всем серверам',
+      hint: 'маска /24, не занятая на других серверах',
     },
     {
       name: 'AWG_REPLACE',
-      label: 'Если такой контейнер уже есть',
+      label: 'Если контейнер уже есть',
       type: 'select',
       default: 'stop',
       options: [
-        { value: 'stop', label: 'остановиться с ошибкой (безопасно)' },
-        { value: 'replace', label: 'удалить и создать заново (клиенты потеряются!)' },
+        { value: 'stop', label: 'не устанавливать' },
+        { value: 'replace', label: 'пересоздать, клиенты будут удалены' },
       ],
     },
   ],
@@ -170,7 +170,7 @@ export const awgCmd: CommandDef = {
   cleanup: ['/tmp/awg-install-start.sh', '/tmp/awg-install-awg0.conf'],
   script: `${PROLOGUE}
 ${ENSURE_DOCKER}
-say "Подготовка хоста (как prepare_host.sh приложения)"
+say "Подготовка сервера"
 mkdir -p /opt/amnezia/$CONTAINER_NAME
 # Проверки без конвейера "docker ... | grep -q": под pipefail grep выходит на первом совпадении,
 # docker дописывает остальные строки в закрытый канал и падает от SIGPIPE - сеть или контейнер
@@ -183,7 +183,7 @@ if docker container inspect "$CONTAINER_NAME" >/dev/null 2>&1; then
     say "Удаляю существующий контейнер $CONTAINER_NAME"
     docker rm -f "$CONTAINER_NAME"
   else
-    echo "Контейнер $CONTAINER_NAME уже существует. Выбери 'удалить и создать заново' или сначала убери его вручную." >&2
+    echo "контейнер $CONTAINER_NAME уже существует: нужно выбрать 'пересоздать' или удалить его вручную" >&2
     exit 3
   fi
 fi
@@ -208,7 +208,7 @@ unset PRIV
 say "Скрипт запуска и старт AWG"
 docker cp /tmp/awg-install-start.sh "$CONTAINER_NAME:/opt/amnezia/start.sh"
 docker exec -d "$CONTAINER_NAME" sh -c "chmod a+x /opt/amnezia/start.sh && /opt/amnezia/start.sh"
-say "Firewall хоста (как setup_host_firewall.sh, без запрета ping)"
+say "Firewall сервера"
 sysctl -w net.ipv4.ip_forward=1 >/dev/null
 sysctl -w net.netfilter.nf_conntrack_max=262144 >/dev/null 2>&1 || true
 # Переходы FORWARD -> цепочки docker: только на те, что есть (в docker 28+ цепочки изоляции переименованы).
@@ -226,31 +226,31 @@ if iptables -S DOCKER >/dev/null 2>&1; then
 fi
 sleep 3
 say "Проверка"
-AWG_SHOW=$(docker exec "$CONTAINER_NAME" awg show awg0 2>/dev/null) || { echo "awg0 не поднялся, смотри docker logs $CONTAINER_NAME" >&2; exit 4; }
+AWG_SHOW=$(docker exec "$CONTAINER_NAME" awg show awg0 2>/dev/null) || { echo "awg0 не поднялся, журнал: docker logs $CONTAINER_NAME" >&2; exit 4; }
 head -5 <<<"$AWG_SHOW"
 docker exec "$CONTAINER_NAME" test -e /sys/class/net/awg0/tun_flags && echo "Реализация: amneziawg-go" || echo "Реализация: модуль ядра"
 say "Сервер AWG $AWG_PROFILE ($CONTAINER_NAME) готов"
 echo "Публичный ключ сервера: $PUB"
 echo "Порт: $AWG_SERVER_PORT/udp, подсеть $AWG_SUBNET_IP/$WIREGUARD_SUBNET_CIDR"
-echo "Клиентов добавляй во вкладке AWG карточки сервера."
+echo "Клиенты добавляются на вкладке AWG сервера"
 `,
-  preflight: `if docker ps -a --format '{{.Names}}' 2>/dev/null | grep -qx "$CONTAINER_NAME"; then if [ "$AWG_REPLACE" = "replace" ]; then echo "WARN|контейнер $CONTAINER_NAME существует и БУДЕТ УДАЛЁН вместе с клиентами"; else echo "FAIL|контейнер $CONTAINER_NAME уже существует"; fi; else echo "OK|контейнера $CONTAINER_NAME нет"; fi
-if ss -lun | awk '{print $5}' | grep -q ":$AWG_SERVER_PORT$"; then echo "FAIL|порт $AWG_SERVER_PORT/udp уже занят"; elif docker ps -a --format '{{.Names}} {{.Ports}}' 2>/dev/null | grep -v "^$CONTAINER_NAME " | grep -q ":$AWG_SERVER_PORT->"; then echo "FAIL|порт $AWG_SERVER_PORT/udp опубликован другим контейнером docker"; else echo "OK|порт $AWG_SERVER_PORT/udp свободен"; fi
+  preflight: `if docker ps -a --format '{{.Names}}' 2>/dev/null | grep -qx "$CONTAINER_NAME"; then if [ "$AWG_REPLACE" = "replace" ]; then echo "WARN|контейнер $CONTAINER_NAME будет пересоздан, его клиенты будут удалены"; else echo "FAIL|контейнер $CONTAINER_NAME уже существует"; fi; else echo "OK|контейнера $CONTAINER_NAME нет"; fi
+if ss -lun | awk '{print $5}' | grep -q ":$AWG_SERVER_PORT$"; then echo "FAIL|порт $AWG_SERVER_PORT/udp занят"; elif docker ps -a --format '{{.Names}} {{.Ports}}' 2>/dev/null | grep -v "^$CONTAINER_NAME " | grep -q ":$AWG_SERVER_PORT->"; then echo "FAIL|порт $AWG_SERVER_PORT/udp занят другим контейнером Docker"; else echo "OK|порт $AWG_SERVER_PORT/udp свободен"; fi
 NET="\${AWG_SUBNET_IP%.*}."; BUSY=""
 for c in $(docker ps --format '{{.Names}}' 2>/dev/null | grep -E '^amnezia-awg'); do
   [ "$c" = "$CONTAINER_NAME" ] && continue
   docker exec "$c" sh -c 'grep -h "^Address" /opt/amnezia/awg/*.conf 2>/dev/null' | grep -q "= $NET" && BUSY="$BUSY $c"
 done
-if [ -n "$BUSY" ]; then echo "FAIL|подсеть $AWG_SUBNET_IP/24 уже у:$BUSY - выбери другую"; else echo "OK|подсеть $AWG_SUBNET_IP/24 свободна"; fi
-if command -v docker >/dev/null 2>&1; then echo "OK|docker установлен"; else echo "WARN|docker не установлен, будет поставлен"; fi
-MOD=$(cat /sys/module/amneziawg/version 2>/dev/null); if [ -n "$MOD" ] && [ "\${MOD%%.*}" -lt 3 ]; then echo "WARN|модуль ядра amneziawg $MOD старше 3.x: будет работать amneziawg-go (медленнее, но совместимо)"; fi`,
+if [ -n "$BUSY" ]; then echo "FAIL|подсеть $AWG_SUBNET_IP/24 занята:$BUSY"; else echo "OK|подсеть $AWG_SUBNET_IP/24 свободна"; fi
+if command -v docker >/dev/null 2>&1; then echo "OK|Docker установлен"; else echo "WARN|Docker не установлен, будет установлен"; fi
+MOD=$(cat /sys/module/amneziawg/version 2>/dev/null); if [ -n "$MOD" ] && [ "\${MOD%%.*}" -lt 3 ]; then echo "WARN|модуль ядра amneziawg $MOD старше 3.x: будет использован amneziawg-go, он медленнее"; fi`,
   plan: (a) => [
-    'Установить docker, если его нет; создать сеть amnezia-dns-net',
-    `Собрать образ ${containerOf(a)} из ${IMAGE} (Dockerfile приложения)`,
-    `Запустить контейнер с портом ${a.AWG_SERVER_PORT}/udp, сгенерировать ключи и awg0.conf версии ${profileOf(a)}, пустой clientsTable`,
-    'Поднять awg0 внутри контейнера (amneziawg-go, если модуль ядра старше 3.x), NAT и правила FORWARD как у приложения',
-    'Клиенты - во вкладке AWG карточки сервера',
+    'Установить Docker, если его нет',
+    `Собрать контейнер ${containerOf(a)} с AmneziaWG ${profileOf(a)}`,
+    `Запустить AWG на порту ${a.AWG_SERVER_PORT}/udp с подсетью ${a.AWG_SUBNET_IP}/24`,
+    'Сгенерировать ключи сервера',
+    'Настроить NAT и firewall',
   ],
   after:
-    'Клиентов добавляй во вкладке AWG. Основной экземпляр amnezia-awg2 совместим с приложением Amnezia (подключение по SSH).',
+    'Клиенты добавляются на вкладке AWG сервера. Основной экземпляр доступен и в приложении Amnezia по SSH.',
 };

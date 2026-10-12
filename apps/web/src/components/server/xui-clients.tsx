@@ -80,8 +80,8 @@ export function XuiClients({
 
   async function remove(c: XuiClientRow) {
     const ok = await ask({
-      title: `Удалить клиента ${c.email}?`,
-      text: `Клиент пропадёт из 3X-UI на этом сервере вместе со статистикой и перестанет подключаться (inbound-ов: ${c.inboundIds.length}).`,
+      title: `Удалить клиента \u00ab${c.email}\u00bb?`,
+      text: 'Клиент удалится из 3X-UI на этом сервере вместе со статистикой',
       okLabel: 'Удалить',
       danger: true,
     });
@@ -104,7 +104,9 @@ export function XuiClients({
   return (
     <Section
       title="Клиенты"
-      info="Клиенты 3X-UI и их inbound-ы. Привязку можно поменять: у клиента панели набор запоминается в панели, и сверка его держит (новые inbound-ы такой клиент сам не получает); 'Как у всех' возвращает общий набор - свои VLESS-inbound-ы, кроме отмеченных 'без клиентов панели'. Остальное о клиенте - в панели 3X-UI или в карточке клиента панели."
+      info={
+        'Свой набор inbound клиента панели сохраняется при синхронизации, новые inbound он не получает. \u00abКак у всех\u00bb возвращает общий набор.'
+      }
       extra={data && <Chip>{data.length}</Chip>}
     >
       {err && !edit && (
@@ -114,14 +116,12 @@ export function XuiClients({
       )}
       {error && (
         <div className="px-4 py-3 text-[13px] text-muted">
-          {noToken
-            ? 'Нужен API-токен 3X-UI: выпусти его кнопкой выше.'
-            : `Не удалось прочитать клиентов: ${error.message}`}
+          {noToken ? 'Нужен API-токен 3X-UI' : `Не удалось получить клиентов: ${error.message}`}
         </div>
       )}
       {!data && !error && (
         <div className="px-4 py-3 text-[13px] text-muted">
-          {isFetching ? 'Читаю клиентов...' : 'Нет данных'}
+          {isFetching ? 'Загрузка\u2026' : 'Нет данных'}
         </div>
       )}
       {data && data.length > 0 && (
@@ -132,7 +132,7 @@ export function XuiClients({
             value={inb}
             onChange={(e) => setInb(e.target.value)}
           >
-            <option value="all">все inbound-ы</option>
+            <option value="all">все inbound</option>
             {(inbounds ?? []).map((i) => (
               <option key={i.id} value={i.id}>
                 {i.remark || `#${i.id}`}
@@ -151,7 +151,7 @@ export function XuiClients({
       )}
       {data && rows.length === 0 && (
         <div className="px-4 py-3 text-[13px] text-muted">
-          {data.length ? 'Ничего не найдено' : 'Клиентов нет.'}
+          {data.length ? 'Ничего не найдено' : 'Клиентов нет'}
         </div>
       )}
       {paged.items.length > 0 && (
@@ -159,7 +159,7 @@ export function XuiClients({
           <THead>
             <tr>
               <th>Клиент</th>
-              <th>Inbound-ы</th>
+              <th>Inbound</th>
               <th className="text-right">Трафик</th>
               <th className="w-0" />
             </tr>
@@ -184,7 +184,7 @@ export function XuiClients({
                       <Link
                         to="/clients/$id"
                         params={{ id: c.panel.clientId }}
-                        title={`Клиент панели${c.panel.custom ? ', свой набор inbound-ов' : ''}: открыть карточку`}
+                        title={`Клиент панели${c.panel.custom ? ', свой набор inbound' : ''}`}
                         className="inline-flex min-w-0 items-center gap-1 text-xs text-accent hover:underline"
                       >
                         <UserRound className="size-3.5 shrink-0" />
@@ -213,7 +213,7 @@ export function XuiClients({
                   className="whitespace-nowrap text-right text-xs text-muted"
                   title={
                     [
-                      c.totalGB ? `лимит ${bytes(c.totalGB)}` : '',
+                      c.totalGB ? `лимит: ${bytes(c.totalGB)}` : '',
                       c.expiryTime > 0
                         ? `до ${new Date(c.expiryTime).toLocaleDateString('ru-RU')}`
                         : '',
@@ -230,8 +230,8 @@ export function XuiClients({
                     <Button
                       size="icon-sm"
                       variant="ghost"
-                      title={reason ?? 'Inbound-ы клиента'}
-                      aria-label="Inbound-ы клиента"
+                      title={reason ?? 'Inbound клиента'}
+                      aria-label="Inbound клиента"
                       disabled={disabled || busy || !inbounds}
                       onClick={() => {
                         setErr(null);
@@ -245,7 +245,7 @@ export function XuiClients({
                       variant="ghost"
                       title={
                         c.panel
-                          ? 'Клиент панели: убрать VLESS на сервере или самого клиента - в его карточке'
+                          ? 'Клиент панели удаляется в своей карточке'
                           : (reason ?? 'Удалить клиента')
                       }
                       aria-label="Удалить клиента"
@@ -265,7 +265,7 @@ export function XuiClients({
       <Dialog
         open={edit !== null}
         onClose={() => setEdit(null)}
-        title={edit ? `Inbound-ы ${edit.email}` : ''}
+        title={edit ? `Inbound: ${edit.email}` : ''}
       >
         {edit && inbounds && (
           <InboundsForm
@@ -313,9 +313,9 @@ function InboundsForm({
       <div className="text-[13px] text-muted">
         {client.panel
           ? client.panel.custom
-            ? 'У клиента свой набор: сверка держит его, новые inbound-ы он сам не получает.'
-            : 'Сейчас набор как у всех клиентов панели. Сохранишь другой - он запомнится в панели, и сверка будет держать его.'
-          : 'Клиент заведён не панелью: привязка меняется прямо в 3X-UI.'}
+            ? 'Свой набор: сохраняется при синхронизации, новые inbound клиент не получает'
+            : 'Общий набор. Другой набор запомнится и будет сохраняться при синхронизации.'
+          : 'Клиент не из панели: привязка меняется прямо в 3X-UI'}
       </div>
       <div className="flex flex-col gap-2">
         {choices.map((i) => (
@@ -341,13 +341,13 @@ function InboundsForm({
           />
         ))}
         {choices.length === 0 && (
-          <span className="text-[13px] text-muted">Подходящих inbound-ов нет.</span>
+          <span className="text-[13px] text-muted">Подходящих inbound нет</span>
         )}
       </div>
       {ids.length === 0 && (
         <Alert tone="info">
           Нужен хотя бы один inbound.
-          {client.panel && ' Убрать клиента панели с сервера - в его карточке (Доступ).'}
+          {client.panel && ' Убрать клиента панели с сервера можно в его карточке.'}
         </Alert>
       )}
       {error && <Alert tone="bad">{error}</Alert>}
@@ -356,7 +356,7 @@ function InboundsForm({
           <Button
             disabled={busy}
             onClick={onReset}
-            title="Снова общий набор: свои VLESS минус исключённые"
+            title="Общий набор: свои VLESS, кроме исключённых"
           >
             Как у всех
           </Button>

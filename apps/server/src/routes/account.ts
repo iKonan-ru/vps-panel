@@ -44,7 +44,7 @@ export async function accountRoutes(app: FastifyInstance, opts: { db: Db; secure
     const token = sessionToken(req);
     const s = await sessionOf(db, token);
     const admin = s ? await findAdminById(db, s.adminId) : null;
-    if (!s || !admin || !token) throw fail(401, 'Не авторизован');
+    if (!s || !admin || !token) throw fail(401, 'вход не выполнен');
     return { admin, token };
   }
 
@@ -55,11 +55,11 @@ export async function accountRoutes(app: FastifyInstance, opts: { db: Db; secure
     password: string,
   ) {
     if (await tooManyAttempts(db, req.ip))
-      throw fail(429, 'Слишком много попыток, подожди 15 минут');
+      throw fail(429, 'слишком много попыток, следующая\u00a0\u2014 через 15\u00a0минут');
     const ok = await verifyPassword(admin.passwordHash, password);
     if (!ok) {
       await recordAttempt(db, req.ip, admin.login, false);
-      throw fail(400, 'Неверный текущий пароль');
+      throw fail(400, 'неверный текущий пароль');
     }
   }
 
@@ -82,11 +82,11 @@ export async function accountRoutes(app: FastifyInstance, opts: { db: Db; secure
       .parse(req.body);
     const login = b.login.trim();
     if (!LOGIN_RE.test(login))
-      throw fail(400, 'Логин: 3-32 символа, латиница, цифры, точка, дефис, подчёркивание');
+      throw fail(400, 'логин: 3\u201332 символа, латиница, цифры, точка, дефис, подчёркивание');
     await checkPassword(req, admin, b.password);
     if (login !== admin.login) {
       const taken = await db.select({ id: admins.id }).from(admins).where(eq(admins.login, login));
-      if (taken.some((t) => t.id !== admin.id)) throw fail(409, 'Такой логин уже есть');
+      if (taken.some((t) => t.id !== admin.id)) throw fail(409, 'такой логин уже есть');
       await setLogin(db, admin.id, login);
     }
     return { ok: true, login };
@@ -98,8 +98,8 @@ export async function accountRoutes(app: FastifyInstance, opts: { db: Db; secure
       .object({ password: z.string().min(1).max(200), newPassword: z.string().max(200) })
       .parse(req.body);
     if (b.newPassword.length < PASSWORD_MIN)
-      throw fail(400, `Новый пароль - не короче ${PASSWORD_MIN} символов`);
-    if (b.newPassword === b.password) throw fail(400, 'Новый пароль совпадает с текущим');
+      throw fail(400, `новый пароль\u00a0\u2014 не короче ${PASSWORD_MIN}\u00a0символов`);
+    if (b.newPassword === b.password) throw fail(400, 'новый пароль совпадает с текущим');
     await checkPassword(req, admin, b.password);
     await setPassword(db, admin.id, b.newPassword);
     // остальные устройства входят заново, эта сессия остаётся
@@ -119,7 +119,7 @@ export async function accountRoutes(app: FastifyInstance, opts: { db: Db; secure
       (await consumeBackupCode(db, admin.id, b.code));
     if (!ok) {
       await recordAttempt(db, req.ip, admin.login, false);
-      throw fail(400, 'Неверный код 2FA');
+      throw fail(400, 'неверный код 2FA');
     }
     const e = totpEnrollment(admin.login);
     enrolling.set(sha256(token), { ...e, expires: Date.now() + 15 * 60_000 });
@@ -131,8 +131,9 @@ export async function accountRoutes(app: FastifyInstance, opts: { db: Db; secure
     const { code } = z.object({ code: z.string().min(6).max(8) }).parse(req.body);
     const key = sha256(token);
     const e = enrolling.get(key);
-    if (!e || e.expires < Date.now()) throw fail(400, 'Настройка истекла - начни заново');
-    if (!verifyTotp(e.secret, code)) throw fail(400, 'Неверный код');
+    if (!e || e.expires < Date.now())
+      throw fail(400, 'время настройки истекло, нужно начать заново');
+    if (!verifyTotp(e.secret, code)) throw fail(400, 'неверный код');
     await saveTotp(db, admin.id, e.secret, e.codes);
     enrolling.delete(key);
     await deleteOtherSessions(db, admin.id, token);

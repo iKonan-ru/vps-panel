@@ -131,7 +131,7 @@ func Create(ctx context.Context, p CreateParams, stream func(channel, chunk stri
 		}
 	}
 	if len(chosen) == 0 {
-		return nil, errors.New("на сервере нет ничего, что можно сохранить (3X-UI, WDTT, MTProxyL, Amnezia, сертификаты)")
+		return nil, errors.New("на сервере нечего сохранять: нет 3X-UI, WDTT, MTProxyL, Amnezia и сертификатов")
 	}
 	tmpDir, err := os.MkdirTemp("/var/tmp", "vps-backup-")
 	if err != nil {

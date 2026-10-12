@@ -66,23 +66,23 @@ func Run(ctx context.Context, fw proto.FirewallState, containers []proto.Contain
 	a.SSHPasswordAuth = ssh["passwordauthentication"] != "no"
 	a.SSHPermitRootLogin = ssh["permitrootlogin"]
 	if a.SSHPasswordAuth {
-		addURL("high", "SSH: вход по паролю включён", "Исправить: отключить пароли, оставить вход по ключу", "fix:sshd")
+		addURL("high", "SSH: вход по паролю включён", "оставить вход только по ключу", "fix:sshd")
 	}
 	if a.SSHPermitRootLogin == "yes" {
-		addURL("high", "SSH: PermitRootLogin yes - root может войти по паролю", "Исправить: prohibit-password", "fix:sshd")
+		addURL("high", "SSH: root может войти по паролю (PermitRootLogin yes)", "root только по ключу (prohibit-password)", "fix:sshd")
 	}
 	if baseline.CountRootKeys() == 0 && !a.SSHPasswordAuth {
-		add("high", "SSH: у root нет ключей, а пароли выключены - риск потерять доступ", "Кнопка \"Ключи root\" выше")
+		add("high", "SSH: у root нет ключей, а вход по паролю выключен", "добавить ключ во вкладке \u00abКлючи\u00bb: без него можно потерять доступ")
 	}
 
 	// --- firewall
 	switch {
 	case !shell.Has("ufw"):
-		addURL("high", "ufw не установлен", "Исправить: установить и включить firewall", "fix:ufw")
+		addURL("high", "ufw не установлен", "установить и включить ufw", "fix:ufw")
 	case !fw.UfwActive:
-		addURL("high", "Firewall (ufw) не активен", "Исправить: включить firewall", "fix:ufw")
+		addURL("high", "Firewall (ufw) выключен", "включить ufw", "fix:ufw")
 	case !strings.Contains(fw.DefaultIncoming, "deny (incoming)"):
-		addURL("high", "ufw: входящие по умолчанию не запрещены: "+fw.DefaultIncoming, "Исправить: deny incoming", "fix:ufw")
+		addURL("high", "ufw: входящие по умолчанию не запрещены: "+fw.DefaultIncoming, "запретить входящие по умолчанию (deny incoming)", "fix:ufw")
 	}
 	published := false
 	for _, c := range containers {
@@ -91,21 +91,21 @@ func Run(ctx context.Context, fw proto.FirewallState, containers []proto.Contain
 		}
 	}
 	if published && fw.UfwActive && !fw.DockerFiltered {
-		addURL("high", "Опубликованные порты контейнеров идут мимо ufw: цепочка DOCKER-USER не фильтруется", "Исправить: port-sync настроит DOCKER-USER", "fix:portsync")
+		addURL("high", "Опубликованные порты контейнеров идут мимо ufw: цепочка DOCKER-USER не фильтруется", "настроить DOCKER-USER через port-sync", "fix:portsync")
 	}
 	if !fw.PortsyncInstalled {
-		addURL("high", "port-sync не установлен: firewall не следит за портами VPN", "Исправить: установить port-sync", "fix:portsync")
+		addURL("high", "port-sync не установлен: firewall не следит за портами VPN", "установить port-sync", "fix:portsync")
 	} else if !fw.PortsyncActive {
-		addURL("medium", "port-sync установлен, но таймер не активен", "Исправить: включить таймер", "fix:portsync")
+		addURL("medium", "port-sync: таймер выключен", "включить таймер port-sync", "fix:portsync")
 	}
 
 	// --- fail2ban
 	if !shell.Has("fail2ban-client") {
-		addURL("high", "fail2ban не установлен", "Исправить: установить fail2ban", "fix:fail2ban")
+		addURL("high", "fail2ban не установлен", "установить fail2ban", "fix:fail2ban")
 	} else {
 		a.Fail2banRunning = shell.Out(ctx, "systemctl", "is-active", "fail2ban") == "active"
 		if !a.Fail2banRunning {
-			addURL("high", "fail2ban установлен, но не запущен", "Исправить: запустить fail2ban", "fix:fail2ban")
+			addURL("high", "fail2ban не запущен", "запустить fail2ban", "fix:fail2ban")
 		} else {
 			out := shell.Out(ctx, "fail2ban-client", "status")
 			if m := regexp.MustCompile(`Jail list:\s*(.*)`).FindStringSubmatch(out); m != nil {
@@ -116,7 +116,7 @@ func Run(ctx context.Context, fw proto.FirewallState, containers []proto.Contain
 				}
 			}
 			if !slices.Contains(a.Fail2banJails, "sshd") {
-				addURL("medium", "fail2ban: нет jail для sshd", "Исправить: настроить jail", "fix:fail2ban")
+				addURL("medium", "fail2ban: нет jail для sshd", "настроить jail sshd", "fix:fail2ban")
 			}
 			for _, j := range a.Fail2banJails {
 				st := shell.Out(ctx, "fail2ban-client", "status", j)
@@ -157,7 +157,7 @@ func Run(ctx context.Context, fw proto.FirewallState, containers []proto.Contain
 			if s.Kind == "mtproxyl" {
 				title = "MTProxyL"
 			}
-			addURL("high", "Панель "+title+" открыта наружу: её можно найти сканером и подбирать пароль", "Оставить только 127.0.0.1 - вход через VPS Panel", "cmd:panels-local")
+			addURL("high", "Панель "+title+" открыта наружу: её находят сканеры и подбирают пароль", "оставить только 127.0.0.1, вход через VPS Panel", "cmd:panels-local")
 		}
 	}
 	for _, c := range containers {
@@ -169,7 +169,7 @@ func Run(ctx context.Context, fw proto.FirewallState, containers []proto.Contain
 			if strings.Contains(low, hint) {
 				for _, p := range c.Published {
 					if strings.Contains(p, "/tcp") && !strings.HasPrefix(p, "127.") {
-						addURL("medium", "Контейнер "+c.Name+" публикует веб-панель наружу: "+p, "Вкладка Firewall: deny-список или правило с источником", "tab:firewall")
+						addURL("medium", "Контейнер "+c.Name+" публикует веб-панель наружу: "+p, "закрыть во вкладке Firewall: deny-список или правило с источником", "tab:firewall")
 					}
 				}
 			}
@@ -180,24 +180,24 @@ func Run(ctx context.Context, fw proto.FirewallState, containers []proto.Contain
 	conf, _ := os.ReadFile("/etc/apt/apt.conf.d/20auto-upgrades")
 	a.UnattendedUpgrades = strings.Contains(string(conf), `Unattended-Upgrade "1"`)
 	if !a.UnattendedUpgrades {
-		addURL("medium", "Автообновления безопасности выключены", "Исправить: включить unattended-upgrades", "fix:updates")
+		addURL("medium", "Автообновления безопасности выключены", "включить unattended-upgrades", "fix:updates")
 	}
 	a.PendingUpdates = pendingUpdates
 	if a.PendingUpdates > 0 {
-		add("medium", "Ожидают установки обновления безопасности: "+strconv.Itoa(a.PendingUpdates), "Кнопка \"Обновить пакеты\" выше")
+		add("medium", "Ожидают установки обновления безопасности: "+strconv.Itoa(a.PendingUpdates), "apt upgrade без docker и ядра")
 	}
 	if _, err := os.Stat("/var/run/reboot-required"); err == nil {
 		a.RebootRequired = true
-		add("info", "Требуется перезагрузка (обновлено ядро или libc)", "Кнопка \"Перезагрузить\" выше: VPN прервётся на минуту, лучше когда пользователей меньше")
+		add("info", "Требуется перезагрузка: обновлено ядро или libc", "\u00abПерезагрузить сервер\u00bb в меню сервера; VPN прервётся примерно на минуту")
 	}
 	// --- диск: от 80% - предупреждение, от 90% - критично; кнопка ведёт к очистке мусора
 	var st syscall.Statfs_t
 	if err := syscall.Statfs("/", &st); err == nil && st.Blocks > 0 {
 		used := 100 - int(st.Bavail*100/st.Blocks)
 		if used >= 90 {
-			addURL("high", "Диск заполнен на "+strconv.Itoa(used)+"%", "Освободить место", "cleanup:")
+			addURL("high", "Диск заполнен на "+strconv.Itoa(used)+"%", "кэш docker и apt, старые логи и временные файлы", "cleanup:")
 		} else if used >= 80 {
-			addURL("medium", "Диск заполнен на "+strconv.Itoa(used)+"%", "Освободить место", "cleanup:")
+			addURL("medium", "Диск заполнен на "+strconv.Itoa(used)+"%", "кэш docker и apt, старые логи и временные файлы", "cleanup:")
 		}
 	}
 	return a
@@ -235,38 +235,29 @@ func downFinding(s proto.Service, reason string) (text, fix, url string) {
 		if reason == "" {
 			return action
 		}
-		return capital(reason) + ". " + action
+		return reason + "; " + action
 	}
 	switch s.Kind {
 	case "xui":
-		return "3X-UI: xray не работает - VLESS на сервере недоступен",
-			with("Исправить inbound в панели 3X-UI (например, порт занят другим сервисом) - xray запустится сам"), "tab:xui"
+		return "3X-UI: xray не работает, VLESS на сервере недоступен",
+			with("исправить inbound в 3X-UI (например, порт занят другим сервисом), xray запустится сам"), "tab:xui"
 	case "mtproxyl":
-		return "MTProxyL: прокси не работает - Telegram-прокси недоступен",
-			with("Вкладка MTProxyL: \"Перезапустить прокси\""), "tab:mtproxyl"
+		return "MTProxyL: прокси не работает",
+			with("\u00abПерезапустить прокси\u00bb во вкладке MTProxyL"), "tab:mtproxyl"
 	case "amnezia":
-		return s.Title + ": контейнер не работает - клиенты AWG без связи",
-			with("Вкладка Docker: запустить контейнер"), "tab:docker"
+		return s.Title + ": контейнер не работает, клиенты AWG без связи",
+			with("запустить контейнер во вкладке Docker"), "tab:docker"
 	case "wg-easy":
-		return "wg-easy: контейнер не работает - клиенты без связи",
-			with("Вкладка Docker: запустить контейнер"), "tab:docker"
+		return "wg-easy: контейнер не работает, клиенты без связи",
+			with("запустить контейнер во вкладке Docker"), "tab:docker"
 	case "openflux":
-		return "OpenFlux: канал не работает - узел недоступен",
-			with("Вкладка \"Терминал\": systemctl restart openflux-node@<канал>, причина - journalctl -u openflux-node@<канал>"), "tab:terminal"
+		return "OpenFlux: канал не работает, узел недоступен",
+			with("в терминале: systemctl restart openflux-node@<канал>, причина: journalctl -u openflux-node@<канал>"), "tab:terminal"
 	case "wdtt":
-		return "WDTT: служба не работает - клиенты WDTT без связи",
-			with("Вкладка \"Терминал\": systemctl restart wdtt, причина - journalctl -u wdtt"), "tab:terminal"
+		return "WDTT: служба не работает, клиенты WDTT без связи",
+			with("в терминале: systemctl restart wdtt, причина: journalctl -u wdtt"), "tab:terminal"
 	default:
 		return s.Title + ": не работает",
-			with("Вкладка \"Терминал\": wg-quick up <имя> (awg-quick для AWG)"), "tab:terminal"
+			with("в терминале: wg-quick up <имя> (awg-quick для AWG)"), "tab:terminal"
 	}
-}
-
-// capital - первая буква заглавная ("порт ..." -> "Порт ...").
-func capital(s string) string {
-	r := []rune(s)
-	if len(r) > 0 {
-		r[0] = []rune(strings.ToUpper(string(r[0])))[0]
-	}
-	return string(r)
 }

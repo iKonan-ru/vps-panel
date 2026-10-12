@@ -41,9 +41,7 @@ export function QrCode({
           <img src={url} alt={alt} className="size-full [image-rendering:pixelated]" />
         ) : (
           url === '' && (
-            <span className="px-4 text-center text-xs text-black">
-              слишком длинно для QR - используй файл или ключ
-            </span>
+            <span className="px-4 text-center text-xs text-black">не помещается в QR</span>
           )
         )}
       </div>

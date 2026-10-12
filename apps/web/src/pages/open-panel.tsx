@@ -26,7 +26,7 @@ const ATTEMPTS = 3;
 const RETRY_MS = 2000;
 
 const steps = [
-  { stage: 'agent', title: 'Агент сервера на связи' },
+  { stage: 'agent', title: 'Сервер в сети' },
   { stage: 'tunnel', title: 'Канал до панели сервиса' },
   { stage: 'panel', title: 'Панель отвечает' },
 ] as const;
@@ -89,9 +89,9 @@ export function OpenPanelPage() {
     return () => clearTimeout(timer.current);
   }, [run]);
 
-  const title = titles[probe?.kind ?? kind] ?? 'панель';
+  const title = titles[probe?.kind ?? kind] ?? 'панели';
   useEffect(() => {
-    document.title = `Открываю ${title}${probe?.server ? ` - ${probe.server}` : ''}`;
+    document.title = `Открытие ${title}${probe?.server ? `\u00a0\u2014 ${probe.server}` : ''}`;
   }, [title, probe?.server]);
 
   const failIdx = probe && !probe.ok ? steps.findIndex((s) => s.stage === probe.stage) : -1;
@@ -105,7 +105,7 @@ export function OpenPanelPage() {
   const time = (i: number) => {
     if (state(i) !== 'ok') return null;
     const ms = i === 1 ? probe?.tunnelMs : i === 2 ? probe?.panelMs : undefined;
-    return ms === undefined ? null : `${ms} мс`;
+    return ms === undefined ? null : `${ms}\u00a0мс`;
   };
   const retrying = !running && probe && !probe.ok && probe.stage !== 'target' && attempt < ATTEMPTS;
   const gaveUp = !running && ((probe && !probe.ok && !retrying) || fatal);
@@ -115,7 +115,7 @@ export function OpenPanelPage() {
       <Card className="flex w-full min-w-0 max-w-[420px] flex-col gap-5 p-6 md:p-8">
         <Logo size={28} />
         <div>
-          <div className="text-xl font-semibold">Открываю {title}</div>
+          <div className="text-xl font-semibold">Открытие {title}</div>
           <div className="mt-1 flex items-center gap-1.5 text-[13px] text-muted">
             <Server className="size-3.5" />
             {probe?.server || label}
@@ -139,14 +139,14 @@ export function OpenPanelPage() {
           </ol>
         )}
         {probe?.ok && !running && (
-          <div className="text-[13px] text-ok">Панель готова, перехожу...</div>
+          <div className="text-[13px] text-ok">Панель готова, переход&hellip;</div>
         )}
         {(probe?.error || fatal) && !running && (
           <Alert tone="bad">
             {probe?.error ?? fatal}
             {retrying && (
               <div className="mt-1 text-xs text-muted">
-                Пробую ещё раз через {RETRY_MS / 1000} с (попытка {attempt + 1} из {ATTEMPTS})
+                Повтор через {RETRY_MS / 1000}&nbsp;с, попытка {attempt + 1} из {ATTEMPTS}
               </div>
             )}
           </Alert>
@@ -161,10 +161,10 @@ export function OpenPanelPage() {
             )}
             {probe?.serverId ? (
               <ButtonLink to="/servers/$id" params={{ id: probe.serverId }}>
-                Карточка сервера
+                Открыть сервер
               </ButtonLink>
             ) : (
-              <ButtonLink to="/">К серверам</ButtonLink>
+              <ButtonLink to="/">Перейти к серверам</ButtonLink>
             )}
           </div>
         )}

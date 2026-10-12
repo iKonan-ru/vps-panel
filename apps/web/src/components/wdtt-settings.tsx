@@ -40,7 +40,7 @@ export function WdttSettings() {
       await qc.invalidateQueries({ queryKey: ['wdtt-settings'] });
       setMsg({
         tone: 'ok',
-        text: 'Сохранено: ссылки и подписки WDTT клиентов обновятся при сверке',
+        text: 'Сохранено. Ссылки клиентов обновятся при синхронизации',
       });
     } catch (x) {
       setMsg({ tone: 'bad', text: (x as Error).message });
@@ -51,15 +51,11 @@ export function WdttSettings() {
 
   return (
     <Section
-      title="WDTT: хеши звонков VK"
-      info="Хеш - ссылка на звонок VK (vk.com/call/join/...) из твоего аккаунта VK. Указанные здесь хеши получат все клиенты в ссылках и подписке qWDTT и обновятся у них сами. Пусто - каждый клиент добавляет свои хеши в приложении (вход в аккаунт VK)."
+      title="WDTT: звонки VK"
+      info="Ссылки на звонки VK получат все клиенты. Если список пуст, клиенты добавляют свои звонки в приложении"
     >
       <form className="flex flex-col gap-3 p-4" onSubmit={save}>
-        <Field
-          label="Хеши, по одному в строке"
-          htmlFor="wdtt-hashes"
-          hint="можно вставлять ссылки целиком"
-        >
+        <Field label="Ссылки или хеши звонков, по одному в строке" htmlFor="wdtt-hashes">
           <Textarea
             id="wdtt-hashes"
             rows={4}

@@ -54,22 +54,20 @@ export function EngineForm({
   });
   const [tag, setTag] = useState<string | null>(null);
   if (error) return <Alert tone="bad">{error.message}</Alert>;
-  if (!data) return <div className="text-sm text-muted">Спрашиваю версии у сервера...</div>;
+  if (!data) return <div className="text-sm text-muted">Загрузка&hellip;</div>;
   return (
     <div className="flex flex-col gap-3">
       <div className="flex items-center gap-1 text-[13px] text-muted">
-        Обновлять движок необязательно.
+        Обновлять движок необязательно
         <InfoTip>
-          Прокси работает на текущей версии.{' '}
           {data.binary
-            ? 'Движок - бинарник: любая версия скачивается готовой.'
-            : 'Движок - образ docker: доступны версии с готовым образом. Без него MTProxyL собирает движок из исходников на сервере - слабый сервер от этого может повиснуть, такие версии недоступны.'}
+            ? 'Движок установлен бинарником: доступна любая версия'
+            : 'Движок в docker: доступны только версии с готовым образом, сборка из исходников может повесить слабый сервер'}
         </InfoTip>
       </div>
       {data.registryError && (
         <Alert tone="bad">
-          Реестр образов не ответил ({data.registryError}): неизвестно, есть ли готовые образы.
-          Попробуй позже.
+          Реестр образов не ответил ({data.registryError}), наличие готовых образов неизвестно
         </Alert>
       )}
       <div className="flex flex-col rounded-lg border border-border">
@@ -100,7 +98,7 @@ export function EngineForm({
             </span>
             <span className="flex flex-wrap justify-end gap-1">
               {v.installed && <Chip tone="ok">установлена</Chip>}
-              {v.prerelease && <Chip tone="muted">pre-release</Chip>}
+              {v.prerelease && <Chip tone="muted">предварительная</Chip>}
             </span>
           </label>
         ))}
@@ -113,7 +111,7 @@ export function EngineForm({
           onClick={() => tag && onInstall(tag)}
         >
           <Download className="size-3.5" />
-          {tag ? `Поставить ${tag}` : 'Выбери версию'}
+          {tag ? `Установить ${tag}` : 'Версия не выбрана'}
         </Button>
       </div>
     </div>

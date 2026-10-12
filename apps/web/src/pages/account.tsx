@@ -15,7 +15,7 @@ import { PasswordInput } from '@/components/ui/password-input';
 import { Section } from '@/components/ui/section';
 import { TBody, THead, Table } from '@/components/ui/table';
 import { api } from '@/lib/api';
-import { ago } from '@/lib/format';
+import { ago, dateShort } from '@/lib/format';
 import { useServers } from '@/lib/servers';
 import { useAction } from '@/lib/use-action';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
@@ -122,7 +122,7 @@ function LoginDialog({ current, onClose }: { current: string; onClose: () => voi
         </Field>
         {act.error && <Alert tone="bad">{act.error}</Alert>}
         <Button type="submit" variant="primary" disabled={act.busy || login === current}>
-          {act.busy ? 'Сохраняю...' : 'Сохранить'}
+          Сохранить
         </Button>
       </form>
     </Dialog>
@@ -152,11 +152,10 @@ function PasswordDialog({ onClose }: { onClose: () => void }) {
     return (
       <Dialog open onClose={onClose} title="Пароль изменён">
         <div className="text-[13px] text-muted">
-          Остальные устройства вышли из панели - войти на них заново можно с новым паролем и кодом
-          2FA. Эта сессия осталась.
+          Остальные устройства вышли из панели, эта сессия осталась
         </div>
         <Button variant="primary" onClick={onClose}>
-          Готово
+          Закрыть
         </Button>
       </Dialog>
     );
@@ -173,7 +172,11 @@ function PasswordDialog({ onClose }: { onClose: () => void }) {
             autoFocus
           />
         </Field>
-        <Field label={`Новый пароль, от ${PASSWORD_MIN} символов`} htmlFor="acc-pw-new">
+        <Field
+          label="Новый пароль"
+          htmlFor="acc-pw-new"
+          hint={`не короче ${PASSWORD_MIN}\u00a0символов`}
+        >
           <div className="flex gap-2">
             <PasswordInput
               id="acc-pw-new"
@@ -208,12 +211,12 @@ function PasswordDialog({ onClose }: { onClose: () => void }) {
           />
         </Field>
         <div className="text-xs text-muted">
-          Сохрани новый пароль в менеджере паролей: восстановления нет, сброс - только из консоли
-          сервера панели (vps-panel admin password). Другие устройства выйдут из панели.
+          Восстановления пароля нет, сброс только из консоли сервера панели: vps-panel admin
+          password. Другие устройства выйдут из панели.
         </div>
         {act.error && <Alert tone="bad">{act.error}</Alert>}
         <Button type="submit" variant="primary" disabled={act.busy}>
-          {act.busy ? 'Сохраняю...' : 'Сменить пароль'}
+          Сменить пароль
         </Button>
       </form>
     </Dialog>
@@ -250,9 +253,7 @@ function TotpDialog({ onClose }: { onClose: () => void }) {
       {setup ? (
         <>
           <div className="text-[13px] text-muted">
-            Новый телефон или приложение: отсканируй QR, сохрани новые резервные коды (старые
-            перестанут действовать) и введи код из приложения. Пока не подтвердишь, работает прежняя
-            2FA.
+            Старые резервные коды перестанут действовать. До подтверждения работает прежняя 2FA.
           </div>
           <TotpEnroll
             setup={setup}
@@ -264,9 +265,6 @@ function TotpDialog({ onClose }: { onClose: () => void }) {
         </>
       ) : (
         <form onSubmit={submit} className="flex flex-col gap-4">
-          <div className="text-[13px] text-muted">
-            Подтверди паролем и текущим кодом 2FA (или резервным кодом) - затем покажу новый QR.
-          </div>
           <Field label="Текущий пароль" htmlFor="acc-totp-pw">
             <PasswordInput
               id="acc-totp-pw"
@@ -289,7 +287,7 @@ function TotpDialog({ onClose }: { onClose: () => void }) {
           </Field>
           {start.error && <Alert tone="bad">{start.error}</Alert>}
           <Button type="submit" variant="primary" disabled={start.busy}>
-            {start.busy ? 'Проверяю...' : 'Дальше'}
+            Дальше
           </Button>
         </form>
       )}
@@ -318,19 +316,17 @@ function CodesDialog({ onClose }: { onClose: () => void }) {
       {codes ? (
         <>
           <div className="text-[13px] text-muted">
-            Каждый код - один вход без телефона. Показываются один раз: сохрани их сейчас, прежние
+            Каждый код годится для одного входа без телефона. Коды показываются один раз, прежние
             больше не действуют.
           </div>
           <BackupCodes codes={codes} />
           <Button variant="primary" onClick={onClose}>
-            Сохранил
+            Закрыть
           </Button>
         </>
       ) : (
         <form onSubmit={submit} className="flex flex-col gap-4">
-          <div className="text-[13px] text-muted">
-            Новые 8 кодов заменят прежние (и неиспользованные тоже).
-          </div>
+          <div className="text-[13px] text-muted">Новые 8&nbsp;кодов заменят все прежние</div>
           <Field label="Текущий пароль" htmlFor="acc-codes-pw">
             <PasswordInput
               id="acc-codes-pw"
@@ -343,7 +339,7 @@ function CodesDialog({ onClose }: { onClose: () => void }) {
           </Field>
           {act.error && <Alert tone="bad">{act.error}</Alert>}
           <Button type="submit" variant="primary" disabled={act.busy}>
-            {act.busy ? 'Создаю...' : 'Создать коды'}
+            Создать коды
           </Button>
         </form>
       )}
@@ -382,8 +378,8 @@ export function AccountPage() {
     const ok = await ask({
       title: current ? 'Выйти на этом устройстве?' : 'Закрыть сессию?',
       text: current
-        ? 'Это твоя текущая сессия: панель вернёт на вход.'
-        : 'Устройство выйдет из панели, войти заново - с паролем и кодом 2FA.',
+        ? 'Это текущая сессия: откроется страница входа.'
+        : 'Устройство выйдет из панели.',
       okLabel: current ? 'Выйти' : 'Закрыть',
       danger: true,
     });
@@ -404,12 +400,12 @@ export function AccountPage() {
 
       <Section
         title="Вход в панель"
-        info="Один администратор: логин, пароль и обязательная 2FA. Восстановления пароля нет - сбросить пароль или 2FA можно только из консоли сервера панели: vps-panel admin password и vps-panel admin 2fa (все сессии при этом закрываются)."
+        info="Сброс пароля и 2FA только из консоли сервера панели: vps-panel admin password, vps-panel admin 2fa. Все сессии при этом закрываются."
       >
         <Row
           icon={<User className="size-4" />}
           title="Логин"
-          value={a ? a.login : '...'}
+          value={a ? a.login : '\u2026'}
           action={
             <Button size="sm" disabled={busy} onClick={() => setDialog('login')}>
               Изменить
@@ -419,7 +415,7 @@ export function AccountPage() {
         <Row
           icon={<KeyRound className="size-4" />}
           title="Пароль"
-          value="восстановления нет, сброс - из консоли сервера"
+          value="сброс только из консоли сервера"
           action={
             <Button size="sm" disabled={busy} onClick={() => setDialog('password')}>
               Изменить
@@ -428,7 +424,7 @@ export function AccountPage() {
         />
         <Row
           icon={<ShieldCheck className="size-4" />}
-          title="Двухфакторная защита"
+          title="Двухфакторная аутентификация"
           value={
             a ? (
               <span className="inline-flex items-center gap-2">
@@ -437,11 +433,11 @@ export function AccountPage() {
                 </Chip>
                 <span>
                   резервных кодов: {a.backupCodesLeft}
-                  {a.backupCodesLeft <= 2 ? ' - пора создать новые' : ''}
+                  {a.backupCodesLeft <= 2 ? ', пора создать новые' : ''}
                 </span>
               </span>
             ) : (
-              '...'
+              '\u2026'
             )
           }
           action={
@@ -468,15 +464,14 @@ export function AccountPage() {
             <span className="flex items-center gap-1">
               Неудачных входов за сутки
               <InfoTip>
-                Защита входа: пароль и код 2FA, 5 неудачных попыток - пауза 15 минут, fail2ban на
-                сервере панели банит IP на час после 5 неудач за 15 минут. Баны fail2ban приходят в
-                Telegram, если в уведомлениях включены баны.
+                После 5&nbsp;неудачных попыток вход приостанавливается на 15&nbsp;мин. После
+                5&nbsp;неудач за 15&nbsp;мин fail2ban банит IP на 1&nbsp;ч.
               </InfoTip>
             </span>
           }
           value={d ? <Num value={d.failed24} /> : '-'}
           tone={(d?.failed24 ?? 0) > 20 ? 'warn' : undefined}
-          note={`за 7 дней: ${d?.failed7d ?? '-'}`}
+          note={`за 7\u00a0дней: ${d?.failed7d ?? '-'}`}
         />
         <MetricCard
           label="fail2ban: jail vps-panel"
@@ -486,14 +481,14 @@ export function AccountPage() {
           note={
             panelJail
               ? `всего банов ${panelJail.totalBanned}, в окне ${panelJail.failed} неудачных`
-              : `нет данных: агент на ${panelHost} должен быть обновлён и jail vps-panel включён`
+              : `нет данных: нужен свежий агент на ${panelHost} и включённый jail vps-panel`
           }
         />
         <MetricCard
           label={
             <span className="flex items-center gap-1">
               Активных сессий
-              <InfoTip>Выход на всех устройствах закрывает и эту сессию.</InfoTip>
+              <InfoTip>Выход на всех устройствах закрывает и эту сессию</InfoTip>
             </span>
           }
           value={d ? <Num value={d.sessions.length} /> : '-'}
@@ -508,7 +503,7 @@ export function AccountPage() {
               onClick={async () => {
                 const ok = await ask({
                   title: 'Выйти на всех устройствах?',
-                  text: 'Все сессии панели закроются, войти заново - с кодом 2FA.',
+                  text: 'Все сессии панели закроются, включая эту.',
                   okLabel: 'Выйти везде',
                   danger: true,
                 });
@@ -522,7 +517,7 @@ export function AccountPage() {
               }}
             >
               <LogOut className="size-3.5 md:size-3" />
-              <span className="hidden md:inline">выйти везде</span>
+              <span className="hidden md:inline">Выйти везде</span>
             </Button>
           }
         >
@@ -561,9 +556,7 @@ export function AccountPage() {
                 <td className="max-w-[420px] truncate text-muted" title={s.userAgent}>
                   {s.userAgent}
                 </td>
-                <td className="whitespace-nowrap text-muted">
-                  {new Date(s.expiresAt).toLocaleDateString('ru-RU')}
-                </td>
+                <td className="whitespace-nowrap text-muted">{dateShort(s.expiresAt)}</td>
                 <td className="text-right">
                   <Button
                     size="icon-sm"
@@ -584,8 +577,8 @@ export function AccountPage() {
 
       <div className="grid items-start gap-4 lg:grid-cols-2">
         <Section
-          title="Откуда ломятся"
-          extra={<span className="text-xs text-muted">неудачные попытки за 7 дней</span>}
+          title="Неудачные попытки по IP"
+          extra={<span className="text-xs text-muted">за 7&nbsp;дней</span>}
         >
           <Table>
             <THead>
@@ -635,7 +628,7 @@ export function AccountPage() {
               {d && d.recent.length === 0 && (
                 <tr>
                   <td colSpan={4} className="py-4 text-center text-muted">
-                    Пока пусто
+                    Попыток пока нет
                   </td>
                 </tr>
               )}

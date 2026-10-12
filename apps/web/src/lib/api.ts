@@ -34,13 +34,13 @@ export async function api<T>(path: string, init?: RequestInit & { json?: unknown
     data = text ? JSON.parse(text) : null;
   } catch {
     // не JSON: страница прокси (502 во время выкладки) - ошибка с кодом ниже
-    if (res.ok) throw new ApiError(res.status, 'Панель ответила не JSON');
+    if (res.ok) throw new ApiError(res.status, 'ответ панели не в формате JSON');
   }
   if (!res.ok) {
     const msg =
       typeof data === 'object' && data !== null && 'error' in data && typeof data.error === 'string'
         ? data.error
-        : `Ошибка ${res.status}`;
+        : `ошибка ${res.status}`;
     const code =
       typeof data === 'object' && data !== null && 'code' in data && typeof data.code === 'string'
         ? data.code

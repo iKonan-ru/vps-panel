@@ -42,7 +42,7 @@ interface WdttData {
 const expiresLabel = (unix: number) => {
   if (!unix) return 'без срока';
   const days = Math.ceil((unix * 1000 - Date.now()) / 86_400_000);
-  return days <= 0 ? 'истёк' : `ещё ${days} дн.`;
+  return days <= 0 ? 'истёк' : `ещё ${days}\u00a0дн`;
 };
 
 /**
@@ -84,9 +84,9 @@ export function WdttTab({ s }: { s: ServerDetail }) {
   }
   const blocked = lock.busy || op.busy;
 
-  if (!online) return <Card className="p-8 text-[13px] text-muted">Агент не на связи.</Card>;
+  if (!online) return <Card className="p-8 text-[13px] text-muted">Сервер не в сети</Card>;
   if (error) return <Alert tone="bad">{error.message}</Alert>;
-  if (!data) return <Card className="p-8 text-[13px] text-muted">Опрашиваю WDTT...</Card>;
+  if (!data) return <Card className="p-8 text-[13px] text-muted">Загрузка&hellip;</Card>;
 
   const full = data.passwords.length >= data.limit;
   return (
@@ -94,15 +94,15 @@ export function WdttTab({ s }: { s: ServerDetail }) {
       {err && <Alert tone="bad">{err}</Alert>}
       {data.hashes === 0 && (
         <Alert tone="info">
-          Хеши звонков VK в настройках панели не заданы: клиенты добавляют свои в приложении (вход в
-          аккаунт VK). Общие хеши - в Настройках, блок "WDTT: хеши звонков VK".
+          Хеши звонков VK не заданы: клиентам нужно добавить свои в приложении. Общие хеши задаются
+          в &laquo;Настройках&raquo;.
         </Alert>
       )}
       <Section
         title="Пользователи WDTT"
-        info="Пароль генерирует сервер. Один пароль - один человек, на нём до стольких устройств, сколько указано. Ссылки qwdtt:// и wdtt:// добавляются в приложение qWDTT."
+        info="Один пароль на одного человека. Ссылки qwdtt:// и wdtt:// добавляются в приложение qWDTT."
         extra={
-          <Chip title="Паролей на сервере из лимита WDTT">
+          <Chip title="Лимит паролей WDTT">
             {data.passwords.length} из {data.limit}
           </Chip>
         }
@@ -111,7 +111,7 @@ export function WdttTab({ s }: { s: ServerDetail }) {
             size="sm"
             variant="primary"
             disabled={blocked || full}
-            title={full ? 'Достигнут лимит паролей на сервере' : lock.reason}
+            title={full ? 'Лимит паролей исчерпан' : lock.reason}
             onClick={() => setAdd(true)}
             label="Добавить"
           >
@@ -120,9 +120,7 @@ export function WdttTab({ s }: { s: ServerDetail }) {
         }
       >
         {data.passwords.length === 0 && (
-          <div className="px-4 py-3 text-[13px] text-muted">
-            Пользователей пока нет. Нажми "Добавить": сервер создаст пароль и ссылки.
-          </div>
+          <div className="px-4 py-3 text-[13px] text-muted">Пользователей пока нет</div>
         )}
         {data.passwords.map((p) => {
           const own = owner('wdtt', keys?.get(p.password));
@@ -138,8 +136,8 @@ export function WdttTab({ s }: { s: ServerDetail }) {
                   {own && <OwnerLink owner={own} />}
                 </div>
                 <div className="text-xs text-muted">
-                  устройств {p.active_devices}/{p.max_devices}, {expiresLabel(p.expires_at)}, трафик{' '}
-                  {bytes(p.down_bytes + p.up_bytes)}
+                  устройств: {p.active_devices}/{p.max_devices}, {expiresLabel(p.expires_at)},
+                  трафик: {bytes(p.down_bytes + p.up_bytes)}
                 </div>
               </div>
               <ActionBar
@@ -178,11 +176,10 @@ export function WdttTab({ s }: { s: ServerDetail }) {
                     icon: <Unlink className="size-3.5" />,
                     hidden: (p.device_ids ?? []).length === 0,
                     disabled: blocked,
-                    title: 'Отвязать все устройства (можно будет подключить заново)',
                     onClick: async () => {
                       const ok = await ask({
-                        title: `Отвязать устройства ${p.label}?`,
-                        text: 'Устройства отключатся; подключить их заново можно той же ссылкой.',
+                        title: `Отвязать устройства \u00ab${p.label}\u00bb?`,
+                        text: 'Устройства отключатся, подключить их заново можно той же ссылкой',
                         okLabel: 'Отвязать',
                       });
                       if (ok)
@@ -203,8 +200,8 @@ export function WdttTab({ s }: { s: ServerDetail }) {
                     disabled: blocked,
                     onClick: async () => {
                       const ok = await ask({
-                        title: `Удалить пользователя ${p.label}?`,
-                        text: 'Его ссылки перестанут работать.',
+                        title: `Удалить пользователя \u00ab${p.label}\u00bb?`,
+                        text: 'Его ссылки перестанут работать',
                         okLabel: 'Удалить',
                         danger: true,
                       });
@@ -228,7 +225,7 @@ export function WdttTab({ s }: { s: ServerDetail }) {
         serverId={s.id}
         kind="wdtt"
         title="WDTT"
-        loses="сервер WDTT и пароли всех пользователей пропадут, приложения перестанут подключаться."
+        loses="Сервер WDTT и пароли пользователей удалятся, приложения перестанут подключаться"
         disabled={blocked}
         reason={lock.reason}
       />
@@ -297,7 +294,7 @@ function PasswordForm({
           maxLength={64}
           required
           autoFocus
-          placeholder="например, Иван"
+          placeholder="Иван"
         />
       </Field>
       <Field label="Устройств одновременно" htmlFor="wd-dev">
@@ -310,7 +307,11 @@ function PasswordForm({
           onChange={(e) => setMaxDevices(Number(e.target.value))}
         />
       </Field>
-      <Field label={initial ? 'Продлить, дней (0 - не менять)' : 'Срок, дней'} htmlFor="wd-days">
+      <Field
+        label={initial ? 'Продление, дней' : 'Срок, дней'}
+        htmlFor="wd-days"
+        hint={initial ? 'при 0 срок не меняется' : undefined}
+      >
         <Input
           id="wd-days"
           type="number"

@@ -540,7 +540,7 @@ def desired_state(conf):
         if not xui_info.get("panel_https"):
             findings.append(("high", "3x-ui: панель открыта в интернет БЕЗ HTTPS (webCertFile пуст)"))
         if xui_info.get("panel_base_path", "/") in ("/", ""):
-            findings.append(("medium", "3x-ui: панель открыта в интернет с webBasePath '/' - задай длинный путь"))
+            findings.append(("medium", "3x-ui: панель открыта в интернет с webBasePath '/', нужен длинный путь"))
         if not xui_info.get("panel_2fa"):
             findings.append(("info", "3x-ui: 2FA в панели выключена (Settings -> Security)"))
 

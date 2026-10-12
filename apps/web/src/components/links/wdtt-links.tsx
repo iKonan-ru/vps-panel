@@ -12,10 +12,9 @@ export function WdttLinksView({ links }: { links: WdttLinks }) {
   return (
     <div className="flex flex-col items-center gap-3">
       <div className="flex items-center gap-1 self-stretch text-[13px] text-muted">
-        Добавьте в приложение qWDTT ссылкой или по QR.
+        Для приложений qWDTT и PWDTT
         <InfoTip>
-          qwdtt:// понимают оба приложения qWDTT и PWDTT; wdtt:// - старый формат на случай
-          несовместимости. QR - для qwdtt://.
+          Старая ссылка wdtt:// нужна на случай несовместимости. QR содержит ссылку qwdtt://.
         </InfoTip>
       </div>
       <QrCode text={links.qwdtt} alt="QR-код qwdtt" />

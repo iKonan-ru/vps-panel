@@ -13,7 +13,7 @@ export const wdttCmd: CommandDef = {
   group: 'install',
   service: 'WDTT',
   description:
-    'Сервер qWDTT (VPN через TURN-инфраструктуру звонков VK) без приложения: deploy.sh и бинарник wdtt-server отдаёт панель, секреты передаются файлами. Пользователи добавляются из приложения по паролю владельца.',
+    'Сервер qWDTT: VPN через инфраструктуру звонков VK. Пользователи добавляются в приложении qWDTT по паролю владельца.',
   params: [
     {
       name: 'WDTT_PASSWORD',
@@ -21,7 +21,7 @@ export const wdttCmd: CommandDef = {
       type: 'password',
       required: true,
       secret: true,
-      hint: 'им приложение подключается к серверу; хранится только на сервере',
+      hint: 'для подключения приложения qWDTT к серверу',
     },
     {
       name: 'WDTT_DTLS_PORT',
@@ -29,7 +29,7 @@ export const wdttCmd: CommandDef = {
       type: 'port',
       default: '56000',
       required: true,
-      hint: 'udp и tcp, открывается наружу',
+      hint: 'UDP и TCP, открывается наружу',
     },
     {
       name: 'WDTT_WG_PORT',
@@ -45,7 +45,7 @@ export const wdttCmd: CommandDef = {
       type: 'port',
       default: '56002',
       required: true,
-      hint: 'только на самом сервере (127.0.0.1): панель обращается к нему через агента',
+      hint: 'только внутри сервера',
     },
     {
       name: 'WDTT_DNS_SERVERS',
@@ -60,14 +60,14 @@ export const wdttCmd: CommandDef = {
       label: 'Telegram ID администратора',
       type: 'string',
       pattern: '^([0-9]+)?$',
-      hint: 'необязательно: бот управления доступом',
+      hint: 'необязательно, для бота управления доступом',
     },
     {
       name: 'WDTT_BOT_TOKEN',
       label: 'Токен Telegram-бота',
       type: 'password',
       secret: true,
-      hint: 'необязательно, вместе с ID',
+      hint: 'необязательно',
     },
   ],
   timeoutSec: 20 * 60,
@@ -115,20 +115,18 @@ fi
 say "Проверка"
 systemctl is-active wdtt
 ss -lunp | grep -E ":$WDTT_DTLS_PORT " | head -1 || true
-say "Готово. Подключение из приложения qWDTT: адрес $SERVER_HOST, порт $WDTT_DTLS_PORT, пароль владельца из формы."
-echo "Admin API: 127.0.0.1:$WDTT_ADMIN_PORT, только на сервере (токен в /etc/wdtt/admin.token); панель обращается к нему через агента."
+say "Готово: в приложении qWDTT - адрес $SERVER_HOST, порт $WDTT_DTLS_PORT, пароль владельца из формы"
+echo "Admin API: 127.0.0.1:$WDTT_ADMIN_PORT, только внутри сервера (токен в /etc/wdtt/admin.token)"
 `,
-  preflight: `if systemctl is-active --quiet wdtt 2>/dev/null; then echo "WARN|WDTT уже установлен и запущен: deploy.sh переустановит службу, база доступа /etc/wdtt/passwords.json сохранится"; else echo "OK|WDTT не установлен"; fi
+  preflight: `if systemctl is-active --quiet wdtt 2>/dev/null; then echo "WARN|WDTT уже установлен: он будет переустановлен, база доступа сохранится"; else echo "OK|WDTT не установлен"; fi
 # при переустановке порты держит сам WDTT - их не проверяем
 if ! systemctl is-active --quiet wdtt 2>/dev/null; then for p in $WDTT_DTLS_PORT $WDTT_ADMIN_PORT; do if ss -ltn -lun | awk '{print $5}' | grep -q ":$p$"; then echo "FAIL|порт $p занят"; else echo "OK|порт $p свободен"; fi; done; fi
-if [ "$WDTT_DTLS_PORT" = "$WDTT_WG_PORT" ] || [ "$WDTT_DTLS_PORT" = "$WDTT_ADMIN_PORT" ] || [ "$WDTT_WG_PORT" = "$WDTT_ADMIN_PORT" ]; then echo "FAIL|порты должны быть разными"; fi
-curl -fsS -m 10 -o /dev/null "$PANEL_URL/files/wdtt/deploy.sh" && echo "OK|файлы WDTT на панели доступны" || echo "FAIL|панель не отдаёт /files/wdtt/deploy.sh - положи файлы в deploy/files/wdtt (tools/build-wdtt.sh)"`,
+if [ "$WDTT_DTLS_PORT" = "$WDTT_WG_PORT" ] || [ "$WDTT_DTLS_PORT" = "$WDTT_ADMIN_PORT" ] || [ "$WDTT_WG_PORT" = "$WDTT_ADMIN_PORT" ]; then echo "FAIL|порты совпадают"; fi
+curl -fsS -m 10 -o /dev/null "$PANEL_URL/files/wdtt/deploy.sh" && echo "OK|файлы WDTT на панели доступны" || echo "FAIL|на панели нет файлов WDTT: нужна сборка tools/build-wdtt.sh"`,
   plan: (a) => [
-    'Скачать с панели deploy.sh и wdtt-server (сборка из исходников qWDTT), проверить sha256',
-    'Записать пароль владельца и токен admin API в /tmp; deploy.sh перенесёт их в /etc/wdtt с правами 0600',
-    `deploy.sh: пакеты, sysctl, NAT (MASQUERADE 10.66.0.0/16), правила iptables для ${a.WDTT_DTLS_PORT} и ${a.WDTT_WG_PORT}, служба wdtt`,
-    `port-sync откроет ${a.WDTT_DTLS_PORT}/udp+tcp (процесс wdtt-server известен); admin API ${a.WDTT_ADMIN_PORT} - только на 127.0.0.1`,
-    'После установки агент увидит сервис WDTT: пароли и ссылки - во вкладке WDTT сервера',
+    'Скачать WDTT с панели и проверить контрольную сумму',
+    `Установить WDTT: порт DTLS ${a.WDTT_DTLS_PORT}, WireGuard ${a.WDTT_WG_PORT}`,
+    `Открыть порт ${a.WDTT_DTLS_PORT} (UDP и TCP)`,
   ],
   access: ({ server, answers }) => ({
     kind: 'wdtt',
@@ -143,8 +141,8 @@ curl -fsS -m 10 -o /dev/null "$PANEL_URL/files/wdtt/deploy.sh" && echo "OK|фа�
         ? [{ label: 'Telegram ID администратора', value: answers.WDTT_ADMIN_ID }]
         : []),
     ],
-    note: 'Пароль владельца вводится в клиентском приложении WDTT при подключении к серверу.',
+    note: 'Пароль владельца нужен для подключения в приложении qWDTT',
   }),
   after:
-    'В приложении qWDTT: Серверы -> добавить -> адрес сервера, порт DTLS и пароль владельца. Пользователи создаются там же.',
+    'В приложении qWDTT сервер добавляется в\u00a0\u00abСерверах\u00bb: адрес, порт DTLS и пароль владельца. Там же создаются пользователи.',
 };

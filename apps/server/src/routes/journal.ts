@@ -34,7 +34,7 @@ export async function journalRoutes(app: FastifyInstance, opts: ServerRouteOpts)
   app.get('/api/actions/:aid', async (req, reply) => {
     const { aid } = z.object({ aid: z.string() }).parse(req.params);
     const row = (await db.select().from(actionLog).where(eq(actionLog.id, aid)).limit(1))[0];
-    if (!row) return reply.code(404).send({ error: 'Не найдено' });
+    if (!row) return reply.code(404).send({ error: 'не найдено' });
     return row;
   });
   app.get('/api/actions', async (): Promise<ActionListRow[]> => {

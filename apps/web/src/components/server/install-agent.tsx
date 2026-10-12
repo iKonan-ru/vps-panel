@@ -95,7 +95,7 @@ export function InstallAgent({
               onClick={resetHostKey}
               label="Сбросить отпечаток SSH"
               short="Сбросить отпечаток"
-              title="Если сервер переустановлен и его ключ SSH сменился"
+              title="Ключ SSH сменился после переустановки сервера"
             >
               <KeyRound className="size-3.5" />
             </Button>
@@ -127,19 +127,19 @@ export function InstallAgent({
           active={mode === 'password'}
           onClick={() => setMode('password')}
           title="Пароль root"
-          text="Используется один раз, панель его не хранит."
+          text="Используется один раз и не хранится"
         />
         <ModeCard
           active={mode === 'key'}
           onClick={() => setMode('key')}
           title="Ключ панели"
-          text="Если публичный ключ панели уже добавлен на сервер."
+          text="Ключ панели уже добавлен на сервер"
         />
         <ModeCard
           active={mode === 'manual'}
           onClick={() => setMode('manual')}
           title="Вручную"
-          text="Панель даст команду, выполнишь сам."
+          text="Команда для запуска на сервере"
         />
       </div>
 
@@ -157,14 +157,11 @@ export function InstallAgent({
       )}
       {mode === 'key' && (
         <div className="flex flex-col gap-2 text-[13px]">
-          <div className="text-muted">
-            Публичный ключ панели. Добавь его на сервер одной командой под root, затем нажми
-            "Установить":
-          </div>
+          <div className="text-muted">Добавление ключа панели, под root:</div>
           <pre className="overflow-x-auto console rounded-lg p-3 font-mono text-xs whitespace-pre-wrap break-all">
             {key.data
               ? `mkdir -p /root/.ssh && echo '${key.data.publicKey}' >> /root/.ssh/authorized_keys`
-              : 'Загрузка...'}
+              : 'Загрузка\u2026'}
           </pre>
           <CopyButton
             text={
@@ -178,7 +175,7 @@ export function InstallAgent({
       {mode === 'manual' && command && (
         <div className="flex flex-col gap-2 text-[13px]">
           <div className="text-muted">
-            Выполни под root на сервере. Токен в команде одноразовый и действует 1 час.
+            Под root на сервере. Токен одноразовый, действует 1&nbsp;ч.
           </div>
           <pre className="overflow-x-auto console rounded-lg p-3 font-mono text-xs whitespace-pre-wrap break-all">
             {command}
@@ -188,9 +185,7 @@ export function InstallAgent({
       )}
       {error && <Alert tone="bad">{error}</Alert>}
       <div className="flex items-center gap-3">
-        <InfoTip>
-          Установщик ставит агента как systemd-службу. Docker, VPN и firewall не трогаются.
-        </InfoTip>
+        <InfoTip>Агент ставится systemd-службой. Docker, VPN и firewall не затрагиваются.</InfoTip>
         <div className="grow" />
         <Button
           type="submit"
@@ -199,7 +194,7 @@ export function InstallAgent({
         >
           {mode === 'manual'
             ? command
-              ? 'Выдать новую команду'
+              ? 'Получить новую команду'
               : 'Показать команду'
             : 'Установить'}
         </Button>

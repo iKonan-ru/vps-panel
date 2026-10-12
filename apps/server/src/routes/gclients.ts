@@ -90,7 +90,7 @@ export async function gclientRoutes(
 
   function getClient(id: string) {
     const c = db.select().from(gclients).where(eq(gclients.id, id)).get();
-    if (!c || c.deletedAt) throw Object.assign(new Error('Клиент не найден'), { statusCode: 404 });
+    if (!c || c.deletedAt) throw Object.assign(new Error('клиент не найден'), { statusCode: 404 });
     return c;
   }
 
@@ -150,7 +150,7 @@ export async function gclientRoutes(
   app.delete('/api/openflux/docs/:did', async (req) => {
     const { did } = z.object({ did: z.string() }).parse(req.params);
     const d = db.select().from(openfluxDocs).where(eq(openfluxDocs.id, did)).get();
-    if (!d) throw Object.assign(new Error('Документ не найден'), { statusCode: 404 });
+    if (!d) throw Object.assign(new Error('документ не найден'), { statusCode: 404 });
     db.delete(openfluxDocs).where(eq(openfluxDocs.id, did)).run();
     if (d.bindingId) {
       db.update(gclientBindings).set(queued()).where(eq(gclientBindings.id, d.bindingId)).run();
@@ -284,7 +284,7 @@ export async function gclientRoutes(
       if (l?.state !== 'running') continue;
       l.state = 'online';
       l.lastSeen = e.seenAt;
-      l.note = `расширение ${e.browser === 'firefox' ? 'Firefox' : 'Chrome'} ${e.version} включено${e.auto ? ' (Авто: первый доступный сервер)' : ''}`;
+      l.note = `расширение ${e.browser === 'firefox' ? 'Firefox' : 'Chrome'} ${e.version} включено${e.auto ? ' (\u00abАвто\u00bb: первый доступный сервер)' : ''}`;
     }
     return {
       at: new Date().toISOString(),
@@ -302,7 +302,7 @@ export async function gclientRoutes(
       .from(gclientBindings)
       .where(and(eq(gclientBindings.id, bid), eq(gclientBindings.clientId, id)))
       .get();
-    if (!b) return reply.code(404).send({ error: 'Привязка не найдена' });
+    if (!b) return reply.code(404).send({ error: 'привязка не найдена' });
     reply.header('Cache-Control', 'no-store');
     const out: GBindingLinks = { links: b.links };
     // порядок ссылок WDTT задаёт сверка (lib/gclients.ts, wdttEnsure): qwdtt://, затем wdtt://
@@ -503,10 +503,10 @@ export async function gclientRoutes(
   /** REST 3X-UI сервера с сохранённым токеном (нет - 409 no-token: вкладка предложит выпустить). */
   function xuiFor(id: string) {
     if (!registry.isOnline(id))
-      throw Object.assign(new Error('Агент не подключён'), { statusCode: 409 });
+      throw Object.assign(new Error('сервер не в сети'), { statusCode: 409 });
     const token = savedXuiToken(db, box, id);
     if (!token)
-      throw Object.assign(new Error('Нет API-токена 3X-UI: выпусти его кнопкой'), {
+      throw Object.assign(new Error('нет API-токена 3X-UI: его нужно выпустить на вкладке 3X-UI'), {
         statusCode: 409,
         code: 'no-token',
       });
@@ -592,7 +592,7 @@ export async function gclientRoutes(
       })
       .parse(req.body ?? {});
     const row = db.select().from(servers).where(eq(servers.id, id)).get();
-    if (!row) throw Object.assign(new Error('Сервер не найден'), { statusCode: 404 });
+    if (!row) throw Object.assign(new Error('сервер не найден'), { statusCode: 404 });
     const api = xuiFor(id);
     const inbounds = (unwrap(await api('GET', 'inbounds/list'), 'inbounds/list') ?? []) as Record<
       string,
@@ -603,9 +603,7 @@ export async function gclientRoutes(
     const want = body.reset ? def : [...new Set(body.inboundIds)];
     if (!want.length)
       throw Object.assign(
-        new Error(
-          'Нужен хотя бы один inbound. Убрать клиента панели с сервера - в его карточке (Доступ)',
-        ),
+        new Error('нужен хотя бы один inbound (клиента панели убирают с сервера в его карточке)'),
         { statusCode: 400 },
       );
     const allowed = new Set((p ? ownVlessInbounds(inbounds) : inbounds).map((i) => Number(i.id)));
@@ -614,8 +612,8 @@ export async function gclientRoutes(
       throw Object.assign(
         new Error(
           p
-            ? `клиенту панели - только свои VLESS-inbound-ы сервера (не подходят: ${bad.join(', ')})`
-            : `нет таких inbound-ов: ${bad.join(', ')}`,
+            ? `клиенту панели подходят только свои inbound VLESS сервера (не подходят: ${bad.join(', ')})`
+            : `нет таких inbound: ${bad.join(', ')}`,
         ),
         { statusCode: 400 },
       );
@@ -680,7 +678,7 @@ export async function gclientRoutes(
     if (p)
       throw Object.assign(
         new Error(
-          `"${email}" - клиент панели (${p.c.name}): сверка заведёт его снова. Убрать VLESS на сервере или самого клиента - в его карточке`,
+          `\u00ab${email}\u00bb\u00a0\u2014 клиент панели (${p.c.name}), синхронизация создаст его снова. VLESS или самого клиента убирают в его карточке`,
         ),
         { statusCode: 409 },
       );
@@ -733,8 +731,8 @@ export async function gclientRoutes(
   app.get('/api/servers/:id/xui/inbounds', async (req, reply) => {
     const { id } = Id.parse(req.params);
     const row = db.select().from(servers).where(eq(servers.id, id)).get();
-    if (!row) return reply.code(404).send({ error: 'Сервер не найден' });
-    if (!registry.isOnline(id)) return reply.code(409).send({ error: 'Агент не подключён' });
+    if (!row) return reply.code(404).send({ error: 'сервер не найден' });
+    if (!registry.isOnline(id)) return reply.code(409).send({ error: 'сервер не в сети' });
     const api = xuiApi(registry, id, await xuiToken(db, box, registry, id));
     const list =
       (unwrap(await api('GET', 'inbounds/list'), 'inbounds/list') as Record<string, unknown>[]) ??

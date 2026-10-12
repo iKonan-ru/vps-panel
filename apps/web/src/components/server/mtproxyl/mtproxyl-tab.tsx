@@ -130,9 +130,9 @@ export function MtproxylTab({ s }: { s: ServerDetail }) {
   /** Сменить версию движка telemt: только готовый образ docker или бинарник (без сборки). */
   async function changeEngine(tag: string) {
     const ok = await ask({
-      title: `Поставить движок telemt ${tag}?`,
-      text: 'Скачается готовый образ docker или бинарник, затем прокси перезапустится: подключения пользователей прервутся на несколько секунд.',
-      okLabel: 'Поставить',
+      title: `Установить движок telemt ${tag}?`,
+      text: 'Прокси перезапустится, подключения прервутся на несколько секунд',
+      okLabel: 'Установить',
     });
     if (!ok) return;
     setEngineOpen(false);
@@ -155,8 +155,8 @@ export function MtproxylTab({ s }: { s: ServerDetail }) {
   /** Удалить пользователя после подтверждения; true - удалён. */
   async function removeUser(u: MtUser) {
     const ok = await ask({
-      title: `Удалить пользователя ${u.label}?`,
-      text: 'Его ссылки перестанут работать.',
+      title: `Удалить пользователя \u00ab${u.label}\u00bb?`,
+      text: 'Его ссылки перестанут работать',
       okLabel: 'Удалить',
       danger: true,
     });
@@ -164,13 +164,13 @@ export function MtproxylTab({ s }: { s: ServerDetail }) {
     return (await run('', 'secret.remove', { label: u.label })) !== null;
   }
 
-  if (!online) return <Card className="p-8 text-[13px] text-muted">Агент не на связи.</Card>;
+  if (!online) return <Card className="p-8 text-[13px] text-muted">Сервер не в сети</Card>;
   if (loadError) return <Alert tone="bad">{loadError.message}</Alert>;
-  if (!data) return <Card className="p-8 text-[13px] text-muted">Опрашиваю mtproxyl...</Card>;
+  if (!data) return <Card className="p-8 text-[13px] text-muted">Загрузка&hellip;</Card>;
   if (!data.installed)
     return (
       <Card className="p-8 text-[13px] text-muted">
-        MTProxyL на сервере не найден. Установить можно командой из каталога.
+        MTProxyL не установлен: установка через каталог команд
       </Card>
     );
 
@@ -183,8 +183,6 @@ export function MtproxylTab({ s }: { s: ServerDetail }) {
   const trafficByUser = new Map((data.traffic?.users ?? []).map((u) => [u.user, u]));
   const openUser = data.secrets?.find((u) => u.label === user);
   const panelInstalled = Boolean(panelUrl) || /running|active|работает/i.test(data.panel);
-  // "mtproxyl panel status" печатает "Состояние: работает (v1.2.12)"
-  const panelVersion = /\((v?[0-9][^)\s]*)\)/.exec(data.panel)?.[1];
   const proxyNote = `v${st?.version ?? '?'}, режим ${st?.mode ?? '?'}${
     st?.uptime ? `, аптайм ${uptime(st.uptime)}` : ''
   }`;
@@ -235,14 +233,14 @@ export function MtproxylTab({ s }: { s: ServerDetail }) {
             reach
               ? reach.error
                 ? `проверка не удалась: ${reach.error}`
-                : `дошли ${reach.ok} из ${reach.total} зондов, ${ago(reach.checkedAt)}`
-              : 'проверок MTProxyL ещё не было'
+                : `дошли ${reach.ok} из ${reach.total}\u00a0зондов, ${ago(reach.checkedAt)}`
+              : 'проверок пока не было'
           }
         />
         <MetricCard
           label="Трафик"
           value={<Num value={st?.traffic_total ?? 0} format={bytes} />}
-          note={`вход ${bytes(st?.traffic_in ?? 0)}, выход ${bytes(st?.traffic_out ?? 0)}`}
+          note={`вход: ${bytes(st?.traffic_in ?? 0)}, выход: ${bytes(st?.traffic_out ?? 0)}`}
         />
       </div>
 
@@ -257,11 +255,7 @@ export function MtproxylTab({ s }: { s: ServerDetail }) {
             hidden: !panelUrl,
             ...(panelUrl ? { href: panelUrl } : {}),
             node: panelUrl && (
-              <LinkButton
-                href={panelUrl}
-                variant="primary"
-                title={panelVersion ? `Открыть панель MTProxyL (${panelVersion})` : panelUrl}
-              >
+              <LinkButton href={panelUrl} variant="primary" title={panelUrl}>
                 Открыть панель MTProxyL
               </LinkButton>
             ),
@@ -284,7 +278,7 @@ export function MtproxylTab({ s }: { s: ServerDetail }) {
                 params={{ id: 'mtproxyl' }}
                 search={{ server: s.id, run: undefined, tab: undefined }}
                 size="sm"
-                title="Панель не найдена: установить командой из каталога"
+                title="Веб-панель не установлена"
               >
                 <Plus className="size-3.5" />
                 Установить панель
@@ -319,8 +313,8 @@ export function MtproxylTab({ s }: { s: ServerDetail }) {
             variant="ghost"
             disabled={isFetching}
             onClick={() => void refresh()}
-            title="Обновить данные вкладки"
-            aria-label="Обновить данные вкладки"
+            title="Обновить"
+            aria-label="Обновить"
           >
             <RefreshCw className={cn('size-3.5', isFetching && 'animate-spin')} />
           </Button>
@@ -329,7 +323,7 @@ export function MtproxylTab({ s }: { s: ServerDetail }) {
 
       <Section
         title="Пользователи"
-        info="Лимиты, ротация секретов, настройки прокси и nft - в панели MTProxyL; сертификат панели - во вкладке Сертификаты."
+        info={'Лимиты, ротация секретов и настройки прокси\u00a0\u2014 в панели MTProxyL'}
         extra={<Chip>{data.secrets?.length ?? 0}</Chip>}
         actions={
           <Button
@@ -355,7 +349,7 @@ export function MtproxylTab({ s }: { s: ServerDetail }) {
                 <button
                   key={u.label}
                   type="button"
-                  title={`${u.enabled ? 'включён' : 'выключен'}${panel ? `, клиент панели ${panel.client}` : ''}: подробности, ссылки и QR-код`}
+                  title={`${u.enabled ? 'включён' : 'выключен'}${panel ? `, клиент панели ${panel.client}` : ''}`}
                   onClick={() => setUser(u.label)}
                   className="flex min-w-0 items-center gap-2 rounded-lg border border-border bg-surface-2 px-3 py-2 text-left hover:border-accent"
                 >
@@ -420,7 +414,7 @@ export function MtproxylTab({ s }: { s: ServerDetail }) {
         serverId={s.id}
         kind="mtproxyl"
         title="MTProxyL"
-        loses="прокси, его пользователи и веб-панель пропадут, ссылки tg://proxy перестанут работать."
+        loses="Прокси, его пользователи и веб-панель удалятся, ссылки tg://proxy перестанут работать"
         disabled={busy || lock.busy}
         reason={lock.reason}
       />

@@ -142,7 +142,7 @@ func Run(ctx context.Context, panelURL string, sums map[string]string, log func(
 	}
 	if n > maxBinary {
 		tmp.Close()
-		return "", errors.New("бинарник агента больше 256 МБ - не похоже на агента")
+		return "", errors.New("бинарник больше 256 МБ: не похоже на агента")
 	}
 	tmp.Close()
 	got := hex.EncodeToString(h.Sum(nil))

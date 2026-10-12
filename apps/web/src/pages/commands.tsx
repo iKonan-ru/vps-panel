@@ -179,7 +179,7 @@ export function CommandsPage() {
         title="Последние запуски"
         extra={
           <Link to="/log" className="text-[13px] text-accent hover:underline">
-            весь журнал
+            Весь журнал
           </Link>
         }
       >
@@ -235,7 +235,7 @@ export function CommandsPage() {
             {runs && runs.length === 0 && (
               <tr>
                 <td colSpan={5} className="py-4 text-center text-muted">
-                  Команды ещё не запускались
+                  Запусков пока нет
                 </td>
               </tr>
             )}
@@ -278,7 +278,7 @@ function CommandCard({
         {r &&
           (r.finishedAt === null ? (
             <Chip tone="accent" className="mr-2 align-middle">
-              идёт
+              выполняется
             </Chip>
           ) : r.exitCode === 0 ? (
             <Chip tone="ok" className="mr-2 align-middle">
@@ -291,8 +291,8 @@ function CommandCard({
           ))}
         <span className="break-words">
           {r
-            ? `последний: ${runLabel}${serverName ?? 'сервер удалён'} - ${ago(r.startedAt)}`
-            : 'ещё не запускалась'}
+            ? `${runLabel}${serverName ?? 'сервер удалён'}, ${ago(r.startedAt)}`
+            : 'не запускалась'}
         </span>
       </div>
       <div className="flex flex-wrap items-center justify-end gap-2 border-t border-border pt-2.5">

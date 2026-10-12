@@ -30,7 +30,7 @@ export function Pager({
   return (
     <div className="flex items-center justify-end gap-2 border-t border-border px-4 py-2 text-xs text-muted">
       <span>
-        {page * size + 1}-{Math.min((page + 1) * size, total)} из {total}
+        {page * size + 1}&ndash;{Math.min((page + 1) * size, total)} из {total}
       </span>
       <Button
         size="icon-sm"

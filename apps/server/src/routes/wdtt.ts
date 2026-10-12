@@ -35,9 +35,9 @@ export async function wdttRoutes(
 
   const serverOf = (id: string) => {
     const s = db.select().from(servers).where(eq(servers.id, id)).get();
-    if (!s) throw Object.assign(new Error('Сервер не найден'), { statusCode: 404 });
+    if (!s) throw Object.assign(new Error('сервер не найден'), { statusCode: 404 });
     if (!registry.isOnline(id))
-      throw Object.assign(new Error('Агент не подключён'), { statusCode: 409 });
+      throw Object.assign(new Error('сервер не в сети'), { statusCode: 409 });
     return s;
   };
 

@@ -6,17 +6,18 @@
 #   vps-panel admin [show | password | 2fa | login <имя> | init [имя]] [-y]
 #                                                        администратор: сброс пароля и 2FA
 #   vps-panel domain <имя> [--sub <имя>]                 домен панели (была по IP или другой)
-#   vps-panel restore <файл .enc> [-y]                   восстановить панель из бэкапа
+#   vps-panel restore <файл .enc> [-y]                   восстановить панель из резервной копии
 #                                                        (пароль - вопросом или BACKUP_PASSWORD)
 #   vps-panel update [X.Y.Z] [--beta] [--force]          обновление до версии или до последней
 #   vps-panel rollback                                   вернуть прошлую версию
 #   vps-panel status | version | logs [panel|caddy] | restart
 #   vps-panel fail2ban                                   jail fail2ban входа в панель заново
 #                                                        (обновление делает это само)
-#   vps-panel channel [stable|beta]                      канал для "update" без версии
-#   vps-panel uninstall [--purge | --full] [-y]           снять панель (данные - с --purge);
+#   vps-panel channel [stable|beta]                      канал для "update" без версии: стабильный
+#                                                        или предварительный (beta)
+#   vps-panel uninstall [--purge | --full] [-y]          снять панель (данные - с --purge);
 #                                                        --full - всё, что ставила панель,
-#                                                        включая агента и VPN-сервисы
+#                                                        включая агент и VPN-сервисы
 #   vps-panel serve-request                              запрос обновления из панели (служба)
 #   vps-panel migrate [--beta] [--version X.Y.Z]         переезд со сборки из исходников
 #                                                        (<каталог>/deploy) на релизы
@@ -58,6 +59,7 @@ die() {
   exit 1
 }
 need_root() { [ "$(id -u)" = 0 ] || die "запускать от root (sudo vps-panel ...)"; }
+channel_name() { case "$1" in beta) echo "предварительный (beta)" ;; stable) echo "стабильный (stable)" ;; *) echo "$1" ;; esac; }
 ask() { # ask <вопрос> <по умолчанию> - ответ в $REPLY
   if [ "$YES" = 1 ]; then REPLY="$2"; return; fi
   read -r -p "$1${2:+ [$2]}: " REPLY </dev/tty 2>/dev/null ||
@@ -257,7 +259,7 @@ cmd_install() {
     shift
   done
   [ -f "$ENV_FILE" ] && die "панель уже установлена в $ROOT: обновление - vps-panel update"
-  [ -f "$DATA/panel.db" ] && die "в $DATA уже есть база панели, а $ENV_FILE нет: верните прежний .env (или panel.env из бэкапа панели) - новый SESSION_SECRET сделает зашифрованные в базе доступы нечитаемыми"
+  [ -f "$DATA/panel.db" ] && die "в $DATA уже есть база панели, а $ENV_FILE нет: верните прежний .env (или panel.env из резервной копии панели): новый SESSION_SECRET сделает зашифрованные в базе доступы нечитаемыми"
   command -v apt-get >/dev/null || warn "не Debian/Ubuntu: недостающие пакеты ставить руками"
   local miss=() p
   for p in curl python3 openssl ca-certificates iproute2; do dpkg -s "$p" >/dev/null 2>&1 || miss+=("$p"); done
@@ -287,11 +289,10 @@ cmd_install() {
     DOMAIN="$IP" TLS=ip SNI="$IP" SUB=""
     say "без домена: панель будет по адресу https://$IP"
     cat <<TXT
-Сертификат - Let's Encrypt на IP-адрес (короткий, 6 дней; Caddy продлевает сам), браузер не
-ругается. Без домена не будет: открытия панелей 3X-UI и MTProxyL через панель (поддомены) -
-они открываются напрямую, если их порт открыт; отдельного имени для подписок; имени naive на
-этом сервере по умолчанию. Домен можно добавить позже: vps-panel domain <имя> - прежний адрес
-по IP продолжит работать для агентов и подписок.
+Сертификат: Let's Encrypt на IP-адрес (6 дней, Caddy продлевает его), браузер не предупреждает.
+Без домена нет: входа в панели 3X-UI и MTProxyL через поддомены (они открываются напрямую, если
+их порт открыт), отдельного имени для подписок, имени naive на этом сервере. Домен добавляется
+позже: vps-panel domain <имя>; адрес по IP продолжит работать для агентов и подписок.
 TXT
   else
     SUB="${SUB_DOMAIN-sub.$DOMAIN}"
@@ -421,9 +422,9 @@ ENV
   ACCESS_LOGIN=""
   print_access "$ADMIN_LOGIN" "$ADMIN_PASSWORD" "VPS Panel $VERSION установлена"
   cat <<MSG
-Дальше: войдите в панель и настройте 2FA, затем "Серверы" -> "Добавить сервер". Бэкап панели
-(Настройки) - включить сразу. Обновления приходят в саму панель (Настройки -> Версия панели);
-из консоли - vps-panel update. Все команды: vps-panel help
+Дальше: вход в панель, настройка 2FA, затем "Серверы" -> "Добавить сервер". Резервную копию
+панели (Настройки) стоит включить сразу. Обновления приходят в панель (Настройки -> Версия
+панели), из консоли: vps-panel update. Все команды: vps-panel help
 MSG
 }
 
@@ -493,7 +494,7 @@ cmd_update() {
   if ! wait_health "$TARGET" 180; then
     restore
     status failed 4 4 "проверка новой версии" "$CURRENT"
-    die "$TARGET не ответила за 3 минуты - вернул $CURRENT (vps-panel logs)"
+    die "$TARGET не ответила за 3 минуты, возвращена $CURRENT (vps-panel logs)"
   fi
   install -m 755 "$tmp/vps-panel" "$CLI_PATH"
   # jail fail2ban - по правилам нового релиза (его же командой), там, где jail уже стоял
@@ -592,23 +593,23 @@ cmd_migrate() {
   fi
   install_fail2ban
   install_units
-  say "готово: $VERSION из релиза, канал $CHANNEL"
-  echo "Старые файлы установки из исходников ($legacy и исходники рядом) больше не нужны -"
-  echo "удалите их, когда убедитесь, что всё работает. Обновления - Настройки -> Версия панели."
+  say "готово: $VERSION из релиза, канал $(channel_name "$CHANNEL")"
+  echo "Старые файлы установки из исходников ($legacy и исходники рядом) больше не нужны:"
+  echo "их можно удалить, когда всё заработает. Обновления: Настройки -> Версия панели."
 }
 
 cmd_status() {
   [ -f "$ENV_FILE" ] || die "панель не установлена в $ROOT"
-  echo "версия: $(env_get PANEL_VERSION), канал: $(env_get PANEL_CHANNEL)"
+  echo "версия: $(env_get PANEL_VERSION), канал: $(channel_name "$(env_get PANEL_CHANNEL)")"
   compose ps
 }
 
 cmd_channel() {
   need_root
   case "${1:-}" in
-    stable | beta) env_set PANEL_CHANNEL "$1"; echo "канал: $1" ;;
-    "") echo "канал: $(env_get PANEL_CHANNEL)" ;;
-    *) die "канал: stable или beta" ;;
+    stable | beta) env_set PANEL_CHANNEL "$1"; echo "канал: $(channel_name "$1")" ;;
+    "") echo "канал: $(channel_name "$(env_get PANEL_CHANNEL)")" ;;
+    *) die "канал: stable (стабильный) или beta (предварительный)" ;;
   esac
 }
 
@@ -636,7 +637,7 @@ cmd_uninstall() {
     return
   fi
   confirm "Остановить и снять VPS Panel?" || exit 1
-  [ "$mode" = purge ] && { confirm "Удалить и данные ($DATA, сертификаты Caddy)? Без бэкапа их не вернуть" || exit 1; }
+  [ "$mode" = purge ] && { confirm "Удалить и данные ($DATA, сертификаты Caddy)? Без резервной копии их не вернуть" || exit 1; }
   remove_panel "$mode"
   if [ "$mode" = purge ]; then
     echo "снято вместе с данными"
@@ -687,7 +688,7 @@ full_uninstall() {
   say "Полная зачистка сервера от VPS Panel"
   printf '  - %s\n' "${items[@]}"
   if [ "${#vpn[@]}" -gt 0 ]; then
-    echo "VPN-сервисы на этом сервере (люди перестанут подключаться, пользователи и ключи пропадут):"
+    echo "VPN-сервисы на этом сервере (клиенты перестанут подключаться, пользователи и ключи пропадут):"
     printf '  - %s\n' "${vpn[@]}"
   fi
   echo "Остаётся: вход SSH по ключу, jail sshd, автообновления безопасности, ufw."
@@ -891,23 +892,23 @@ cmd_restore() {
   [ -f "$ENV_FILE" ] || die "панель не установлена в $ROOT: сначала установка (install), потом restore"
   local file="" a
   for a in "$@"; do case "$a" in -y) YES=1 ;; -*) die "restore: неизвестный ключ $a" ;; *) file="$a" ;; esac; done
-  [ -n "$file" ] && [ -f "$file" ] || die "vps-panel restore <файл бэкапа .tar.gz.enc>"
+  [ -n "$file" ] && [ -f "$file" ] || die "vps-panel restore <файл резервной копии .tar.gz.enc>"
   local pw="${BACKUP_PASSWORD:-}"
   if [ -z "$pw" ]; then
-    read -r -s -p "Пароль бэкапа: " pw </dev/tty 2>/dev/null || die "нет терминала: пароль - в BACKUP_PASSWORD"
+    read -r -s -p "Пароль резервной копии: " pw </dev/tty 2>/dev/null || die "нет терминала: пароль - в BACKUP_PASSWORD"
     echo
   fi
   TMPD="$(mktemp -d)"
   local b="$TMPD/vps-panel-backup"
   if ! printf '%s' "$pw" | openssl enc -d -aes-256-cbc -pbkdf2 -iter 100000 -pass stdin -in "$file" 2>/dev/null | tar xz -C "$TMPD" 2>/dev/null; then
-    die "не расшифровать: неверный пароль или это не бэкап панели"
+    die "не удалось расшифровать: неверный пароль или это не резервная копия панели"
   fi
   [ -f "$b/panel.db" ] && [ -f "$b/panel.env" ] && [ -f "$b/panel_agent_ed25519.pem" ] || die "в архиве нет panel.db, panel.env или ключа панели"
   local secret
   secret="$(sed -n 's/^SESSION_SECRET=//p' "$b/panel.env" | tail -1)"
   [ -n "$secret" ] || die "в panel.env архива нет SESSION_SECRET"
   echo "в архиве: $(sed -n 's/^PANEL_PUBLIC_URL=//p' "$b/panel.env") ($(du -h "$b/panel.db" | cut -f1) база)"
-  confirm "Заменить данные этой панели данными из бэкапа?" || exit 1
+  confirm "Заменить данные этой панели данными из резервной копии?" || exit 1
   local keep="$DATA/before-restore-$(date +%Y%m%d-%H%M%S)"
   say "останавливаю панель, прежние данные - в $keep"
   compose stop panel >/dev/null
@@ -927,7 +928,7 @@ cmd_restore() {
   compose up -d >/dev/null
   if wait_health "$(env_get PANEL_VERSION)" 180; then
     echo "панель восстановлена: https://$(env_get PANEL_DOMAIN) - вход прежним логином, паролем и 2FA"
-    echo "агенты на серверах подключатся сами (они верят ключу панели из бэкапа)"
+    echo "агенты на серверах подключатся сами: ключ панели взят из резервной копии"
   else
     warn "панель не ответила за 3 минуты: vps-panel logs; прежние данные - в $keep"
   fi
@@ -949,6 +950,6 @@ case "${1:-}" in
   restart) need_root; compose restart ;;
   fail2ban) need_root; install_fail2ban ;;
   uninstall) shift; cmd_uninstall "$@" ;;
-  help | -h | --help) sed -n '2,26p' "$0" | sed 's/^# \{0,1\}//' ;;
-  *) sed -n '2,26p' "$0" | sed 's/^# \{0,1\}//'; exit 1 ;;
+  help | -h | --help) sed -n '2,27p' "$0" | sed 's/^# \{0,1\}//' ;;
+  *) sed -n '2,27p' "$0" | sed 's/^# \{0,1\}//'; exit 1 ;;
 esac

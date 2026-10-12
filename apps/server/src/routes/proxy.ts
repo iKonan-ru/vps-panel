@@ -53,7 +53,7 @@ export async function proxyRoutes(
       return reply.redirect(`/login?next=${encodeURIComponent(next)}`, 302);
     }
     if (!(await proxy.target(label)))
-      return reply.code(404).send({ error: 'Такой панели сервиса нет' });
+      return reply.code(404).send({ error: 'панель сервиса не найдена' });
     if (!go) {
       const q = back ? `?back=${encodeURIComponent(back)}` : '';
       return reply.redirect(`/open/${label}${q}`, 302);

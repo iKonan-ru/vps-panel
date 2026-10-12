@@ -44,7 +44,7 @@ function render(st, update, current) {
     : !c
       ? ''
       : c.ok
-        ? `Работает, ответ за ${c.ms} мс`
+        ? `Работает, ответ за ${c.ms}\u00a0мс`
         : `Не работает: ${c.error || 'нет ответа'}`;
   $('test').hidden = !on;
 }
@@ -59,7 +59,7 @@ let measuring = false;
 function pingText(id) {
   if (!(id in pings)) return measuring ? '...' : '';
   const ms = pings[id];
-  return ms === null ? 'нет ответа' : `${ms} мс`;
+  return ms === null ? 'нет ответа' : `${ms}\u00a0мс`;
 }
 function pingClass(id) {
   if (!(id in pings) || pings[id] === undefined) return 'ping';
@@ -72,7 +72,7 @@ function renderServers() {
   const title = (id) =>
     id === 'auto'
       ? servers.length > 1
-        ? 'Авто (остальные - запасные)'
+        ? 'Авто (остальные в запасе)'
         : 'Авто'
       : (servers.find((s) => s.id === id) || {}).title || id;
   $('ddLabel').textContent = title(selected);
@@ -192,7 +192,7 @@ $('ownSave').addEventListener('click', async () => {
   }
 });
 $('test').addEventListener('click', () => {
-  $('check').textContent = 'Проверяю...';
+  $('check').textContent = 'Проверка\u2026';
   act({ cmd: 'check' });
 });
 

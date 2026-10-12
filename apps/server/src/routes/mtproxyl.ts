@@ -15,13 +15,13 @@ export async function mtproxylRoutes(app: FastifyInstance, opts: ServerRouteOpts
 
   app.get('/api/servers/:id/mtproxyl', async (req, reply) => {
     const { id } = Id.parse(req.params);
-    if (!registry.isOnline(id)) return reply.code(409).send({ error: 'Агент не подключён' });
+    if (!registry.isOnline(id)) return reply.code(409).send({ error: 'сервер не в сети' });
     return registry.request(id, 'mtproxyl.status', {}, { timeoutMs: 120_000 });
   });
   /** Версии движка telemt: установленная и те, что ставятся без сборки на сервере. */
   app.get('/api/servers/:id/mtproxyl/engine', async (req, reply) => {
     const { id } = Id.parse(req.params);
-    if (!registry.isOnline(id)) return reply.code(409).send({ error: 'Агент не подключён' });
+    if (!registry.isOnline(id)) return reply.code(409).send({ error: 'сервер не в сети' });
     return engines.info(id);
   });
   /** Операции, которые печатают ссылки с секретом пользователя: их вывод в журнал не пишется. */
@@ -50,8 +50,8 @@ export async function mtproxylRoutes(app: FastifyInstance, opts: ServerRouteOpts
         throw Object.assign(
           new Error(
             info.registryError
-              ? `Реестр образов не ответил (${info.registryError}): неизвестно, будет ли сборка на сервере`
-              : `Для версии ${body.args.version ?? '?'} нет готового образа: MTProxyL собирал бы движок на сервере`,
+              ? `реестр образов не ответил (${info.registryError}): неизвестно, придётся ли собирать движок на сервере`
+              : `для версии ${body.args.version ?? '?'} нет готового образа: MTProxyL собирал бы движок на сервере`,
           ),
           { statusCode: 409 },
         );

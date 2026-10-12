@@ -3,6 +3,7 @@ import { Chip } from '@/components/ui/chip';
 import { useConfirm } from '@/components/ui/confirm';
 import { Section } from '@/components/ui/section';
 import { api } from '@/lib/api';
+import { cap } from '@/lib/format';
 import { subscribe } from '@/lib/live';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { Link } from '@tanstack/react-router';
@@ -87,8 +88,8 @@ export function useAgentsRollout(outdated: number) {
   async function start() {
     if (starting) return;
     const ok = await ask({
-      title: `Обновить агентов на ${outdated} серверах?`,
-      text: 'По очереди: следующий сервер - только когда агент предыдущего вернулся с новой версией. Первая ошибка останавливает раскатку.',
+      title: `Обновить агенты (серверов: ${outdated})?`,
+      text: 'Серверы обновляются по очереди. Первая ошибка останавливает обновление.',
       okLabel: 'Обновить',
     });
     if (!ok) return;
@@ -112,12 +113,11 @@ export function useAgentsRollout(outdated: number) {
           type="button"
           onClick={start}
           disabled={starting}
-          title="Обновить агентов на всех серверах по очереди"
           className="rounded-full hover:brightness-125"
         >
           <Chip tone="warn">
             <RefreshCw className="size-3" />
-            обновить агентов ({outdated})
+            обновить агенты: {outdated}
           </Chip>
         </button>
       ) : null,
@@ -146,7 +146,7 @@ export function useAgentsRollout(outdated: number) {
             )
           }
         >
-          {error && <div className="px-4 py-3 text-[13px] text-bad">{error}</div>}
+          {error && <div className="px-4 py-3 text-[13px] text-bad">{cap(error)}</div>}
           {rollout?.items.map((it) => (
             <div
               key={it.serverId}

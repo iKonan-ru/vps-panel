@@ -20,16 +20,14 @@ describe('xuiTargets', () => {
   });
 
   it('своих VLESS нет', () => {
-    expect(xuiTargets([ib(3, { nodeId: 7 })], []).reason).toBe(
-      'в 3X-UI нет своих VLESS-inbound-ов',
-    );
+    expect(xuiTargets([ib(3, { nodeId: 7 })], []).reason).toBe('в 3X-UI нет своих inbound VLESS');
   });
 
   it('причина называет исключённые и выключенные inbound-ы', () => {
     const r = xuiTargets([ib(1), ib(2, { enable: false, remark: '' })], [1]);
     expect(r.target).toEqual([]);
     expect(r.reason).toBe(
-      'некуда добавить VLESS - исключены в панели (Клиенты, Серверы, Inbound-ы): in1; выключены в 3X-UI: inbound 2',
+      'некуда добавить VLESS\u00a0\u2014 исключены на странице \u00abКлиенты\u00bb: in1; выключены в 3X-UI: inbound 2',
     );
   });
 });

@@ -11,7 +11,7 @@ import { Section } from '@/components/ui/section';
 import { WdttSettings } from '@/components/wdtt-settings';
 import { UserCog } from 'lucide-react';
 
-/** Настройки: версия панели, бэкап, уведомления (с маршрутом до Telegram), WDTT, Firefox; аккаунт - своя страница. */
+/** Настройки: версия панели, резервная копия, уведомления (с маршрутом до Telegram), WDTT, Firefox; аккаунт - своя страница. */
 export function SettingsPage() {
   return (
     <>
@@ -33,16 +33,15 @@ export function SettingsPage() {
       <FirefoxSettings />
 
       <Section
-        title="Аккаунт и безопасность входа"
-        info="Логин, пароль, 2FA и резервные коды администратора, попытки входа и активные сессии - в разделе Аккаунт (он же открывается по нажатию на своё имя в меню)."
+        title="Аккаунт"
         actions={
-          <ButtonLink size="sm" to="/account" label="Аккаунт">
+          <ButtonLink size="sm" to="/account" label="Открыть">
             <UserCog className="size-3.5" />
           </ButtonLink>
         }
       >
         <div className="px-4 py-3 text-[13px] text-muted">
-          Смена логина и пароля, перенастройка 2FA, новые резервные коды, сессии и попытки входа.
+          Логин, пароль, двухфакторная аутентификация, сессии
         </div>
       </Section>
     </>

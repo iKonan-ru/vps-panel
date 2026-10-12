@@ -29,12 +29,18 @@ export function RebootDialog({
     }
   }
   return (
-    <Dialog open={open} onClose={onClose} title="Перезагрузить сервер">
+    <Dialog open={open} onClose={onClose} title={`Перезагрузить \u00ab${name}\u00bb?`}>
       <div className="text-sm text-muted">
-        Все соединения VPN на этом сервере оборвутся на время перезагрузки. Чтобы подтвердить, введи
-        имя сервера: <span className="font-mono text-text">{name}</span>
+        VPN-соединения на сервере оборвутся на время перезагрузки
       </div>
-      <Field label="Имя сервера" htmlFor="reboot-name">
+      <Field
+        label={
+          <>
+            Имя для подтверждения: <span className="font-mono">{name}</span>
+          </>
+        }
+        htmlFor="reboot-name"
+      >
         <Input
           id="reboot-name"
           value={typed}

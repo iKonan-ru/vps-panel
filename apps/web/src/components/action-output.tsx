@@ -79,11 +79,11 @@ export function ActionOutput({
         onScroll={onScroll}
         className={`${tall ? 'max-h-[70vh] min-h-[320px]' : 'max-h-[50vh] min-h-[160px]'} ${done === 0 ? 'console-ok' : ''} min-w-0 overflow-auto console rounded-lg p-3 font-mono text-xs leading-relaxed whitespace-pre-wrap [overflow-wrap:anywhere]`}
       >
-        {text ? renderAnsi(text) : <span className="text-[#8b95a3]">Ожидание вывода...</span>}
+        {text ? renderAnsi(text) : <span className="text-[#8b95a3]">Ожидание вывода&hellip;</span>}
       </pre>
       <div className={done === 0 ? 'text-xs text-ok' : 'text-xs text-muted'}>
         {done === null
-          ? 'Выполняется...'
+          ? 'Выполняется\u2026'
           : done === 0
             ? 'Завершено успешно'
             : `Завершено с ошибкой (код ${done})`}

@@ -34,14 +34,14 @@ describe('Telegram.send', () => {
     let up = false;
     const sent: string[] = [];
     (n as unknown as { deliver: Deliver }).deliver = async (_st, m) => {
-      if (!up) return { err: 'с хоста панели: fetch failed', via: null };
+      if (!up) return { err: 'с сервера панели: fetch failed', via: null };
       sent.push(m);
       return { err: null, via: 'proxy:s2' };
     };
     (n as unknown as { call: Call }).call = async () =>
       up ? { raw: '{}', via: 'proxy:s2' } : { err: 'нет пути' };
 
-    expect(await n.send('первое')).toBe('с хоста панели: fetch failed');
+    expect(await n.send('первое')).toBe('с сервера панели: fetch failed');
     // второе уже не пробует мёртвые пути: сразу в очередь
     expect(await n.send('второе')).toMatch(/отложено/);
     // тест из настроек не копится
@@ -49,7 +49,7 @@ describe('Telegram.send', () => {
     expect(n.health()).toMatchObject({
       ok: false,
       pending: 2,
-      lastError: 'с хоста панели: fetch failed',
+      lastError: 'с сервера панели: fetch failed',
     });
     expect(n.health().failingSince).toBeTruthy();
 

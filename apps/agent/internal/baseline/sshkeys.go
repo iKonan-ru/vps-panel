@@ -161,7 +161,7 @@ func removeKey(path, fp string, passwordLogin bool) error {
 		return errors.New("ключ не найден")
 	}
 	if left == 0 && !passwordLogin {
-		return errors.New("это последний ключ root, а вход по паролю выключен: по SSH будет не войти. Сначала добавь другой ключ")
+		return errors.New("это последний ключ root, а вход по паролю выключен: без него по SSH не войти")
 	}
 	return writeKeyLines(path, keep)
 }

@@ -9,8 +9,8 @@ export function githubError(r: Response): Error {
     const left = Number.isFinite(reset) ? Math.ceil((reset * 1000 - Date.now()) / 60_000) : 0;
     return new Error(
       `лимит запросов GitHub исчерпан (60 в час с адреса сервера)${
-        left > 0 ? `, сбросится через ${left} мин` : ''
-      } - повтор при следующей проверке`,
+        left > 0 ? `, сбросится через ${left}\u00a0мин` : ''
+      }, повтор при следующей проверке`,
     );
   }
   return new Error(`GitHub: ${r.status}`);

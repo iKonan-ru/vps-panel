@@ -36,7 +36,9 @@ export function ClientHostCard({ serverId }: { serverId: string }) {
   return (
     <Section
       title="Адрес для клиентов"
-      info="Какой адрес сервера стоит в конфигах людей: VLESS, AWG, WDTT, OpenFlux. С именем (A-запись в DNS на этот сервер) смена IP у хостера - правка одной записи в DNS, конфиги у людей не меняются. С IP - после смены IP выданные AWG, WDTT и OpenFlux перестанут работать."
+      info={
+        'С именем смена IP\u00a0\u2014 правка одной записи в DNS, конфиги клиентов не меняются. С IP после смены адреса выданные AWG, WDTT и OpenFlux перестанут работать.'
+      }
       extra={<Chip tone={named ? 'ok' : 'muted'}>{named ? 'имя' : 'IP'}</Chip>}
       actions={
         <Button size="sm" onClick={() => setOpen(true)} label="Изменить">
@@ -46,11 +48,11 @@ export function ClientHostCard({ serverId }: { serverId: string }) {
     >
       <div className="px-4 py-3 text-[13px]">
         <span className="font-mono">{data.clientHost || data.host}</span>
-        {named && <span className="text-muted"> - указывает на {data.host}</span>}
+        {named && <span className="text-muted">, указывает на {data.host}</span>}
         {!named && (
           <div className="mt-1 text-xs text-muted">
-            Лучше имя: например <span className="font-mono">{data.suggestion}</span> (A-запись на{' '}
-            {data.host}).
+            Надёжнее имя, например <span className="font-mono">{data.suggestion}</span> с A-записью
+            на {data.host}
           </div>
         )}
       </div>
@@ -113,9 +115,9 @@ function ClientHostForm({
   return (
     <form className="flex flex-col gap-3" onSubmit={(e) => void save(value, e)}>
       <Field
-        label="Имя сервера в конфигах людей"
+        label="Имя в конфигах клиентов"
         htmlFor="ch-name"
-        hint={`A-запись имени должна указывать на ${data.host}; проверка - через публичные DNS`}
+        hint={`A-запись должна указывать на ${data.host}, проверка через публичные DNS`}
       >
         <div className="flex gap-2">
           <Input
@@ -142,16 +144,15 @@ function ClientHostForm({
       {check && (
         <Alert tone={check.ok ? 'ok' : 'bad'}>
           {check.ok
-            ? `${value} указывает на ${check.addresses.join(', ')} - этот сервер`
+            ? `${value} указывает на этот сервер (${check.addresses.join(', ')})`
             : check.error}
         </Alert>
       )}
       {err && <Alert tone="bad">{err}</Alert>}
       <div className="text-xs text-muted">
-        После сохранения панель перевыпустит ссылки и конфиги на личных страницах. VLESS-подписка
-        обновится у людей сама; AWG, WDTT и OpenFlux с прежним адресом работают, пока не сменился
-        IP, - чтобы смена IP прошла незаметно, людям нужно один раз заново взять их с личной
-        страницы.
+        Ссылки и конфиги на личных страницах перевыпустятся. VLESS-подписка обновится сама, а AWG,
+        WDTT и OpenFlux клиентам нужно один раз взять заново, иначе после смены IP они перестанут
+        работать.
       </div>
       <div className="flex flex-wrap justify-end gap-2">
         {data.clientHost && (
@@ -164,7 +165,7 @@ function ClientHostForm({
           type="submit"
           variant="primary"
           disabled={busy || !checked || value === data.clientHost}
-          title={checked ? undefined : 'Сначала проверь имя'}
+          title={checked ? undefined : 'Имя не проверено'}
         >
           Сохранить
         </Button>

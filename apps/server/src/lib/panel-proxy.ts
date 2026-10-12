@@ -421,7 +421,7 @@ export class PanelProxy {
       await this.serve(label, req, res);
     } catch (e) {
       this.log.warn({ err: (e as Error).message, label }, 'proxy: ошибка');
-      this.fail(res, 502, 'Ошибка прокси', 'Попробуйте ещё раз.');
+      this.fail(res, 502, 'Ошибка прокси', 'Попробуйте ещё раз');
     }
     return true;
   }
@@ -429,8 +429,7 @@ export class PanelProxy {
   private async serve(label: string, req: IncomingMessage, res: ServerResponse) {
     const url = new URL(req.url ?? '/', 'http://x');
     const t = await this.target(label);
-    if (!t)
-      return this.fail(res, 404, 'Панель не найдена', `Поддомен ${label} не знает VPS Panel.`);
+    if (!t) return this.fail(res, 404, 'Панель не найдена', `VPS Panel не знает поддомен ${label}`);
     if (url.pathname === '/__vps/auth') {
       const ticket = this.tickets.get(url.searchParams.get('t') ?? '');
       this.tickets.delete(url.searchParams.get('t') ?? '');
@@ -458,10 +457,10 @@ export class PanelProxy {
         return res.end();
       }
       res.writeHead(401, { 'content-type': 'application/json' });
-      return res.end('{"error":"Войдите в VPS Panel"}');
+      return res.end('{"error":"нужен вход в VPS Panel"}');
     }
     if (!this.registry.isOnline(t.serverId))
-      return this.fail(res, 502, 'Сервер не на связи', 'Агент сервера не подключён к VPS Panel.');
+      return this.fail(res, 502, 'Сервер не в сети', 'Агент сервера не подключён к VPS Panel');
 
     const upstream = {
       headers: this.upstreamHeaders(req),
@@ -481,7 +480,7 @@ export class PanelProxy {
    */
   async probe(label: string): Promise<ProxyProbe> {
     const t = await this.target(label);
-    if (!t) return { ok: false, stage: 'target', error: 'Такой панели сервиса нет' };
+    if (!t) return { ok: false, stage: 'target', error: 'панель сервиса не найдена' };
     const row = this.db
       .select({ name: servers.name })
       .from(servers)
@@ -489,9 +488,9 @@ export class PanelProxy {
       .get();
     const base = { serverId: t.serverId, server: row?.name ?? '', kind: t.kind };
     if (!this.registry.isOnline(t.serverId))
-      return { ...base, ok: false, stage: 'agent', error: 'Агент сервера не на связи с VPS Panel' };
+      return { ...base, ok: false, stage: 'agent', error: 'сервер не в сети' };
     if (!this.registry.supports(t.serverId, 'tunnel.open'))
-      return { ...base, ok: false, stage: 'agent', error: 'Агент устарел: обновите агента' };
+      return { ...base, ok: false, stage: 'agent', error: 'агент устарел: нужно обновить агент' };
     const t0 = Date.now();
     const opened = await new Promise<string | null>((resolve) => {
       const sock = new TunnelSocket(this.registry, t.serverId, t.port);
@@ -513,7 +512,7 @@ export class PanelProxy {
         ok: false,
         stage: 'tunnel',
         tunnelMs,
-        error: `Панель не слушает порт ${t.port} на сервере: ${opened}`,
+        error: `панель не слушает порт ${t.port} на сервере: ${opened}`,
       };
     const t1 = Date.now();
     let status = await this.httpProbe(t);
@@ -538,7 +537,7 @@ export class PanelProxy {
         stage: 'panel',
         tunnelMs,
         panelMs,
-        error: `Панель ответила ошибкой ${status}`,
+        error: `панель ответила ошибкой ${status}`,
       };
     return { ...base, ok: true, tunnelMs, panelMs };
   }

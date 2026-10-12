@@ -89,7 +89,7 @@ export async function personalRoutes(
         .send(
           page(
             pageTitle(c.name),
-            `${head(c.name)}<section class="card empty">Доступ приостановлен.</section>`,
+            `${head(c.name)}<section class="card empty">Доступ приостановлен</section>`,
           ),
         );
     const rows = db
@@ -121,14 +121,14 @@ export async function personalRoutes(
       }
       body += card(
         'Прокси для Telegram',
-        `<p class="hint">"Подключить" у сервера - Telegram предложит добавить прокси.</p>${fold({ head: 'Серверы', n: mt.length, body: items })}`,
+        `<p class="hint">Нажмите \u00abПодключить\u00bb: Telegram предложит добавить прокси</p>${fold({ head: 'Серверы', n: mt.length, body: items })}`,
       );
     }
     // VLESS: одна подписка на все серверы
     if (rows.some((r) => r.b.service === 'xui')) {
       body += card(
         'VPN по подписке',
-        `<p class="hint">Добавьте подписку в Happ (или v2rayNG, Hiddify) кнопкой, ссылкой или QR-кодом - серверы обновятся сами.</p>
+        `<p class="hint">Добавьте подписку в Happ, v2rayNG или Hiddify кнопкой, ссылкой или QR-кодом. Серверы будут обновляться автоматически.</p>
 ${await linkBtn({ href: `happ://add/${subUrl}`, label: 'Добавить в Happ', copy: subUrl, qr: subUrl, primary: true, wide: true })}
 ${appsLink(c.token, 'vless', 'Скачать приложение Happ')}`,
       );
@@ -151,7 +151,7 @@ ${appsLink(c.token, 'vless', 'Скачать приложение Happ')}`,
       }
       body += card(
         'VPN по конфигу AWG',
-        `<p class="hint">Свой конфиг на каждое устройство и сервер.</p>${items}${appsLink(c.token, 'awg', 'Скачать Amnezia VPN или AmneziaWG')}`,
+        `<p class="hint">Для каждого устройства и сервера свой конфиг</p>${items}${appsLink(c.token, 'awg', 'Скачать Amnezia VPN или AmneziaWG')}`,
       );
     }
     // WDTT: подписка qWDTT и ссылки серверов
@@ -162,10 +162,10 @@ ${appsLink(c.token, 'vless', 'Скачать приложение Happ')}`,
         items += `<div class="drow"><span class="name">${esc(serverTitle(s))}</span>${await copyStack(b.links[0] ?? '', 'Скопировать', true)}</div>`;
       const ownHashes = wdttHashes(db).length
         ? ''
-        : ' Хеши звонков VK добавьте в приложении (вход в аккаунт VK).';
+        : ' Хеши звонков VK добавьте в приложении через вход в аккаунт VK.';
       body += card(
         'VPN через звонки VK (WDTT)',
-        `<p class="hint">Телефон (qWDTT): добавьте подписку - серверы и пароли обновятся сами. Компьютер (PWDTT): ссылки серверов ниже.${ownHashes}</p>
+        `<p class="hint">На телефоне (qWDTT) добавьте подписку: серверы и пароли будут обновляться автоматически. На компьютере (PWDTT) используйте ссылки серверов ниже.${ownHashes}</p>
 ${await copyStack(`${subBase}/sub/${c.token}/wdtt`, 'Скопировать подписку', false, true)}
 ${fold({ head: 'Ссылки серверов (PWDTT)', n: wd.length, body: items })}${appsLink(c.token, 'wdtt', 'Скачать qWDTT или PWDTT')}`,
       );
@@ -188,7 +188,7 @@ ${fold({ head: 'Ссылки серверов (PWDTT)', n: wd.length, body: item
       }
       body += card(
         'OpenFlux',
-        `<p class="hint">"Подключить" открывает профиль в приложении OpenFlux. Ссылка - только для своего устройства.</p>${items}${appsLink(c.token, 'openflux', 'Скачать OpenFlux')}`,
+        `<p class="hint">\u00abПодключить\u00bb открывает профиль в приложении OpenFlux. Каждая ссылка\u00a0\u2014 только для своего устройства.</p>${items}${appsLink(c.token, 'openflux', 'Скачать OpenFlux')}`,
       );
     }
     // Расширение для браузера: Chrome - архив со ссылкой клиента внутри; Firefox - подписанное
@@ -197,7 +197,7 @@ ${fold({ head: 'Ссылки серверов (PWDTT)', n: wd.length, body: item
     if (rows.some((r) => r.b.service === 'naive' && r.b.state === 'ok' && r.b.links[0])) {
       const pageUrl = `${subBase}/c/${c.token}`;
       const firefox = Boolean(firefoxXpi(firefoxDirs(env)));
-      const askLink = `<li>Если расширение попросит ссылку - вставьте ссылку этой страницы:<br>${copyBtn(pageUrl, 'Скопировать ссылку', 'sm')}</li>`;
+      const askLink = `<li>Если расширение попросит ссылку, вставьте ссылку этой страницы:<br>${copyBtn(pageUrl, 'Скопировать ссылку', 'sm')}</li>`;
       const steps = (title: string, list: string[]) =>
         fold({
           head: esc(title),
@@ -208,15 +208,15 @@ ${fold({ head: 'Ссылки серверов (PWDTT)', n: wd.length, body: item
         `<div class="browsers"><a class="btn primary" data-browser="chrome" href="/c/${c.token}/chrome.zip">${icon('download')}Chrome</a>${firefox ? `<a class="btn" data-browser="firefox" href="/c/${c.token}/firefox.xpi">${icon('download')}Firefox</a>` : ''}</div>
 ${steps('Как установить в Chrome', [
   'Скачайте архив и распакуйте его в папку, которую не будете удалять.',
-  'Откройте <b>chrome://extensions</b> и включите "Режим разработчика" (справа вверху).',
-  '"Загрузить распакованное расширение" - выберите папку <b>vps-panel-proxy</b> (не архив .zip).',
-  'Значок VPS Panel - под значком пазла: там включение и выбор сервера.',
+  'Откройте <b>chrome://extensions</b> и включите \u00abРежим разработчика\u00bb (справа вверху).',
+  'Нажмите \u00abЗагрузить распакованное расширение\u00bb и выберите папку <b>vps-panel-proxy</b> (не архив .zip).',
+  'Значок VPS Panel находится под значком пазла: там включение и выбор сервера.',
 ])}${
   firefox
     ? steps('Как установить в Firefox', [
-        'Откройте эту страницу в Firefox и нажмите "Firefox". Разрешите установку: "Продолжить установку", затем "Добавить".',
-        'Не закрывайте страницу, пока не появится значок VPS Panel: ссылку расширение возьмёт с неё. Обновляется само.',
-        'Значок - под значком пазла: там включение и выбор сервера.',
+        'Откройте эту страницу в Firefox и нажмите \u00abFirefox\u00bb. Разрешите установку: \u00abПродолжить установку\u00bb, затем \u00abДобавить\u00bb.',
+        'Не закрывайте страницу, пока не появится значок VPS Panel: расширение возьмёт ссылку с неё. Обновления устанавливаются автоматически.',
+        'Значок находится под значком пазла: там включение и выбор сервера.',
       ])
     : ''
 }`,
@@ -320,7 +320,7 @@ ${steps('Как установить в Chrome', [
         .send(
           page(
             pageTitle(r.c.name),
-            `${back}<section class="card empty">Сервер сейчас недоступен, попробуйте позже.</section>`,
+            `${back}<section class="card empty">Сервер сейчас недоступен, попробуйте позже</section>`,
           ),
         );
     const { cfg } = r;
@@ -330,13 +330,13 @@ ${steps('Как установить в Chrome', [
     const body = `${back}<div class="head"><h1>${esc(serverTitle(r.row.s))}</h1></div><p class="lead">${esc([r.c.name, r.device].filter(Boolean).join(', '))}. Подойдёт любое из двух приложений.</p>
 ${card(
   'Вариант 1: приложение Amnezia VPN',
-  `<p class="hint">"Добавить" - вставить ключ или отсканировать QR-код. Подключение будет называться "${esc(cfg.title)}".</p>
+  `<p class="hint">В приложении нажмите \u00abДобавить\u00bb и вставьте ключ или отсканируйте QR-код. Подключение будет называться \u00ab${esc(cfg.title)}\u00bb.</p>
 <div class="key">${esc(cfg.vpn)}</div><span class="split">${copyBtn(cfg.vpn, 'Скопировать ключ', 'main primary')}${frames.btn}</span>${frames.panel}
 ${appsLink(token, 'amnezia-vpn', 'Скачать Amnezia VPN', os)}`,
 )}
 ${card(
   'Вариант 2: приложение AmneziaWG',
-  `<p class="hint">Скачайте файл и откройте его в приложении или отсканируйте QR-код (приложение спросит имя - введите ${esc(cfg.fileName)}).</p>
+  `<p class="hint">Скачайте файл и откройте его в приложении или отсканируйте QR-код. Если приложение спросит имя, введите ${esc(cfg.fileName)}.</p>
 <span class="split"><a class="btn main" href="/c/${token}/awg/${bid}/conf">${icon('download')}Скачать ${esc(cfg.fileName)}.conf</a>${conf.btn}</span>${conf.panel}
 ${appsLink(token, 'amneziawg', 'Скачать AmneziaWG', os)}`,
 )}`;
@@ -368,17 +368,17 @@ ${appsLink(token, 'amneziawg', 'Скачать AmneziaWG', os)}`,
       if (!a) return '';
       return `<div class="appb" id="${id}"><h3>${esc(a.name)}</h3><p class="hint">${esc(about)}</p>${await platformsHtml(a.platforms, prefer)}</div>`;
     };
-    let body = `<a class="back" href="/c/${token}">${icon('back')}Все подключения</a><div class="head"><h1>Приложения</h1></div><p class="lead">Для вашего устройства - сверху, остальные платформы - кнопкой.</p>`;
+    let body = `<a class="back" href="/c/${token}">${icon('back')}Все подключения</a><div class="head"><h1>Приложения</h1></div><p class="lead">Сверху\u00a0\u2014 версии для вашего устройства</p>`;
     if (services.has('xui'))
       body += card(
         'VPN по подписке',
-        await appBlock('happ', 'Добавьте в нём подписку - серверы обновятся сами.'),
+        await appBlock('happ', 'Добавьте в нём подписку: серверы будут обновляться автоматически.'),
         'vless',
       );
     if (services.has('awg'))
       body += card(
         'VPN по конфигу AWG',
-        `<p class="hint">Подойдёт любое из двух приложений.</p>${await appBlock('amnezia-vpn', 'Клиент Amnezia: вставить ключ vpn:// или отсканировать QR-код из нескольких кадров.')}${await appBlock('amneziawg', 'Простое приложение: открыть файл конфига (.conf) или отсканировать QR-код.')}`,
+        `<p class="hint">Подойдёт любое из двух приложений.</p>${await appBlock('amnezia-vpn', 'Полное приложение Amnezia: ключ vpn:// или QR-код из нескольких кадров.')}${await appBlock('amneziawg', 'Простое приложение: файл конфига (.conf) или QR-код.')}`,
         'awg',
       );
     if (services.has('wdtt'))
@@ -386,7 +386,7 @@ ${appsLink(token, 'amneziawg', 'Скачать AmneziaWG', os)}`,
         'VPN через звонки VK',
         await appBlock(
           'qwdtt',
-          'Телефон на Android - qWDTT, компьютер (Windows, macOS, Linux) - PWDTT. Добавьте подписку или ссылку сервера.',
+          'Для Android\u00a0\u2014 qWDTT, для компьютера (Windows, macOS, Linux)\u00a0\u2014 PWDTT. Добавьте подписку или ссылку сервера.',
         ),
         'wdtt',
       );
@@ -395,14 +395,14 @@ ${appsLink(token, 'amneziawg', 'Скачать AmneziaWG', os)}`,
         'OpenFlux',
         await appBlock(
           'openflux',
-          'Телефон (Android, iPhone - бета через TestFlight) и компьютер. Добавьте профиль ссылкой или QR-кодом.',
+          'Есть для Android, iPhone (предварительная версия через TestFlight) и компьютера. Добавьте профиль ссылкой или QR-кодом.',
         ),
         'openflux',
       );
     if (services.has('mtproxyl'))
       body += card(
         'Прокси для Telegram',
-        `<p class="hint">Отдельное приложение не нужно - достаточно Telegram.</p>${await linkBtn({ href: 'https://telegram.org/apps', label: 'Telegram для всех устройств', sm: true })}`,
+        `<p class="hint">Отдельное приложение не нужно, достаточно Telegram</p>${await linkBtn({ href: 'https://telegram.org/apps', label: 'Telegram для всех устройств', sm: true })}`,
         'telegram',
       );
     if (!services.size)

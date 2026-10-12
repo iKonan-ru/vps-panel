@@ -30,7 +30,7 @@ export async function xrayRoutes(
 
   app.get('/api/xray/inbounds', async (req, reply) => {
     const { server } = z.object({ server: z.string() }).parse(req.query);
-    if (!registry.isOnline(server)) return reply.code(409).send({ error: 'Агент не подключён' });
+    if (!registry.isOnline(server)) return reply.code(409).send({ error: 'сервер не в сети' });
     const api = xuiApi(registry, server, await xuiToken(db, box, registry, server));
     const list = await realityInbounds(api);
     return {

@@ -124,7 +124,7 @@ interface SyncCtx {
 /**
  * Сверка глобальных клиентов с серверами: желаемое состояние - в базе,
  * фоновая задача приводит к нему серверы. Каждый сервер - отдельное действие в журнале
- * ("Глобальные клиенты: сверка") с обычной блокировкой: занятый или не в сети сервер ждёт
+ * ("Синхронизация клиентов") с обычной блокировкой: занятый или не в сети сервер ждёт
  * следующего прохода. Раз в 5 минут и сразу после изменений (kick).
  */
 export class GClients {
@@ -591,7 +591,7 @@ export class GClients {
     for (const [i, b] of work.entries()) {
       prog.done = i;
       if (this.stopRequested) {
-        say(`сверка прервана: осталось ${work.length - i} - в следующий раз`);
+        say(`синхронизация прервана: осталось ${work.length - i} - в следующий раз`);
         stoppedAt = i;
         break;
       }
@@ -628,12 +628,12 @@ export class GClients {
           if (!target.length)
             throw new Error(
               b.xuiInbounds
-                ? 'inbound-ов своего набора больше нет в 3X-UI: задай набор заново во вкладке 3X-UI'
+                ? 'inbound из набора клиента больше нет в 3X-UI: набор нужно задать заново на вкладке 3X-UI'
                 : x.reason,
             );
           const links = await xuiEnsure(x.api, c, b.ref, target);
           this.setBinding(b, { state: 'ok', error: '', links });
-          say(`${label}: ${c.enabled ? 'включён' : 'выключен'}, inbound-ов ${target.length}`);
+          say(`${label}: ${c.enabled ? 'включён' : 'выключен'}, inbound: ${target.length}`);
         }
         if (b.service === 'mtproxyl') {
           const r = await mtEnsure(this.deps, row.id, await mtCtx(), c, b);
@@ -673,10 +673,10 @@ export class GClients {
           const st = await awgCtx();
           const { major, container, publicKey } = awgRef(b.ref);
           if (!st.instances?.some((i) => (i.version ?? '').startsWith(major))) {
-            if (!st.docker) throw new Error('docker на сервере не ответил - повтор позже');
+            if (!st.docker) throw new Error('docker на сервере не ответил, повтор позже');
             if (container && publicKey) await awgForgetKey(this.db, row.id, container, publicKey);
             this.db.delete(gclientBindings).where(eq(gclientBindings.id, b.id)).run();
-            say(`${label}: экземпляра AWG ${major}.x на сервере нет - не заводится`);
+            say(`${label}: экземпляра AWG ${major}.x на сервере нет, привязка убрана`);
             continue;
           }
           const ref = await awgEnsure(this.deps, row.id, st, c, d, b.ref);
@@ -691,7 +691,7 @@ export class GClients {
         say(`${label}: ошибка: ${error}`);
         // агент завис или отключился: остальное по серверу - в следующий проход, а не каждая
         // привязка со своим таймаутом
-        if (/^Агент (не ответил вовремя|отключился|не подключён)/.test(error)) {
+        if (/^(агент (не ответил вовремя|отключился)|сервер не в сети)/i.test(error)) {
           say('агент не отвечает - остальное в следующий раз');
           stoppedAt = i + 1;
           break;

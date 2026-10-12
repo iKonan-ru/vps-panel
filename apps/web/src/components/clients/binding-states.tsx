@@ -11,7 +11,7 @@ export function BindingStates({ s }: { s: GClientRow['states'] }) {
           работает {s.ok}
         </Chip>
       )}
-      {s.pending > 0 && <Chip tone="muted">ждёт сверки {s.pending}</Chip>}
+      {s.pending > 0 && <Chip tone="muted">ждёт синхронизации {s.pending}</Chip>}
       {s.error > 0 && <Chip tone="bad">ошибок {s.error}</Chip>}
     </span>
   );

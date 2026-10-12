@@ -63,7 +63,7 @@ export async function notifyRoutes(app: FastifyInstance, opts: { telegram: Teleg
   });
 
   app.post('/api/notify/telegram/test', async (_req, reply) => {
-    const err = await telegram.send('VPS Panel: тестовое сообщение, уведомления работают.', {
+    const err = await telegram.send('VPS Panel: тестовое сообщение, уведомления работают', {
       keep: false,
     });
     if (err) return reply.code(502).send({ error: err });

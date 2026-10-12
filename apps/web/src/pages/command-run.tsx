@@ -195,7 +195,7 @@ export function CommandRunPage() {
   }
 
   if (!cmds || (!cmd && (!retried || cmdsFetching)))
-    return <Card className="p-8 text-muted">Загрузка...</Card>;
+    return <Card className="p-8 text-muted">Загрузка&hellip;</Card>;
   if (!cmd) return <Card className="p-8 text-bad">Команда не найдена</Card>;
   const server = servers?.find((s) => s.id === serverId);
   const runServer = servers?.find((s) => s.id === runServerId);
@@ -241,26 +241,23 @@ export function CommandRunPage() {
           <div className="grid items-start gap-4 lg:grid-cols-[minmax(0,1.15fr)_minmax(0,1fr)]">
             <Card className="flex flex-col gap-4 p-5">
               <div className="text-[13px] leading-relaxed text-muted">{cmd.description}</div>
-              <Field
-                label="Сервер"
-                htmlFor="cmd-server"
-                hint="команда выполняется на одном сервере"
-              >
+              <Field label="Сервер" htmlFor="cmd-server">
                 <Select
                   id="cmd-server"
                   value={serverId}
                   onChange={(e) => setServerId(e.target.value)}
                 >
-                  <option value="">выбери сервер</option>
+                  <option value="">не выбран</option>
                   {(servers ?? []).map((s) => (
                     <option key={s.id} value={s.id} disabled={s.status !== 'online'}>
-                      {s.name} - {s.host} {s.status === 'online' ? '(в сети)' : '(не в сети)'}
+                      {s.name}, {s.host}
+                      {s.status === 'online' ? '' : ' (не в сети)'}
                     </option>
                   ))}
                 </Select>
               </Field>
               {serverId && loadedFor !== `${cmd.id}:${serverId}` && (
-                <div className="text-sm text-muted">Загружаю значения по умолчанию...</div>
+                <div className="text-sm text-muted">Загрузка&hellip;</div>
               )}
               {serverId && loadedFor === `${cmd.id}:${serverId}` && (
                 <div className="grid gap-3 sm:grid-cols-2">
@@ -276,9 +273,7 @@ export function CommandRunPage() {
                       />
                     ))}
                   {cmd.params.length === 0 && (
-                    <div className="text-sm text-muted sm:col-span-2">
-                      Вопросов нет - можно запускать.
-                    </div>
+                    <div className="text-sm text-muted sm:col-span-2">Параметров нет</div>
                   )}
                 </div>
               )}
@@ -295,7 +290,7 @@ export function CommandRunPage() {
               <Card className="flex flex-col gap-2.5 p-4">
                 <div className="font-semibold">Что будет сделано</div>
                 {plan.length === 0 ? (
-                  <div className="text-[13px] text-muted">Выбери сервер</div>
+                  <div className="text-[13px] text-muted">Сервер не выбран</div>
                 ) : (
                   <div className="flex flex-col gap-1.5 text-[13px]">
                     {plan.map((s) => (
@@ -314,7 +309,7 @@ export function CommandRunPage() {
                     (checks.some((c) => c.level === 'fail') ? (
                       <Chip tone="bad">есть проблемы</Chip>
                     ) : checks.some((c) => c.level === 'warn') ? (
-                      <Chip tone="warn">с оговорками</Chip>
+                      <Chip tone="warn">есть предупреждения</Chip>
                     ) : (
                       <Chip tone="ok">всё в порядке</Chip>
                     ))}
@@ -323,7 +318,7 @@ export function CommandRunPage() {
                     size="sm"
                     disabled={!serverId || checking || busy || errors.length > 0}
                     onClick={runPreflight}
-                    label={checking ? 'Проверяю...' : checks ? 'Проверить снова' : 'Проверить'}
+                    label="Проверить"
                   >
                     <ClipboardCheck className={checking ? 'size-3.5 animate-pulse' : 'size-3.5'} />
                   </Button>
@@ -343,12 +338,7 @@ export function CommandRunPage() {
                       </div>
                     ))}
                   </div>
-                ) : (
-                  <div className="text-[13px] text-muted">
-                    Агент проверит порты, наличие сервиса и место на диске. Запуск без проверки тоже
-                    возможен.
-                  </div>
-                )}
+                ) : null}
               </Card>
               {cmd.after && (
                 <Card className="p-4 text-[13px] text-muted">
@@ -359,10 +349,7 @@ export function CommandRunPage() {
             </div>
           </div>
           <div className="flex flex-wrap items-center gap-3">
-            <InfoTip>
-              Ответы сохраняются как значения по умолчанию для следующего запуска на этом сервере
-              (кроме паролей).
-            </InfoTip>
+            <InfoTip>Ответы запоминаются для следующего запуска, кроме паролей</InfoTip>
             <div className="grow" />
             <ButtonLink to="/commands" search={{ server: undefined }}>
               Отмена
@@ -371,7 +358,7 @@ export function CommandRunPage() {
               variant="primary"
               disabled={!canRun || secretsMissing || lock.busy}
               onClick={run}
-              title={lock.reason ?? (secretsMissing ? 'Заполни пароли' : '')}
+              title={lock.reason ?? (secretsMissing ? 'Не заполнены пароли' : '')}
               label={server ? `Запустить на ${server.name}` : 'Запустить'}
             >
               <Play className="size-4" />
@@ -383,16 +370,13 @@ export function CommandRunPage() {
       {tab === 'output' && (
         <Card className="flex flex-col gap-3 p-4">
           {!actionId ? (
-            <div className="text-[13px] text-muted">
-              Команда ещё не запускалась в этой вкладке. Заполни форму и нажми "Запустить", либо
-              открой запуск из истории.
-            </div>
+            <div className="text-[13px] text-muted">Запусков пока нет</div>
           ) : (
             <>
               <div className="flex flex-wrap items-center gap-2.5">
                 <div className="font-semibold">
-                  Запуск: {cmd.title}
-                  {runServer ? ` на ${runServer.name}` : ''}
+                  {cmd.title}
+                  {runServer ? `: ${runServer.name}` : ''}
                 </div>
                 <ActionStatusChip
                   finishedAt={finished === null ? null : 'done'}
@@ -419,7 +403,7 @@ export function CommandRunPage() {
                     to="/servers/$id"
                     params={{ id: runServer.id }}
                     size="sm"
-                    label="Открыть карточку сервера"
+                    label="Открыть сервер"
                   >
                     <Server className="size-3.5" />
                   </ButtonLink>

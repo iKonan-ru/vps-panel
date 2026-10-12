@@ -21,8 +21,8 @@ export function NoAdminPage() {
         <Logo size={32} />
         <div className="text-xl font-semibold">Администратор не создан</div>
         <div className="text-[13px] leading-relaxed text-muted">
-          Логин и пароль появляются при установке панели. Если установка прервалась, создай
-          администратора в консоли сервера панели - пароль будет показан там же:
+          Логин и пароль выдаются при установке панели. Если установка прервалась, администратор
+          создаётся в консоли сервера панели:
         </div>
         <code className="rounded-md bg-surface-2 px-3 py-2 font-mono text-[13px]">
           vps-panel admin init
@@ -119,10 +119,10 @@ export function LoginPage() {
         {step === 'enroll' && enroll ? (
           <div key="enroll" className="flex flex-col gap-4">
             <div>
-              <div className="text-xl font-semibold">Двухфакторная защита</div>
+              <div className="text-xl font-semibold">Двухфакторная аутентификация</div>
               <div className="mt-1 text-[13px] text-muted">
-                Первый вход: без 2FA в панель не попасть. Отсканируй QR в приложении-аутентификаторе
-                (Google Authenticator, Aegis, 1Password), сохрани резервные коды и введи код.
+                Вход в панель только с 2FA. Подойдёт любое приложение-аутентификатор: Google
+                Authenticator, Aegis, 1Password.
               </div>
             </div>
             <TotpEnroll
@@ -145,12 +145,7 @@ export function LoginPage() {
           </div>
         ) : step === 'password' ? (
           <form key="password" onSubmit={submitPassword} className="flex flex-col gap-4">
-            <div>
-              <div className="text-xl font-semibold">Вход</div>
-              <div className="mt-1 text-[13px] text-muted">
-                Логин и пароль администратора, затем код из приложения.
-              </div>
-            </div>
+            <div className="text-xl font-semibold">Вход</div>
             <Field label="Логин" htmlFor="login">
               <Input
                 id="login"
@@ -188,7 +183,7 @@ export function LoginPage() {
             <div>
               <div className="text-xl font-semibold">Код подтверждения</div>
               <div className="mt-1 text-[13px] text-muted">
-                Введи 6 цифр из приложения-аутентификатора или резервный код.
+                6&nbsp;цифр из приложения-аутентификатора или резервный код
               </div>
             </div>
             <Field label="Код" htmlFor="code">

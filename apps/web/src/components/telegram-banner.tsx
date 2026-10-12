@@ -40,13 +40,11 @@ export function TelegramBanner() {
   return (
     <Alert tone="bad">
       {`Уведомления в Telegram не доходят${failingFor(data.failingSince)}`}
-      {data.pending > 0
-        ? `, отложено сообщений: ${data.pending} (уйдут, когда связь вернётся)`
-        : ''}
+      {data.pending > 0 ? `, отложено сообщений: ${data.pending}` : ''}
       {'. '}
       {data.lastError && <span className="break-words">{data.lastError}. </span>}
       <Link to="/settings" className="underline">
-        Настройки: тест и выход через xray
+        Настройки
       </Link>
     </Alert>
   );

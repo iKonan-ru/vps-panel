@@ -26,7 +26,7 @@ export async function dockerRoutes(app: FastifyInstance, opts: ServerRouteOpts) 
     const { tail } = z
       .object({ tail: z.coerce.number().int().min(10).max(5000).default(500) })
       .parse(req.query);
-    if (!registry.isOnline(id)) return reply.code(409).send({ error: 'Агент не подключён' });
+    if (!registry.isOnline(id)) return reply.code(409).send({ error: 'сервер не в сети' });
     return registry.request(id, 'docker.logs', { id: cid, tail }, { timeoutMs: 60_000 });
   });
 }

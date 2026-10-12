@@ -131,7 +131,7 @@ export function validateAwgParams(p: Record<string, string>): string[] {
   const jmax = num('Jmax');
   if (jmin !== undefined && jmax !== undefined && jmin > jmax) errors.push('Jmin больше Jmax');
   if (jmax !== undefined && jmax > 1280)
-    errors.push('Jmax больше 1280: мусор будет фрагментироваться');
+    errors.push('Jmax больше 1280: мусорные пакеты будут фрагментироваться');
 
   const sizes: [string, number][] = [];
   for (const [k, base] of [

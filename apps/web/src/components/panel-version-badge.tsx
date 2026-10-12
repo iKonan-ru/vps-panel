@@ -18,8 +18,8 @@ export function PanelVersionBadge({ compact = false }: { compact?: boolean }) {
   const version = data?.current ?? running;
   const top = data?.newer[0];
   const title = top
-    ? `Панель ${version ?? '?'}: есть новая версия ${top.version} - открыть обновление`
-    : `Версия панели ${version ?? '?'} - настройки обновлений`;
+    ? `Версия панели ${version ?? '?'}, доступна ${top.version}`
+    : `Версия панели ${version ?? '?'}`;
   if (compact && !top) return null;
   if (!version && !top) return null;
   return (

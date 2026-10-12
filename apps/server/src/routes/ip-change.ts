@@ -61,17 +61,17 @@ export async function ipChangeRoutes(
 
   async function check(id: string, ip: string) {
     const row = db.select().from(servers).where(eq(servers.id, id)).get();
-    if (!row) throw Object.assign(new Error('Сервер не найден'), { statusCode: 404 });
+    if (!row) throw Object.assign(new Error('сервер не найден'), { statusCode: 404 });
     const steps: IpStep[] = [];
     if (!isIP(ip)) {
-      steps.push({ name: 'Новый адрес', level: 'fail', detail: 'нужен IPv4 или IPv6 адрес' });
+      steps.push({ name: 'Новый адрес', level: 'fail', detail: 'нужен адрес IPv4 или IPv6' });
       return { row, steps, canSwitch: false };
     }
     if (ip === row.host) {
       steps.push({ name: 'Новый адрес', level: 'fail', detail: 'это текущий адрес сервера' });
       return { row, steps, canSwitch: false };
     }
-    steps.push({ name: 'Новый адрес', level: 'ok', detail: `${row.host} -> ${ip}` });
+    steps.push({ name: 'Новый адрес', level: 'ok', detail: `${ip}, сейчас ${row.host}` });
 
     // имена, которые люди и браузеры знают: адрес для клиентов и имя прокси для браузера
     let dnsOk = true;
@@ -89,7 +89,7 @@ export async function ipChangeRoutes(
         name: 'Адрес для клиентов',
         level: 'warn',
         detail:
-          'имени нет - у людей в AWG, WDTT, OpenFlux и MTProxy старый IP, после смены они перестанут работать (VLESS-подписка обновится сама). Лучше сначала задать имя в "Обзоре"',
+          'имени нет: у клиентов AWG, WDTT, OpenFlux и MTProxy останется старый IP и подключения перестанут работать (подписка VLESS обновится сама). Имя лучше задать заранее на вкладке \u00abОбзор\u00bb.',
       });
     for (const n of names) {
       const r = await resolvePublic(n.name);
@@ -100,7 +100,7 @@ export async function ipChangeRoutes(
         level: ok ? 'ok' : n.must ? 'fail' : 'warn',
         detail: ok
           ? `${n.what}: указывает на ${ip}`
-          : `${n.what}: ${r.error ?? `указывает на ${r.addresses.join(', ')}`} - поправь A-запись на ${ip} и проверь снова (DNS обновляется до нескольких минут)`,
+          : `${n.what}: ${r.error ?? `указывает на ${r.addresses.join(', ')}`}; A-запись нужно сменить на ${ip}, обновление DNS занимает до нескольких минут`,
       });
     }
 
@@ -111,7 +111,7 @@ export async function ipChangeRoutes(
       name: 'Агент',
       level: agentOk ? 'ok' : 'warn',
       detail: !conn
-        ? 'не на связи'
+        ? 'не в сети'
         : agentOk
           ? `подключён с ${ip}`
           : `подключён с ${addr || 'неизвестного адреса'}: сервер ещё на старом адресе?`,
@@ -120,7 +120,7 @@ export async function ipChangeRoutes(
     steps.push({
       name: `TCP ${ip}:${row.sshPort}`,
       level: tcpErr ? 'warn' : 'ok',
-      detail: tcpErr ? `с панели не открылся: ${tcpErr}` : 'SSH отвечает с панели',
+      detail: tcpErr ? `не открывается с сервера панели: ${tcpErr}` : 'SSH отвечает серверу панели',
     });
     return { row, steps, canSwitch: dnsOk && (agentOk || !tcpErr) };
   }
@@ -152,7 +152,7 @@ export async function ipChangeRoutes(
       [
         `Адрес сервера: ${row.host} -> ${ip}`,
         ...steps.map((s) => `${s.name}: ${s.detail}`),
-        xrayMoved ? 'Маршрут до Telegram через этот сервер - на новый адрес' : '',
+        xrayMoved ? 'Маршрут до Telegram через этот сервер переведён на новый адрес' : '',
       ]
         .filter(Boolean)
         .join('\n'),

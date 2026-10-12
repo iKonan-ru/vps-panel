@@ -70,12 +70,12 @@ describe('AgentRegistry.request', () => {
   it('times out and fails at once when the agent is offline', async () => {
     const reg = new AgentRegistry();
     await expect(reg.request('s1', 'inventory.get')).rejects.toMatchObject({
-      message: 'Агент не подключён',
+      message: 'сервер не в сети',
       statusCode: 409,
     });
     const ws = connect(reg);
     await expect(reg.request('s1', 'inventory.get', {}, { timeoutMs: 20 })).rejects.toThrow(
-      'Агент не ответил вовремя',
+      'агент не ответил вовремя',
     );
     ws.close(1000);
   });
@@ -85,7 +85,7 @@ describe('AgentRegistry.request', () => {
     const ws = connect(reg);
     const p = reg.request('s1', 'inventory.get');
     ws.close(1006);
-    await expect(p).rejects.toThrow('Агент отключился');
+    await expect(p).rejects.toThrow('агент отключился');
     expect(reg.isOnline('s1')).toBe(false);
   });
 

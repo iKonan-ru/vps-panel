@@ -21,7 +21,7 @@ export async function saveXuiToken(db: Db, box: SecretBox, serverId: string, tok
     kind: 'xui-api',
     title: 'API 3X-UI',
     fields: [{ label: 'Токен', value: token, secret: true }],
-    note: 'Токен vps-panel для REST API 3X-UI; панель использует его для статуса и пользователей.',
+    note: 'Нужен VPS Panel для статуса 3X-UI и клиентов',
   });
 }
 

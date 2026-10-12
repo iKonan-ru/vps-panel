@@ -63,9 +63,7 @@ export function DockerTab({ s }: { s: ServerDetail }) {
   }
 
   if (!s.inventory?.host.dockerVersion) {
-    return (
-      <Card className="p-8 text-[13px] text-muted">Docker на этом сервере не установлен.</Card>
-    );
+    return <Card className="p-8 text-[13px] text-muted">Docker не установлен</Card>;
   }
 
   const groups = new Map<string, Container[]>();
@@ -79,11 +77,12 @@ export function DockerTab({ s }: { s: ServerDetail }) {
       {error && <Alert tone="bad">{error}</Alert>}
       <Section
         title="Контейнеры"
-        info="Контейнеры VPN (Amnezia, 3X-UI, MTProxy) панель останавливает и перезапускает только после подтверждения: ими пользуются люди."
         extra={
           <>
             <Chip>{containers.length}</Chip>
-            <Chip tone="ok">работает {containers.filter((c) => c.state === 'running').length}</Chip>
+            <Chip tone="ok">
+              работает: {containers.filter((c) => c.state === 'running').length}
+            </Chip>
             <span className="text-xs text-muted">docker {s.inventory.host.dockerVersion}</span>
           </>
         }
@@ -138,22 +137,16 @@ export function DockerTab({ s }: { s: ServerDetail }) {
       <Dialog
         open={confirm !== null}
         onClose={() => setConfirm(null)}
-        title={confirm ? actionTitle(confirm.action) : ''}
+        title={confirm ? `${actionTitle(confirm.action)} \u00ab${confirm.c.name}\u00bb?` : ''}
       >
         {confirm && (
           <>
-            <div className="text-sm">
-              Контейнер <span className="font-mono">{confirm.c.name}</span>
+            <div className="flex flex-col gap-2 text-sm">
               {isVpn(confirm.c) && (
-                <span className="text-warn">
-                  {' '}
-                  похож на VPN-сервис: все его пользователи потеряют соединение.
-                </span>
+                <div className="text-warn">Похоже на VPN: клиенты потеряют соединение</div>
               )}
               {confirm.action === 'remove' && (
-                <div className="mt-2 text-muted">
-                  Контейнер будет остановлен и удалён. Тома и образ остаются.
-                </div>
+                <div className="text-muted">Тома и образ останутся</div>
               )}
             </div>
             <div className="flex justify-end gap-2">
@@ -232,7 +225,7 @@ function GroupRows({
               )}
             </td>
             <td className="font-mono text-xs">
-              {c.cpuPercent !== undefined ? `${c.cpuPercent.toFixed(1)}%` : '-'}
+              {c.cpuPercent !== undefined ? `${c.cpuPercent.toFixed(1).replace('.', ',')}%` : '-'}
             </td>
             <td className="font-mono text-xs">
               {c.memMb !== undefined ? `${Math.round(c.memMb)} МБ` : '-'}
@@ -350,7 +343,9 @@ function MobileList({ groups, ...actions }: ActionProps & { groups: Map<string, 
                 <span className="font-mono">
                   {c.published.join(', ') || (c.networkMode === 'host' ? 'host' : 'без портов')}
                 </span>
-                {c.cpuPercent !== undefined && <span>CPU {c.cpuPercent.toFixed(1)}%</span>}
+                {c.cpuPercent !== undefined && (
+                  <span>CPU {c.cpuPercent.toFixed(1).replace('.', ',')}%</span>
+                )}
                 {c.memMb !== undefined && <span>{Math.round(c.memMb)} МБ</span>}
               </div>
               <ContainerActions c={c} {...actions} className="-ml-2" />
@@ -391,7 +386,7 @@ function LogsDialog({
     >
       {error && <Alert tone="bad">{error}</Alert>}
       <pre className="max-h-[60vh] min-h-[200px] overflow-auto console rounded-lg p-3 font-mono text-xs leading-relaxed whitespace-pre-wrap">
-        {text === null ? 'Загрузка...' : text || 'Логи пусты'}
+        {text === null ? 'Загрузка\u2026' : text || 'Логов нет'}
       </pre>
       <div className="flex items-center gap-2">
         <span className="text-xs text-muted">Последние строки:</span>

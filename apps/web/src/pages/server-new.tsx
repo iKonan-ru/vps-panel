@@ -102,12 +102,12 @@ export function ServerNewPage() {
         <PageTitle>Установка агента</PageTitle>
         <Card className="flex flex-col gap-4 p-5">
           <p className="text-sm">
-            Сервер <b>{name}</b> добавлен. Осталось поставить на него агента.
+            Сервер <b>{name}</b> добавлен
           </p>
           <InstallAgent serverId={created.id} host={host} />
           <div className="flex justify-end">
             <Button onClick={() => navigate({ to: '/servers/$id', params: { id: created.id } })}>
-              Открыть карточку сервера
+              Открыть сервер
             </Button>
           </div>
         </Card>
@@ -117,25 +117,20 @@ export function ServerNewPage() {
 
   return (
     <form onSubmit={submit} className="flex max-w-[760px] flex-col gap-5">
-      <div>
-        <PageTitle>Добавить сервер</PageTitle>
-        <div className="mt-1 text-sm text-muted">
-          Сначала данные сервера, затем установка агента: по SSH из панели или командой вручную.
-        </div>
-      </div>
+      <PageTitle>Новый сервер</PageTitle>
       <Card className="flex flex-col gap-4 p-5">
         <div className="font-semibold">Подключение</div>
         <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
           <Field
             label="Имя в панели"
             htmlFor="srv-name"
-            hint="по умолчанию - хостинг и страна, можно переименовать"
+            hint="если не задано, составляется из хостинга и страны"
           >
             <Input
               id="srv-name"
               value={name}
               onChange={(e) => setCustomName(e.target.value)}
-              placeholder="например, Hoster Финляндия"
+              placeholder="Hoster Финляндия"
               required
               maxLength={64}
             />
@@ -151,7 +146,7 @@ export function ServerNewPage() {
           </Field>
         </div>
         <div className="grid grid-cols-1 gap-3 sm:grid-cols-[minmax(0,2fr)_minmax(0,1fr)]">
-          <Field label="Адрес (IP или домен)" htmlFor="srv-host">
+          <Field label="Адрес" htmlFor="srv-host">
             <Input
               id="srv-host"
               className="font-mono"
@@ -183,7 +178,7 @@ export function ServerNewPage() {
             <Radar className={probing ? 'size-3.5 animate-spin' : 'size-3.5'} />
           </Button>
           <InfoTip>
-            DNS, TCP до порта SSH и баннер sshd с адреса панели. Добавление не блокирует.
+            Проверка с сервера панели: DNS, порт SSH, ответ sshd. На добавление не влияет.
           </InfoTip>
         </div>
         {probe && (
@@ -198,14 +193,14 @@ export function ServerNewPage() {
                 <span className="w-[150px] shrink-0 text-muted">{st.name}</span>
                 <span className="min-w-0 break-all">
                   {st.detail}
-                  {st.ms !== undefined && <span className="text-muted"> ({st.ms} мс)</span>}
+                  {st.ms !== undefined && <span className="text-muted"> ({st.ms}&nbsp;мс)</span>}
                 </span>
               </div>
             ))}
             <div className={probe.ok ? 'mt-1 text-ok' : 'mt-1 text-bad'}>
               {probe.ok
-                ? 'Сервер доступен с панели, можно ставить агента по SSH.'
-                : 'С панели до сервера не достучаться: агент по SSH не поставится, но можно добавить и установить вручную.'}
+                ? 'Сервер доступен: агент установится по SSH'
+                : 'Сервер недоступен: агент можно установить только командой вручную'}
             </div>
           </div>
         )}
@@ -214,18 +209,15 @@ export function ServerNewPage() {
         <div className="flex items-center gap-2.5">
           <div className="font-semibold">Хостинг</div>
           <span className="text-xs text-muted">необязательно</span>
-          <InfoTip>Можно заполнить позже в карточке сервера.</InfoTip>
         </div>
         <HostingFields f={hosting} set={setH} idPrefix="new" />
       </Card>
       {error && <Alert tone="bad">{error}</Alert>}
       <div className="flex items-center justify-end gap-2.5">
-        <InfoTip>
-          Пароль root, если понадобится, спросим на следующем шаге; панель его не хранит.
-        </InfoTip>
+        <InfoTip>Пароль root, если нужен, запрашивается на следующем шаге и не хранится</InfoTip>
         <ButtonLink to="/">Отмена</ButtonLink>
         <Button type="submit" variant="primary" disabled={busy}>
-          Добавить и получить команду
+          Добавить
         </Button>
       </div>
     </form>

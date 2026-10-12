@@ -14,6 +14,6 @@ export function LogTab({ serverId }: { serverId: string }) {
     queryFn: () => actions.log(serverId),
   });
   if (error) return <Alert tone="bad">{error.message}</Alert>;
-  if (isLoading) return <Card className="p-8 text-muted">Загрузка...</Card>;
+  if (isLoading) return <Card className="p-8 text-muted">Загрузка&hellip;</Card>;
   return <ActionsTable title="Журнал действий" rows={data ?? []} />;
 }

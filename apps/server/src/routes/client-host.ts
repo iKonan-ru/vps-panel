@@ -27,7 +27,7 @@ export async function clientHostRoutes(
   app.get('/api/servers/:id/client-host', async (req, reply) => {
     const { id } = Id.parse(req.params);
     const r = row(id);
-    if (!r) return reply.code(404).send({ error: 'Сервер не найден' });
+    if (!r) return reply.code(404).send({ error: 'сервер не найден' });
     // подсказка: имя прокси для браузера (A-запись уже есть) или <слаг>.<домен панели>
     const inv = (r.statusCache as StatusCache | null)?.inventory;
     const naive = inv?.services.find((s) => s.kind === 'naive')?.details?.domain;
@@ -42,7 +42,7 @@ export async function clientHostRoutes(
   app.post('/api/servers/:id/client-host/check', async (req, reply) => {
     const { id } = Id.parse(req.params);
     const r = row(id);
-    if (!r) return reply.code(404).send({ error: 'Сервер не найден' });
+    if (!r) return reply.code(404).send({ error: 'сервер не найден' });
     const { name } = Name.parse(req.body ?? {});
     return checkClientHost(name, r.host);
   });
@@ -51,7 +51,7 @@ export async function clientHostRoutes(
   app.put('/api/servers/:id/client-host', async (req, reply) => {
     const { id } = Id.parse(req.params);
     const r = row(id);
-    if (!r) return reply.code(404).send({ error: 'Сервер не найден' });
+    if (!r) return reply.code(404).send({ error: 'сервер не найден' });
     const { name } = Name.parse(req.body ?? {});
     if (name) {
       const c = await checkClientHost(name, r.host);

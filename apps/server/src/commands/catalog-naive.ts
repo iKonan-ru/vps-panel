@@ -106,7 +106,7 @@ export const naiveCmd: CommandDef = {
   group: 'install',
   service: 'Браузер (naive)',
   description:
-    'HTTPS-прокси Caddy с forwardproxy (naive) для расширения Chrome: выход через сервер только из браузера, без программ на компьютере. Сертификат на имя сервера Caddy выпускает сам; пользователи - глобальные клиенты панели.',
+    'HTTPS-прокси (Caddy naive) для расширения Chrome: через сервер идёт только трафик браузера, программы на компьютере не нужны. Клиенты получат прокси при синхронизации.',
   liveDefaults: 'naive',
   panelCertParam: 'NAIVE_DOMAIN',
   params: [
@@ -115,7 +115,7 @@ export const naiveCmd: CommandDef = {
       label: 'Имя прокси',
       type: 'domain',
       required: true,
-      hint: 'A-запись этого имени должна указывать на IP сервера (обычно <слаг>.<домен панели>)',
+      hint: 'A-запись должна указывать на IP сервера, обычно <слаг>.<домен панели>',
     },
     {
       name: 'NAIVE_PORT',
@@ -123,7 +123,7 @@ export const naiveCmd: CommandDef = {
       type: 'port',
       default: '8444',
       required: true,
-      hint: 'TCP, открывается наружу; на 443 прокси отвечает через маску MTProxyL или сам, если 443 свободен',
+      hint: 'TCP; порт 443 прокси тоже займёт, если он свободен или занят MTProxyL',
     },
   ],
   timeoutSec: 15 * 60,
@@ -133,11 +133,11 @@ export const naiveCmd: CommandDef = {
   cleanup: ['/tmp/vps-naive-caddy'],
   script: `${PROLOGUE}${NAIVE_FUNCS}
 NAIVE_DOMAIN=$(printf '%s' "$NAIVE_DOMAIN" | tr 'A-Z' 'a-z')
-/usr/local/bin/vps-agent -h 2>&1 | grep -q naive-render || { echo "агент устарел: обнови агента сервера" >&2; exit 2; }
+/usr/local/bin/vps-agent -h 2>&1 | grep -q naive-render || { echo "агент сервера устарел, нужно обновить агент" >&2; exit 2; }
 ext=false
 if [ "$PANEL_HOST" = 1 ]; then
   ext=true
-  /usr/local/bin/vps-agent -h 2>&1 | grep -q externalCert || { echo "агент устарел: обнови агента сервера панели" >&2; exit 2; }
+  /usr/local/bin/vps-agent -h 2>&1 | grep -q externalCert || { echo "агент сервера панели устарел, нужно обновить агент" >&2; exit 2; }
 fi
 arch=$(uname -m)
 case "$arch" in
@@ -237,54 +237,54 @@ echo "порт $NAIVE_PORT: HTTP $code"
 if [ "$mask" = true ] || [ "$l443" = true ]; then
   code=$(curl -s -o /dev/null -w '%{http_code}' --resolve "$NAIVE_DOMAIN:443:127.0.0.1" "https://$NAIVE_DOMAIN/" || true)
   echo "порт 443: HTTP $code"
-  [ "$code" = 200 ] || echo "ВНИМАНИЕ: на 443 прокси не отвечает - расширение будет ходить на $NAIVE_PORT"
+  [ "$code" = 200 ] || echo "ВНИМАНИЕ: на порту 443 прокси не отвечает - расширение будет подключаться к порту $NAIVE_PORT"
 fi
-say "Готово: пользователи - глобальные клиенты панели (сверка заведёт их сама), расширение берёт адрес из подписки"
+say "Готово: клиенты получат прокси при синхронизации, адрес расширение возьмёт из подписки"
 if [ "\${PANEL_HOST:-}" = 1 ]; then
-  echo 'Это сервер панели: клиенты заводятся на нём, только если включить его в разделе Клиенты - Серверы клиентов.'
+  echo 'Это сервер панели: клиенты получат прокси, только если он включён в "Клиенты" - "Серверы клиентов"'
 fi
 `,
   preflight: `${NAIVE_FUNCS}
-/usr/local/bin/vps-agent -h 2>&1 | grep -q naive-render && echo "OK|агент умеет собирать конфиг прокси" || echo "FAIL|агент устарел: обнови агента сервера"
+/usr/local/bin/vps-agent -h 2>&1 | grep -q naive-render && echo "OK|версия агента подходит" || echo "FAIL|агент сервера устарел, нужно обновить агент"
 D=$(printf '%s' "$NAIVE_DOMAIN" | tr 'A-Z' 'a-z')
 ip=$(getent ahostsv4 "$D" 2>/dev/null | awk '{print $1; exit}')
-if [ -z "$ip" ]; then echo "FAIL|имя $D не находится в DNS - заведи A-запись на $SERVER_HOST";
+if [ -z "$ip" ]; then echo "FAIL|имени $D нет в DNS: нужна A-запись на $SERVER_HOST";
 elif [ "$ip" = "$SERVER_HOST" ]; then echo "OK|$D указывает на этот сервер ($ip)";
-else echo "FAIL|$D указывает на $ip, а сервер - $SERVER_HOST: поправь A-запись (или подожди обновления DNS)"; fi
+else echo "FAIL|$D указывает на $ip, а не на $SERVER_HOST: A-запись нужно сменить или дождаться обновления DNS"; fi
 o=$(port_owner "$NAIVE_PORT")
-if [ -z "$o" ]; then echo "OK|порт $NAIVE_PORT свободен"; elif [ "$o" = caddy ] && naive_unit_active; then echo "OK|порт $NAIVE_PORT держит прокси (переустановка)"; else echo "FAIL|порт $NAIVE_PORT занят ($o)"; fi
+if [ -z "$o" ]; then echo "OK|порт $NAIVE_PORT свободен"; elif [ "$o" = caddy ] && naive_unit_active; then echo "OK|порт $NAIVE_PORT занят этим прокси (переустановка)"; else echo "FAIL|порт $NAIVE_PORT занят ($o)"; fi
 mp=$(mt_port)
 if [ "$PANEL_HOST" = 1 ]; then
-/usr/local/bin/vps-agent -h 2>&1 | grep -q externalCert || echo "FAIL|агент сервера панели устарел: обнови его (сертификат от Caddy панели)"
+/usr/local/bin/vps-agent -h 2>&1 | grep -q externalCert || echo "FAIL|агент сервера панели устарел, нужно обновить агент"
 c=$(docker ps --filter label=com.docker.compose.service=caddy --format '{{.Names}}' 2>/dev/null | head -1)
-if [ -n "$c" ]; then echo "OK|сервер панели: сертификат для $D выпустит Caddy панели ($c), прокси - только на порту $NAIVE_PORT"; else echo "FAIL|сервер панели, но контейнер Caddy панели не найден"; fi
+if [ -n "$c" ]; then echo "OK|сервер панели: сертификат выпустит Caddy панели, прокси будет только на порту $NAIVE_PORT"; else echo "FAIL|контейнер Caddy панели не найден"; fi
 else
 if [ "$mp" = "443" ] && command -v mtproxyl >/dev/null 2>&1; then
-  if [ -f /opt/mtproxyl/superexpert.toml ]; then echo "FAIL|MTProxyL в режиме суперэксперта: маску 443 задать нельзя"; else echo "WARN|443 держит MTProxyL: будет маска telemt для $D, прокси Telegram перезапустится (соединения прервутся на несколько секунд)"; fi
-elif [ -z "$(port_owner 443)" ]; then echo "OK|443 свободен - прокси будет слушать и его";
-elif [ "$(port_owner 443)" = caddy ] && naive_unit_active; then echo "OK|443 держит прокси (переустановка)";
-else echo "WARN|443 занят ($(port_owner 443)): прокси только на порту $NAIVE_PORT, сертификат - только через 80"; fi
+  if [ -f /opt/mtproxyl/superexpert.toml ]; then echo "FAIL|MTProxyL в режиме суперэксперта: порт 443 для прокси недоступен"; else echo "WARN|порт 443 занят MTProxyL: прокси будет отвечать через него, MTProxyL перезапустится и соединения Telegram прервутся на несколько секунд"; fi
+elif [ -z "$(port_owner 443)" ]; then echo "OK|порт 443 свободен, прокси займёт и его";
+elif [ "$(port_owner 443)" = caddy ] && naive_unit_active; then echo "OK|порт 443 занят этим прокси (переустановка)";
+else echo "WARN|порт 443 занят ($(port_owner 443)): прокси будет только на порту $NAIVE_PORT, сертификат выпускается через порт 80"; fi
 o80=$(port_owner 80)
-if [ -z "$o80" ] || { [ "$o80" = caddy ] && naive_unit_active; }; then echo "OK|80 свободен - для выпуска сертификата (HTTP-01)"; else echo "WARN|80 занят ($o80): сертификат - только через 443"; fi
+if [ -z "$o80" ] || { [ "$o80" = caddy ] && naive_unit_active; }; then echo "OK|порт 80 свободен для выпуска сертификата"; else echo "WARN|порт 80 занят ($o80): сертификат выпускается через порт 443"; fi
 # сертификат выпускается через 443 (сам или маской MTProxyL) или 80; оба чужие (сервер панели:
 # их держит Caddy панели) - Let's Encrypt не достучится, ставить бессмысленно
 o443=$(port_owner 443)
 ok443=false; { [ "$mp" = "443" ] && command -v mtproxyl >/dev/null 2>&1; } || [ -z "$o443" ] || { [ "$o443" = caddy ] && naive_unit_active; } && ok443=true
 ok80=false; [ -z "$o80" ] || { [ "$o80" = caddy ] && naive_unit_active; } && ok80=true
-if [ "$ok443" = false ] && [ "$ok80" = false ]; then echo "FAIL|443 и 80 заняты ($o443, $o80): сертификат для $D не выпустить"; fi
+if [ "$ok443" = false ] && [ "$ok80" = false ]; then echo "FAIL|порты 443 и 80 заняты ($o443, $o80): сертификат для $D не выпустить"; fi
 fi
-if naive_unit_active; then echo "WARN|прокси уже установлен: служба перезапустится, пользователи и секретное имя сохранятся"; fi
-curl -fsS -m 10 -o /dev/null "$PANEL_URL/files/sha256/naive/caddy-linux-amd64" && echo "OK|бинарник прокси на панели есть" || echo "FAIL|панель не отдаёт /files/naive - собери tools/build-naive.sh"`,
+if naive_unit_active; then echo "WARN|прокси уже установлен: он перезапустится, подписки клиентов не изменятся"; fi
+curl -fsS -m 10 -o /dev/null "$PANEL_URL/files/sha256/naive/caddy-linux-amd64" && echo "OK|файлы прокси на панели доступны" || echo "FAIL|на панели нет файлов прокси: нужна сборка tools/build-naive.sh"`,
   plan: (a) => [
-    'Скачать с панели Caddy с forwardproxy (сборка tools/build-naive.sh), проверить sha256',
-    'Пользователь vps-naive, /opt/vps-naive, /etc/vps-naive (config.json, users.json, Caddyfile от агента), /var/lib/vps-naive',
-    `Служба vps-naive: HTTPS-прокси на ${a.NAIVE_PORT}/tcp для ${a.NAIVE_DOMAIN || '<имя>'}; без пароля - сайт-заглушка`,
-    '443: если его держит MTProxyL - маска telemt (перезапуск прокси Telegram), если свободен - Caddy сам; 80 - для выпуска сертификата, если свободен. Сервер панели: сертификат выпускает Caddy панели, копию раз в сутки кладёт таймер vps-naive-cert',
-    "port-sync откроет порты процесса caddy; Caddy выпустит сертификат Let's Encrypt и будет продлевать его сам",
-    'Пользователей заведёт сверка глобальных клиентов; адрес и пароль клиент получает в подписке расширения',
+    'Скачать прокси с панели и проверить контрольную сумму',
+    `Запустить прокси для ${a.NAIVE_DOMAIN || '<имя>'} на порту ${a.NAIVE_PORT}`,
+    'Занять и порт 443, если он свободен; если он занят MTProxyL, отвечать через него (MTProxyL перезапустится)',
+    "Получить сертификат Let's Encrypt; на сервере панели его выпускает Caddy панели",
+    'Открыть порты прокси',
+    'Выдать прокси клиентам при синхронизации',
   ],
   after:
-    'Клиенты получат прокси сверкой (страница Клиенты - "Сверить сейчас"). Расширение Chrome и шаги установки - на личной странице клиента, блок "Браузер Chrome".',
+    'Клиенты получат прокси при синхронизации. Расширение и инструкция\u00a0\u2014 на личной странице клиента.',
 };
 
 export const naiveUninstallCmd: CommandDef = {
@@ -293,7 +293,7 @@ export const naiveUninstallCmd: CommandDef = {
   group: 'maintain',
   service: 'Браузер (naive)',
   description:
-    'Снести прокси для браузера: служба vps-naive, Caddy, сертификат и пользователи; маска 443 в MTProxyL снимается. Расширения клиентов перестанут работать через этот сервер.',
+    'Удаляет прокси для браузера вместе с сертификатом. Расширения клиентов перестанут работать через этот сервер.',
   params: [
     {
       name: 'CONFIRM',
@@ -302,8 +302,8 @@ export const naiveUninstallCmd: CommandDef = {
       default: 'no',
       required: true,
       options: [
-        { value: 'no', label: 'нет, не удалять' },
-        { value: 'yes', label: 'да, удалить' },
+        { value: 'no', label: 'не удалять' },
+        { value: 'yes', label: 'удалить' },
       ],
     },
   ],
@@ -336,13 +336,13 @@ if [ -x /usr/local/sbin/vps-portsync ]; then
 fi
 say "Готово"
 `,
-  preflight: `if [ -f /etc/systemd/system/vps-naive.service ]; then echo "WARN|прокси для браузера установлен: удалятся служба, сертификат и пользователи; клиенты потеряют этот сервер в расширении"; else echo "FAIL|прокси для браузера не установлен"; fi
-if [ -f /etc/vps-naive/config.json ] && grep -q '"mask443": true' /etc/vps-naive/config.json; then echo "WARN|маска 443 в MTProxyL снимется - прокси Telegram перезапустится"; fi`,
+  preflight: `if [ -f /etc/systemd/system/vps-naive.service ]; then echo "WARN|прокси для браузера установлен: клиенты потеряют этот сервер в расширении"; else echo "FAIL|прокси для браузера не установлен"; fi
+if [ -f /etc/vps-naive/config.json ] && grep -q '"mask443": true' /etc/vps-naive/config.json; then echo "WARN|MTProxyL перезапустится, соединения Telegram прервутся на несколько секунд"; fi`,
   plan: () => [
-    'Остановить и удалить службу vps-naive',
-    'Снять маску 443 в MTProxyL (если была) и перезапустить прокси Telegram',
-    'Удалить /opt/vps-naive, /etc/vps-naive, /var/lib/vps-naive (сертификат), пользователя vps-naive',
-    'port-sync закроет порты прокси; привязки клиентов к прокси на этом сервере панель удалит сразу',
+    'Остановить и удалить прокси с сертификатом',
+    'Отключить прокси от порта 443 в MTProxyL, если он отвечал через него (MTProxyL перезапустится)',
+    'Закрыть порты прокси',
+    'Отключить клиентов от прокси на этом сервере',
   ],
   dropsBindings: ['naive'],
 };

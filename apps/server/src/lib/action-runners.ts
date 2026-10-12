@@ -34,7 +34,7 @@ export function actionRunners(registry: AgentRegistry, journal: ReturnType<typeo
     logParams: Record<string, unknown> = params,
   ) {
     if (!registry.isOnline(serverId))
-      throw Object.assign(new Error('Агент не подключён'), { statusCode: 409 });
+      throw Object.assign(new Error('сервер не в сети'), { statusCode: 409 });
     const action = journal.open(serverId, kind, logParams);
     registry
       .request(serverId, method, params, { timeoutMs, onStream: action.stream })
@@ -58,7 +58,7 @@ export function actionRunners(registry: AgentRegistry, journal: ReturnType<typeo
     logParams: Record<string, unknown> = params,
   ): Promise<T> {
     if (!registry.isOnline(serverId))
-      throw Object.assign(new Error('Агент не подключён'), { statusCode: 409 });
+      throw Object.assign(new Error('сервер не в сети'), { statusCode: 409 });
     const actionId = await journal.start(serverId, kind, logParams);
     try {
       const res = await registry.request<T>(serverId, method, params, { timeoutMs });

@@ -23,7 +23,7 @@ export function BannedIps({ audit }: { audit: Audit }) {
           key={j.name}
           type="button"
           className="rounded-full focus-visible:outline-2 focus-visible:outline-accent"
-          title={`всего банов ${j.totalBanned}, неудачных в окне ${j.failed}. Нажми, чтобы увидеть адреса`}
+          title={`Всего банов: ${j.totalBanned}, неудачных попыток: ${j.failed}`}
           onClick={() => setOpen(true)}
         >
           <Chip
@@ -34,14 +34,13 @@ export function BannedIps({ audit }: { audit: Audit }) {
           </Chip>
         </button>
       ))}
-      <Dialog open={open} onClose={() => setOpen(false)} title="Откуда ломятся">
+      <Dialog open={open} onClose={() => setOpen(false)} title="Заблокированные адреса">
         {jails.map((j) => (
           <div key={j.name} className="flex flex-col gap-1.5">
             <div className="flex flex-wrap items-center gap-2 text-sm">
               <span className="font-mono font-medium">{j.name}</span>
               <span className="text-xs text-muted">
-                в бане {j.banned}, всего забанено {j.totalBanned}, неудачных попыток в окне{' '}
-                {j.failed}
+                в бане: {j.banned}, всего: {j.totalBanned}, неудачных попыток: {j.failed}
               </span>
             </div>
             {(j.bannedIps ?? []).length > 0 ? (
@@ -56,7 +55,7 @@ export function BannedIps({ audit }: { audit: Audit }) {
                 ))}
               </div>
             ) : (
-              <div className="text-xs text-muted">Сейчас никого в бане.</div>
+              <div className="text-xs text-muted">Сейчас в бане никого нет</div>
             )}
           </div>
         ))}

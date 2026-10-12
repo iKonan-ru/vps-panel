@@ -64,7 +64,7 @@ function History({ t, now, onOpen }: { t: ReachTarget; now: number; onOpen: () =
       type="button"
       onClick={onOpen}
       className="mt-1.5 flex h-5 cursor-pointer items-end gap-px rounded-sm hover:opacity-80"
-      aria-label={`${t.title}: откуда видно и откуда нет`}
+      aria-label={`${t.title}: подробности`}
     >
       {slots.map((s) => (
         <span key={s.end} title={slotTitle(s)} className="flex h-full w-1 items-end">
@@ -76,7 +76,7 @@ function History({ t, now, onOpen }: { t: ReachTarget; now: number; onOpen: () =
 }
 
 function what(t: ReachTarget): string {
-  if (t.source === 'mtproxyl') return 'проверяет сам MTProxyL, раз в 15 минут';
+  if (t.source === 'mtproxyl') return 'проверка MTProxyL раз в 15\u00a0мин';
   return t.kind === 'tls'
     ? `TLS на порт ${t.port}${t.sni ? `, SNI ${t.sni}` : ''}`
     : `TCP до порта ${t.port}`;
@@ -93,13 +93,17 @@ function Row({ t, now, onOpen }: { t: ReachTarget; now: number; onOpen: () => vo
         <span className="block truncate text-xs text-muted" title={t.errors.join('\n')}>
           {what(t)}
           {t.checkedAt ? `, ${ago(t.checkedAt)}` : ''}
-          {lv && lv !== 'ok' && t.errors[0] ? ` - ${t.errors[0]}` : ''}
+          {lv && lv !== 'ok' && t.errors[0] ? `, ${t.errors[0]}` : ''}
         </span>
         {t.error && <span className="block text-xs text-warn">{t.error}</span>}
         <History t={t} now={now} onOpen={onOpen} />
       </span>
       {lv ? (
-        <Chip tone={reachTone[lv]} className="mt-px" title={`дошли ${t.ok} из ${t.total} зондов`}>
+        <Chip
+          tone={reachTone[lv]}
+          className="mt-px"
+          title={`дошли ${t.ok} из ${t.total}\u00a0зондов`}
+        >
           {lv === 'ok' ? 'виден' : lv === 'partial' ? 'частично' : 'не виден'} {t.percent}%
         </Chip>
       ) : (
@@ -175,7 +179,7 @@ function Check({
                     className="max-w-full truncate rounded-md bg-surface-2 px-1.5 py-0.5 text-xs sm:max-w-[16rem]"
                   >
                     {x.city || '?'}
-                    <span className="text-muted"> - {x.network}</span>
+                    <span className="text-muted">, {x.network}</span>
                   </span>
                 ))}
               </div>
@@ -186,9 +190,7 @@ function Check({
         </div>
       ) : (
         <div className="mt-1 text-xs text-muted">
-          {loading
-            ? 'Загружаю зонды...'
-            : 'Зондов этой проверки нет: они хранятся 13 часов, а проверки до обновления панели их не сохраняли.'}
+          {loading ? 'Загрузка\u2026' : 'Данных о зондах нет: они хранятся 13\u00a0ч'}
         </div>
       )}
     </div>
@@ -218,11 +220,8 @@ function Details({
     <Dialog open onClose={onClose} title={`${t.title}: доступность из России`}>
       <div className="space-y-4">
         <div className="text-xs text-muted">
-          {what(t).charAt(0).toUpperCase() + what(t).slice(1)}. Столбик - полчаса, высота -{' '}
-          {t.source === 'mtproxyl'
-            ? 'худшая из двух проверок за это время'
-            : 'проверка за это время'}
-          . Нажми на столбик, чтобы увидеть, из каких городов и сетей сервис виден, а из каких нет.
+          {what(t).charAt(0).toUpperCase() + what(t).slice(1)}. Столбик&nbsp;&mdash; полчаса,
+          высота&nbsp;&mdash; худшая проверка за это время.
         </div>
         <div>
           <div className="flex h-20 items-end gap-0.5">
@@ -260,7 +259,7 @@ function Details({
             ))}
           </div>
         ) : (
-          <div className="text-[13px] text-muted">Проверок за 12 часов не было.</div>
+          <div className="text-[13px] text-muted">Проверок за 12&nbsp;ч не было</div>
         )}
       </div>
     </Dialog>
@@ -300,7 +299,9 @@ export function ReachCard({ serverId, online }: { serverId: string; online: bool
   return (
     <Section
       title="Доступность из России"
-      info="Видят ли сервер люди в России: 10 зондов Globalping в российских домашних сетях в :00 и :30 каждого часа пробуют дойти до адреса (TCP до порта SSH) и до каждого inbound-а 3X-UI (TLS-рукопожатие с его SNI или TCP до порта). Заказывает проверки агент со своего адреса: квота Globalping - 250 зондов в час на адрес. MTProxyL проверяет себя сам раз в 15 минут. От 80% - виден, от 50% - частично, ниже - не виден; о сбое двух проверок подряд и о возврате приходит уведомление. График - 12 часов по получасам, общий для всех строк; нажми на него - покажет, из каких городов и сетей видно, а из каких нет."
+      info={
+        'Каждые полчаса 10 зондов Globalping из домашних сетей России проверяют адрес и inbound 3X-UI. Виден\u00a0\u2014 от 80%, частично\u00a0\u2014 от 50%.'
+      }
       extra={
         data?.remaining !== undefined && (
           <span className="text-xs text-muted">квота Globalping: осталось {data.remaining}</span>
@@ -311,8 +312,8 @@ export function ReachCard({ serverId, online }: { serverId: string; online: bool
           size="sm"
           disabled={busy || !online}
           onClick={() => void check()}
-          label={busy ? 'Проверяю...' : 'Проверить сейчас'}
-          short={busy ? 'Проверяю...' : 'Проверить'}
+          label="Проверить сейчас"
+          short="Проверить"
         >
           <Radar className={cn('size-3.5', busy && 'animate-pulse')} />
         </Button>
@@ -326,7 +327,7 @@ export function ReachCard({ serverId, online }: { serverId: string; online: bool
       {data?.error && <div className="px-4 pt-3 text-xs text-warn">{data.error}</div>}
       {!data || data.targets.length === 0 ? (
         <div className="px-4 py-3 text-[13px] text-muted">
-          Проверок ещё не было: первая - в течение получаса после подключения агента.
+          Проверок пока не было: первая пройдёт в течение получаса
         </div>
       ) : (
         data.targets.map((t) => <Row key={t.key} t={t} now={now} onOpen={() => setOpen(t.key)} />)

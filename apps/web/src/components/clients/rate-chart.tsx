@@ -30,9 +30,9 @@ const MIN_SPAN_MS = 60_000;
 function agoShort(ms: number): string {
   const s = Math.round(ms / 1000);
   if (s < 5) return 'сейчас';
-  if (s < 60) return `${s} с назад`;
+  if (s < 60) return `${s}\u00a0с назад`;
   const m = Math.floor(s / 60);
-  return s % 60 ? `${m} мин ${s % 60} с назад` : `${m} мин назад`;
+  return s % 60 ? `${m}\u00a0мин ${s % 60}\u00a0с назад` : `${m}\u00a0мин назад`;
 }
 
 export function RateChart({ points, height = 140 }: { points: RatePoint[]; height?: number }) {

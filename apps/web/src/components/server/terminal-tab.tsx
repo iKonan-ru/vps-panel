@@ -2,6 +2,7 @@ import { Alert } from '@/components/ui/alert';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { Chip } from '@/components/ui/chip';
+import { InfoTip } from '@/components/ui/info-tip';
 import type { ServerDetail } from '@/lib/servers';
 import { FitAddon } from '@xterm/addon-fit';
 import { Terminal } from '@xterm/xterm';
@@ -134,8 +135,8 @@ export function TerminalTab({ s }: { s: ServerDetail }) {
     };
     sock.onclose = (ev) => {
       setState('closed');
-      if (ev.code === 4009) setNote('Агент не на связи');
-      else if (ev.code === 4001) setNote('Сессия панели истекла, войди заново');
+      if (ev.code === 4009) setNote('Сервер не в сети');
+      else if (ev.code === 4001) setNote('Сессия панели истекла: нужно войти заново');
       else if (ev.code === 4010) setNote('Сессию подхватила другая вкладка или окно');
     };
     t.onData((d) => {
@@ -167,7 +168,7 @@ export function TerminalTab({ s }: { s: ServerDetail }) {
     return () => clearTimeout(id);
   }, [full]);
 
-  if (!online) return <Card className="p-8 text-[13px] text-muted">Агент не на связи.</Card>;
+  if (!online) return <Card className="p-8 text-[13px] text-muted">Сервер не в сети</Card>;
 
   return (
     <div className={full ? 'fixed inset-0 z-40 flex flex-col bg-bg p-3' : 'flex flex-col gap-3'}>
@@ -176,13 +177,13 @@ export function TerminalTab({ s }: { s: ServerDetail }) {
           tone={state === 'open' ? 'ok' : state === 'connecting' ? 'accent' : 'muted'}
           dot={state === 'open'}
         >
-          {state === 'open' ? 'подключено' : state === 'connecting' ? 'подключаюсь' : 'закрыто'}
+          {state === 'open' ? 'подключено' : state === 'connecting' ? 'подключение' : 'закрыто'}
         </Chip>
         <span className="text-xs text-muted">
-          root@{s.host}, bash -l
-          {resumed && state === 'open' ? ', сессия продолжена' : ''}; без вкладки живёт 3 минуты,
-          пишется в журнал
+          root@{s.host}
+          {resumed && state === 'open' ? ', сессия продолжена' : ''}
         </span>
+        <InfoTip>Без открытой вкладки сессия живёт 3&nbsp;мин. Сессии пишутся в журнал.</InfoTip>
         <div className="grow" />
         {state === 'closed' && (
           <Button

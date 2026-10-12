@@ -70,12 +70,12 @@ export function XuiInbounds({
       const ok = await ask({
         title:
           body.enable === false
-            ? `Выключить inbound "${i.remark}"?`
+            ? `Выключить inbound \u00ab${i.remark}\u00bb?`
             : `Сменить порт на ${body.port}?`,
         text:
           body.enable === false
-            ? `Клиенты этого inbound-а (${i.clients}) перестанут подключаться, пока его не включат.`
-            : 'Клиенты с прежней ссылкой перестанут подключаться: подписки панели получат новый порт сами (после отчёта агента), остальным нужна новая ссылка. port-sync откроет новый порт.',
+            ? `Его клиенты (${i.clients}) не смогут подключиться`
+            : 'Подписки панели получат новый порт сами, остальным клиентам нужна новая ссылка',
         okLabel: body.enable === false ? 'Выключить' : 'Сменить',
         danger: true,
       });
@@ -99,8 +99,8 @@ export function XuiInbounds({
   const list = data ?? [];
   return (
     <Section
-      title="Inbound-ы"
-      info="Клиенты, протокол, SNI и трафик по REST API 3X-UI. Здесь - подпись, порт и вкл/выкл; остальные настройки (Reality, транспорт, клиенты) - в панели 3X-UI."
+      title="Inbound"
+      info={'Здесь меняются подпись, порт и включение, остальное\u00a0\u2014 в панели 3X-UI'}
       extra={data && <Chip>{list.length}</Chip>}
     >
       {err && !edit && (
@@ -110,18 +110,16 @@ export function XuiInbounds({
       )}
       {error && (
         <div className="px-4 py-3 text-[13px] text-muted">
-          {noToken
-            ? 'Нужен API-токен 3X-UI: выпусти его кнопкой выше.'
-            : `Не удалось прочитать inbound-ы: ${error.message}`}
+          {noToken ? 'Нужен API-токен 3X-UI' : `Не удалось получить inbound: ${error.message}`}
         </div>
       )}
       {!data && !error && (
         <div className="px-4 py-3 text-[13px] text-muted">
-          {isFetching ? 'Читаю inbound-ы...' : 'Нет данных'}
+          {isFetching ? 'Загрузка\u2026' : 'Нет данных'}
         </div>
       )}
       {data && list.length === 0 && (
-        <div className="px-4 py-3 text-[13px] text-muted">Inbound-ов нет.</div>
+        <div className="px-4 py-3 text-[13px] text-muted">Inbound нет</div>
       )}
       {list.map((i) => (
         <div
@@ -131,7 +129,7 @@ export function XuiInbounds({
           <Switch
             checked={i.enable}
             disabled={disabled || busy || i.node}
-            label={i.enable ? 'Выключить inbound' : 'Включить inbound'}
+            label={`Inbound ${i.remark || `#${i.id}`}`}
             onChange={() => void save(i, { enable: !i.enable })}
           />
           <div className="min-w-0 grow">
@@ -151,7 +149,9 @@ export function XuiInbounds({
               {i.excluded && (
                 <Chip
                   tone="warn"
-                  title="Отмечен в разделе Клиенты: глобальные клиенты сюда не добавляются"
+                  title={
+                    'Исключён в разделе \u00abКлиенты\u00bb: клиенты панели сюда не добавляются'
+                  }
                 >
                   без клиентов панели
                 </Chip>
@@ -161,10 +161,10 @@ export function XuiInbounds({
             <div className="text-xs text-muted">
               {[
                 i.sni && `SNI ${i.sni}`,
-                `клиентов ${i.clients}${i.clientsOff ? ` (выкл ${i.clientsOff})` : ''}`,
-                i.panelClients ? `из панели ${i.panelClients}` : '',
-                i.enable ? `онлайн ${i.online}` : '',
-                `трафик ${bytes(i.up + i.down)}${i.total ? ` из ${bytes(i.total)}` : ''}`,
+                `клиентов: ${i.clients}${i.clientsOff ? ` (выключено: ${i.clientsOff})` : ''}`,
+                i.panelClients ? `из панели: ${i.panelClients}` : '',
+                i.enable ? `онлайн: ${i.online}` : '',
+                `трафик: ${bytes(i.up + i.down)}${i.total ? ` из ${bytes(i.total)}` : ''}`,
                 i.expiryTime ? `до ${new Date(i.expiryTime).toLocaleDateString('ru-RU')}` : '',
               ]
                 .filter(Boolean)
@@ -174,7 +174,7 @@ export function XuiInbounds({
           <Button
             size="icon-sm"
             variant="ghost"
-            title={i.node ? 'inbound другого узла - правится на нём' : (reason ?? 'Подпись и порт')}
+            title={i.node ? 'Inbound другого узла: правится на нём' : reason}
             aria-label="Изменить inbound"
             disabled={disabled || busy || i.node}
             onClick={() => {
@@ -239,7 +239,7 @@ function EditForm({
   };
   return (
     <form className="flex flex-col gap-3" onSubmit={submit}>
-      <Field label="Подпись (remark)" htmlFor="xui-in-remark">
+      <Field label="Подпись" htmlFor="xui-in-remark">
         <Input
           id="xui-in-remark"
           value={remark}
@@ -250,7 +250,7 @@ function EditForm({
       <Field
         label="Порт"
         htmlFor="xui-in-port"
-        hint="панель проверит, что порт свободен: inbound на занятом порту роняет весь xray"
+        hint="порт проверяется на занятость: inbound на занятом порту останавливает весь Xray"
       >
         <Input
           id="xui-in-port"
@@ -262,7 +262,7 @@ function EditForm({
           className="font-mono"
         />
       </Field>
-      {portTaken && <Alert tone="bad">Порт {n} уже у другого inbound-а.</Alert>}
+      {portTaken && <Alert tone="bad">Порт {n} занят другим inbound</Alert>}
       {error && <Alert tone="bad">{error}</Alert>}
       <div className="flex justify-end gap-2">
         <Button onClick={onCancel}>Отмена</Button>

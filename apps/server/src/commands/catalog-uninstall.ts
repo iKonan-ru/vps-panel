@@ -14,8 +14,8 @@ const CONFIRM = {
   default: 'no',
   required: true,
   options: [
-    { value: 'no', label: 'нет, не удалять' },
-    { value: 'yes', label: 'да, удалить' },
+    { value: 'no', label: 'не удалять' },
+    { value: 'yes', label: 'удалить' },
   ],
 };
 const GUARD = `[ "$CONFIRM" = "yes" ] || { echo "удаление не подтверждено" >&2; exit 2; }`;
@@ -25,8 +25,7 @@ export const xuiUninstallCmd: CommandDef = {
   title: 'Удалить 3X-UI',
   group: 'maintain',
   service: '3X-UI',
-  description:
-    'Снести панель 3X-UI вместе с Xray: служба, /usr/local/x-ui, база /etc/x-ui. Пользователи Xray перестанут подключаться.',
+  description: 'Удаляет 3X-UI вместе с Xray и базой. Клиенты Xray перестанут подключаться.',
   params: [CONFIRM],
   timeoutSec: 10 * 60,
   script: `${PROLOGUE}
@@ -44,12 +43,9 @@ rm -f /etc/fail2ban/jail.d/xui-panel.conf
 systemctl reload fail2ban 2>/dev/null || true
 say "Готово"
 `,
-  preflight: `if [ -x /usr/local/x-ui/x-ui ]; then echo "WARN|3X-UI установлен: удалятся панель, Xray и база inbound-ов (сделай бэкап во вкладке Бэкапы)"; else echo "FAIL|3X-UI не установлен"; fi`,
-  plan: () => [
-    'x-ui uninstall: остановить службу, удалить /usr/local/x-ui и /etc/x-ui (база с пользователями)',
-    'Убрать jail fail2ban панели; port-sync закроет порты панели и inbound-ов',
-  ],
-  after: 'Запись в "Доступах" и сертификат панели остаются - удали вручную, если не нужны.',
+  preflight: `if [ -x /usr/local/x-ui/x-ui ]; then echo "WARN|будут удалены панель, Xray и все inbound; резервная копия\u00a0\u2014 на вкладке \u00abРезервные копии\u00bb"; else echo "FAIL|3X-UI не установлен"; fi`,
+  plan: () => ['Удалить 3X-UI с Xray и базой inbound', 'Закрыть порты панели и inbound'],
+  after: 'Запись в\u00a0\u00abДоступах\u00bb и сертификат панели не удаляются.',
   dropsBindings: ['xui'],
 };
 
@@ -59,14 +55,14 @@ export const mtproxylUninstallCmd: CommandDef = {
   group: 'maintain',
   service: 'MTProxyL',
   description:
-    'Снести MTProxyL вместе с веб-панелью: контейнер или служба telemt, конфиги и секреты в /opt/mtproxyl, правила nft, панель с конфигом и данными.',
+    'Удаляет MTProxyL с веб-панелью, пользователями и секретами. Ссылки tg://proxy перестанут работать.',
   params: [CONFIRM],
   timeoutSec: 10 * 60,
   script: `${PROLOGUE}${NAIVE_FUNCS}
 ${GUARD}
 need mtproxyl || { echo "MTProxyL не установлен" >&2; exit 3; }
 if systemctl list-unit-files mtproxyl-panel.service >/dev/null 2>&1 && systemctl cat mtproxyl-panel >/dev/null 2>&1; then
-  say "Сначала веб-панель MTProxyL"
+  say "Удаляю веб-панель MTProxyL"
   printf 'y\\n' | mtproxyl panel uninstall --no-confirm || true
 fi
 say "Удаляю MTProxyL (mtproxyl uninstall)"
@@ -85,12 +81,12 @@ if naive_installed && [ "$(naive_mode)" = mask ]; then
 fi
 say "Готово"
 `,
-  preflight: `${NAIVE_FUNCS}if command -v mtproxyl >/dev/null 2>&1; then echo "WARN|MTProxyL установлен: пропадут секреты пользователей и ссылки (сделай бэкап во вкладке Бэкапы)"; else echo "FAIL|MTProxyL не установлен"; fi
-if naive_installed && grep -q '"mask443": true' /etc/vps-naive/config.json 2>/dev/null; then echo "OK|прокси для браузера отвечает на 443 через MTProxyL: после удаления будет слушать 443 сам (служба прокси перезапустится)"; fi`,
+  preflight: `${NAIVE_FUNCS}if command -v mtproxyl >/dev/null 2>&1; then echo "WARN|секреты и ссылки пользователей будут удалены; резервная копия\u00a0\u2014 на вкладке \u00abРезервные копии\u00bb"; else echo "FAIL|MTProxyL не установлен"; fi
+if naive_installed && grep -q '"mask443": true' /etc/vps-naive/config.json 2>/dev/null; then echo "OK|прокси для браузера займёт порт 443 сам и перезапустится"; fi`,
   plan: () => [
-    'Удалить веб-панель MTProxyL, если есть (с конфигом и данными)',
-    'mtproxyl uninstall: остановить движок, снять правила nft, удалить /opt/mtproxyl без выгрузки секретов',
-    'Прокси для браузера, если он отвечал на 443 через MTProxyL, снова слушает 443 сам',
+    'Удалить веб-панель MTProxyL',
+    'Удалить MTProxyL с пользователями и секретами',
+    'Вернуть порт 443 прокси для браузера, если он отвечал через MTProxyL',
   ],
   dropsBindings: ['mtproxyl'],
 };
@@ -101,7 +97,7 @@ export const wdttUninstallCmd: CommandDef = {
   group: 'maintain',
   service: 'WDTT',
   description:
-    'Снести сервер WDTT: служба, бинарник, интерфейс и правила firewall. База доступа (кто подключался) сохраняется в /etc/wdtt.',
+    'Удаляет сервер WDTT, клиенты перестанут подключаться. База доступа остаётся на сервере.',
   params: [CONFIRM],
   timeoutSec: 5 * 60,
   script: `${PROLOGUE}
@@ -127,9 +123,9 @@ say "Готово"
 `,
   preflight: `if [ -x /usr/local/bin/wdtt-server ]; then echo "WARN|WDTT установлен: клиенты перестанут подключаться"; else echo "FAIL|WDTT не установлен"; fi`,
   plan: () => [
-    'deploy.sh uninstall: остановить службу, удалить бинарник, интерфейс и правила',
-    'Конфиг с ключами удаляется, база доступа остаётся в /etc/wdtt',
-    'Правила iptables WDTT_MIRRORED для портов WDTT убираются',
+    'Удалить WDTT с ключами',
+    'Убрать правила firewall WDTT',
+    'Оставить базу доступа на сервере',
   ],
   dropsBindings: ['wdtt'],
 };
@@ -139,15 +135,13 @@ export const awgUninstallCmd: CommandDef = {
   title: 'Удалить Amnezia AWG',
   group: 'maintain',
   service: 'Amnezia AWG',
-  description:
-    'Остановить и удалить контейнер AmneziaWG. Все клиенты этого контейнера перестанут подключаться; данные (/opt/amnezia/awg внутри) можно сохранить бэкапом.',
+  description: 'Удаляет контейнер AmneziaWG вместе с ключами. Его клиенты перестанут подключаться.',
   params: [
     {
       name: 'AWG_CONTAINER',
       label: 'Контейнер',
       type: 'awg-container',
       required: true,
-      hint: 'экземпляры AWG, которые агент нашёл на этом сервере',
     },
     CONFIRM,
   ],
@@ -160,12 +154,12 @@ say "Удаляю контейнер $AWG_CONTAINER"
 docker rm -f "$AWG_CONTAINER"
 docker image rm "$AWG_CONTAINER" 2>/dev/null || true
 rm -rf "/opt/amnezia/$AWG_CONTAINER"
-say "Готово: port-sync закроет порт"
+say "Готово: порт закроется автоматически"
 `,
-  preflight: `if docker inspect "$AWG_CONTAINER" >/dev/null 2>&1; then echo "WARN|контейнер $AWG_CONTAINER работает: все его клиенты потеряют VPN (сделай бэкап Amnezia во вкладке Бэкапы)"; else echo "FAIL|контейнер $AWG_CONTAINER не найден"; fi`,
+  preflight: `if docker inspect "$AWG_CONTAINER" >/dev/null 2>&1; then echo "WARN|клиенты $AWG_CONTAINER потеряют доступ; резервная копия\u00a0\u2014 на вкладке \u00abРезервные копии\u00bb"; else echo "FAIL|контейнер $AWG_CONTAINER не найден"; fi`,
   plan: (a) => [
-    `docker rm -f ${a.AWG_CONTAINER}: ключи сервера и клиентов внутри контейнера пропадут`,
-    `Удалить образ ${a.AWG_CONTAINER} и /opt/amnezia/${a.AWG_CONTAINER} на хосте`,
+    `Удалить контейнер ${a.AWG_CONTAINER} с ключами сервера и клиентов`,
+    'Удалить образ контейнера',
   ],
   dropsBindings: ['awg'],
   dropsBindingsRef: (a) => `|${a.AWG_CONTAINER ?? ''}|`,

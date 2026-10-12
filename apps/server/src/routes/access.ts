@@ -84,7 +84,7 @@ export async function accessRoutes(app: FastifyInstance, opts: { db: Db; box: Se
       .set(patch)
       .where(and(eq(access.id, aid), eq(access.serverId, id)))
       .returning();
-    if (!res[0]) return reply.code(404).send({ error: 'Запись не найдена' });
+    if (!res[0]) return reply.code(404).send({ error: 'запись не найдена' });
     return open(res[0]);
   });
 

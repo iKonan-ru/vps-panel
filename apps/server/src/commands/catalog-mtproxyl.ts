@@ -85,16 +85,16 @@ export const mtproxylCmd: CommandDef = {
   group: 'install',
   service: 'MTProxyL',
   description:
-    'MTProto-прокси Telegram (движок telemt) вместе с веб-панелью MTProxyL: порт, домен маскировки, пользователи, Zapret2, доступ к панели. Если прокси уже стоит - ставится только панель.',
+    'MTProto-прокси Telegram (telemt) с веб-панелью MTProxyL. Если прокси уже установлен, устанавливается только панель.',
   // 443 занят (3X-UI, Caddy сервера панели) - форма предложит свободный порт
   liveDefaults: 'mtproxyl',
   params: [
     { name: 'MT_PORT', label: 'Порт прокси', type: 'port', default: '443', required: true },
     {
       name: 'MT_HOST',
-      label: 'Адрес в ссылках (домен или пусто = IP)',
+      label: 'Адрес в ссылках',
       type: 'string',
-      hint: 'домен переносится между серверами, IP - нет',
+      hint: 'домен или пусто для IP; домен переносится на другой сервер, IP\u00a0\u2014 нет',
       pattern: '^([a-z0-9.-]+)?$',
     },
     {
@@ -103,7 +103,7 @@ export const mtproxylCmd: CommandDef = {
       type: 'domain',
       default: 'autoscout24.ru',
       required: true,
-      hint: 'под него маскируется рукопожатие',
+      hint: 'под него маскируется соединение',
     },
     {
       name: 'MT_USERS',
@@ -111,7 +111,7 @@ export const mtproxylCmd: CommandDef = {
       type: 'string',
       default: 'default',
       required: true,
-      hint: 'метки через запятую, каждому сгенерируется свой секрет',
+      hint: 'имена через запятую',
       pattern: '^[A-Za-z0-9_-]+(,[A-Za-z0-9_-]+)*$',
     },
     {
@@ -120,18 +120,18 @@ export const mtproxylCmd: CommandDef = {
       type: 'select',
       default: 'docker',
       options: [
-        { value: 'docker', label: 'контейнер docker' },
-        { value: 'binary', label: 'бинарник под systemd (без docker)' },
+        { value: 'docker', label: 'Docker' },
+        { value: 'binary', label: 'служба systemd' },
       ],
     },
     {
       name: 'MT_ZAPRET2',
-      label: 'Zapret2 (обход на уровне TCP)',
+      label: 'Zapret2',
       type: 'select',
       default: 'yes',
       options: [
-        { value: 'yes', label: 'включить' },
-        { value: 'no', label: 'выключить' },
+        { value: 'yes', label: 'включён' },
+        { value: 'no', label: 'выключен' },
       ],
     },
     {
@@ -146,7 +146,7 @@ export const mtproxylCmd: CommandDef = {
       label: 'Токен Telegram-бота',
       type: 'password',
       secret: true,
-      hint: 'необязательно, вместе с ID администратора',
+      hint: 'необязательно',
     },
     {
       name: 'MT_TG_ADMIN',
@@ -169,7 +169,7 @@ export const mtproxylCmd: CommandDef = {
       secret: true,
       required: true,
       generate: rndHex(12),
-      hint: 'не короче 8 символов; сгенерирован, можно заменить',
+      hint: 'не короче 8\u00a0символов',
     },
     {
       name: 'MTP_PORT',
@@ -177,7 +177,6 @@ export const mtproxylCmd: CommandDef = {
       type: 'port',
       default: '8080',
       required: true,
-      hint: 'только на 127.0.0.1: вход через VPS Panel',
     },
   ],
   timeoutSec: 45 * 60,
@@ -255,30 +254,30 @@ if naive_installed && [ "$(mt_port)" = 443 ] && [ "$(naive_mode)" != mask ]; the
     if naive_mask_on "$nd" "$np"; then
       naive_443 mask
     else
-      echo "ВНИМАНИЕ: маска не задалась - прокси для браузера только на порту $np; повтори установку прокси для браузера"
+      echo "ВНИМАНИЕ: маска не задалась - прокси для браузера только на порту $np; нужно повторить установку прокси для браузера"
     fi
   fi
   [ -x /usr/local/sbin/vps-portsync ] && /usr/local/sbin/vps-portsync | tail -n 5 || true
 fi
 say "Готово"
 `,
-  preflight: `${NAIVE_FUNCS}if command -v mtproxyl >/dev/null 2>&1; then echo "WARN|MTProxyL уже установлен: прокси и пользователи останутся как есть, поставится или обновится только панель"
-elif [ "$MT_PORT" = 443 ] && [ "$(port_owner 443)" = caddy ] && naive_installed; then echo "WARN|443 держит прокси для браузера: он уступит 443 MTProxyL и будет отвечать на 443 через маску telemt (служба прокси перезапустится, браузеры клиентов переподключатся)"
-elif ss -ltn | awk '{print $4}' | grep -q ":$MT_PORT$"; then echo "FAIL|порт $MT_PORT уже занят"
+  preflight: `${NAIVE_FUNCS}if command -v mtproxyl >/dev/null 2>&1; then echo "WARN|MTProxyL уже установлен: будет установлена или обновлена только панель"
+elif [ "$MT_PORT" = 443 ] && [ "$(port_owner 443)" = caddy ] && naive_installed; then echo "WARN|порт 443 занят прокси для браузера: он перейдёт за MTProxyL, браузеры клиентов переподключатся"
+elif ss -ltn | awk '{print $4}' | grep -q ":$MT_PORT$"; then echo "FAIL|порт $MT_PORT занят"
 else echo "OK|порт $MT_PORT свободен"; fi
-if [ "$MT_ENGINE" = "docker" ] && ! command -v docker >/dev/null 2>&1 && ! command -v mtproxyl >/dev/null 2>&1; then echo "WARN|docker не установлен, будет поставлен"; fi
-case "$(sudo --version 2>/dev/null || true) $(readlink -f "$(command -v sudo || true)" || true)" in *sudo-rs*) echo "WARN|системный sudo - sudo-rs: будет переключён на классический sudo (sudo.ws), иначе панель не встанет";; esac
-if systemctl is-active mtproxyl-panel >/dev/null 2>&1; then echo "WARN|панель уже установлена и работает: установщик обновит её, настройки сохранятся"; fi
-if ss -ltn | awk '{print $4}' | grep -q ":$MTP_PORT$" && ! systemctl is-active mtproxyl-panel >/dev/null 2>&1; then echo "FAIL|порт панели $MTP_PORT уже занят"; else echo "OK|порт панели $MTP_PORT"; fi`,
+if [ "$MT_ENGINE" = "docker" ] && ! command -v docker >/dev/null 2>&1 && ! command -v mtproxyl >/dev/null 2>&1; then echo "WARN|Docker не установлен, будет установлен"; fi
+case "$(sudo --version 2>/dev/null || true) $(readlink -f "$(command -v sudo || true)" || true)" in *sudo-rs*) echo "WARN|sudo-rs будет заменён на классический sudo";; esac
+if systemctl is-active mtproxyl-panel >/dev/null 2>&1; then echo "WARN|панель уже установлена: она будет обновлена с сохранением настроек"; fi
+if ss -ltn | awk '{print $4}' | grep -q ":$MTP_PORT$" && ! systemctl is-active mtproxyl-panel >/dev/null 2>&1; then echo "FAIL|порт панели $MTP_PORT занят"; else echo "OK|порт панели $MTP_PORT свободен"; fi`,
   plan: (a) => [
-    'Если MTProxyL ещё не установлен - скачать install.sh и установить менеджер аргументами (иначе прокси и пользователи остаются как есть)',
-    `Прокси на порту ${a.MT_PORT}, FakeTLS ${a.MT_SNI}, движок ${a.MT_ENGINE === 'binary' ? 'бинарник' : 'docker (поставить, если его нет)'}`,
-    `Пользователи: ${a.MT_USERS} (секреты генерируются на сервере)`,
-    a.MT_ZAPRET2 === 'yes' ? 'Zapret2 включён' : 'Zapret2 выключен, SYN-лимитер по умолчанию',
-    'Если системный sudo - sudo-rs (свежие Ubuntu), переключить на классический sudo.ws: иначе установщик панели не примет свой sudoers',
-    `Веб-панель на 127.0.0.1:${a.MTP_PORT} без шифрования (HTTP), логин ${a.MTP_USER}: вход через VPS Panel (поддомен), снаружи панели нет`,
-    'В конце - ссылки tg://proxy для пользователей (в выводе; потом - во вкладке MTProxyL)',
-    'Если на сервере прокси для браузера и MTProxyL на 443: прокси уступает 443, telemt передаёт ему соединения на его имя (маска)',
+    'Установить MTProxyL, если его нет',
+    `Прокси на порту ${a.MT_PORT}, FakeTLS ${a.MT_SNI}, ${a.MT_ENGINE === 'binary' ? 'служба systemd' : 'Docker'}`,
+    `Пользователи: ${a.MT_USERS}`,
+    a.MT_ZAPRET2 === 'yes' ? 'Zapret2 включён' : 'Zapret2 выключен',
+    'Заменить sudo-rs на классический sudo, если нужно',
+    `Веб-панель, логин ${a.MTP_USER}: вход только через VPS Panel`,
+    'Вывести ссылки tg://proxy пользователей',
+    'Если порт 443 занят прокси для браузера, перевести прокси за MTProxyL',
   ],
   access: ({ answers, server, panelUrl }) => {
     const panel: AccessEntry = {
@@ -294,5 +293,6 @@ if ss -ltn | awk '{print $4}' | grep -q ":$MTP_PORT$" && ! systemctl is-active m
     // ссылки пользователей в "Доступы" не пишутся: они во вкладке MTProxyL
     return [panel];
   },
-  after: 'Панель MTProxyL - в "Доступах" сервера, пользователи и их ссылки - во вкладке MTProxyL.',
+  after:
+    'Доступ к панели\u00a0\u2014 в\u00a0\u00abДоступах\u00bb сервера, ссылки пользователей\u00a0\u2014 на вкладке MTProxyL.',
 };

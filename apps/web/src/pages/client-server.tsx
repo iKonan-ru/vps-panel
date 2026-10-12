@@ -51,7 +51,7 @@ export function ClientServerPage() {
   const live = useClientLive(id, bindings, serverId);
 
   if (error) return <Alert tone="bad">{error.message}</Alert>;
-  if (!data) return <Card className="p-8 text-[13px] text-muted">Загружаю...</Card>;
+  if (!data) return <Card className="p-8 text-[13px] text-muted">Загрузка&hellip;</Card>;
   const c = data.client;
   const list = byServer(bindings)[0]?.[1] ?? [];
   const serverName = list[0]?.serverName ?? 'Сервер';
@@ -94,18 +94,13 @@ export function ClientServerPage() {
           <Server className="size-3.5" />
         </ButtonLink>
       </div>
-      {s && !s.online && (
-        <Alert tone="info">
-          Сервер не в сети: живой статистики нет, пока агент не подключится.
-        </Alert>
-      )}
+      {s && !s.online && <Alert tone="info">Сервер не в сети: живой статистики нет</Alert>}
       {s?.outdated && (
         <Alert tone="info">
-          Агент сервера устарел: живой статистики нет. Обнови агента в{' '}
+          Агент сервера устарел: живой статистики не будет до его обновления в{' '}
           <Link to="/servers/$id" params={{ id: serverId }} className="text-accent hover:underline">
             карточке сервера
           </Link>
-          .
         </Alert>
       )}
       {s?.error && <Alert tone="bad">Агент не ответил: {s.error}</Alert>}
@@ -169,7 +164,7 @@ function ServerNow({
             label="Всего"
             note={
               withTotals.some((l) => l.sinceStart)
-                ? 'у AWG и MTProxy - с запуска сервиса'
+                ? 'у AWG и MTProxy\u00a0\u2014 с запуска сервиса'
                 : undefined
             }
           >
@@ -215,10 +210,10 @@ function ServiceCard({
   const tab = serviceTab[b.service];
   const hasCounters = counted.includes(b.service);
   const rows: [string, ReactNode][] = [];
-  if (b.state === 'pending') rows.push(['Сверка', 'ждёт сверки']);
+  if (b.state === 'pending') rows.push(['Синхронизация', 'ждёт']);
   if (b.state === 'error')
     rows.push([
-      'Сверка',
+      'Синхронизация',
       <span key="sync" className="text-bad">
         {b.error}
       </span>,
@@ -271,7 +266,7 @@ function ServiceCard({
       <div className="flex flex-col gap-3 px-4 py-3">
         {rows.length > 0 && <Facts rows={rows} />}
         {l?.note && <div className="text-xs text-muted">{l.note}</div>}
-        {!l && <div className="text-[13px] text-muted">Загружаю...</div>}
+        {!l && <div className="text-[13px] text-muted">Загрузка&hellip;</div>}
         {hasCounters && l && l.state !== 'offline' && l.state !== 'outdated' && (
           <RateChart points={live.history(b.id)} height={110} />
         )}

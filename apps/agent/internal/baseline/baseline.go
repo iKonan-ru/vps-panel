@@ -77,11 +77,11 @@ func MakePlan(ctx context.Context) Plan {
 	needSSH := ssh["passwordauthentication"] != "no" || ssh["permitrootlogin"] == "yes"
 	add("sshd", "SSH: отключить вход по паролю, root только по ключу, лимит попыток", needSSH, "")
 	if needSSH && p.RootKeys == 0 {
-		block("sshd", "У root нет ключей в authorized_keys: отключать пароли нельзя, иначе доступ пропадёт. Сначала добавь ключ.")
+		block("sshd", "у root нет ключей: после отключения паролей доступ к серверу пропадёт")
 	}
 	add("fail2ban", "fail2ban: jail sshd (и панели 3X-UI, если она нативная)", !shell.Has("fail2ban-client") || shell.Out(ctx, "systemctl", "is-active", "fail2ban") != "active" || !fileHas("/etc/fail2ban/jail.local", "VPS Panel"), "")
-	add("updates", "Автообновления безопасности (docker и ядро исключены)", !fileHas("/etc/apt/apt.conf.d/50unattended-upgrades", "VPS Panel"), "")
-	add("portsync", "port-sync: firewall следует за портами VPN (таймер, реакция на 3X-UI и docker)", !fw.PortsyncInstalled || !fw.PortsyncActive, "")
+	add("updates", "Включить автообновления безопасности (кроме docker и ядра)", !fileHas("/etc/apt/apt.conf.d/50unattended-upgrades", "VPS Panel"), "")
+	add("portsync", "Установить port-sync: firewall следует за портами VPN", !fw.PortsyncInstalled || !fw.PortsyncActive, "")
 	add("ufw", "Включить firewall (deny incoming, постоянное правило SSH)", !fw.UfwActive, "")
 
 	// Что закроется: слушатели, которых не откроет port-sync.
@@ -108,7 +108,7 @@ func MakePlan(ctx context.Context) Plan {
 		p.Ports = append(p.Ports, PortChange{Port: l.Port, Proto: l.Proto, Process: l.Process, Action: "close"})
 		// порт из deny-списка закрывается намеренно (9090/9091 - метрики telemt и прочих), это не блокер
 		if isVPNProcess(l.Process) && !fw.UfwActive && !denied[key] {
-			block("ufw", fmt.Sprintf("Порт %s процесса %s закроется, а это похоже на VPN-сервис. Добавь процесс в известные или порт в разрешённые.", key, l.Process))
+			block("ufw", fmt.Sprintf("порт %s процесса %s закроется, а это похоже на VPN: процесс нужно добавить в известные или порт в разрешённые", key, l.Process))
 		}
 	}
 	// применять есть что, если хотя бы один нужный шаг не заблокирован

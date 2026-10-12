@@ -42,7 +42,7 @@ export function HostingCard({ serverId, hosting }: { serverId: string; hosting: 
         </Button>
       </div>
       {empty ? (
-        <div className="text-[13px] text-muted">Данные о хостинге не заполнены.</div>
+        <div className="text-[13px] text-muted">Не заполнено</div>
       ) : (
         <div className="grid grid-cols-[120px_1fr] gap-x-3 gap-y-2 text-[13px]">
           <Row label="Провайдер">
@@ -64,7 +64,7 @@ export function HostingCard({ serverId, hosting }: { serverId: string; hosting: 
               )}
               {h.nextPaymentAt && (
                 <span className={paymentSoon(days) ? 'text-warn' : 'text-muted'}>
-                  {' - следующая '}
+                  {', следующая '}
                   {dateShort(h.nextPaymentAt)}
                   {paymentSoon(days) && ` (${daysWord(days)})`}
                 </span>

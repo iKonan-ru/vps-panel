@@ -1,6 +1,7 @@
 #!/bin/bash
 # Проверки перед коммитом и выкладкой: протокол, типы трёх пакетов, biome, тесты сервера,
-# агент (если менялся: gofmt, go vet, go test), только клавиатурные символы в своих файлах.
+# агент (если менялся: gofmt, go vet, go test), типографика интерфейса, только клавиатурные
+# символы в своих файлах.
 # Любой сбой - выход с ошибкой. Использование: tools/check.sh (CHECK_AGENT=1 - агент всегда).
 set -euo pipefail
 cd "$(dirname "$0")/.."
@@ -8,6 +9,8 @@ cd "$(dirname "$0")/.."
 corepack pnpm --filter @vps/protocol build >/dev/null
 corepack pnpm -r --filter @vps/protocol --filter @vps/server --filter @vps/web exec tsc --noEmit
 npx biome check apps/web/src apps/server/src apps/server/test packages/protocol/src >/dev/null
+# типографика текстов интерфейса: ёлочки, тире, многоточие (свод правил - docs/development.md)
+node tools/check-typography.mjs apps/web/src
 log="$(mktemp)"
 (cd apps/server && npx vitest run >"$log" 2>&1) || { grep -P "FAIL|\x{00D7}" "$log" | head; rm -f "$log"; exit 1; }
 grep -E "Tests " "$log"

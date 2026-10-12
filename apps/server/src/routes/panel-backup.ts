@@ -11,7 +11,11 @@ export async function panelBackupRoutes(app: FastifyInstance, opts: { backups: P
   app.post('/api/panel-backup/settings', async (req) => {
     const body = z
       .object({
-        password: z.string().min(8, 'пароль - не короче 8 символов').max(200).optional(),
+        password: z
+          .string()
+          .min(8, 'пароль\u00a0\u2014 не короче 8\u00a0символов')
+          .max(200)
+          .optional(),
         telegram: z.boolean().optional(),
       })
       .parse(req.body ?? {});

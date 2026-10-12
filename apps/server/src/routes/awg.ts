@@ -21,7 +21,7 @@ export async function awgRoutes(app: FastifyInstance, opts: ServerRouteOpts) {
 
   app.get('/api/servers/:id/awg', async (req, reply) => {
     const { id } = Id.parse(req.params);
-    if (!registry.isOnline(id)) return reply.code(409).send({ error: 'Агент не подключён' });
+    if (!registry.isOnline(id)) return reply.code(409).send({ error: 'сервер не в сети' });
     // ошибки агента (устарел - 409, сбой - 502) отдаёт общий обработчик с их текстом
     const st: {
       docker?: boolean;
@@ -83,8 +83,8 @@ export async function awgRoutes(app: FastifyInstance, opts: ServerRouteOpts) {
       })
       .parse(req.body ?? {});
     const row = (await db.select().from(servers).where(eq(servers.id, id)).limit(1))[0];
-    if (!row) return reply.code(404).send({ error: 'Сервер не найден' });
-    if (!registry.isOnline(id)) return reply.code(409).send({ error: 'Агент не подключён' });
+    if (!row) return reply.code(404).send({ error: 'сервер не найден' });
+    if (!registry.isOnline(id)) return reply.code(409).send({ error: 'сервер не в сети' });
     const cfg = await awgClientConfigs({
       db,
       registry,
@@ -127,12 +127,12 @@ export async function awgRoutes(app: FastifyInstance, opts: ServerRouteOpts) {
       const profile = body.profile ?? '3.1';
       // легаси-контейнер amnezia-awg (образ amnezia-wg) умеет только 1.0
       if (body.container === 'amnezia-awg' && profile !== '1.0')
-        throw Object.assign(new Error('Легаси-контейнер amnezia-awg поддерживает только AWG 1.0'), {
+        throw Object.assign(new Error('старый контейнер amnezia-awg поддерживает только AWG 1.0'), {
           statusCode: 400,
         });
       const params = generateAwgParams(profile);
       const errors = validateAwgParams(params);
-      if (errors.length) throw new Error(`Параметры не прошли проверку: ${errors.join('; ')}`);
+      if (errors.length) throw new Error(`параметры не прошли проверку: ${errors.join('; ')}`);
       const args = Object.fromEntries(Object.entries(params).map(([k, v]) => [`p.${k}`, v]));
       // в журнал - только версия: HeaderProtectionKey общий секрет клиентов экземпляра
       return quickAction<{ ok: boolean; version: string }>(

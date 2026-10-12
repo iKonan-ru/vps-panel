@@ -58,7 +58,7 @@ export function CountrySelect({
           aria-controls={listId}
           aria-autocomplete="list"
           value={open ? q : label}
-          placeholder={open ? 'начни вводить название' : 'не указана'}
+          placeholder={open ? 'Финляндия' : 'не указана'}
           onFocus={() => {
             setOpen(true);
             setQ('');

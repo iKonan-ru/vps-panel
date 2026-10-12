@@ -21,6 +21,14 @@ const UPDATE_EVENT: Record<ServiceUpdateKind, NotifyEvent> = {
   'mtproxyl-panel': 'updMtproxylPanel',
 };
 
+/** Дата платежа (полночь UTC) для текста: 22.10 в текущем году, иначе 22.10.2027. */
+function shortDate(iso: string, now = new Date()): string {
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return iso.slice(0, 10);
+  const dm = `${String(d.getUTCDate()).padStart(2, '0')}.${String(d.getUTCMonth() + 1).padStart(2, '0')}`;
+  return d.getUTCFullYear() === now.getUTCFullYear() ? dm : `${dm}.${d.getUTCFullYear()}`;
+}
+
 /** Событие уведомления о доступности из России по ключу цели (lib/ru-reach.ts). */
 export function reachEvent(key: string, back: boolean): NotifyEvent {
   if (back) return 'reachBack';
@@ -107,12 +115,12 @@ export class Notifier {
     if (this.registry.isOnline(id) || this.registry.isUpdating(id)) return;
     if (!(await this.tg.wants('offline', id))) return;
     this.notifiedOffline.add(id);
-    await this.tg.send(`Сервер ${await this.serverName(id)} не на связи уже ${minutes} мин.`);
+    await this.tg.send(`Сервер ${await this.serverName(id)} не в сети ${minutes}\u00a0мин`);
   }
 
   private async notifyOnline(id: string) {
     if (!(await this.tg.wants('online', id))) return;
-    await this.tg.send(`Сервер ${await this.serverName(id)} снова на связи.`);
+    await this.tg.send(`Сервер ${await this.serverName(id)} снова в сети`);
   }
 
   /** Сервисы из снимка: упал (down дольше SERVICE_DOWN_MS) и снова работает. */
@@ -133,11 +141,11 @@ export class Notifier {
           d.notified = true;
           const why =
             typeof s.details.downReason === 'string' ? `: ${esc(s.details.downReason)}` : '';
-          await this.tg.send(`${name}: ${esc(s.title)} не работает${why}.`);
+          await this.tg.send(`${name}: ${esc(s.title)} не работает${why}`);
         }
         next.set(key, d);
       } else if (was?.notified && (await this.tg.wants('serviceUp', id))) {
-        await this.tg.send(`${name}: ${esc(s.title)} снова работает.`);
+        await this.tg.send(`${name}: ${esc(s.title)} снова работает`);
       }
     }
     this.downs.set(id, next);
@@ -191,7 +199,7 @@ export class Notifier {
       );
     if (st.events.auditClosed && gone.length)
       await this.tg.send(
-        `${name}: замечания закрыты\n${gone.map((t) => `- ${esc(t)}`).join('\n')}`,
+        `${name}: замечания устранены\n${gone.map((t) => `- ${esc(t)}`).join('\n')}`,
       );
 
     // баны fail2ban: рост суммарного счётчика за последний час
@@ -206,9 +214,9 @@ export class Notifier {
     if (st.events.bans && delta >= st.banThreshold && now - b.notifiedAt > 60 * 60_000) {
       b.notifiedAt = now;
       const jails = (inv.audit?.jails ?? [])
-        .map((j) => `${j.name}: ${j.banned} в бане, всего ${j.totalBanned}`)
+        .map((j) => `${j.name}: сейчас ${j.banned}, всего ${j.totalBanned}`)
         .join('; ');
-      await this.tg.send(`${name}: fail2ban забанил ${delta} адресов за час (${esc(jails)}).`);
+      await this.tg.send(`${name}: fail2ban за час заблокировал адресов: ${delta} (${esc(jails)})`);
     }
     this.bans.set(id, b);
 
@@ -224,7 +232,7 @@ export class Notifier {
     ) {
       this.updatesNotifiedAt.set(id, now);
       await this.tg.send(
-        `${name}: ожидают установки обновления безопасности: ${pend}. Кнопка "Обновить пакеты" в карточке.`,
+        `${name}: ожидают установки обновления безопасности: ${pend}. Кнопка \u00abОбновить\u00bb\u00a0\u2014 в блоке \u00abОбслуживание\u00bb.`,
       );
     }
   }
@@ -241,7 +249,7 @@ export class Notifier {
   async panelRelease(r: PanelRelease) {
     if (!(await this.tg.wants('updPanel'))) return;
     await this.tg.send(
-      `VPS Panel: вышла версия ${esc(r.version)}${r.prerelease ? ' (бета)' : ''}. Обновить - Настройки, блок "Версия панели". ${esc(r.url)}`,
+      `VPS Panel: вышла ${r.prerelease ? 'предварительная ' : ''}версия ${esc(r.version)}. Обновление: \u00abНастройки\u00bb\u00a0\u2014 \u00abВерсия панели\u00bb.\n${esc(r.url)}`,
     );
   }
 
@@ -249,7 +257,7 @@ export class Notifier {
   async serviceUpdate(id: string, u: ServiceUpdate) {
     if (!(await this.tg.wants(UPDATE_EVENT[u.kind], id))) return;
     await this.tg.send(
-      `${await this.serverName(id)}: доступно обновление ${u.title} ${esc(u.current)} -> ${esc(u.latest)}. Кнопка "Обновить" в блоке "Обслуживание" на вкладке "Обзор".`,
+      `${await this.serverName(id)}: доступна версия ${u.title} ${esc(u.latest)}${u.current ? `, сейчас ${esc(u.current)}` : ''}. Кнопка \u00abОбновить\u00bb\u00a0\u2014 в блоке \u00abОбслуживание\u00bb.`,
     );
   }
 
@@ -275,10 +283,10 @@ export class Notifier {
       if (days > st.paymentDays || days < 0) continue;
       if (this.paymentNotified.get(r.id) === r.nextPaymentAt) continue;
       this.paymentNotified.set(r.id, r.nextPaymentAt);
-      const when = days === 0 ? 'сегодня' : `через ${days} дн`;
+      const when = days === 0 ? 'сегодня' : `через ${days}\u00a0дн.`;
       const price = r.price ? ` (${r.price} ${r.currency})` : '';
       await this.tg.send(
-        `Оплата хостинга ${await this.serverName(r.id)}: ${when}, ${r.nextPaymentAt.slice(0, 10)}${price}. ${r.providerUrl ? esc(r.providerUrl) : ''}`,
+        `Оплата хостинга ${await this.serverName(r.id)}: ${shortDate(r.nextPaymentAt)}, ${when}${price}${r.providerUrl ? `\n${esc(r.providerUrl)}` : ''}`,
       );
     }
   }

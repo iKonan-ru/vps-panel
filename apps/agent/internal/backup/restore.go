@@ -28,7 +28,7 @@ func CheckPanelURL(raw, panelURL string) error {
 	u, err1 := url.Parse(raw)
 	p, err2 := url.Parse(panelURL)
 	if err1 != nil || err2 != nil || u.Host == "" || u.Scheme != p.Scheme || !strings.EqualFold(u.Host, p.Host) {
-		return fmt.Errorf("адрес бэкапа %q - не адрес панели", raw)
+		return fmt.Errorf("адрес резервной копии %q не ведёт на панель", raw)
 	}
 	return nil
 }
@@ -82,7 +82,7 @@ func Restore(ctx context.Context, p RestoreParams, stream func(channel, chunk st
 	if err := json.Unmarshal(raw, &man); err != nil {
 		return err
 	}
-	log("== бэкап с %s от %s", man.Hostname, man.CreatedAt)
+	log("== резервная копия с %s от %s", man.Hostname, man.CreatedAt)
 	copyR := func(dst string) {
 		if !copyBack(ex, dst, log) {
 			failed = append(failed, dst)
@@ -115,10 +115,10 @@ func Restore(ctx context.Context, p RestoreParams, stream func(channel, chunk st
 				}
 				runR("systemctl start x-ui")
 			case hasDump == nil:
-				log("  бэкап сделан с 3X-UI на PostgreSQL, а здесь 3X-UI на sqlite: базу перенести нельзя, пропускаю")
+				log("  копия сделана с 3X-UI на PostgreSQL, а здесь 3X-UI на sqlite: базу перенести нельзя, пропускаю")
 				continue
 			case cfg.Type == "postgres":
-				log("  бэкап с 3X-UI на sqlite, а здесь PostgreSQL: базу перенести нельзя, пропускаю")
+				log("  копия сделана с 3X-UI на sqlite, а здесь PostgreSQL: базу перенести нельзя, пропускаю")
 				continue
 			default:
 				runR("systemctl stop x-ui")
@@ -171,7 +171,7 @@ func Restore(ctx context.Context, p RestoreParams, stream func(channel, chunk st
 		log("== Готово с ошибками, не восстановлено: %s", strings.Join(failed, ", "))
 		return fmt.Errorf("восстановлено частично, ошибки: %s", strings.Join(failed, "; "))
 	}
-	log("== Готово. Проверь сервисы в карточке сервера.")
+	log("== Готово")
 	return nil
 }
 
