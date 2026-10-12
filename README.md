@@ -208,42 +208,40 @@ Amnezia AWG, WDTT, OpenFlux, прокси для браузера, перево�
 На сервере панели (root), после A-записей домена панели и имени подписок на этот сервер:
 
 ```bash
-git clone https://github.com/iKonan-ru/vps-panel.git /opt/vps-panel
-/opt/vps-panel/deploy/install.sh
+bash <(curl -fsSL https://raw.githubusercontent.com/iKonan-ru/vps-panel/main/install.sh)
 ```
 
-Скрипт спросит домен панели, имя подписок и почту для Let's Encrypt, проверит DNS и порты,
-поставит недостающее (docker, fail2ban), запишет `deploy/.env` с новым `SESSION_SECRET`,
-соберёт агента и файлы сервисов (Go скачает во временную папку, если его нет), запустит
-контейнеры и дождётся ответа панели. Сертификаты Caddy получит сам. Без вопросов:
-`PANEL_DOMAIN=... ACME_EMAIL=... SUB_DOMAIN=... deploy/install.sh -y`.
+Скрипт поставит команду `vps-panel` и запустит установку последнего релиза: спросит домен
+панели, имя подписок и почту для Let's Encrypt, проверит DNS и порты, поставит docker, если
+его нет, запишет `/opt/vps-panel/.env` с новым `SESSION_SECRET`, скачает готовые образы из
+ghcr.io (amd64 и arm64; на сервере ничего не собирается), запустит панель и дождётся её
+ответа, включит fail2ban для входа в панель и службу обновлений. Сертификаты Caddy получит
+сам. Ключи: `--beta` - канал с пре-релизами, `--version X.Y.Z` - конкретная версия, `-y` -
+без вопросов (`PANEL_DOMAIN=... ACME_EMAIL=... SUB_DOMAIN=...` в окружении).
 
 Сразу после установки откройте панель и пройдите мастер первой настройки
 (администратор, пароль, 2FA): до этого он открыт любому, кто первым зайдёт на адрес.
 
+Каталог установки - `/opt/vps-panel`: `compose.yml` и `Caddyfile` (их заменяет обновление;
+свои правки - в `compose.override.yml`), `.env`, `data` (база и ключи панели).
+
+Команда `vps-panel` на сервере: `status`, `update [версия]`, `rollback`, `logs [panel|caddy]`,
+`restart`, `channel [stable|beta]`, `uninstall [--purge]`; `migrate` - переезд установки из
+исходников (`deploy/install.sh`) на релизы с теми же данными и сертификатами.
+
 <details>
-<summary>Установка вручную</summary>
+<summary>Сборка из исходников</summary>
 
-```bash
-git clone https://github.com/iKonan-ru/vps-panel.git /opt/vps-panel
-cd /opt/vps-panel/apps/agent && make build-all        # бинарники агента в dist/ (нужен Go)
-mkdir -p /opt/vps-panel/deploy/agent-dist
-cp /opt/vps-panel/dist/* /opt/vps-panel/deploy/agent-dist/ && chmod -R a+rX /opt/vps-panel/deploy/agent-dist
-sh /opt/vps-panel/tools/build-wdtt.sh && sh /opt/vps-panel/tools/build-naive.sh   # файлы WDTT и naive
-
-cd /opt/vps-panel/deploy
-cp .env.example .env              # заполнить, см. ниже
-mkdir -p data && chown 1000:1000 data
-docker compose up -d --build
-```
-
-fail2ban для входа в панель, тестовый режим без HTTPS и тонкости - в `deploy/README.md`.
+Для разработки и своих правок: `git clone` в `/opt/vps-panel` и `deploy/install.sh` - он
+соберёт агента, файлы сервисов и образ на сервере (нужно больше памяти и 3-5 минут). Такая
+панель обновляется повторным `deploy/install.sh`, а не из интерфейса. Тестовый режим без
+HTTPS и тонкости - в `deploy/README.md`.
 
 </details>
 
 ## Настройки окружения
 
-Файл `deploy/.env`:
+Файл `/opt/vps-panel/.env` (при сборке из исходников - `deploy/.env`):
 
 | Переменная | Обязательна | Что это |
 | --- | --- | --- |
@@ -253,6 +251,8 @@ fail2ban для входа в панель, тестовый режим без H
 | `SUB_DOMAIN` | нет | отдельное имя для подписок и личных страниц, например `sub.example.com`; пусто - они на имени панели |
 | `TG_PROXY_URL` | нет | внешний HTTP-прокси до api.telegram.org, если встроенный xray не настроен |
 | `LOG_LEVEL` | нет | `info` по умолчанию |
+| `PANEL_VERSION` | да | версия образов; меняет `vps-panel update` |
+| `PANEL_CHANNEL` | нет | `stable` или `beta`: канал для `vps-panel update` без версии |
 
 Остальное (Telegram, уведомления, бэкап, маршрут до Telegram, хеши звонков WDTT, документы
 OpenFlux) настраивается в интерфейсе, раздел "Настройки".
@@ -272,13 +272,15 @@ OpenFlux) настраивается в интерфейсе, раздел "На
 
 ## Обновление
 
-- **Панель**: снова `deploy/install.sh` на сервере панели (git pull, сборка, пересборка
-  контейнеров; `.env` и данные не трогаются). Пока идёт сборка, работает прежняя версия.
-  С машины разработки - `tools/ship.sh` (проверки, коммит, выкладка через `deploy/push.sh`;
-  сервер и домен - в `.ship.env`, см. шапку `tools/ship.sh`).
-- **Агенты**: версия агента - `apps/agent/VERSION` плюс хеш исходников. Новые бинарники в
-  `deploy/agent-dist` - и панель покажет "есть обновление"; обновить - кнопкой в карточке
-  сервера или всех по очереди на странице серверов.
+- **Панель**: новые версии - релизы на GitHub (тег `vX.Y.Z`, пре-релиз `vX.Y.Z-beta.N`).
+  Панель сама проверяет их раз в 6 часов и показывает в "Настройки" - "Версия панели" со
+  списком изменений; кнопка "Обновить" или автообновление в заданный час, уведомление в
+  Telegram. Ставит обновление служба на хосте (`vps-panel-update.path`): скачивает образы,
+  перезапускает панель и проверяет её, при неудаче возвращает прежнюю версию. Из консоли -
+  `vps-panel update`.
+- **Агенты**: бинарники агента лежат в образе панели. После обновления панели устаревшие
+  агенты обновляются сами по одному (выключатель - в "Версии панели"); вручную - кнопкой в
+  карточке сервера или всех по очереди на странице серверов.
 - **Сервисы**: обновления 3X-UI, ядра Xray в нём и MTProxyL панель проверяет раз в 6 часов,
   обновления пакетов приходят в снимках агента; всё это видно в карточке, на странице серверов
   и в Telegram. Xray ставится через сам 3X-UI: доступна новейшая из версий, которые он
@@ -294,12 +296,12 @@ Telegram раз в сутки, кнопки "Отправить сейчас" и
 
 ```bash
 openssl enc -d -aes-256-cbc -pbkdf2 -iter 100000 -in vps-panel-backup-<дата>.tar.gz.enc | tar xz
-cd /opt/vps-panel/deploy && docker compose stop panel
+cd /opt/vps-panel && docker compose stop panel
 cp vps-panel-backup/panel.db vps-panel-backup/panel_ssh_ed25519* vps-panel-backup/panel_agent_ed25519.pem data/
 chmod 600 data/panel_ssh_ed25519 data/panel_agent_ed25519.pem
 mkdir -p data/xray && cp vps-panel-backup/xray/config.json data/xray/
 rm -f data/panel.db-wal data/panel.db-shm && chown -R 1000:1000 data
-# SESSION_SECRET из vps-panel-backup/panel.env - в .env
+# SESSION_SECRET из vps-panel-backup/panel.env - в /opt/vps-panel/.env
 docker compose up -d panel
 ```
 
@@ -325,7 +327,7 @@ docker compose up -d panel
 
 ## Разработка
 
-Нужны Node.js 22+, pnpm (через corepack) и Go 1.25 для агента.
+Нужны Node.js 22+, pnpm (через corepack) и Go 1.26+ (агент; сборка Caddy naive).
 
 ```bash
 corepack pnpm install
@@ -337,8 +339,12 @@ cd apps/server && npx vitest run
 cd apps/agent && go vet ./... && go test ./... && make build-all
 ```
 
-Перед выкладкой - `tools/check.sh`: протокол, типы, biome, тесты сервера, агент (gofmt,
-vet, test, govulncheck), `pnpm audit`, только клавиатурные символы в файлах.
+Перед коммитом - `tools/check.sh`: протокол, типы, biome, тесты сервера, агент (gofmt,
+vet, test, govulncheck), `pnpm audit`, только клавиатурные символы в файлах. То же на
+GitHub - `.github/workflows/ci.yml` на каждый push и pull request.
+
+Релиз: раздел `## X.Y.Z` в `CHANGELOG.md` и `tools/release.sh X.Y.Z` (или `X.Y.Z-beta.N`) -
+тег, сборка образов и релиза в GitHub Actions (`release.yml`, около 15 минут).
 
 Правила проекта: код, комментарии, интерфейс и документы - на русском; в файлах только
 символы с клавиатуры (дефис вместо тире, прямые кавычки).
@@ -353,7 +359,10 @@ apps/
   extension/    расширение Chrome и Firefox для прокси для браузера
 packages/
   protocol/     zod-схемы протокола агент-панель и общие типы
-deploy/         install.sh, Dockerfile, docker-compose, Caddyfile, fail2ban, скрипты выкладки
+deploy/         Dockerfile, Caddyfile, fail2ban; release/ - vps-panel и compose.yml релизов;
+                install.sh и docker-compose.yml - сборка из исходников
+install.sh      установка из релиза одной командой
+.github/        CI и сборка релизов (образы ghcr.io)
 tools/          check.sh, ship.sh, сборка wdtt-server и Caddy с forwardproxy, подпись расширения Firefox
 ```
 
