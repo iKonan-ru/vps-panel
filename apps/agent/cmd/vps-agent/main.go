@@ -96,7 +96,7 @@ func main() {
 	}
 
 	collector := metrics.NewCollector()
-	ops := registry(cfg.PanelURL)
+	ops := withConfigOps(registry(cfg.PanelURL), cfg, *cfgPath)
 	panelKey, _ := cfg.Key() // формат проверен в config.Load
 	var client *transport.Client
 	client = transport.New(cfg.PanelURL, token, panelKey, metrics.Host(Version), handler(ops), log)

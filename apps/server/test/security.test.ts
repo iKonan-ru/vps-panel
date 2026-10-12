@@ -148,8 +148,8 @@ describe('catalog answers', () => {
   });
 });
 
-describe('login after an interrupted setup wizard', () => {
-  it('asks for the code and enables 2FA with the first valid one', async () => {
+describe('login after 2FA reset from the console', () => {
+  it('sets up a new secret at login and enables 2FA with its first code', async () => {
     const a = await createAdmin(db, 'half', 'password-123');
     const login = await app.inject({
       method: 'POST',
@@ -157,12 +157,12 @@ describe('login after an interrupted setup wizard', () => {
       payload: { login: 'half', password: 'password-123' },
       remoteAddress: '10.0.0.9',
     });
-    expect(login.json().next).toBe('totp');
+    expect(login.json().next).toBe('enroll');
     const pending = login.cookies.find((c) => c.name !== 'vps_session');
     const res = await app.inject({
       method: 'POST',
-      url: '/api/auth/totp',
-      payload: { code: authenticator.generate(a.secret) },
+      url: '/api/auth/enroll',
+      payload: { code: authenticator.generate(login.json().totpSecret) },
       cookies: { [pending?.name ?? '']: pending?.value ?? '' },
       remoteAddress: '10.0.0.9',
     });

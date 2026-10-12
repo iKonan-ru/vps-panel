@@ -12,7 +12,7 @@ import {
   validateAnswers,
 } from '../commands/index.js';
 import { type RunContext, toInfo } from '../commands/types.js';
-import type { Env } from '../config.js';
+import { type Env, panelDomain } from '../config.js';
 import type { Db } from '../db/index.js';
 import { access, actionLog, commandDefaults, gclientBindings, servers } from '../db/schema.js';
 import { upsertAccess } from '../lib/access.js';
@@ -55,8 +55,10 @@ export async function commandRoutes(
     const row = (
       await db.select({ name: servers.name }).from(servers).where(eq(servers.id, id))
     )[0];
-    if (!row) return {};
-    return { NAIVE_DOMAIN: `${slugify(row.name)}.${new URL(env.PANEL_PUBLIC_URL).hostname}` };
+    // панель без домена: подставить нечего, имя вводят сами
+    const domain = panelDomain(env);
+    if (!row || !domain) return {};
+    return { NAIVE_DOMAIN: `${slugify(row.name)}.${domain}` };
   }
 
   /** Значения по умолчанию для формы: сохранённые ответы для сервера поверх default/generate. */

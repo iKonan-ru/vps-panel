@@ -4,7 +4,8 @@
 #   bash <(curl -fsSL https://raw.githubusercontent.com/iKonan-ru/vps-panel/main/install.sh)
 #
 # Скачивает команду vps-panel из релиза и запускает "vps-panel install" с теми же ключами:
-#   -y              без вопросов (PANEL_DOMAIN, ACME_EMAIL, SUB_DOMAIN - из окружения)
+#   -y              без вопросов (из окружения: PANEL_DOMAIN - пусто значит панель по IP,
+#                   ACME_EMAIL, SUB_DOMAIN, PANEL_LOGIN - пусто значит случайный)
 #   --beta          канал "бета": пре-релизы тоже
 #   --version X.Y.Z конкретная версия
 set -euo pipefail

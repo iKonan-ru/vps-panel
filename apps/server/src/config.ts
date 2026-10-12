@@ -1,3 +1,4 @@
+import { isIP } from 'node:net';
 import { z } from 'zod';
 
 const EnvSchema = z.object({
@@ -48,4 +49,13 @@ export function loadEnv(source: NodeJS.ProcessEnv = process.env): Env {
     throw new Error('PANEL_PUBLIC_URL в production - только https://');
   }
   return env;
+}
+
+/**
+ * Домен панели; пусто - панель без домена (https://<IP>, сертификат Let's Encrypt на IP). Без
+ * домена нет поддоменов: панели сервисов через панель и имена naive по умолчанию.
+ */
+export function panelDomain(env: Pick<Env, 'PANEL_PUBLIC_URL'>): string {
+  const host = new URL(env.PANEL_PUBLIC_URL).hostname.replace(/^\[|\]$/g, '');
+  return isIP(host) ? '' : host;
 }

@@ -1,4 +1,5 @@
 import { Logo } from '@/components/logo';
+import { TotpEnroll, type TotpSetup } from '@/components/totp-enroll';
 import { Alert } from '@/components/ui/alert';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
@@ -6,13 +7,34 @@ import { Field } from '@/components/ui/field';
 import { Input } from '@/components/ui/input';
 import { api } from '@/lib/api';
 import type { Me } from '@/lib/auth';
+import { cn } from '@/lib/cn';
 import { codeMask } from '@/lib/masks';
 import { useQueryClient } from '@tanstack/react-query';
 import { useNavigate } from '@tanstack/react-router';
 import { type FormEvent, useState } from 'react';
 
+/** Администратора ещё нет: его создаёт установка или консоль сервера панели. */
+export function NoAdminPage() {
+  return (
+    <div className="flex min-h-full items-center justify-center p-4">
+      <Card className="flex w-full max-w-[440px] flex-col gap-4 p-8">
+        <Logo size={32} />
+        <div className="text-xl font-semibold">Администратор не создан</div>
+        <div className="text-[13px] leading-relaxed text-muted">
+          Логин и пароль появляются при установке панели. Если установка прервалась, создай
+          администратора в консоли сервера панели - пароль будет показан там же:
+        </div>
+        <code className="rounded-md bg-surface-2 px-3 py-2 font-mono text-[13px]">
+          vps-panel admin init
+        </code>
+      </Card>
+    </div>
+  );
+}
+
 export function LoginPage() {
-  const [step, setStep] = useState<'password' | 'totp'>('password');
+  const [step, setStep] = useState<'password' | 'totp' | 'enroll'>('password');
+  const [enroll, setEnroll] = useState<TotpSetup | null>(null);
   const [login, setLogin] = useState('');
   const [password, setPassword] = useState('');
   const [code, setCode] = useState('');
@@ -26,8 +48,15 @@ export function LoginPage() {
     setBusy(true);
     setError(null);
     try {
-      await api('/api/auth/login', { method: 'POST', json: { login, password } });
-      setStep('totp');
+      const r = await api<{ next: 'totp' } | ({ next: 'enroll' } & TotpSetup)>('/api/auth/login', {
+        method: 'POST',
+        json: { login, password },
+      });
+      if (r.next === 'enroll') {
+        // первый вход (или 2FA сброшена из консоли): настроить её сейчас
+        setEnroll(r);
+        setStep('enroll');
+      } else setStep('totp');
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Ошибка');
     } finally {
@@ -41,6 +70,19 @@ export function LoginPage() {
     setError(null);
     try {
       await api('/api/auth/totp', { method: 'POST', json: { code } });
+      await finish();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Ошибка');
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function confirmEnroll(c: string) {
+    setBusy(true);
+    setError(null);
+    try {
+      await api('/api/auth/enroll', { method: 'POST', json: { code: c } });
       await finish();
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Ошибка');
@@ -64,12 +106,44 @@ export function LoginPage() {
 
   return (
     <div className="flex min-h-full items-center justify-center p-4">
-      <Card className="flex w-full max-w-[400px] flex-col gap-4.5 p-8">
+      <Card
+        className={cn(
+          'flex w-full flex-col gap-4.5 p-8',
+          step === 'enroll' ? 'max-w-[520px]' : 'max-w-[400px]',
+        )}
+      >
         <Logo size={32} />
         {/* разные key: иначе React переиспользует форму и кнопку - "Назад" (пятый элемент) прямо
             во время клика становится "Дальше" (type=submit), браузер отправляет форму пароля, и
             экран кода открывается снова */}
-        {step === 'password' ? (
+        {step === 'enroll' && enroll ? (
+          <div key="enroll" className="flex flex-col gap-4">
+            <div>
+              <div className="text-xl font-semibold">Двухфакторная защита</div>
+              <div className="mt-1 text-[13px] text-muted">
+                Первый вход: без 2FA в панель не попасть. Отсканируй QR в приложении-аутентификаторе
+                (Google Authenticator, Aegis, 1Password), сохрани резервные коды и введи код.
+              </div>
+            </div>
+            <TotpEnroll
+              setup={enroll}
+              onConfirm={(c) => void confirmEnroll(c)}
+              label="Включить 2FA и войти"
+              busy={busy}
+              error={error}
+            />
+            <Button
+              variant="link"
+              className="self-end text-[13px] text-muted hover:text-text"
+              onClick={() => {
+                setError(null);
+                setStep('password');
+              }}
+            >
+              Назад
+            </Button>
+          </div>
+        ) : step === 'password' ? (
           <form key="password" onSubmit={submitPassword} className="flex flex-col gap-4">
             <div>
               <div className="text-xl font-semibold">Вход</div>

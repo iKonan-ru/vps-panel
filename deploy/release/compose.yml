@@ -50,6 +50,10 @@ services:
       - "443:443/udp"
     environment:
       PANEL_DOMAIN: ${PANEL_DOMAIN}
+      # панель по IP (без домена или прежний адрес): сертификат на IP - deploy/Caddyfile
+      PANEL_ALIAS: ${PANEL_ALIAS:-}
+      PANEL_TLS: ${PANEL_TLS:-domain}
+      PANEL_SNI: ${PANEL_SNI:-}
       SUB_DOMAIN: ${SUB_DOMAIN:-sub.localhost}
       ACME_EMAIL: ${ACME_EMAIL}
     volumes:

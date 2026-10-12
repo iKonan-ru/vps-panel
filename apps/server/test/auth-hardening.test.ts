@@ -6,6 +6,7 @@ import { buildApp, trustCaddy } from '../src/app.js';
 import { loadEnv } from '../src/config.js';
 import { createDb } from '../src/db/index.js';
 import { admins, loginAttempts } from '../src/db/schema.js';
+import { initAdmin } from '../src/lib/auth.js';
 import {
   DockerRef,
   MtproxylArgs,
@@ -30,18 +31,10 @@ afterAll(async () => {
   rmSync(dir, { recursive: true, force: true });
 });
 
-describe('мастер первой настройки', () => {
-  it('два параллельных запроса создают одного администратора', async () => {
-    const setup = (login: string) =>
-      app.inject({
-        method: 'POST',
-        url: '/api/setup',
-        payload: { login, password: 'password-1234' },
-      });
-    const codes = (await Promise.all([setup('first'), setup('second'), setup('third')]))
-      .map((r) => r.statusCode)
-      .sort();
-    expect(codes).toEqual([200, 409, 409]);
+describe('администратор из консоли', () => {
+  it('параллельные admin-init создают одного администратора', async () => {
+    const r = await Promise.all(['first', 'second', 'third'].map((l) => initAdmin(db, l)));
+    expect(r.filter(Boolean)).toHaveLength(1);
     expect(db.select().from(admins).all()).toHaveLength(1);
   });
 });

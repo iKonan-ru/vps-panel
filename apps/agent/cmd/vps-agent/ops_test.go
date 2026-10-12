@@ -1,11 +1,17 @@
 package main
 
 import (
+	"context"
+	"encoding/json"
 	"os"
+	"path/filepath"
 	"regexp"
 	"slices"
+	"strings"
 	"testing"
 	"time"
+
+	"github.com/iKonan-ru/vps-panel/apps/agent/internal/config"
 )
 
 // Операции агента и AgentMethodSchema в packages/protocol совпадают: панель не зовёт того, чего
@@ -24,7 +30,7 @@ func TestMethodsMatchProtocol(t *testing.T) {
 		proto = append(proto, string(m[1]))
 	}
 	slices.Sort(proto)
-	got := methods(registry(""))
+	got := methods(withConfigOps(registry(""), &config.Config{}, ""))
 	for _, m := range got {
 		if !slices.Contains(proto, m) {
 			t.Errorf("операции %s нет в AgentMethodSchema", m)
@@ -48,5 +54,30 @@ func TestSetMetricsEveryKeepsLast(t *testing.T) {
 	case d := <-metricsEvery:
 		t.Fatalf("лишнее значение в канале: %s", d)
 	default:
+	}
+}
+
+func TestPanelURLOp(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "agent.json")
+	cfg := &config.Config{PanelURL: "https://203.0.113.10", Token: "t"}
+	restarts := 0
+	restartLater = func() error { restarts++; return nil }
+	o := panelURLOp(cfg, path)
+	call := func(url string) (any, error) {
+		return o(context.Background(), json.RawMessage(`{"url":"`+url+`"}`), nil)
+	}
+	if _, err := call("http://panel.example.com"); err == nil {
+		t.Fatal("только https")
+	}
+	r, err := call("https://203.0.113.10")
+	if err != nil || r.(map[string]any)["changed"] != false || restarts != 0 {
+		t.Fatalf("тот же адрес - без перезапуска: %v %v", r, err)
+	}
+	if r, err = call("https://panel.example.com"); err != nil || r.(map[string]any)["changed"] != true || restarts != 1 {
+		t.Fatalf("новый адрес: %v %v", r, err)
+	}
+	saved, err := os.ReadFile(path)
+	if err != nil || !strings.Contains(string(saved), `"panelUrl": "https://panel.example.com"`) {
+		t.Fatalf("сохранён: %s %v", saved, err)
 	}
 }
