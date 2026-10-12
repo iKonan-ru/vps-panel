@@ -1,0 +1,83 @@
+import { Alert } from '@/components/ui/alert';
+import { Button } from '@/components/ui/button';
+import { Chip } from '@/components/ui/chip';
+import { Field } from '@/components/ui/field';
+import { Input } from '@/components/ui/input';
+import { Section } from '@/components/ui/section';
+import { api } from '@/lib/api';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
+import { type FormEvent, useState } from 'react';
+
+/**
+ * Токен Globalping для проверок "Доступность из России" (необязательно): бесплатный токен с
+ * dash.globalping.io поднимает квоту каждого сервера с 250 до 500 зондов в час.
+ */
+export function ReachSettings() {
+  const qc = useQueryClient();
+  const { data } = useQuery({
+    queryKey: ['reach-settings'],
+    queryFn: () => api<{ tokenSet: boolean }>('/api/reach/settings'),
+  });
+  const [token, setToken] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [msg, setMsg] = useState<{ tone: 'ok' | 'bad'; text: string } | null>(null);
+
+  async function save(value: string, e?: FormEvent) {
+    e?.preventDefault();
+    setBusy(true);
+    setMsg(null);
+    try {
+      await api('/api/reach/settings', { method: 'PUT', json: { token: value } });
+      setToken('');
+      await qc.invalidateQueries({ queryKey: ['reach-settings'] });
+      setMsg({ tone: 'ok', text: value ? 'Токен сохранён' : 'Токен убран' });
+    } catch (x) {
+      setMsg({ tone: 'bad', text: (x as Error).message });
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <Section
+      title="Доступность из России"
+      info="Проверки адресов и inbound-ов серверов из российских домашних сетей заказывает агент каждого сервера у Globalping со своего адреса: без токена - 250 зондов в час на сервер, с бесплатным токеном (dash.globalping.io, раздел Tokens) - 500. Токен необязателен; хватает и без него."
+      extra={
+        data && (
+          <Chip tone={data.tokenSet ? 'ok' : 'muted'}>
+            {data.tokenSet ? 'токен задан' : 'без токена'}
+          </Chip>
+        )
+      }
+    >
+      <form
+        className="flex flex-wrap items-end gap-3 p-4"
+        onSubmit={(e) => void save(token.trim(), e)}
+      >
+        <Field label="Токен Globalping" htmlFor="gp-token" className="min-w-[240px] grow">
+          <Input
+            id="gp-token"
+            type="password"
+            autoComplete="off"
+            value={token}
+            onChange={(e) => setToken(e.target.value)}
+            placeholder={data?.tokenSet ? 'задан; новый заменит его' : 'необязательно'}
+          />
+        </Field>
+        <Button type="submit" variant="primary" disabled={busy || !token.trim()}>
+          Сохранить
+        </Button>
+        {data?.tokenSet && (
+          <Button variant="ghost" disabled={busy} onClick={() => void save('')}>
+            Убрать
+          </Button>
+        )}
+      </form>
+      {msg && (
+        <div className="px-4 pb-4">
+          <Alert tone={msg.tone}>{msg.text}</Alert>
+        </div>
+      )}
+    </Section>
+  );
+}

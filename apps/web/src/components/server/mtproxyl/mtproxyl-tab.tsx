@@ -20,7 +20,8 @@ import { Num } from '@/components/ui/num';
 import { Section } from '@/components/ui/section';
 import { api } from '@/lib/api';
 import { cn } from '@/lib/cn';
-import { bytes, uptime } from '@/lib/format';
+import { ago, bytes, uptime } from '@/lib/format';
+import { reachLevel, reachTone } from '@/lib/reach';
 import { type ServerDetail, serverLock } from '@/lib/servers';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { MonitorCog, Plus, RefreshCw, RotateCcw, UserRound } from 'lucide-react';
@@ -161,6 +162,11 @@ export function MtproxylTab({ s }: { s: ServerDetail }) {
     );
 
   const st = data.status;
+  // "Доступность из России" - проверка самого MTProxyL (зонды Globalping), агент кладёт её итог
+  // в снимок
+  const reach = s.services.find((x) => x.kind === 'mtproxyl')?.details?.ruReach as
+    | { percent: number; ok: number; total: number; checkedAt: string; error?: string }
+    | undefined;
   const trafficByUser = new Map((data.traffic?.users ?? []).map((u) => [u.user, u]));
   const openUser = data.secrets?.find((u) => u.label === user);
   const panelInstalled = Boolean(panelUrl) || /running|active|работает/i.test(data.panel);
@@ -191,7 +197,7 @@ export function MtproxylTab({ s }: { s: ServerDetail }) {
       )}
 
       {/* как в "Обзоре": на мобиле по две в ряд */}
-      <div className="grid grid-cols-2 gap-3 md:gap-4 lg:grid-cols-4">
+      <div className="grid grid-cols-2 gap-3 md:gap-4 lg:grid-cols-5">
         <MetricCard
           label="Прокси"
           value={st?.status === 'running' ? 'Работает' : (st?.status ?? 'нет данных')}
@@ -207,6 +213,18 @@ export function MtproxylTab({ s }: { s: ServerDetail }) {
           label="Подключения"
           value={<Num value={st?.connections ?? 0} />}
           note={`уникальных IP: ${st?.unique_ips ?? 0}`}
+        />
+        <MetricCard
+          label="Из России"
+          value={reach ? `${reach.percent}%` : 'нет данных'}
+          tone={reach ? reachTone[reachLevel(reach.percent) ?? 'bad'] : 'muted'}
+          note={
+            reach
+              ? reach.error
+                ? `проверка не удалась: ${reach.error}`
+                : `дошли ${reach.ok} из ${reach.total} зондов, ${ago(reach.checkedAt)}`
+              : 'проверок MTProxyL ещё не было'
+          }
         />
         <MetricCard
           label="Трафик"

@@ -257,6 +257,7 @@ export const AgentMethodSchema = z.enum([
   'agent.update',
   'agent.update.cancel',
   'telegram.send',
+  'reach.check',
   'telegram.updates',
   'term.open',
   'term.input',

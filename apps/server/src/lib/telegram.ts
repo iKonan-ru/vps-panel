@@ -19,6 +19,8 @@ export interface TgSettings {
     audit: boolean;
     bans: boolean;
     updates: boolean;
+    /** Доступность из России: цель перестала быть видна и снова видна (lib/ru-reach.ts). */
+    reach: boolean;
   };
   banThreshold: number; // банов в час, после которых шлём
   paymentDays: number; // за сколько дней предупреждать о платеже
@@ -27,7 +29,7 @@ export interface TgSettings {
 export const defaultTg: TgSettings = {
   token: '',
   chatId: '',
-  events: { offline: true, audit: true, bans: true, updates: true },
+  events: { offline: true, audit: true, bans: true, updates: true, reach: true },
   banThreshold: 10,
   paymentDays: 3,
 };

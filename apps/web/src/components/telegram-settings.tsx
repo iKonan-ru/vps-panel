@@ -18,7 +18,7 @@ interface TgSettings {
   token: string;
   tokenSet: boolean;
   chatId: string;
-  events: { offline: boolean; audit: boolean; bans: boolean; updates: boolean };
+  events: { offline: boolean; audit: boolean; bans: boolean; updates: boolean; reach: boolean };
   banThreshold: number;
   paymentDays: number;
   lastRoute: { via: string; at: string } | null;
@@ -39,6 +39,7 @@ const eventTitles: Record<keyof TgSettings['events'], string> = {
   audit: 'Новые и закрытые критичные замечания аудита',
   bans: 'Рост банов fail2ban (порог ниже)',
   updates: 'Обновления пакетов и сервисов (3X-UI, Xray, MTProxyL), платежи хостингу',
+  reach: 'Доступность из России: адрес, inbound или MTProxyL не виден и снова виден',
 };
 
 /** Настройки Telegram-уведомлений: бот, чат, какие события, тест. */

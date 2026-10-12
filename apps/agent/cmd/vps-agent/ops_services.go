@@ -6,10 +6,11 @@ import (
 
 	"github.com/iKonan-ru/vps-panel/apps/agent/internal/adapters"
 	"github.com/iKonan-ru/vps-panel/apps/agent/internal/dockerapi"
+	"github.com/iKonan-ru/vps-panel/apps/agent/internal/reach"
 )
 
 // serviceOps - сервисы на сервере: docker, 3X-UI, WDTT, AmneziaWG, OpenFlux, прокси для браузера
-// (naive), MTProxyL и пересылка в Telegram.
+// (naive), MTProxyL, пересылка в Telegram и проверка доступности из России.
 func serviceOps() map[string]op {
 	return map[string]op{
 		"docker.action": typed(func(ctx context.Context, p dockerParams, _ stream) (any, error) {
@@ -114,6 +115,11 @@ func serviceOps() map[string]op {
 			Token string `json:"token"`
 		}, _ stream) (any, error) {
 			return adapters.TelegramUpdates(ctx, p.Token)
+		}),
+
+		// видно ли из России: измерения Globalping с адреса этого сервера (своя квота)
+		"reach.check": typed(func(ctx context.Context, p reach.Params, _ stream) (any, error) {
+			return reach.Check(ctx, p)
 		}),
 	}
 }

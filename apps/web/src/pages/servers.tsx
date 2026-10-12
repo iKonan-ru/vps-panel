@@ -21,6 +21,7 @@ import {
   plural,
   uptime,
 } from '@/lib/format';
+import { type ReachTarget, type ServerReach, reachLevel, useReachAll } from '@/lib/reach';
 import { useServers } from '@/lib/servers';
 import { useQuery } from '@tanstack/react-query';
 import { Link, useNavigate } from '@tanstack/react-router';
@@ -185,6 +186,7 @@ function attention(
   s: ServerSummary,
   updates: ServiceUpdate[],
   mobile: boolean,
+  reach: ServerReach | undefined,
 ): {
   key: string;
   tone: 'bad' | 'warn' | 'update';
@@ -219,6 +221,14 @@ function attention(
       tone: 'warn',
       text: `${medium.length} ${plural(medium.length, 'замечание', 'замечания', 'замечаний')}`,
       title: medium.map((f) => f.text).join('\n'),
+    });
+  for (const t of reachProblems(reach))
+    out.push({
+      key: `reach-${t.key}`,
+      tab: t.key === 'mtproxyl' ? 'mtproxyl' : 'overview',
+      tone: reachLevel(t.percent) === 'bad' ? 'bad' : 'warn',
+      text: `из РФ: ${reachShort(t)} ${t.percent}%`,
+      title: `${t.title}: из России дошли ${t.ok} из ${t.total} зондов${t.errors[0] ? ` (${t.errors[0]})` : ''}`,
     });
   if (s.audit?.rebootRequired)
     out.push({
@@ -274,9 +284,29 @@ function attention(
   return out;
 }
 
+/**
+ * Что не видно из России: цели ниже 80%. Адрес не виден - inbound-ы того же адреса не
+ * перечисляем (их не видно по той же причине), MTProxyL - отдельно (его проверка своя).
+ */
+function reachProblems(r: ServerReach | undefined): ReachTarget[] {
+  const bad = (r?.targets ?? []).filter((t) => {
+    const lv = reachLevel(t.percent);
+    return lv === 'bad' || lv === 'partial';
+  });
+  const ip = bad.find((t) => t.key === 'ip' && reachLevel(t.percent) === 'bad');
+  return ip ? bad.filter((t) => t === ip || t.source === 'mtproxyl') : bad;
+}
+
+function reachShort(t: ReachTarget): string {
+  if (t.key === 'ip') return 'адрес';
+  if (t.key === 'mtproxyl') return 'MTProxy';
+  return t.title.replace(/^3X-UI /, '');
+}
+
 function AttentionChips({ s, mobile = false }: { s: ServerSummary; mobile?: boolean }) {
   const { data: updates } = useServiceUpdates();
-  const items = attention(s, updates?.[s.id] ?? [], mobile);
+  const { data: reach } = useReachAll();
+  const items = attention(s, updates?.[s.id] ?? [], mobile, reach?.[s.id]);
   if (!items.length) return null;
   const chips = items.map((i) => <AttentionItem key={i.key} i={i} serverId={s.id} />);
   if (!mobile) return <span className="flex flex-wrap gap-1">{chips}</span>;
