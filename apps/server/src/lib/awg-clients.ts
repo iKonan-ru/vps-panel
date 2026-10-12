@@ -11,6 +11,7 @@ import {
   wgClientConf,
   wgCompatible,
 } from './awg-config.js';
+import { clientHost } from './client-host.js';
 import type { SecretBox } from './secret-box.js';
 
 /** Конфиги клиента AWG во всех форматах (окно клиента, глобальный клиент, личная страница). */
@@ -111,7 +112,7 @@ export async function awgClientConfigs(o: {
     clientPrivateKey: o.box.open(saved.privateKey),
     clientPublicKey: o.publicKey,
     clientIps: d.clientIps,
-    host: row.host,
+    host: clientHost(row),
     port: d.port,
     mtu: o.mtu,
     dns: ['1.1.1.1', '1.0.0.1'],

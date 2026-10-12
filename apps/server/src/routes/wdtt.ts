@@ -6,6 +6,7 @@ import type { Db } from '../db/index.js';
 import { gclientBindings, servers } from '../db/schema.js';
 import { actionJournal } from '../lib/action-journal.js';
 import { awgTunnelNames } from '../lib/awg-config.js';
+import { clientHost } from '../lib/client-host.js';
 import { type GClients, queued } from '../lib/gclients.js';
 import type { UiHub } from '../lib/ui-hub.js';
 import {
@@ -79,7 +80,7 @@ export async function wdttRoutes(
         // у пароля без устройств сервер (Go) отдаёт null, а не пустой список
         device_ids: p.device_ids ?? [],
         links: wdttLinks({
-          host: s.host,
+          host: clientHost(s),
           dtlsPort: r.dtlsPort,
           wgPort: r.wgPort,
           password: p.password,

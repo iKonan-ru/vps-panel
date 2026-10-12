@@ -36,7 +36,14 @@ const BASE_VERSION = 19;
  * применённые помнит pragma user_version. Каждый шаг идемпотентен (новая база уже содержит его
  * результат в BOOTSTRAP_SQL). Новый шаг - только в конец списка.
  */
-const STEPS: ((sqlite: Database.Database) => void)[] = [];
+const STEPS: ((sqlite: Database.Database) => void)[] = [
+  // 20: адрес сервера в конфигах людей (имя вместо IP) - только добавление столбца
+  (sqlite) => {
+    const cols = sqlite.prepare('pragma table_info(server)').all() as { name: string }[];
+    if (!cols.some((c) => c.name === 'client_host'))
+      sqlite.exec('alter table server add column client_host text');
+  },
+];
 
 /** Шаги, которых база ещё не видела, - по порядку, каждый с отметкой версии. */
 function migrate(sqlite: Database.Database, existed: boolean) {
@@ -85,7 +92,8 @@ create table if not exists server (
   next_payment_at text, agent_token_hash text, agent_version text, registration_token text, registration_expires_at text,
   created_at text not null default (strftime('%Y-%m-%dT%H:%M:%fZ','now')),
   last_seen_at text, status_cache text, host_key_fingerprint text not null default '',
-  gclients integer not null default 1, xui_excluded text not null default '[]'
+  gclients integer not null default 1, xui_excluded text not null default '[]',
+  client_host text
 );
 create table if not exists firewall_rule (
   id text primary key, server_id text not null references server(id) on delete cascade,

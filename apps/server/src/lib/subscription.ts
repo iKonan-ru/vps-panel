@@ -2,6 +2,7 @@ import { and, eq, isNull } from 'drizzle-orm';
 import type { Db } from '../db/index.js';
 import { gclientBindings, gclients, servers } from '../db/schema.js';
 import { awgTunnelNames } from './awg-config.js';
+import { clientHost } from './client-host.js';
 import { parseNaiveLink } from './gclient-services.js';
 
 /**
@@ -67,7 +68,12 @@ export function buildSubscription(db: Db, token: string): { links: string[] } | 
     });
     for (const l of b.links)
       links.push(
-        rewriteLink(l, { host: s.host, title, email: b.ref, withInbound: b.links.length > 1 }),
+        rewriteLink(l, {
+          host: clientHost(s),
+          title,
+          email: b.ref,
+          withInbound: b.links.length > 1,
+        }),
       );
   }
   return { links };

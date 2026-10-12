@@ -65,6 +65,8 @@ export const servers = sqliteTable('server', {
   gclients: integer('gclients', { mode: 'boolean' }).notNull().default(true),
   /** Inbound-ы 3X-UI, куда глобальные клиенты не добавляются (id). */
   xuiExcluded: text('xui_excluded', { mode: 'json' }).$type<number[]>().notNull().default([]),
+  /** Адрес сервера в конфигах людей (имя под A-записью); null - host (IP). */
+  clientHost: text('client_host'),
   /** Последний снимок состояния от агента (Inventory + метрики), JSON. */
   statusCache: text('status_cache', { mode: 'json' }).$type<Record<string, unknown>>(),
 });

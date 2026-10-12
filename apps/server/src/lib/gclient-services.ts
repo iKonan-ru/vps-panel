@@ -7,6 +7,7 @@ import type { gclientBindings, gclientDevices, gclients, servers } from '../db/s
 import { awgForgetKey, awgSaveKey } from './awg-clients.js';
 import { awgTunnelNames } from './awg-config.js';
 import { awgKeyPair } from './awg-keys.js';
+import { clientHost } from './client-host.js';
 import { peerName } from './gclient-names.js';
 import { takeOfDocs } from './openflux-docs.js';
 import type { SecretBox } from './secret-box.js';
@@ -272,7 +273,7 @@ export async function wdttEnsure(
     serverName: row.name,
   }).title;
   const l = wdttLinks({
-    host: row.host,
+    host: clientHost(row),
     dtlsPort: st.dtlsPort,
     wgPort: st.wgPort,
     password,
@@ -500,7 +501,7 @@ export async function ofEnsure(
     const r = await deps.registry.request<{ link: string }>(
       row.id,
       'openflux.link',
-      { channel: b.ref, name: title, host: row.host },
+      { channel: b.ref, name: title, host: clientHost(row) },
       { timeoutMs: 60_000 },
     );
     links = [r.link];
