@@ -102,3 +102,23 @@ func TestOfCheckTransports(t *testing.T) {
 		t.Fatal("перевод строки в ссылке")
 	}
 }
+
+// OpenFlux без копии установщика (мастер приложения, старая версия) - всё равно установлен:
+// по каналам в /etc/openflux-node.
+func TestOfInstalledByChannels(t *testing.T) {
+	old := ofEtcDir
+	defer func() { ofEtcDir = old }()
+	ofEtcDir = t.TempDir()
+	if _, err := os.Stat(ofInstaller); err == nil {
+		t.Skip("на машине стоит OpenFlux")
+	}
+	if ofInstalled() {
+		t.Fatal("пустой каталог каналов - не установлен")
+	}
+	if err := os.Mkdir(filepath.Join(ofEtcDir, "main"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if !ofInstalled() {
+		t.Fatal("есть канал - установлен")
+	}
+}
