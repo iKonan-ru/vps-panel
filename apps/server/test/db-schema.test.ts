@@ -42,7 +42,30 @@ describe('database schema', () => {
       createDb(dir);
       createDb(dir);
       const db = new Database(join(dir, 'panel.db'), { readonly: true });
-      expect(db.pragma('user_version', { simple: true })).toBe(19);
+      expect(db.pragma('user_version', { simple: true })).toBe(20);
+      db.close();
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it('шаг 20: база версии 19 получает client_host, данные на месте', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'vps-s20-'));
+    try {
+      createDb(dir);
+      const raw = new Database(join(dir, 'panel.db'));
+      // база как до шага: без столбца и с версией 19
+      raw.exec("insert into server (id, name, host) values ('s', 's', '203.0.113.1')");
+      raw.exec('alter table server drop column client_host');
+      raw.pragma('user_version = 19');
+      raw.close();
+      createDb(dir);
+      const db = new Database(join(dir, 'panel.db'), { readonly: true });
+      expect(db.pragma('user_version', { simple: true })).toBe(20);
+      expect(db.prepare('select host, client_host from server').get()).toEqual({
+        host: '203.0.113.1',
+        client_host: null,
+      });
       db.close();
     } finally {
       rmSync(dir, { recursive: true, force: true });

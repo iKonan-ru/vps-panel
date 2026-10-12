@@ -3,6 +3,7 @@ import { AccessCard } from '@/components/server/access-card';
 import { BannedIps } from '@/components/server/banned-ips';
 import { BaselineDialog } from '@/components/server/baseline-dialog';
 import { CleanupDialog } from '@/components/server/cleanup-dialog';
+import { ClientHostCard } from '@/components/server/client-host-card';
 import { HostingCard } from '@/components/server/hosting-card';
 import { MetricCard } from '@/components/server/metric-card';
 import { ReachCard } from '@/components/server/reach-card';
@@ -473,7 +474,10 @@ export function OverviewTab({ s, onTab }: { s: ServerDetail; onTab?: (tab: strin
             {s.audit && <BannedIps audit={s.audit} />}
           </Section>
         </div>
-        <AccessCard serverId={s.id} />
+        <div className="flex flex-col gap-4">
+          <ClientHostCard serverId={s.id} />
+          <AccessCard serverId={s.id} />
+        </div>
       </div>
       <CleanupDialog serverId={s.id} open={cleanup} onClose={() => setCleanup(false)} />
       <BaselineDialog

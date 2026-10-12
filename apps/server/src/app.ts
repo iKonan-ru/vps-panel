@@ -41,6 +41,7 @@ import { authRoutes, requireAuth, useHostCookies } from './routes/auth.js';
 import { awgRoutes } from './routes/awg.js';
 import { backupRoutes } from './routes/backups.js';
 import { baselineFirewallRoutes } from './routes/baseline-firewall.js';
+import { clientHostRoutes } from './routes/client-host.js';
 import { commandRoutes } from './routes/commands.js';
 import { cspRoutes } from './routes/csp.js';
 import { deployRoutes } from './routes/deploy.js';
@@ -280,6 +281,7 @@ export async function buildApp(opts: AppOptions) {
   // метрики агентов раз в 2 с, пока открыта вкладка панели, иначе раз в 30 с
   stops.push(startMetricsPace(registry, hub, app.log));
   await app.register(gclientRoutes, { db, registry, box, gc, env, hub });
+  await app.register(clientHostRoutes, { db, gc, hub, panelUrl: env.PANEL_PUBLIC_URL });
   await app.register(wdttRoutes, { db, registry, hub, gc });
   await app.register(subscriptionRoutes, { db, env });
   // бэкап самой панели: раз в сутки в Telegram, по кнопке - сразу или скачиванием

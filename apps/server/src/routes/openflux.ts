@@ -5,6 +5,7 @@ import { servers } from '../db/schema.js';
 import { actionJournal } from '../lib/action-journal.js';
 import { type ServerRouteOpts, actionRunners } from '../lib/action-runners.js';
 import { awgTunnelNames } from '../lib/awg-config.js';
+import { clientHost } from '../lib/client-host.js';
 
 const Id = z.object({ id: z.string() });
 /** Имя канала - как у node-install.sh. */
@@ -55,7 +56,7 @@ export async function openfluxRoutes(app: FastifyInstance, opts: ServerRouteOpts
         // имя профиля в приложении - как у остальных сервисов: "флаг Страна :: Хостинг"
         name: awgTunnelNames({ provider: row.provider, country: row.country, serverName: row.name })
           .title,
-        host: row.host,
+        host: clientHost(row),
       },
       { timeoutMs: 60_000 },
     );
