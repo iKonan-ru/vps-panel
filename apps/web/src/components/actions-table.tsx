@@ -77,7 +77,13 @@ export function ActionsTable({
                   <ActionStatusChip finishedAt={r.finishedAt} exitCode={r.exitCode} />
                 </td>
                 <td className="text-right">
-                  <Button size="sm" variant="ghost" onClick={() => setOpen(r)} label="Вывод">
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    onClick={() => setOpen(r)}
+                    label="Вывод"
+                    short="Вывод"
+                  >
                     <FileText className="size-3.5" />
                   </Button>
                 </td>

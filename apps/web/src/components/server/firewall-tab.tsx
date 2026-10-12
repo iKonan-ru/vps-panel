@@ -1,5 +1,6 @@
 import { ActionPanel } from '@/components/action-output';
 import { MetricCard } from '@/components/server/metric-card';
+import { ActionBar } from '@/components/ui/action-bar';
 import { Alert } from '@/components/ui/alert';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
@@ -197,27 +198,29 @@ export function FirewallTab({ s }: { s: ServerDetail }) {
         title="Правила"
         extra={<Chip>{rules.length}</Chip>}
         actions={
-          <>
-            <Button
-              size="sm"
-              disabled={!canAct}
-              title={lock.reason}
-              onClick={() => setSettingsOpen(true)}
-              label="Настройки port-sync"
-            >
-              <Settings2 className="size-3.5" />
-            </Button>
-            <Button
-              size="sm"
-              variant="primary"
-              disabled={!canAct}
-              title={lock.reason}
-              onClick={() => setRuleOpen(true)}
-              label="Добавить правило"
-            >
-              <Plus className="size-3.5" />
-            </Button>
-          </>
+          <ActionBar
+            actions={[
+              {
+                key: 'portsync',
+                label: 'Настройки port-sync',
+                short: 'port-sync',
+                icon: <Settings2 className="size-3.5" />,
+                disabled: !canAct,
+                title: lock.reason,
+                onClick: () => setSettingsOpen(true),
+              },
+              {
+                key: 'add',
+                label: 'Добавить правило',
+                short: 'Правило',
+                icon: <Plus className="size-3.5" />,
+                variant: 'primary',
+                disabled: !canAct,
+                title: lock.reason,
+                onClick: () => setRuleOpen(true),
+              },
+            ]}
+          />
         }
       >
         <div className="hidden md:block">

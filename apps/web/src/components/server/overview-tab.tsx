@@ -7,6 +7,7 @@ import { HostingCard } from '@/components/server/hosting-card';
 import { MetricCard } from '@/components/server/metric-card';
 import { ReachCard } from '@/components/server/reach-card';
 import { SshKeysDialog } from '@/components/server/ssh-keys-dialog';
+import { ActionBar } from '@/components/ui/action-bar';
 import { Alert } from '@/components/ui/alert';
 import { Button, ButtonLink } from '@/components/ui/button';
 import { Chip } from '@/components/ui/chip';
@@ -392,31 +393,31 @@ export function OverviewTab({ s, onTab }: { s: ServerDetail; onTab?: (tab: strin
               </>
             }
             actions={
-              <>
-                <Button
-                  size="sm"
-                  disabled={!canAct}
-                  onClick={() => setKeys(true)}
-                  title={
-                    lock.reason ?? 'Ключи в authorized_keys root: просмотр, удаление, добавление'
-                  }
-                  label="Ключи root"
-                >
-                  <KeyRound className="size-3.5" />
-                </Button>
-                {fixable > 0 && (
-                  <Button
-                    size="sm"
-                    variant="primary"
-                    disabled={!canAct}
-                    title={lock.reason}
-                    onClick={() => setBaseline('')}
-                    label={`Исправить проблемы (${fixable})`}
-                  >
-                    <Wrench className="size-3.5" />
-                  </Button>
-                )}
-              </>
+              <ActionBar
+                actions={[
+                  {
+                    key: 'keys',
+                    label: 'Ключи root',
+                    short: 'Ключи',
+                    icon: <KeyRound className="size-3.5" />,
+                    disabled: !canAct,
+                    title:
+                      lock.reason ?? 'Ключи в authorized_keys root: просмотр, удаление, добавление',
+                    onClick: () => setKeys(true),
+                  },
+                  {
+                    key: 'fix',
+                    label: `Исправить проблемы (${fixable})`,
+                    short: `Исправить (${fixable})`,
+                    icon: <Wrench className="size-3.5" />,
+                    variant: 'primary',
+                    hidden: fixable === 0,
+                    disabled: !canAct,
+                    title: lock.reason,
+                    onClick: () => setBaseline(''),
+                  },
+                ]}
+              />
             }
           >
             {error && (

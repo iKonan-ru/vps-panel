@@ -2,6 +2,7 @@ import { AccessEditor } from '@/components/clients/access-editor';
 import { BindingStates, deviceTitle } from '@/components/clients/binding-states';
 import { SyncPanel, useSyncState } from '@/components/clients/sync-panel';
 import { DeviceSelect } from '@/components/device-select';
+import { ActionBar } from '@/components/ui/action-bar';
 import { Alert } from '@/components/ui/alert';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
@@ -55,47 +56,54 @@ export function ClientsPage() {
         <PageTitle>Клиенты</PageTitle>
         {data && <Chip>{data.length}</Chip>}
         <div className="grow" />
-        <Button
-          size="sm"
-          onClick={() => setServersOpen(true)}
-          label="Серверы"
-          title="На каких серверах заводятся глобальные клиенты и в какие inbound-ы 3X-UI"
-        >
-          <Server className="size-3.5" />
-        </Button>
-        <Button
-          size="sm"
-          disabled={syncing}
-          onClick={() =>
-            void sync.run(async () => {
-              setSyncAsked(true);
-              try {
-                await api('/api/gclients/sync', { method: 'POST', json: { all: true } });
-                // ждём конца сверки: кнопка освобождается, когда сервер скажет "не идёт"
-                for (let i = 0; i < 300; i++) {
-                  await new Promise((r) => setTimeout(r, 2_000));
-                  const st = await api<{ syncing: boolean }>('/api/gclients/syncing');
-                  if (!st.syncing) break;
-                }
-              } finally {
-                setSyncAsked(false);
-                await qc.invalidateQueries({ queryKey: ['gclients'] });
-                void qc.invalidateQueries({ queryKey: ['gclients-syncing'] });
-              }
-            })
-          }
-          label="Сверить всех"
-          title={
-            syncing
-              ? 'Сверка с серверами идёт: кнопка освободится, когда она закончится'
-              : 'Полная сверка всех клиентов на всех серверах: каждая запись каждого сервиса приводится к панели'
-          }
-        >
-          <RefreshCw className={syncing ? 'size-3.5 animate-spin' : 'size-3.5'} />
-        </Button>
-        <Button size="sm" variant="primary" onClick={() => setAdding(true)} label="Добавить">
-          <Plus className="size-3.5" />
-        </Button>
+        <ActionBar
+          topbar
+          actions={[
+            {
+              key: 'add',
+              label: 'Добавить клиента',
+              short: 'Добавить',
+              icon: <Plus className="size-3.5" />,
+              variant: 'primary',
+              onClick: () => setAdding(true),
+              mobile: true,
+              group: 'add',
+            },
+            {
+              key: 'servers',
+              label: 'Серверы клиентов',
+              icon: <Server className="size-3.5" />,
+              title: 'На каких серверах заводятся глобальные клиенты и в какие inbound-ы 3X-UI',
+              onClick: () => setServersOpen(true),
+            },
+            {
+              key: 'sync',
+              label: syncing ? 'Сверка идёт...' : 'Сверить всех',
+              icon: <RefreshCw className={syncing ? 'size-3.5 animate-spin' : 'size-3.5'} />,
+              disabled: syncing,
+              title: syncing
+                ? 'Сверка с серверами идёт: кнопка освободится, когда она закончится'
+                : 'Полная сверка всех клиентов на всех серверах: каждая запись каждого сервиса приводится к панели',
+              onClick: () =>
+                void sync.run(async () => {
+                  setSyncAsked(true);
+                  try {
+                    await api('/api/gclients/sync', { method: 'POST', json: { all: true } });
+                    // ждём конца сверки: кнопка освобождается, когда сервер скажет "не идёт"
+                    for (let i = 0; i < 300; i++) {
+                      await new Promise((r) => setTimeout(r, 2_000));
+                      const st = await api<{ syncing: boolean }>('/api/gclients/syncing');
+                      if (!st.syncing) break;
+                    }
+                  } finally {
+                    setSyncAsked(false);
+                    await qc.invalidateQueries({ queryKey: ['gclients'] });
+                    void qc.invalidateQueries({ queryKey: ['gclients-syncing'] });
+                  }
+                }),
+            },
+          ]}
+        />
       </div>
       {error && <Alert tone="bad">{error.message}</Alert>}
       {sync.error && <Alert tone="bad">{sync.error}</Alert>}

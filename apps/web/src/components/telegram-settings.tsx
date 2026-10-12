@@ -172,11 +172,24 @@ export function TelegramSettings() {
       }
       actions={
         <>
-          <Button size="sm" disabled={busy || !st.tokenSet} onClick={test} label="Тест">
+          <Button
+            size="sm"
+            disabled={busy || !st.tokenSet}
+            onClick={test}
+            label="Тест"
+            short="Тест"
+          >
             <Send className="size-3.5" />
           </Button>
           {st.tokenSet && (
-            <Button size="sm" variant="ghost" disabled={busy} onClick={clear} label="Отключить">
+            <Button
+              size="sm"
+              variant="ghost"
+              disabled={busy}
+              onClick={clear}
+              label="Отключить"
+              short="Отключить"
+            >
               <Power className="size-3.5" />
             </Button>
           )}
@@ -213,6 +226,7 @@ export function TelegramSettings() {
                 onClick={detect}
                 title="Спросить у Telegram, кто писал боту"
                 label="Найти chat id"
+                short="Найти chat id"
               >
                 <Search className="size-4" />
               </Button>

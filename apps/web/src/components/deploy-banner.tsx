@@ -128,7 +128,13 @@ export function DeployBanner() {
           Панель обновлена до {st.commit} (сборка {took}). Обнови страницу, чтобы загрузить новую
           версию интерфейса.
         </div>
-        <Button size="sm" variant="primary" onClick={() => location.reload()} label="Обновить">
+        <Button
+          size="sm"
+          variant="primary"
+          onClick={() => location.reload()}
+          label="Обновить"
+          short="Обновить"
+        >
           <RefreshCw className="size-3.5" />
         </Button>
       </Bar>

@@ -114,6 +114,7 @@ export function AwgTab({ s }: { s: ServerDetail }) {
             search={{ server: s.id, run: undefined, tab: undefined }}
             size="sm"
             label="Установить AWG"
+            short="Установить AWG"
           >
             <Plus className="size-3.5" />
           </ButtonLink>

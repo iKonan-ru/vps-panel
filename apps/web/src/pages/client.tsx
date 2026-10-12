@@ -10,6 +10,7 @@ import {
 import { LiveSummary, ServerOnlineMark, useClientLive } from '@/components/clients/live-stats';
 import { SyncPanel } from '@/components/clients/sync-panel';
 import { ClientConfig } from '@/components/links/awg-config';
+import { ActionBar } from '@/components/ui/action-bar';
 import { Alert } from '@/components/ui/alert';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
@@ -26,7 +27,16 @@ import { cn } from '@/lib/cn';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { Link, useNavigate, useParams } from '@tanstack/react-router';
 import type { GBinding, GClientDetail, GDevice } from '@vps/protocol';
-import { KeyRound, Pencil, Plus, Power, RefreshCw, SlidersHorizontal, Trash2 } from 'lucide-react';
+import {
+  ExternalLink,
+  KeyRound,
+  Pencil,
+  Plus,
+  Power,
+  RefreshCw,
+  SlidersHorizontal,
+  Trash2,
+} from 'lucide-react';
 import { useState } from 'react';
 
 /** Карточка глобального клиента: устройства, привязки по серверам, вкл/выкл, удаление. */
@@ -84,65 +94,82 @@ export function ClientPage() {
         <PageTitle>{c.name}</PageTitle>
         {c.enabled ? <Chip tone="ok">включён</Chip> : <Chip tone="muted">выключен</Chip>}
         <div className="grow" />
-        <LinkButton
-          href={data.subscription.page}
-          variant="primary"
-          label="Личная страница"
-          title="Личная страница клиента: подписка, прокси для Telegram, конфиги AWG и приложения - одной ссылкой"
-          copyTitle="Скопировать ссылку на личную страницу"
+        <ActionBar
+          topbar
+          actions={[
+            {
+              key: 'page',
+              label: 'Личная страница',
+              icon: <ExternalLink className="size-3.5" />,
+              href: data.subscription.page,
+              node: (
+                <LinkButton
+                  href={data.subscription.page}
+                  variant="primary"
+                  title="Личная страница клиента: подписка, прокси для Telegram, конфиги AWG и приложения - одной ссылкой"
+                  copyTitle="Скопировать ссылку на личную страницу"
+                >
+                  Личная страница
+                </LinkButton>
+              ),
+              mobile: true,
+              group: 'page',
+            },
+            {
+              key: 'rotate',
+              label: 'Новая ссылка',
+              icon: <KeyRound className="size-3.5" />,
+              title:
+                'Перевыпустить ссылку на подписку и личную страницу: старые перестанут работать',
+              onClick: async () => {
+                const ok = await ask({
+                  title: `Новая ссылка для ${c.name}?`,
+                  text: 'Старые ссылки на подписку и личную страницу перестанут работать сразу: подписка в приложениях клиента перестанет обновляться, пока он не добавит новую. Подключения на серверах не меняются.',
+                  okLabel: 'Перевыпустить',
+                  danger: true,
+                });
+                if (!ok) return;
+                await call(() => api(`/api/gclients/${id}/rotate-token`, { method: 'POST' }));
+              },
+            },
+            {
+              key: 'rename',
+              label: 'Переименовать',
+              icon: <Pencil className="size-3.5" />,
+              onClick: () => setRename(true),
+            },
+            {
+              key: 'toggle',
+              label: c.enabled ? 'Выключить клиента' : 'Включить клиента',
+              icon: <Power className="size-3.5" />,
+              onClick: () =>
+                void call(() =>
+                  api(`/api/gclients/${id}`, { method: 'PATCH', json: { enabled: !c.enabled } }),
+                ),
+            },
+            {
+              key: 'remove',
+              label: 'Удалить клиента',
+              icon: <Trash2 className="size-3.5" />,
+              variant: 'danger',
+              group: 'danger',
+              onClick: async () => {
+                const ok = await ask({
+                  title: `Удалить клиента ${c.name}?`,
+                  text: 'Его клиенты VLESS, MTProxy, WDTT и AWG будут удалены со всех серверов, подписка и конфиги перестанут работать.',
+                  okLabel: 'Удалить',
+                  danger: true,
+                });
+                if (!ok) return;
+                await call(async () => {
+                  await api(`/api/gclients/${id}`, { method: 'DELETE' });
+                  await qc.invalidateQueries({ queryKey: ['gclients'] });
+                  await navigate({ to: '/clients' });
+                });
+              },
+            },
+          ]}
         />
-        <Button
-          size="sm"
-          label="Новая ссылка"
-          title="Перевыпустить ссылку на подписку и личную страницу: старые перестанут работать"
-          onClick={async () => {
-            const ok = await ask({
-              title: `Новая ссылка для ${c.name}?`,
-              text: 'Старые ссылки на подписку и личную страницу перестанут работать сразу: подписка в приложениях клиента перестанет обновляться, пока он не добавит новую. Подключения на серверах не меняются.',
-              okLabel: 'Перевыпустить',
-              danger: true,
-            });
-            if (!ok) return;
-            await call(() => api(`/api/gclients/${id}/rotate-token`, { method: 'POST' }));
-          }}
-        >
-          <KeyRound className="size-3.5" />
-        </Button>
-        <Button size="sm" onClick={() => setRename(true)} label="Переименовать">
-          <Pencil className="size-3.5" />
-        </Button>
-        <Button
-          size="sm"
-          onClick={() =>
-            void call(() =>
-              api(`/api/gclients/${id}`, { method: 'PATCH', json: { enabled: !c.enabled } }),
-            )
-          }
-          label={c.enabled ? 'Выключить' : 'Включить'}
-        >
-          <Power className="size-3.5" />
-        </Button>
-        <Button
-          size="sm"
-          variant="danger"
-          label="Удалить"
-          onClick={async () => {
-            const ok = await ask({
-              title: `Удалить клиента ${c.name}?`,
-              text: 'Его клиенты VLESS, MTProxy, WDTT и AWG будут удалены со всех серверов, подписка и конфиги перестанут работать.',
-              okLabel: 'Удалить',
-              danger: true,
-            });
-            if (!ok) return;
-            await call(async () => {
-              await api(`/api/gclients/${id}`, { method: 'DELETE' });
-              await qc.invalidateQueries({ queryKey: ['gclients'] });
-              await navigate({ to: '/clients' });
-            });
-          }}
-        >
-          <Trash2 className="size-3.5" />
-        </Button>
       </div>
       {c.note && <div className="text-[13px] text-muted">{c.note}</div>}
       {err && <Alert tone="bad">{err}</Alert>}
@@ -228,29 +255,28 @@ export function ClientPage() {
             </>
           }
           actions={
-            <>
-              <Button
-                size="sm"
-                onClick={() => setAccessOpen(true)}
-                label="Доступ"
-                title="На каких серверах какие сервисы заводятся клиенту"
-              >
-                <SlidersHorizontal className="size-3.5" />
-              </Button>
-              <Button
-                size="sm"
-                disabled={syncing}
-                onClick={() => void sync()}
-                label="Сверить сейчас"
-                title={
-                  syncing
+            <ActionBar
+              actions={[
+                {
+                  key: 'access',
+                  label: 'Доступ',
+                  icon: <SlidersHorizontal className="size-3.5" />,
+                  title: 'На каких серверах какие сервисы заводятся клиенту',
+                  onClick: () => setAccessOpen(true),
+                },
+                {
+                  key: 'sync',
+                  label: 'Сверить сейчас',
+                  short: 'Сверить',
+                  icon: <RefreshCw className={cn('size-3.5', syncing && 'animate-spin')} />,
+                  disabled: syncing,
+                  title: syncing
                     ? 'Сверка с серверами идёт: кнопка освободится, когда она закончится'
-                    : 'Полная сверка этого клиента: все его записи на всех серверах приводятся к панели'
-                }
-              >
-                <RefreshCw className={cn('size-3.5', syncing && 'animate-spin')} />
-              </Button>
-            </>
+                    : 'Полная сверка этого клиента: все его записи на всех серверах приводятся к панели',
+                  onClick: () => void sync(),
+                },
+              ]}
+            />
           }
         >
           {data.bindings.length === 0 && (

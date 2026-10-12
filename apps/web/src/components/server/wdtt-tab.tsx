@@ -1,5 +1,6 @@
 import { type WdttLinks, WdttLinksView } from '@/components/links/wdtt-links';
 import { OwnerLink, useOwners, useWdttKeys } from '@/components/owner-link';
+import { ActionBar } from '@/components/ui/action-bar';
 import { Alert } from '@/components/ui/alert';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
@@ -122,11 +123,11 @@ export function WdttTab({ s }: { s: ServerDetail }) {
           return (
             <div
               key={p.password}
-              className="flex flex-wrap items-center gap-x-3 gap-y-1 border-b border-border px-4 py-2.5 last:border-b-0"
+              className="flex items-center gap-3 border-b border-border px-4 py-2.5 last:border-b-0"
             >
               <div className="min-w-0 grow">
-                <div className="flex items-center gap-2 text-[13px]">
-                  <span className="font-medium">{p.label}</span>
+                <div className="flex min-w-0 items-center gap-2 text-[13px]">
+                  <span className="truncate font-medium">{p.label}</span>
                   {p.is_deactivated && <Chip tone="muted">выключен</Chip>}
                   {own && <OwnerLink owner={own} />}
                 </div>
@@ -135,75 +136,82 @@ export function WdttTab({ s }: { s: ServerDetail }) {
                   {bytes(p.down_bytes + p.up_bytes)}
                 </div>
               </div>
-              <Button size="sm" onClick={() => setLinks(p)} label="Ссылки">
-                <QrCodeIcon className="size-3.5" />
-              </Button>
-              <Button size="icon-sm" variant="ghost" title="Изменить" onClick={() => setEdit(p)}>
-                <Pencil className="size-3.5" />
-              </Button>
-              <Button
-                size="icon-sm"
-                variant="ghost"
-                disabled={lock.busy}
-                title={p.is_deactivated ? 'Включить' : 'Выключить'}
-                onClick={() =>
-                  void call(() =>
-                    api(
-                      `/api/servers/${s.id}/wdtt/passwords/${p.is_deactivated ? 'activate' : 'deactivate'}`,
-                      { method: 'POST', json: { password: p.password, label: p.label } },
-                    ),
-                  )
-                }
-              >
-                <Power className="size-3.5" />
-              </Button>
-              {(p.device_ids ?? []).length > 0 && (
-                <Button
-                  size="icon-sm"
-                  variant="ghost"
-                  disabled={lock.busy}
-                  title="Отвязать все устройства (можно будет подключить заново)"
-                  onClick={async () => {
-                    const ok = await ask({
-                      title: `Отвязать устройства ${p.label}?`,
-                      text: 'Устройства отключатся; подключить их заново можно той же ссылкой.',
-                      okLabel: 'Отвязать',
-                    });
-                    if (ok)
-                      await call(() =>
-                        api(`/api/servers/${s.id}/wdtt/passwords/unbind-device`, {
-                          method: 'POST',
-                          json: { password: p.password, label: p.label },
-                        }),
-                      );
-                  }}
-                >
-                  <Unlink className="size-3.5" />
-                </Button>
-              )}
-              <Button
-                size="icon-sm"
-                variant="ghost"
-                disabled={lock.busy}
-                title="Удалить пароль"
-                onClick={async () => {
-                  const ok = await ask({
-                    title: `Удалить пользователя ${p.label}?`,
-                    text: 'Его ссылки перестанут работать.',
-                    okLabel: 'Удалить',
-                    danger: true,
-                  });
-                  if (ok)
-                    await call(() =>
-                      api(`/api/servers/${s.id}/wdtt/passwords/delete`, {
-                        method: 'POST',
-                        json: { password: p.password, label: p.label },
-                      }),
-                    );
-                }}
-              >
-                <Trash2 className="size-3.5 text-bad" />
-              </Button>
+              <ActionBar
+                dense
+                actions={[
+                  {
+                    key: 'links',
+                    label: 'Ссылки',
+                    icon: <QrCodeIcon className="size-3.5" />,
+                    onClick: () => setLinks(p),
+                    mobile: true,
+                  },
+                  {
+                    key: 'edit',
+                    label: 'Изменить',
+                    icon: <Pencil className="size-3.5" />,
+                    onClick: () => setEdit(p),
+                  },
+                  {
+                    key: 'toggle',
+                    label: p.is_deactivated ? 'Включить' : 'Выключить',
+                    icon: <Power className="size-3.5" />,
+                    disabled: lock.busy,
+                    onClick: () =>
+                      void call(() =>
+                        api(
+                          `/api/servers/${s.id}/wdtt/passwords/${p.is_deactivated ? 'activate' : 'deactivate'}`,
+                          { method: 'POST', json: { password: p.password, label: p.label } },
+                        ),
+                      ),
+                  },
+                  {
+                    key: 'unbind',
+                    label: 'Отвязать устройства',
+                    icon: <Unlink className="size-3.5" />,
+                    hidden: (p.device_ids ?? []).length === 0,
+                    disabled: lock.busy,
+                    title: 'Отвязать все устройства (можно будет подключить заново)',
+                    onClick: async () => {
+                      const ok = await ask({
+                        title: `Отвязать устройства ${p.label}?`,
+                        text: 'Устройства отключатся; подключить их заново можно той же ссылкой.',
+                        okLabel: 'Отвязать',
+                      });
+                      if (ok)
+                        await call(() =>
+                          api(`/api/servers/${s.id}/wdtt/passwords/unbind-device`, {
+                            method: 'POST',
+                            json: { password: p.password, label: p.label },
+                          }),
+                        );
+                    },
+                  },
+                  {
+                    key: 'remove',
+                    label: 'Удалить пароль',
+                    icon: <Trash2 className="size-3.5" />,
+                    variant: 'danger',
+                    group: 'danger',
+                    disabled: lock.busy,
+                    onClick: async () => {
+                      const ok = await ask({
+                        title: `Удалить пользователя ${p.label}?`,
+                        text: 'Его ссылки перестанут работать.',
+                        okLabel: 'Удалить',
+                        danger: true,
+                      });
+                      if (ok)
+                        await call(() =>
+                          api(`/api/servers/${s.id}/wdtt/passwords/delete`, {
+                            method: 'POST',
+                            json: { password: p.password, label: p.label },
+                          }),
+                        );
+                    },
+                  },
+                ]}
+              />
             </div>
           );
         })}

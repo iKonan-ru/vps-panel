@@ -185,12 +185,17 @@ export function TerminalTab({ s }: { s: ServerDetail }) {
         </span>
         <div className="grow" />
         {state === 'closed' && (
-          <Button size="sm" onClick={() => setGen((g) => g + 1)} label="Подключить снова">
+          <Button
+            size="sm"
+            onClick={() => setGen((g) => g + 1)}
+            label="Подключить снова"
+            short="Подключить"
+          >
             <RefreshCw className="size-3.5" />
           </Button>
         )}
         {state === 'open' && (
-          <Button size="sm" onClick={closeNow} label="Закрыть">
+          <Button size="sm" onClick={closeNow} label="Закрыть" short="Закрыть">
             <Power className="size-3.5" />
           </Button>
         )}
