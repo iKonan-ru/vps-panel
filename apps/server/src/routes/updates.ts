@@ -29,6 +29,9 @@ export async function updateRoutes(
   app.get('/api/servers/:id/mtproxyl/versions', async (req) =>
     updates.versions((req.params as { id: string }).id),
   );
+  app.get('/api/servers/:id/xui/versions', async (req) =>
+    updates.versions((req.params as { id: string }).id, ['xui', 'xray']),
+  );
 
   /** Обновить Xray внутри 3X-UI до версии из последней проверки: действие с выводом. */
   app.post('/api/servers/:id/xray/update', async (req, reply) => {

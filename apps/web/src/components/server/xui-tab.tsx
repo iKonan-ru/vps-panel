@@ -1,5 +1,6 @@
 import { ActionPanel } from '@/components/action-output';
 import { MetricCard } from '@/components/server/metric-card';
+import { type Versions, VersionsSection } from '@/components/server/versions-section';
 import { XuiClients } from '@/components/server/xui-clients';
 import { type Inbound, XuiInbounds } from '@/components/server/xui-inbounds';
 import { ActionBar } from '@/components/ui/action-bar';
@@ -22,7 +23,6 @@ import { type ServerDetail, serverLock } from '@/lib/servers';
 import { startServiceUpdate } from '@/lib/service-update';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import {
-  Download,
   ExternalLink,
   KeyRound,
   Play,
@@ -34,6 +34,9 @@ import {
   Zap,
 } from 'lucide-react';
 import { type FormEvent, useState } from 'react';
+
+/** Компоненты блока "Версии": сама панель 3X-UI и Xray внутри неё. */
+type XuiVersionKind = 'xui' | 'xray';
 
 interface XuiInfo {
   installed: boolean;
@@ -115,14 +118,24 @@ export function XuiTab({ s }: { s: ServerDetail }) {
     staleTime: 20_000,
     retry: false,
   });
-  // обновления 3X-UI и Xray с последней проверки (раз в 6 часов) - то же, что в "Обслуживании"
-  const updates = useQuery({
-    queryKey: ['service-updates', s.id, 'xui-tab'],
-    queryFn: () => api<{ kind: string; latest: string }[]>(`/api/servers/${s.id}/updates`),
+  // версии 3X-UI и Xray с последней проверки (раз в 6 часов, кнопкой, после обновления) - те же
+  // обновления, что в "Обслуживании"
+  const versions = useQuery({
+    queryKey: ['xui-versions', s.id],
+    queryFn: () => api<Versions<XuiVersionKind>>(`/api/servers/${s.id}/xui/versions`),
     enabled: online,
   });
-  const xrayUpdate = updates.data?.find((u) => u.kind === 'xray');
-  const [action, setAction] = useState<{ id: string; title: string } | null>(null);
+  const [checking, setChecking] = useState(false);
+  // проверка версий идёт - обновлять нельзя (решение по старым данным)
+  const versionsBusy = checking || versions.isFetching;
+  // recheck - это было обновление: по окончании перепроверить версии; inVersions - вывод в блоке
+  // "Версии", иначе - сверху вкладки
+  const [action, setAction] = useState<{
+    id: string;
+    title: string;
+    recheck?: boolean;
+    inVersions?: boolean;
+  } | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [showLog, setShowLog] = useState(false);
   const [busy, setBusy] = useState(false);
@@ -137,17 +150,40 @@ export function XuiTab({ s }: { s: ServerDetail }) {
     void qc.invalidateQueries({ queryKey: ['servers'] });
   };
 
-  async function start(title: string, fn: () => Promise<{ actionId: string }>) {
+  async function start(title: string, fn: () => Promise<{ actionId: string }>, update = false) {
     setBusy(true);
     setError(null);
     try {
       const r = await fn();
-      setAction({ id: r.actionId, title });
+      setAction({ id: r.actionId, title, recheck: update, inVersions: update });
     } catch (e) {
       setError((e as Error).message);
     } finally {
       setBusy(false);
     }
+  }
+
+  /** Проверить обновления сервера сейчас; итог виден и здесь, и в "Обзоре", и в списке. */
+  async function recheck() {
+    setChecking(true);
+    setError(null);
+    try {
+      await api(`/api/servers/${s.id}/updates/check`, { method: 'POST' });
+    } catch (e) {
+      setError((e as Error).message);
+    } finally {
+      // кнопки версий - только после свежего списка: иначе "Обновить" по старым данным
+      await qc.invalidateQueries({ queryKey: ['xui-versions', s.id] });
+      await qc.invalidateQueries({ queryKey: ['service-updates'] });
+      await qc.invalidateQueries({ queryKey: ['service-updates-all'] });
+      setChecking(false);
+    }
+  }
+
+  function updateComponent(kind: XuiVersionKind, latest: string) {
+    if (kind === 'xui')
+      return start(`Обновление 3X-UI до ${latest}`, () => xuiApi.update(s.id), true);
+    return start(`Обновление Xray до ${latest}`, () => startServiceUpdate.xray(s.id), true);
   }
 
   async function issueToken() {
@@ -198,16 +234,12 @@ export function XuiTab({ s }: { s: ServerDetail }) {
           {e}
         </Alert>
       ))}
-      {action && (
+      {action && !action.inVersions && (
         <ActionPanel
           title={action.title}
           actionId={action.id}
           onHide={() => setAction(null)}
-          onFinished={() => {
-            refresh();
-            void qc.invalidateQueries({ queryKey: ['service-updates'] });
-            void qc.invalidateQueries({ queryKey: ['service-updates-all'] });
-          }}
+          onFinished={refresh}
         />
       )}
 
@@ -247,27 +279,6 @@ export function XuiTab({ s }: { s: ServerDetail }) {
               ]
                 .filter(Boolean)
                 .join(', ') || (noToken ? 'выпусти API-токен кнопкой ниже' : '-')}
-              {xrayUpdate && (
-                <>
-                  {', '}
-                  <Button
-                    variant="link"
-                    className="text-update"
-                    disabled={busy || lock.busy || updates.isFetching}
-                    title={
-                      lock.reason ??
-                      `Поставить Xray ${xrayUpdate.latest} через 3X-UI: подключения VLESS прервутся на несколько секунд`
-                    }
-                    onClick={() =>
-                      start(`Обновление Xray до ${xrayUpdate.latest}`, () =>
-                        startServiceUpdate.xray(s.id),
-                      )
-                    }
-                  >
-                    обновить до {xrayUpdate.latest}
-                  </Button>
-                </>
-              )}
             </span>
           }
         />
@@ -348,15 +359,6 @@ export function XuiTab({ s }: { s: ServerDetail }) {
             group: 'service',
           })),
           {
-            key: 'update',
-            label: 'Обновить 3X-UI',
-            icon: <Download className="size-3.5" />,
-            onClick: () => void start('Обновление 3X-UI', () => xuiApi.update(s.id)),
-            disabled: busy || lock.busy,
-            title: lock.reason,
-            group: 'more',
-          },
-          {
             key: 'token',
             label: noToken ? 'Выпустить API-токен' : 'Перевыпустить API-токен',
             icon: <KeyRound className="size-3.5" />,
@@ -394,6 +396,35 @@ export function XuiTab({ s }: { s: ServerDetail }) {
         inbounds={inboundList.data}
         disabled={busy || lock.busy}
         reason={lock.reason}
+      />
+
+      <VersionsSection<XuiVersionKind>
+        rows={[
+          {
+            kind: 'xui',
+            title: '3X-UI',
+            current: data.version,
+            hint: 'Официальным "x-ui update": inbound-ы и клиенты сохраняются, панель перезапустится',
+          },
+          {
+            kind: 'xray',
+            title: 'Xray',
+            current: obj?.xray?.version,
+            hint: 'Через 3X-UI: подключения VLESS прервутся на несколько секунд',
+          },
+        ]}
+        data={versions.data}
+        checking={versionsBusy}
+        disabled={busy || lock.busy || versionsBusy}
+        reason={lock.reason}
+        onCheck={() => void recheck()}
+        onUpdate={(kind, latest) => void updateComponent(kind, latest)}
+        action={action?.inVersions ? action : null}
+        onHideAction={() => setAction(null)}
+        onActionFinished={() => {
+          refresh();
+          if (action?.recheck) void recheck();
+        }}
       />
 
       <SettingsForm

@@ -7,8 +7,8 @@ import {
   EngineForm,
   type MtVersionKind,
   type MtVersions,
-  VersionsSection,
 } from '@/components/server/mtproxyl/versions';
+import { VersionsSection } from '@/components/server/versions-section';
 import { ActionBar } from '@/components/ui/action-bar';
 import { Alert } from '@/components/ui/alert';
 import { Button, ButtonLink } from '@/components/ui/button';
@@ -25,7 +25,15 @@ import { ago, bytes, uptime } from '@/lib/format';
 import { reachLevel, reachTone } from '@/lib/reach';
 import { type ServerDetail, serverLock } from '@/lib/servers';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { ExternalLink, MonitorCog, Plus, RefreshCw, RotateCcw, UserRound } from 'lucide-react';
+import {
+  ExternalLink,
+  Layers,
+  MonitorCog,
+  Plus,
+  RefreshCw,
+  RotateCcw,
+  UserRound,
+} from 'lucide-react';
 import { useState } from 'react';
 
 /**
@@ -371,23 +379,41 @@ export function MtproxylTab({ s }: { s: ServerDetail }) {
         )}
       </Section>
 
-      <VersionsSection
+      <VersionsSection<MtVersionKind>
+        rows={[
+          { kind: 'mtproxyl', title: 'MTProxyL' },
+          ...(panelInstalled ? [{ kind: 'mtproxyl-panel' as const, title: 'Веб-панель' }] : []),
+        ]}
         data={versions.data}
-        panel={panelInstalled}
-        engine={data.engine}
         checking={versionsBusy}
         disabled={busy || lock.busy || versionsBusy}
         reason={lock.reason}
         onCheck={() => void recheck()}
         onUpdate={(kind, latest) => void updateComponent(kind, latest)}
-        onEngine={() => setEngineOpen(true)}
         action={action?.inVersions ? action : null}
         onHideAction={() => setAction(null)}
         onActionFinished={() => {
           void refresh();
           if (action?.recheck) void recheck();
         }}
-      />
+      >
+        {/* движок telemt - не обновление: версия меняется по желанию (EngineForm) */}
+        <div className="flex items-center gap-3 px-4 py-3">
+          <div className="min-w-0 grow">
+            <div className="font-medium">Движок telemt</div>
+            <div className="text-xs text-muted">установлена {data.engine || '?'}</div>
+          </div>
+          <Button
+            size="sm"
+            disabled={busy || lock.busy || versionsBusy}
+            title={lock.reason}
+            onClick={() => setEngineOpen(true)}
+          >
+            <Layers className="size-3.5" />
+            Сменить<span className="hidden md:inline"> версию</span>
+          </Button>
+        </div>
+      </VersionsSection>
 
       <Dialog open={engineOpen} onClose={() => setEngineOpen(false)} title="Версия движка telemt">
         {engineOpen && (

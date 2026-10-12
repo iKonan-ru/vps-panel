@@ -1,153 +1,19 @@
-import { ActionOutput } from '@/components/action-output';
+import type { Versions } from '@/components/server/versions-section';
 import { Alert } from '@/components/ui/alert';
 import { Button } from '@/components/ui/button';
 import { Chip } from '@/components/ui/chip';
 import { InfoTip } from '@/components/ui/info-tip';
-import { Section } from '@/components/ui/section';
 import { api } from '@/lib/api';
 import { cn } from '@/lib/cn';
-import { ago } from '@/lib/format';
 import { useQuery } from '@tanstack/react-query';
-import { Download, Layers, RefreshCw, X } from 'lucide-react';
+import { Download } from 'lucide-react';
 import { useState } from 'react';
 
-/** Версии MTProxyL и его веб-панели, движок (образ или бинарник) с обновлением и откатом. */
+/** Версии MTProxyL и его веб-панели (блок - versions-section.tsx), выбор версии движка telemt. */
 
 export type MtVersionKind = 'mtproxyl' | 'mtproxyl-panel';
 
-/** Итог проверки обновлений компонента (lib/service-updates.ts на сервере). */
-interface MtVersion {
-  latest: string;
-  available: boolean;
-  current?: string;
-  detail?: string;
-  error?: string;
-  checkedAt?: string;
-}
-
-export type MtVersions = Partial<Record<MtVersionKind, MtVersion>>;
-
-/**
- * Версии MTProxyL и веб-панели с последней проверки (раз в 6 часов, кнопкой, после обновления)
- * и кнопки обновления - те же обновления видны в "Обзоре" и в списке серверов. Движок telemt -
- * не обновление: его версия меняется по желанию (EngineForm).
- */
-export function VersionsSection({
-  data,
-  panel,
-  engine,
-  checking,
-  disabled,
-  reason,
-  onCheck,
-  onUpdate,
-  onEngine,
-  action,
-  onHideAction,
-  onActionFinished,
-}: {
-  data: MtVersions | undefined;
-  panel: boolean;
-  engine: string | undefined;
-  checking: boolean;
-  disabled: boolean;
-  reason: string | undefined;
-  onCheck: () => void;
-  onUpdate: (kind: MtVersionKind, latest: string) => void;
-  onEngine: () => void;
-  /** Идущее или законченное обновление (или смена движка): вывод - здесь, как в "Обзоре". */
-  action: { id: string; title: string } | null;
-  onHideAction: () => void;
-  onActionFinished: () => void;
-}) {
-  const rows: { kind: MtVersionKind; title: string }[] = [
-    { kind: 'mtproxyl', title: 'MTProxyL' },
-    ...(panel ? [{ kind: 'mtproxyl-panel' as const, title: 'Веб-панель' }] : []),
-  ];
-  const checkedAt = Object.values(data ?? {})
-    .map((v) => v?.checkedAt ?? '')
-    .sort()
-    .pop();
-  return (
-    <Section
-      title="Версии"
-      extra={checkedAt && <span className="text-xs text-muted">проверено {ago(checkedAt)}</span>}
-      actions={
-        <Button
-          size="icon-sm"
-          variant="ghost"
-          disabled={checking || disabled}
-          onClick={onCheck}
-          title="Проверить обновления"
-          aria-label="Проверить обновления"
-        >
-          <RefreshCw className={cn('size-3.5', checking && 'animate-spin')} />
-        </Button>
-      }
-    >
-      {action && (
-        <div className="flex flex-col gap-2 border-b border-border p-4">
-          <div className="flex items-center gap-2 text-sm font-medium">
-            {action.title}
-            <div className="grow" />
-            <Button size="sm" variant="ghost" onClick={onHideAction} label="Скрыть">
-              <X className="size-3.5" />
-            </Button>
-          </div>
-          <ActionOutput key={action.id} actionId={action.id} onFinished={onActionFinished} />
-        </div>
-      )}
-      {rows.map(({ kind, title }) => {
-        const v = data?.[kind];
-        return (
-          <div
-            key={kind}
-            className="flex items-center gap-3 border-b border-border px-4 py-3 last:border-b-0"
-          >
-            <div className="min-w-0 grow">
-              <div className="font-medium">
-                {title}
-                {v?.detail && <span className="ml-1.5 text-xs text-muted">{v.detail}</span>}
-              </div>
-              <div className="text-xs text-muted">
-                {!v
-                  ? 'ещё не проверялось'
-                  : `установлена ${v.current || '?'}${v.latest ? `, последняя ${v.latest}` : ''}`}
-              </div>
-              {v?.error && (
-                <div className="break-words text-xs text-bad">проверка не удалась: {v.error}</div>
-              )}
-            </div>
-            {v?.available ? (
-              <Button
-                size="sm"
-                variant="primary"
-                disabled={disabled}
-                title={reason}
-                onClick={() => onUpdate(kind, v.latest)}
-              >
-                <Download className="size-3.5" />
-                Обновить<span className="hidden md:inline"> до {v.latest}</span>
-              </Button>
-            ) : (
-              v && !v.error && <Chip tone="ok">последняя</Chip>
-            )}
-          </div>
-        );
-      })}
-      <div className="flex items-center gap-3 px-4 py-3">
-        <div className="min-w-0 grow">
-          <div className="font-medium">Движок telemt</div>
-          <div className="text-xs text-muted">установлена {engine || '?'}</div>
-        </div>
-        <Button size="sm" disabled={disabled} title={reason} onClick={onEngine}>
-          <Layers className="size-3.5" />
-          Сменить<span className="hidden md:inline"> версию</span>
-        </Button>
-      </div>
-    </Section>
-  );
-}
+export type MtVersions = Versions<MtVersionKind>;
 
 interface EngineVersion {
   tag: string;

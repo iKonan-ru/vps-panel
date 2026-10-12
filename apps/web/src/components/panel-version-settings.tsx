@@ -23,7 +23,7 @@ interface PanelRelease {
   url: string;
   publishedAt: string;
 }
-interface PanelUpdateView {
+export interface PanelUpdateView {
   current: string;
   managed: boolean;
   newer: PanelRelease[];
@@ -37,6 +37,18 @@ interface PanelUpdateView {
 }
 
 const KEY = ['panel-update'];
+
+/**
+ * Версия панели и новые релизы канала (без запросов к GitHub: панель отдаёт свою проверку) -
+ * блок "Версия панели" и плашка у логотипа в меню (panel-version-badge.tsx), общий кэш.
+ */
+export function usePanelUpdate(refetchMs = 10 * 60_000) {
+  return useQuery({
+    queryKey: KEY,
+    queryFn: () => api<PanelUpdateView>('/api/panel/update'),
+    refetchInterval: refetchMs,
+  });
+}
 const HOURS = [...Array(24).keys()];
 
 /**
@@ -48,12 +60,9 @@ export function PanelVersionSettings() {
   const qc = useQueryClient();
   const { data: deploy } = useDeploy();
   const updating = deploy?.status?.state === 'building';
-  const { data: st, isFetching } = useQuery({
-    queryKey: KEY,
-    queryFn: () => api<PanelUpdateView>('/api/panel/update'),
-    // пока обновление запрошено или идёт - чаще: блок узнаёт о конце сам
-    refetchInterval: (q) => (q.state.data?.requested || updating ? 5000 : 60_000),
-  });
+  const { data: cached } = usePanelUpdate();
+  // пока обновление запрошено или идёт - чаще: блок узнаёт о конце сам
+  const { data: st, isFetching } = usePanelUpdate(cached?.requested || updating ? 5000 : 60_000);
   const [working, setWorking] = useState(false);
   const [err, setErr] = useState<string | null>(null);
   if (!st) return null;

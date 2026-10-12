@@ -157,15 +157,24 @@ export class ServiceUpdates {
     if (this.registry.isOnline(serverId)) void this.recheck(serverId).catch(() => undefined);
   }
 
-  /** Версии MTProxyL и панели с последней проверки - для вкладки MTProxyL. */
-  async versions(serverId: string): Promise<Partial<Record<ServiceUpdateKind, Checked>>> {
+  /**
+   * Версии компонентов с последней проверки - блок "Версии" во вкладках MTProxyL и 3X-UI.
+   * available - как в "Обслуживании" (list): устаревшая запись (3X-UI поставили заново, сервис
+   * уже обновили) обновлением не считается; у 3X-UI и MTProxyL текущая версия - из снимка.
+   */
+  async versions(
+    serverId: string,
+    kinds: readonly ServiceUpdateKind[] = ['mtproxyl', 'mtproxyl-panel'],
+  ): Promise<Partial<Record<ServiceUpdateKind, Checked>>> {
     const c = (await this.load())[serverId] ?? {};
+    const listed = new Map((await this.list(serverId)).map((u) => [u.kind, u]));
     const out: Partial<Record<ServiceUpdateKind, Checked>> = {};
-    for (const k of ['mtproxyl', 'mtproxyl-panel'] as const) {
+    for (const k of kinds) {
       const v = c[k];
       if (v) {
         const { notified: _, ...rest } = v;
-        out[k] = rest;
+        const u = listed.get(k);
+        out[k] = { ...rest, available: Boolean(u), ...(u?.current ? { current: u.current } : {}) };
       }
     }
     return out;
