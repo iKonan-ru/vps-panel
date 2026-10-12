@@ -29,6 +29,12 @@ RUN apk add --no-cache curl unzip && \
     echo "$H  /tmp/xray.zip" | sha256sum -c - && \
     unzip -q /tmp/xray.zip xray -d /out && chmod 755 /out/xray
 
+# Агент (vps-agent-linux-*) и сборки naive и wdtt для раздачи серверам. Релиз (release.yml)
+# подставляет их вместо этой стадии (--build-context artifacts=<каталог>); при сборке из
+# исходников она пустая - их дают тома deploy/agent-dist и deploy/files.
+FROM alpine:3 AS artifacts
+RUN mkdir -p /agent-dist /files
+
 FROM node:22-alpine
 # версия релиза (тег без v) и коммит: их показывает панель и по ним сверяет обновления
 ARG PANEL_VERSION=dev
@@ -41,6 +47,9 @@ COPY --from=build /src/apps/web/dist /app/web
 # расширение Chrome: архив с личной страницы клиента собирает панель
 COPY apps/extension /app/extension
 ENV EXTENSION_DIR=/app/extension
+COPY --from=artifacts /agent-dist /app/agent-dist
+COPY --from=artifacts /files /app/files
+ENV AGENT_DIR=/app/agent-dist FILES_DIR=/app/files
 # Файлы могут прийти с правами 0600, а процесс работает от node.
 RUN chmod -R a+rX /app
 USER node
