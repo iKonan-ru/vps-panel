@@ -3,7 +3,7 @@
 #
 #   vps-panel install [-y] [--beta] [--version X.Y.Z]   установка (вопросы: домен - можно без
 #                                                        него, по IP; подписки, почта, логин)
-#   vps-panel admin [show | password | 2fa | login <имя> | init [имя]]
+#   vps-panel admin [show | password | 2fa | login <имя> | init [имя]] [-y]
 #                                                        администратор: сброс пароля и 2FA
 #   vps-panel domain <имя> [--sub <имя>]                 домен панели (была по IP или другой)
 #   vps-panel update [X.Y.Z] [--beta] [--force]          обновление до версии или до последней
@@ -35,7 +35,17 @@ YES=0
 # выхода из функции)
 TMPD=""
 TAIL_FILE=""
-trap 'rm -rf "${TMPD:-}" "${TAIL_FILE:-}"' EXIT
+# Логин и пароль, созданные установкой: если она оборвётся после этого (ошибка на позднем шаге),
+# сводка всё равно печатается при выходе - иначе пароль был бы потерян.
+ACCESS_LOGIN=""
+ACCESS_PASSWORD=""
+on_exit() {
+  rm -rf "${TMPD:-}" "${TAIL_FILE:-}"
+  if [ -n "$ACCESS_LOGIN" ]; then
+    print_access "$ACCESS_LOGIN" "$ACCESS_PASSWORD" "VPS Panel: установка оборвалась, но администратор создан"
+  fi
+}
+trap on_exit EXIT
 
 say() { printf '\n== %s\n' "$*"; }
 warn() { printf '!! %s\n' "$*" >&2; }
@@ -70,7 +80,16 @@ PY
   fi
 }
 resolve4() { { getent ahostsv4 "$1" 2>/dev/null || true; } | awk '{print $1}' | sort -u | tr '\n' ' '; }
-compose() { docker compose --project-directory "$ROOT" -f "$ROOT/compose.yml" --env-file "$ENV_FILE" "$@"; }
+# Значения - только из .env: docker compose ставит переменные окружения выше .env, и пустой
+# PANEL_DOMAIN из "PANEL_DOMAIN= vps-panel install -y" (панель по IP) оставил бы контейнеры без
+# адреса.
+COMPOSE_VARS=(PANEL_VERSION PANEL_DOMAIN SUB_DOMAIN ACME_EMAIL SESSION_SECRET LOG_LEVEL TG_PROXY_URL
+  PANEL_TLS PANEL_SNI PANEL_ALIAS CADDY_DATA_VOLUME CADDY_CONFIG_VOLUME)
+compose() {
+  local u=() v
+  for v in "${COMPOSE_VARS[@]}"; do u+=(-u "$v"); done
+  env "${u[@]}" docker compose --project-directory "$ROOT" -f "$ROOT/compose.yml" --env-file "$ENV_FILE" "$@"
+}
 
 # Последняя версия канала: stable - только релизы, beta - и пре-релизы. Наибольшая по semver.
 latest_version() { # latest_version <stable|beta>
@@ -203,17 +222,18 @@ panel_cli() {
 json_field() { python3 -c 'import json,sys; print(json.load(sys.stdin).get(sys.argv[1], ""))' "$1"; }
 
 # Сводка для входа, как у других панелей: адрес, логин, пароль - пароль показывается один раз.
-print_access() { # print_access <логин> <пароль> [заголовок]
-  local url sub line
+print_access() { # print_access <логин> <пароль> [заголовок] [строка о 2FA; - = не писать]
+  local url sub line tfa="${4:-настраивается при первом входе (приложение-аутентификатор)}"
   url="https://$(env_get PANEL_DOMAIN)"
   sub="$(env_get SUB_DOMAIN)"
   line="$(printf '%.0s=' $(seq 1 64))"
+  # подписи - с пробелами вручную: printf считает ширину в байтах, а кириллица - по 2 байта
   printf '\n%s\n %s\n%s\n' "$line" "${3:-VPS Panel}" "$line"
-  printf ' %-11s %s\n' "Адрес:" "$url"
-  printf ' %-11s %s\n' "Логин:" "$1"
-  [ -n "$2" ] && printf ' %-11s %s\n' "Пароль:" "$2"
-  printf ' %-11s %s\n' "2FA:" "настраивается при первом входе (приложение-аутентификатор)"
-  [ -n "$sub" ] && printf ' %-11s %s\n' "Подписки:" "https://$sub"
+  echo " Адрес:      $url"
+  echo " Логин:      $1"
+  [ -n "$2" ] && echo " Пароль:     $2"
+  [ "$tfa" = - ] || echo " 2FA:        $tfa"
+  [ -n "$sub" ] && echo " Подписки:   https://$sub"
   printf '%s\n' "$line"
   [ -n "$2" ] && echo " Сохраните пароль сейчас: он показан один раз, восстановления нет."
   echo " Сброс пароля или 2FA - только здесь, в консоли: vps-panel admin password | 2fa"
@@ -377,6 +397,7 @@ ENV
   admin_json="$(panel_cli admin-init ${LOGIN:+"$LOGIN"})" || die "администратор не создан: vps-panel admin init"
   ADMIN_LOGIN="$(echo "$admin_json" | json_field login)"
   ADMIN_PASSWORD="$(echo "$admin_json" | json_field password)"
+  ACCESS_LOGIN="$ADMIN_LOGIN" ACCESS_PASSWORD="$ADMIN_PASSWORD"
   echo "создан: $ADMIN_LOGIN (пароль - в сводке в конце)"
   compose up -d
   say "жду ответа https://$DOMAIN/api/health"
@@ -393,6 +414,7 @@ ENV
   install_units
 
   say "готово"
+  ACCESS_LOGIN=""
   print_access "$ADMIN_LOGIN" "$ADMIN_PASSWORD" "VPS Panel $VERSION установлена"
   cat <<MSG
 Дальше: войдите в панель и настройте 2FA, затем "Серверы" -> "Добавить сервер". Бэкап панели
@@ -759,7 +781,9 @@ full_uninstall() {
 cmd_admin() {
   need_root
   [ -f "$ENV_FILE" ] || die "панель не установлена в $ROOT"
-  local r login pw
+  local r login pw args=() a
+  for a in "$@"; do [ "$a" = -y ] && YES=1 || args+=("$a"); done
+  set -- "${args[@]}"
   case "${1:-show}" in
     show)
       r="$(panel_cli admin-show)" || exit 1
@@ -771,7 +795,7 @@ cmd_admin() {
     password)
       confirm "Задать администратору новый случайный пароль? Все сессии панели закроются" || exit 1
       r="$(panel_cli admin-password)" || exit 1
-      print_access "$(echo "$r" | json_field login)" "$(echo "$r" | json_field password)" "Новый пароль администратора"
+      print_access "$(echo "$r" | json_field login)" "$(echo "$r" | json_field password)" "Новый пароль администратора" "без изменений; все сессии закрыты"
       ;;
     2fa)
       confirm "Сбросить 2FA? Её настроят заново при следующем входе; все сессии закроются" || exit 1

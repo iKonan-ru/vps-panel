@@ -44,7 +44,7 @@
 		# /api/csp-report и пишутся в журнал панели. Скрипты - только свои. Элементы <style> -
 		# inline тоже: xterm (DOM-рендер) пишет в них размеры ячеек и цвета темы; атрибуты style -
 		# только 'self' (React ставит стили через CSSOM, CSP их не касается).
-		Content-Security-Policy "default-src 'self'; script-src 'self'; style-src 'self'; style-src-elem 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self'; connect-src 'self' wss://{$PANEL_DOMAIN} wss://{$PANEL_ALIAS:localhost}; worker-src 'self'; manifest-src 'self'; frame-ancestors 'none'; base-uri 'none'; object-src 'none'; form-action 'self'; report-uri /api/csp-report"
+		Content-Security-Policy "default-src 'self'; script-src 'self'; style-src 'self'; style-src-elem 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self'; connect-src 'self' wss://{$PANEL_DOMAIN}; worker-src 'self'; manifest-src 'self'; frame-ancestors 'none'; base-uri 'none'; object-src 'none'; form-action 'self'; report-uri /api/csp-report"
 	}
 	# Подписки и личные страницы живут на SUB_DOMAIN; на имени панели их нет: личная страница -
 	# HTML со скриптом, в origin панели ей не место. Без SUB_DOMAIN (sub.localhost) - здесь.
