@@ -3,6 +3,7 @@ import { desc, eq } from 'drizzle-orm';
 import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
 import { actionLog } from '../db/schema.js';
+import { liveOutput } from '../lib/action-journal.js';
 import type { ServerRouteOpts } from '../lib/action-runners.js';
 
 const Id = z.object({ id: z.string() });
@@ -35,7 +36,8 @@ export async function journalRoutes(app: FastifyInstance, opts: ServerRouteOpts)
     const { aid } = z.object({ aid: z.string() }).parse(req.params);
     const row = (await db.select().from(actionLog).where(eq(actionLog.id, aid)).limit(1))[0];
     if (!row) return reply.code(404).send({ error: 'не найдено' });
-    return row;
+    // идёт: вывод - из памяти (в базу он пишется по окончании)
+    return row.finishedAt ? row : { ...row, output: liveOutput(aid) ?? row.output };
   });
   app.get('/api/actions', async (): Promise<ActionListRow[]> => {
     return db.select(listColumns).from(actionLog).orderBy(desc(actionLog.startedAt)).limit(200);
