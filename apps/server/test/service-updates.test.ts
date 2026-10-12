@@ -6,7 +6,12 @@ import type { AgentRegistry } from '../src/agents/registry.js';
 import { type Db, createDb } from '../src/db/index.js';
 import { servers } from '../src/db/schema.js';
 import type { SecretBox } from '../src/lib/secret-box.js';
-import { type ServiceUpdate, ServiceUpdates, cmpVersion } from '../src/lib/service-updates.js';
+import {
+  type ServiceUpdate,
+  ServiceUpdates,
+  cmpVersion,
+  newest,
+} from '../src/lib/service-updates.js';
 
 describe('cmpVersion', () => {
   it('сравнивает по числам, v и хвост коммита не мешают', () => {
@@ -16,6 +21,10 @@ describe('cmpVersion', () => {
     expect(cmpVersion('1.10.0', '1.9.9')).toBe(1);
     expect(cmpVersion('1.2', '1.2.1')).toBe(-1);
     expect(cmpVersion('1.2.13', 'source-dev')).toBeNull();
+  });
+  it('newest - по номеру, не по порядку; не номера пропускает', () => {
+    expect(newest(['dev', 'v26.9.30', 'v26.10.10', 'v26.6.27'])).toBe('v26.10.10');
+    expect(newest([])).toBeUndefined();
   });
 });
 
