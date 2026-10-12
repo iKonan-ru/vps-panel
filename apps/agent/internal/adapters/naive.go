@@ -50,6 +50,16 @@ type NaiveConfig struct {
 	Mask443   bool   `json:"mask443"`   // 443 держит MTProxyL, наш SNI telemt передаёт на Port
 	HTTP80    bool   `json:"http80"`    // 80 для выпуска HTTP-01 и как у обычного сайта
 	Secret    string `json:"secret"`    // имя для probe_resistance: на него прокси отвечает 407
+	// Сервер панели: 443 и 80 держит Caddy панели, он и выпускает сертификат имени, а
+	// таймер vps-naive-cert кладёт его в NaiveCertPaths. Caddy прокси сертификаты не выпускает.
+	ExternalCert bool `json:"externalCert"`
+}
+
+// NaiveCertPaths - сертификат и ключ от Caddy панели (ExternalCert). Каталог - в хранилище
+// Caddy прокси: служба его читает, NaiveCertExpiry находит срок там же, где и выпущенные.
+func NaiveCertPaths(domain string) (crt, key string) {
+	dir := filepath.Join(naiveData, "certificates", "panel", domain)
+	return filepath.Join(dir, domain+".crt"), filepath.Join(dir, domain+".key")
 }
 
 var (
@@ -70,6 +80,9 @@ func (c NaiveConfig) check() error {
 	}
 	if c.Listen443 && c.Mask443 {
 		return errors.New("443: либо Caddy, либо маска MTProxyL")
+	}
+	if c.ExternalCert && (c.Listen443 || c.Mask443 || c.HTTP80) {
+		return errors.New("сертификат от Caddy панели: 443 и 80 держит она, прокси - только на своём порту")
 	}
 	return nil
 }
@@ -106,9 +119,12 @@ func NaiveRender(c NaiveConfig, users map[string]string, deny []string) (string,
 	fmt.Fprintf(&b, "\tadmin unix/%s\n", naiveSock)
 	fmt.Fprintf(&b, "\tstorage file_system %s\n", naiveData)
 	fmt.Fprintf(&b, "\thttps_port %d\n", c.Port)
-	if c.HTTP80 {
+	switch {
+	case c.ExternalCert:
+		// сертификат - файлами (tls в сайте), сам Caddy прокси ничего не выпускает
+	case c.HTTP80:
 		b.WriteString("\thttp_port 80\n")
-	} else {
+	default:
 		b.WriteString("\tcert_issuer acme {\n\t\tdisable_http_challenge\n\t}\n")
 	}
 	b.WriteString("\tauto_https disable_redirects\n")
@@ -122,7 +138,12 @@ func NaiveRender(c NaiveConfig, users map[string]string, deny []string) (string,
 	if c.Listen443 {
 		sites = append(sites, "https://:443", fmt.Sprintf("https://%s:443", c.Domain))
 	}
-	b.WriteString(strings.Join(sites, ", ") + " {\n\troute {\n")
+	b.WriteString(strings.Join(sites, ", ") + " {\n")
+	if c.ExternalCert {
+		crt, key := NaiveCertPaths(c.Domain)
+		fmt.Fprintf(&b, "\ttls %s %s\n", crt, key)
+	}
+	b.WriteString("\troute {\n")
 	if len(names) > 0 {
 		b.WriteString("\t\tforward_proxy {\n")
 		for _, u := range names {

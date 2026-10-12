@@ -50,7 +50,7 @@ func main() {
 	cfgPath := flag.String("config", config.DefaultPath, "путь к конфигу")
 	showVersion := flag.Bool("version", false, "показать версию")
 	dumpInventory := flag.Bool("inventory", false, "собрать снимок и напечатать JSON (без подключения к панели)")
-	naiveRender := flag.Bool("naive-render", false, "собрать /etc/vps-naive/Caddyfile из config.json и users.json (команда установки прокси для браузера)")
+	naiveRender := flag.Bool("naive-render", false, "собрать /etc/vps-naive/Caddyfile из config.json и users.json (команда установки прокси для браузера; externalCert - сертификат от Caddy панели)")
 	flag.Parse()
 	if *naiveRender {
 		if err := adapters.NaiveRenderFiles(); err != nil {

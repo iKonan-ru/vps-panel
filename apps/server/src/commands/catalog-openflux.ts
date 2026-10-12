@@ -192,4 +192,5 @@ say "Готово"
     'Удалить /opt/openflux-node, /etc/openflux-node, /var/lib/openflux-node, шаблон службы, таймер обновлений и пользователя openflux-node',
     'Привязки клиентов панели к OpenFlux на этом сервере снимутся при следующей сверке',
   ],
+  dropsBindings: ['openflux'],
 };

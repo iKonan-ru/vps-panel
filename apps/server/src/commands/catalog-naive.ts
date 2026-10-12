@@ -12,7 +12,66 @@ import { NAIVE_FUNCS, PROLOGUE } from './util.js';
  * если 80 свободен. Бинарник называется caddy - port-sync откроет его порты сам.
  * MTProxyL можно поставить и после прокси, и удалить: его команды переключают режим 443 прокси
  * сами (NAIVE_FUNCS в util.ts).
+ * Сервер панели (PANEL_HOST=1): 443 и 80 держит Caddy панели - он и выпускает сертификат
+ * имени (панель разрешает его, lib/panel-certs.ts), прокси слушает только свой порт, копию
+ * сертификата кладёт vps-naive-cert (при установке и таймером раз в сутки).
  */
+
+/** Сервер панели: копия сертификата от Caddy панели (NaiveConfig.ExternalCert в агенте). */
+const CERT_SCRIPT = `#!/bin/sh
+# Прокси для браузера на сервере панели: 443 и 80 держит Caddy панели, он и выпускает
+# сертификат имени прокси (панель разрешает его в /api/proxy/ask). Здесь - копия для Caddy
+# прокси; новая - перечитать конфиг. Запускают установка и таймер vps-naive-cert (раз в сутки).
+set -eu
+D=$(python3 -c 'import json;print(json.load(open("/etc/vps-naive/config.json"))["domain"])')
+dir=/var/lib/vps-naive/certificates/panel/$D
+c=""
+for n in $(docker ps --filter label=com.docker.compose.service=caddy --format '{{.Names}}'); do
+  if docker exec "$n" test -d /data/caddy; then c=$n; break; fi
+done
+[ -n "$c" ] || { echo "не найден контейнер Caddy панели" >&2; exit 1; }
+# рукопожатие на 443: Caddy панели выпустит сертификат, загрузит его в память и продлит вовремя
+curl -sk -o /dev/null -m 120 --resolve "$D:443:127.0.0.1" "https://$D/" || true
+p=$(docker exec "$c" sh -c "ls -t /data/caddy/certificates/*/$D/$D.crt 2>/dev/null | head -1")
+[ -n "$p" ] || { echo "Caddy панели не выпустил сертификат для $D - журнал: docker logs $c" >&2; exit 1; }
+tmp=$(mktemp -d)
+trap 'rm -rf "$tmp"' EXIT
+docker exec "$c" cat "$p" > "$tmp/crt"
+docker exec "$c" cat "\${p%.crt}.key" > "$tmp/key"
+openssl x509 -in "$tmp/crt" -noout >/dev/null 2>&1 || { echo "сертификат из Caddy панели не читается" >&2; exit 1; }
+if cmp -s "$tmp/crt" "$dir/$D.crt" && cmp -s "$tmp/key" "$dir/$D.key"; then
+  echo "сертификат $D без изменений"
+  exit 0
+fi
+install -d -m 700 -o vps-naive -g vps-naive /var/lib/vps-naive/certificates /var/lib/vps-naive/certificates/panel "$dir"
+install -m 600 -o vps-naive -g vps-naive "$tmp/crt" "$dir/$D.crt"
+install -m 600 -o vps-naive -g vps-naive "$tmp/key" "$dir/$D.key"
+echo "сертификат $D: $(openssl x509 -in "$dir/$D.crt" -noout -enddate)"
+if systemctl is-active --quiet vps-naive; then systemctl reload vps-naive; fi
+`;
+
+const CERT_UNITS = `cat > /etc/systemd/system/vps-naive-cert.service <<'U'
+[Unit]
+Description=VPS Panel: сертификат прокси для браузера от Caddy панели
+After=docker.service
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/sbin/vps-naive-cert
+U
+cat > /etc/systemd/system/vps-naive-cert.timer <<'U'
+[Unit]
+Description=VPS Panel: сертификат прокси для браузера раз в сутки
+
+[Timer]
+OnCalendar=daily
+RandomizedDelaySec=1h
+Persistent=true
+
+[Install]
+WantedBy=timers.target
+U
+`;
 
 const UNIT = `[Unit]
 Description=VPS Panel: прокси для браузера (Caddy naive)
@@ -49,6 +108,7 @@ export const naiveCmd: CommandDef = {
   description:
     'HTTPS-прокси Caddy с forwardproxy (naive) для расширения Chrome: выход через сервер только из браузера, без программ на компьютере. Сертификат на имя сервера Caddy выпускает сам; пользователи - глобальные клиенты панели.',
   liveDefaults: 'naive',
+  panelCertParam: 'NAIVE_DOMAIN',
   params: [
     {
       name: 'NAIVE_DOMAIN',
@@ -74,6 +134,11 @@ export const naiveCmd: CommandDef = {
   script: `${PROLOGUE}${NAIVE_FUNCS}
 NAIVE_DOMAIN=$(printf '%s' "$NAIVE_DOMAIN" | tr 'A-Z' 'a-z')
 /usr/local/bin/vps-agent -h 2>&1 | grep -q naive-render || { echo "агент устарел: обнови агента сервера" >&2; exit 2; }
+ext=false
+if [ "$PANEL_HOST" = 1 ]; then
+  ext=true
+  /usr/local/bin/vps-agent -h 2>&1 | grep -q externalCert || { echo "агент устарел: обнови агента сервера панели" >&2; exit 2; }
+fi
 arch=$(uname -m)
 case "$arch" in
   x86_64) bin=caddy-linux-amd64;;
@@ -96,28 +161,41 @@ install -d -m 700 -o vps-naive -g vps-naive /var/lib/vps-naive
 
 mask=false; l443=false; h80=false
 mp=$(mt_port)
-if [ "$mp" = "443" ] && command -v mtproxyl >/dev/null 2>&1; then
+if [ "$ext" = true ]; then
+  : # сервер панели: 443 и 80 у Caddy панели
+elif [ "$mp" = "443" ] && command -v mtproxyl >/dev/null 2>&1; then
   mask=true
 elif [ -z "$(port_owner 443)" ]; then
   l443=true
 fi
-[ -z "$(port_owner 80)" ] && h80=true
+[ "$ext" = false ] && [ -z "$(port_owner 80)" ] && h80=true
 secret="$NAIVE_SECRET"
 if [ -f /etc/vps-naive/config.json ]; then
   old=$(python3 -c 'import json;print(json.load(open("/etc/vps-naive/config.json")).get("secret",""))' 2>/dev/null || true)
   [ -n "$old" ] && secret="$old"
 fi
-python3 - "$NAIVE_DOMAIN" "$NAIVE_PORT" "$l443" "$mask" "$h80" "$secret" <<'PY'
+python3 - "$NAIVE_DOMAIN" "$NAIVE_PORT" "$l443" "$mask" "$h80" "$secret" "$ext" <<'PY'
 import json, sys
-d, port, l443, mask, h80, secret = sys.argv[1:7]
+d, port, l443, mask, h80, secret, ext = sys.argv[1:8]
 cfg = {"domain": d, "port": int(port), "listen443": l443 == "true", "mask443": mask == "true",
-       "http80": h80 == "true", "secret": secret}
+       "http80": h80 == "true", "secret": secret, "externalCert": ext == "true"}
 with open("/etc/vps-naive/config.json", "w") as f:
     json.dump(cfg, f, indent=2)
 PY
 chmod 600 /etc/vps-naive/config.json
 /usr/local/bin/vps-agent -naive-render
-echo "443: $([ $mask = true ] && echo 'маска MTProxyL' || ([ $l443 = true ] && echo 'Caddy сам' || echo 'нет'))  80: $([ $h80 = true ] && echo 'Caddy (HTTP-01)' || echo 'нет')"
+if [ "$ext" = true ]; then
+  echo "сервер панели: 443 и 80 у Caddy панели, прокси только на порту $NAIVE_PORT"
+  say "Сертификат $NAIVE_DOMAIN выпускает Caddy панели (до 2 минут)"
+  cat > /usr/local/sbin/vps-naive-cert <<'CERT'
+${CERT_SCRIPT}CERT
+  chmod 755 /usr/local/sbin/vps-naive-cert
+  /usr/local/sbin/vps-naive-cert
+  ${CERT_UNITS}  systemctl daemon-reload
+  systemctl enable --now vps-naive-cert.timer >/dev/null 2>&1
+else
+  echo "443: $([ $mask = true ] && echo 'маска MTProxyL' || ([ $l443 = true ] && echo 'Caddy сам' || echo 'нет'))  80: $([ $h80 = true ] && echo 'Caddy (HTTP-01)' || echo 'нет')"
+fi
 
 say "Служба vps-naive"
 cat > /etc/systemd/system/vps-naive.service <<'UNIT'
@@ -173,6 +251,11 @@ else echo "FAIL|$D указывает на $ip, а сервер - $SERVER_HOST: 
 o=$(port_owner "$NAIVE_PORT")
 if [ -z "$o" ]; then echo "OK|порт $NAIVE_PORT свободен"; elif [ "$o" = caddy ] && naive_unit_active; then echo "OK|порт $NAIVE_PORT держит прокси (переустановка)"; else echo "FAIL|порт $NAIVE_PORT занят ($o)"; fi
 mp=$(mt_port)
+if [ "$PANEL_HOST" = 1 ]; then
+/usr/local/bin/vps-agent -h 2>&1 | grep -q externalCert || echo "FAIL|агент сервера панели устарел: обнови его (сертификат от Caddy панели)"
+c=$(docker ps --filter label=com.docker.compose.service=caddy --format '{{.Names}}' 2>/dev/null | head -1)
+if [ -n "$c" ]; then echo "OK|сервер панели: сертификат для $D выпустит Caddy панели ($c), прокси - только на порту $NAIVE_PORT"; else echo "FAIL|сервер панели, но контейнер Caddy панели не найден"; fi
+else
 if [ "$mp" = "443" ] && command -v mtproxyl >/dev/null 2>&1; then
   if [ -f /opt/mtproxyl/superexpert.toml ]; then echo "FAIL|MTProxyL в режиме суперэксперта: маску 443 задать нельзя"; else echo "WARN|443 держит MTProxyL: будет маска telemt для $D, прокси Telegram перезапустится (соединения прервутся на несколько секунд)"; fi
 elif [ -z "$(port_owner 443)" ]; then echo "OK|443 свободен - прокси будет слушать и его";
@@ -186,13 +269,14 @@ o443=$(port_owner 443)
 ok443=false; { [ "$mp" = "443" ] && command -v mtproxyl >/dev/null 2>&1; } || [ -z "$o443" ] || { [ "$o443" = caddy ] && naive_unit_active; } && ok443=true
 ok80=false; [ -z "$o80" ] || { [ "$o80" = caddy ] && naive_unit_active; } && ok80=true
 if [ "$ok443" = false ] && [ "$ok80" = false ]; then echo "FAIL|443 и 80 заняты ($o443, $o80): сертификат для $D не выпустить"; fi
+fi
 if naive_unit_active; then echo "WARN|прокси уже установлен: служба перезапустится, пользователи и секретное имя сохранятся"; fi
 curl -fsS -m 10 -o /dev/null "$PANEL_URL/files/sha256/naive/caddy-linux-amd64" && echo "OK|бинарник прокси на панели есть" || echo "FAIL|панель не отдаёт /files/naive - собери tools/build-naive.sh"`,
   plan: (a) => [
     'Скачать с панели Caddy с forwardproxy (сборка tools/build-naive.sh), проверить sha256',
     'Пользователь vps-naive, /opt/vps-naive, /etc/vps-naive (config.json, users.json, Caddyfile от агента), /var/lib/vps-naive',
     `Служба vps-naive: HTTPS-прокси на ${a.NAIVE_PORT}/tcp для ${a.NAIVE_DOMAIN || '<имя>'}; без пароля - сайт-заглушка`,
-    '443: если его держит MTProxyL - маска telemt (перезапуск прокси Telegram), если свободен - Caddy сам; 80 - для выпуска сертификата, если свободен',
+    '443: если его держит MTProxyL - маска telemt (перезапуск прокси Telegram), если свободен - Caddy сам; 80 - для выпуска сертификата, если свободен. Сервер панели: сертификат выпускает Caddy панели, копию раз в сутки кладёт таймер vps-naive-cert',
     "port-sync откроет порты процесса caddy; Caddy выпустит сертификат Let's Encrypt и будет продлевать его сам",
     'Пользователей заведёт сверка глобальных клиентов; адрес и пароль клиент получает в подписке расширения',
   ],
@@ -232,7 +316,8 @@ if [ -f /etc/vps-naive/config.json ]; then
 fi
 say "Останавливаю службу vps-naive"
 systemctl disable --now vps-naive 2>/dev/null || true
-rm -f /etc/systemd/system/vps-naive.service
+systemctl disable --now vps-naive-cert.timer 2>/dev/null || true
+rm -f /etc/systemd/system/vps-naive.service /etc/systemd/system/vps-naive-cert.service /etc/systemd/system/vps-naive-cert.timer /usr/local/sbin/vps-naive-cert
 systemctl daemon-reload
 if [ "$mask" = true ] && [ -n "$dom" ] && command -v mtproxyl >/dev/null 2>&1; then
   say "MTProxyL: снимаю маску $dom, перезапуск прокси"
@@ -254,6 +339,7 @@ if [ -f /etc/vps-naive/config.json ] && grep -q '"mask443": true' /etc/vps-naive
     'Остановить и удалить службу vps-naive',
     'Снять маску 443 в MTProxyL (если была) и перезапустить прокси Telegram',
     'Удалить /opt/vps-naive, /etc/vps-naive, /var/lib/vps-naive (сертификат), пользователя vps-naive',
-    'port-sync закроет порты прокси; сверка уберёт привязки клиентов',
+    'port-sync закроет порты прокси; привязки клиентов к прокси на этом сервере панель удалит сразу',
   ],
+  dropsBindings: ['naive'],
 };

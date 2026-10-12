@@ -22,6 +22,7 @@ import { startMetricsPace } from './lib/metrics-pace.js';
 import { EngineCatalog } from './lib/mtproxyl-engine.js';
 import { Notifier } from './lib/notify.js';
 import { PanelBackups } from './lib/panel-backup.js';
+import { PanelCerts } from './lib/panel-certs.js';
 import { panelAddresses } from './lib/panel-host.js';
 import { PanelProxy } from './lib/panel-proxy.js';
 import { RuReach } from './lib/ru-reach.js';
@@ -122,12 +123,19 @@ export async function buildApp(opts: AppOptions) {
   // Поддомены панелей сервисов (lib/panel-proxy.ts): запросы к ним разбираются до Fastify,
   // своим сервером - маршруты, хуки и обработчик ошибок Fastify их не касаются.
   let proxy: PanelProxy | null = null;
+  // сертификаты сервисов на самом сервере панели (прокси для браузера): выпускает Caddy панели,
+  // запросы на эти имена панель не обслуживает
+  const panelCerts = new PanelCerts(db, env.PANEL_PUBLIC_URL);
   const app = Fastify({
     logger: env.NODE_ENV === 'test' ? false : { level: env.LOG_LEVEL },
     trustProxy: trustCaddy,
     bodyLimit: 1_048_576,
     serverFactory: (handler) =>
       createServer((req, res) => {
+        if (panelCerts.isCertHost(req.headers.host)) {
+          res.writeHead(404, { 'content-type': 'text/plain; charset=utf-8' }).end('Not found');
+          return;
+        }
         if (!proxy?.labelOf(req.headers.host)) return handler(req, res);
         void proxy.handle(req, res);
       }),
@@ -201,12 +209,12 @@ export async function buildApp(opts: AppOptions) {
   await app.register(xuiRoutes, serverRouteOpts);
   await app.register(installRoutes, { db, env, registry, hub });
   await app.register(securityRoutes, { db });
-  await app.register(commandRoutes, { db, env, registry, hub, box });
+  await app.register(commandRoutes, { db, env, registry, hub, box, certs: panelCerts });
   await app.register(accessRoutes, { db, box });
   await app.register(backupRoutes, { db, env, registry, hub });
   await app.register(probeRoutes);
   await app.register(agentWsRoutes, { db, registry, dataDir: env.DATA_DIR });
-  await app.register(proxyRoutes, { proxy: panelProxy, db });
+  await app.register(proxyRoutes, { proxy: panelProxy, db, certs: panelCerts });
   await app.register(cspRoutes);
   await app.register(uiWsRoutes, { db, registry, hub });
   await app.register(terminalRoutes, { db, registry });
@@ -231,6 +239,8 @@ export async function buildApp(opts: AppOptions) {
   // доступность из России: адрес и inbound-ы - агент через Globalping, MTProxyL - его итог
   const ruReach = new RuReach(db, box, registry, app.log, (id, note) => notifier.reach(id, note));
   stops.push(ruReach.start());
+  // имена сервисов сервера панели с сертификатом от её Caddy - из снимков
+  stops.push(schedule(() => void panelCerts.refresh().catch(() => undefined), 5_000, 5 * 60_000));
   await app.register(reachRoutes, { reach: ruReach });
   stops.push(xraySpares.start());
   // доставка в Telegram: раз в 5 минут проверка выходов xray и getMe бота (lib/telegram.ts)

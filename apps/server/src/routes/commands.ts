@@ -22,6 +22,7 @@ import { awgLiveDefaults } from '../lib/awg-alloc.js';
 import { clientHost } from '../lib/client-host.js';
 import { downloadRateLimit, fileSha256, sendFile } from '../lib/file-send.js';
 import { queued } from '../lib/gclients.js';
+import type { PanelCerts } from '../lib/panel-certs.js';
 import { slugify } from '../lib/panel-proxy.js';
 import { redactOutput } from '../lib/redact.js';
 import type { SecretBox } from '../lib/secret-box.js';
@@ -35,9 +36,16 @@ const Answers = z.record(z.string(), z.string().max(4000));
  */
 export async function commandRoutes(
   app: FastifyInstance,
-  opts: { db: Db; env: Env; registry: AgentRegistry; hub: UiHub; box: SecretBox },
+  opts: {
+    db: Db;
+    env: Env;
+    registry: AgentRegistry;
+    hub: UiHub;
+    box: SecretBox;
+    certs?: PanelCerts;
+  },
 ) {
-  const { db, env, registry, hub, box } = opts;
+  const { db, env, registry, hub, box, certs } = opts;
   const journal = actionJournal(db, hub, registry);
 
   app.get('/api/commands', async () => CATALOG.map(toInfo));
@@ -95,6 +103,8 @@ export async function commandRoutes(
     }));
     const row = await serverRow(id);
     if (!row) return reply.code(404).send({ error: 'Сервер не найден' });
+    const certName = c.panelCertParam ? answers[c.panelCertParam]?.trim() : '';
+    if (row.panelHost && certName) certs?.allow(certName);
     checks.push(
       row.agentUpdateAvailable
         ? { level: 'warn', text: 'Агент устарел - обнови его перед запуском' }
@@ -138,6 +148,8 @@ export async function commandRoutes(
     if (errors.length) return reply.code(400).send({ error: errors.join('; ') });
     const row = await serverRow(id);
     if (!row) return reply.code(404).send({ error: 'Сервер не найден' });
+    const certName = c.panelCertParam ? answers[c.panelCertParam]?.trim() : '';
+    if (row.panelHost && certName) certs?.allow(certName);
 
     const ctx: RunContext = { panelUrl: env.PANEL_PUBLIC_URL, server: row, answers };
     const extraEnv = c.env?.(ctx) ?? {};
@@ -177,6 +189,15 @@ export async function commandRoutes(
         db.update(gclientBindings)
           .set(queued())
           .where(and(eq(gclientBindings.serverId, id), inArray(gclientBindings.service, c.resync)))
+          .run();
+      if (exitCode === 0 && c.dropsBindings?.length)
+        db.delete(gclientBindings)
+          .where(
+            and(
+              eq(gclientBindings.serverId, id),
+              inArray(gclientBindings.service, c.dropsBindings),
+            ),
+          )
           .run();
       if (exitCode === 0 && c.forgetsAccess?.length)
         db.delete(access)
@@ -278,13 +299,21 @@ export async function commandRoutes(
     )[0];
     if (!r) return null;
     const latest = latestAgentVersion(env.AGENT_DIR);
+    const panelHost = Boolean(await certs?.isPanelHost(r.host));
     return {
       ...r,
+      panelHost,
       agentUpdateAvailable: Boolean(latest && r.agentVersion && r.agentVersion !== latest),
     };
   }
   function baseEnv(
-    row: { host: string; name: string; sshPort: number; clientHost?: string | null },
+    row: {
+      host: string;
+      name: string;
+      sshPort: number;
+      clientHost?: string | null;
+      panelHost?: boolean;
+    },
     answers: Record<string, string>,
     extra: Record<string, string>,
     params: { name: string; type: string }[] = [],
@@ -306,6 +335,8 @@ export async function commandRoutes(
       CLIENT_HOST: clientHost(row),
       SERVER_NAME: row.name,
       SERVER_SSH_PORT: String(row.sshPort),
+      // сервер, на котором стоит сама панель: 443 и 80 держит её Caddy
+      PANEL_HOST: row.panelHost ? '1' : '',
     };
   }
 }
