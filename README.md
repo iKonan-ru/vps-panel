@@ -3,7 +3,7 @@
 Своя веб-панель для небольшого парка VPS с VPN-сервисами: серверы, сервисы и клиенты в одном
 месте, подписки и личные страницы клиентов, аудит безопасности, уведомления в Telegram.
 
-[![Релиз](https://img.shields.io/github/v/release/iKonan-ru/vps-panel?include_prereleases&label=релиз)](https://github.com/iKonan-ru/vps-panel/releases)
+[![Релиз](https://img.shields.io/github/v/release/iKonan-ru/vps-panel?label=релиз)](https://github.com/iKonan-ru/vps-panel/releases)
 [![CI](https://github.com/iKonan-ru/vps-panel/actions/workflows/ci.yml/badge.svg)](https://github.com/iKonan-ru/vps-panel/actions/workflows/ci.yml)
 [![Лицензия](https://img.shields.io/badge/лицензия-AGPL--3.0-blue)](LICENSE)
 

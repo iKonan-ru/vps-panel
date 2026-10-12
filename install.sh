@@ -33,7 +33,7 @@ if [ -z "$ver" ]; then
   else
     tag="$(curl -fsSL -m 30 "https://api.github.com/repos/$REPO/releases/latest" | grep -m1 '"tag_name"' | cut -d'"' -f4 || true)"
   fi
-  [ -n "${tag:-}" ] || { echo "не удалось узнать последний релиз на GitHub (api.github.com); стабильного релиза ещё нет - запустите с --beta" >&2; exit 1; }
+  [ -n "${tag:-}" ] || { echo "не удалось узнать последний релиз на GitHub (api.github.com)" >&2; exit 1; }
   ver="${tag#v}"
 fi
 tmp="$(mktemp)"
