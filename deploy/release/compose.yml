@@ -26,6 +26,8 @@ services:
       TG_PROXY_URL: ${TG_PROXY_URL:-}
       # IP-адрес панели при сертификате на IP: его разрешает /api/proxy/ask (запросы без SNI)
       PANEL_SNI: ${PANEL_SNI:-}
+      # канал установки (install --beta): канал по умолчанию в "Версии панели"
+      PANEL_CHANNEL: ${PANEL_CHANNEL:-stable}
     volumes:
       - ./data:/data
     expose:

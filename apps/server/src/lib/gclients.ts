@@ -34,7 +34,7 @@ import { newId } from './ids.js';
 import { releaseOfDocs } from './openflux-docs.js';
 import { schedule } from './schedule.js';
 import type { SecretBox } from './secret-box.js';
-import { getSetting } from './settings.js';
+import { getJsonSetting, getSetting, putSetting } from './settings.js';
 import { type WdttPassword, wdttApi } from './wdtt.js';
 import { type XuiCall, ownVlessInbounds, unwrap, xuiApi } from './xui-api.js';
 import { xuiToken } from './xui-token.js';
@@ -103,6 +103,7 @@ const ERROR_RETRY_MS = 30 * 60_000;
 
 /** Сервиса нет в снимках дольше этого - он удалён, привязки убираются (снимок раз в 5 минут). */
 const ABSENT_MS = 30 * 60_000;
+const ABSENT_KEY = 'gclient_absent_since';
 /** Ход сверки сервера: сделано из скольких, что сейчас, ошибки, последние итоги. */
 export interface SyncProgress {
   done: number;
@@ -130,8 +131,13 @@ export class GClients {
   private running = false;
   /** Когда экземпляры AWG сервера спрашивались у агента в последний раз (сверка). */
   private awgAsked = new Map<string, number>();
-  /** С какого момента сервиса нет в снимках инвентаря: "сервер:сервис" -> время. */
+  /**
+   * С какого момента сервиса нет в снимках инвентаря: "сервер:сервис" -> время. Хранится в базе
+   * (ABSENT_KEY): в памяти отсчёт обнулялся бы каждым перезапуском панели (обновление,
+   * восстановление), и привязки к снятому руками сервису висели бы "ok" сколько угодно.
+   */
   private absentSince = new Map<string, number>();
+  private absentLoaded = false;
   private again = false;
   /** Ход сверки по серверам (имя сервера -> ход): для кнопок "Сверить" и панели хода. */
   readonly progress = new Map<string, SyncProgress>();
@@ -149,6 +155,19 @@ export class GClients {
     private panelIps: () => Promise<string[]>,
     private log: { warn: (o: unknown, m?: string) => void },
   ) {}
+
+  private loadAbsent() {
+    if (this.absentLoaded) return;
+    this.absentLoaded = true;
+    for (const [k, v] of Object.entries(
+      getJsonSetting<Record<string, number>>(this.db, ABSENT_KEY, {}),
+    ))
+      if (typeof v === 'number') this.absentSince.set(k, v);
+  }
+
+  private saveAbsent() {
+    putSetting(this.db, ABSENT_KEY, JSON.stringify(Object.fromEntries(this.absentSince)));
+  }
 
   private get deps(): ServiceDeps {
     return { db: this.db, box: this.box, registry: this.registry };
@@ -407,6 +426,7 @@ export class GClients {
     const stale = (b: Binding) => Date.now() - Date.parse(b.updatedAt) > 6 * 60 * 60_000;
     // серверы - параллельно: каждый со своим агентом, долгая работа на одном (каналы OpenFlux)
     // не держит остальные
+    this.loadAbsent();
     const perServer = async (t: (typeof states)[number]) => {
       let mine = bindings.filter((b) => b.serverId === t.row.id);
       if (!mine.length) return;
@@ -424,11 +444,14 @@ export class GClients {
       ] as const) {
         const key = `${t.row.id}:${service}`;
         if (present || !t.online) {
-          if (present) this.absentSince.delete(key);
+          if (present && this.absentSince.delete(key)) this.saveAbsent();
           continue;
         }
         const since = this.absentSince.get(key) ?? Date.now();
-        this.absentSince.set(key, since);
+        if (!this.absentSince.has(key)) {
+          this.absentSince.set(key, since);
+          this.saveAbsent();
+        }
         if (Date.now() - since < ABSENT_MS) continue;
         for (const b of mine.filter((x) => x.service === service))
           this.db.delete(gclientBindings).where(eq(gclientBindings.id, b.id)).run();

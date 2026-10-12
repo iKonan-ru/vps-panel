@@ -172,3 +172,23 @@ xui_panel_ufw_close() {
     echo "ufw: правило для порта $port убрано"
   fi
 }`;
+
+/**
+ * Зеркальные правила WDTT: deploy.sh копирует в iptables INPUT (ACCEPT, комментарий
+ * WDTT_MIRRORED) все порты, открытые на момент установки, и вставляет их выше ufw - порт,
+ * закрытый port-sync (сервис удалили), оставался открыт. Где порты ведут ufw и port-sync, эти
+ * правила не нужны: port-sync сам открывает порты WDTT (wdtt-server и его WireGuard).
+ */
+export const WDTT_FW_FUNCS = `portsync_governs() { ufw status 2>/dev/null | grep -q '^Status: active' && [ -x /usr/local/sbin/vps-portsync ]; }
+wdtt_mirrors_drop() { # [порт...] - только эти; без аргументов - все
+  need iptables || return 0
+  iptables -S INPUT 2>/dev/null | grep -- '--comment WDTT_MIRRORED' | while read -r rule; do
+    port=$(printf '%s\\n' "$rule" | grep -o -- '--dport [0-9]*' | awk '{print $2}')
+    if [ $# -eq 0 ] || printf ' %s ' "$*" | grep -q " $port "; then
+      # shellcheck disable=SC2086
+      iptables $(printf '%s' "$rule" | sed 's/^-A /-D /') 2>/dev/null || true
+    fi
+  done
+  need netfilter-persistent && netfilter-persistent save >/dev/null 2>&1 || true
+}
+`;

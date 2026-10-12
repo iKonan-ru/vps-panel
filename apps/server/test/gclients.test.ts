@@ -664,9 +664,11 @@ describe('GClients.reconcile: сервис пропал из снимка', () =
       expect(mtOn()[0]?.secret).toBe(secret);
       expect(mt.s1?.users.has(c.slug)).toBe(true);
 
-      // нет дольше 30 минут - сервис удалён, привязки убираются
+      // нет дольше 30 минут - сервис удалён, привязки убираются; отсчёт пережил перезапуск
+      // панели (новый GClients): он в базе, а не в памяти
       vi.setSystemTime(Date.now() + 15 * 60_000);
-      await g.reconcile();
+      const g2 = new GClients(db, box, registry, journal, async () => [], { warn: () => {} });
+      await g2.reconcile();
       expect(mtOn()).toEqual([]);
     } finally {
       vi.useRealTimers();

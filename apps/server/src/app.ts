@@ -214,6 +214,8 @@ export async function buildApp(opts: AppOptions) {
     (url, init) => xray.fetch(url, init),
     app.log,
     (r) => onPanelRelease(r),
+    PANEL_VERSION,
+    env.PANEL_CHANNEL,
   );
   await app.register(panelUpdateRoutes, { updates: panelUpdates });
   // панель обновилась - агенты за ней, если это не выключено

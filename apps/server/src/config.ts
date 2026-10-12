@@ -33,6 +33,11 @@ const EnvSchema = z.object({
    * vps-panel domain): Caddy спрашивает о нём /api/proxy/ask для запросов без SNI.
    */
   PANEL_SNI: z.string().default(''),
+  /** Канал обновлений установки (vps-panel install --beta): по умолчанию в "Версии панели". */
+  PANEL_CHANNEL: z.preprocess(
+    (v) => (v === 'beta' ? 'beta' : 'stable'),
+    z.enum(['stable', 'beta']),
+  ),
 });
 
 export type Env = z.infer<typeof EnvSchema>;
