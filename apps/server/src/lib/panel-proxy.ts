@@ -116,6 +116,23 @@ export function panelTarget(services: Service[], kind: Kind) {
   }
 }
 
+/**
+ * Ответ панели сервиса говорит, что схема не та: TLS к порту с обычным HTTP ("wrong version
+ * number") или HTTP к порту с TLS (Go отвечает 400 "Client sent an HTTP request to an HTTPS
+ * server"). Схему из снимка агент берёт из настроек панели, а 3X-UI 3.10 на 127.0.0.1 отдаёт
+ * HTTP, хотя сертификат в настройках есть.
+ */
+export function tlsMismatch(tls: boolean, status: number | string): boolean {
+  if (tls)
+    return (
+      typeof status === 'string' &&
+      /wrong version number|EPROTO|packet length too long|unknown protocol|ssl3_get_record/i.test(
+        status,
+      )
+    );
+  return status === 400;
+}
+
 function page(title: string, text: string): string {
   return `<!doctype html><html lang="ru"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width"><title>${title}</title>
 <style>body{font-family:system-ui,sans-serif;background:#0f1115;color:#e6e8ec;display:flex;align-items:center;justify-content:center;min-height:100vh;margin:0;padding:16px}
@@ -221,6 +238,8 @@ export class PanelProxy {
   private tickets = new Map<string, { label: string; sid: string; exp: number }>();
   private sessionOk = new Map<string, { ok: boolean; at: number }>();
   private targets = new Map<string, { t: ProxyTarget | null; at: number }>();
+  /** Схема, найденная проверкой вопреки снимку (tlsMismatch): "<сервер>:<порт>" -> tls. */
+  private tlsSeen = new Map<string, boolean>();
   private agents = new Map<string, HttpAgent>();
 
   constructor(
@@ -274,7 +293,11 @@ export class PanelProxy {
       const row = rows.length === 1 ? rows[0] : undefined;
       const services = (row?.cache as StatusCache | null)?.inventory?.services ?? [];
       const p = row ? panelTarget(services, kind) : null;
-      if (row && p) t = { serverId: row.id, kind, ...p };
+      if (row && p) {
+        t = { serverId: row.id, kind, ...p };
+        const seen = this.tlsSeen.get(`${row.id}:${p.port}`);
+        if (seen !== undefined) t.tls = seen;
+      }
     }
     this.targets.set(label, { t, at: Date.now() });
     return t;
@@ -493,7 +516,36 @@ export class PanelProxy {
         error: `Панель не слушает порт ${t.port} на сервере: ${opened}`,
       };
     const t1 = Date.now();
-    const status = await new Promise<number | string>((resolve) => {
+    let status = await this.httpProbe(t);
+    if (tlsMismatch(t.tls, status)) {
+      // схема в снимке не та: пробуем другую, удалось - запоминаем для прокси и websocket
+      const alt = { ...t, tls: !t.tls };
+      const again = await this.httpProbe(alt);
+      if (typeof again === 'number' && again < 500) {
+        this.tlsSeen.set(`${t.serverId}:${t.port}`, alt.tls);
+        this.targets.delete(label);
+        this.log.info({ label, tls: alt.tls }, 'proxy: схема панели сервиса по проверке');
+        status = again;
+      }
+    }
+    const panelMs = Date.now() - t1;
+    if (typeof status === 'string')
+      return { ...base, ok: false, stage: 'panel', tunnelMs, panelMs, error: status };
+    if (status >= 500)
+      return {
+        ...base,
+        ok: false,
+        stage: 'panel',
+        tunnelMs,
+        panelMs,
+        error: `Панель ответила ошибкой ${status}`,
+      };
+    return { ...base, ok: true, tunnelMs, panelMs };
+  }
+
+  /** Первый запрос к панели сервиса: код ответа или текст ошибки. */
+  private httpProbe(t: ProxyTarget): Promise<number | string> {
+    return new Promise<number | string>((resolve) => {
       const request = t.tls ? httpsRequest : httpRequest;
       const send = (retry: boolean) => {
         const up = request({
@@ -516,19 +568,6 @@ export class PanelProxy {
       };
       send(true);
     });
-    const panelMs = Date.now() - t1;
-    if (typeof status === 'string')
-      return { ...base, ok: false, stage: 'panel', tunnelMs, panelMs, error: status };
-    if (status >= 500)
-      return {
-        ...base,
-        ok: false,
-        stage: 'panel',
-        tunnelMs,
-        panelMs,
-        error: `Панель ответила ошибкой ${status}`,
-      };
-    return { ...base, ok: true, tunnelMs, panelMs };
   }
 
   /** WebSocket к поддомену. false - хост не наш. Никогда не бросает. */

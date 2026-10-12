@@ -112,7 +112,7 @@ export function OpenPanelPage() {
 
   return (
     <div className="flex min-h-full items-center justify-center p-4">
-      <Card className="flex w-full max-w-[420px] flex-col gap-5 p-6 md:p-8">
+      <Card className="flex w-full min-w-0 max-w-[420px] flex-col gap-5 p-6 md:p-8">
         <Logo size={28} />
         <div>
           <div className="text-xl font-semibold">Открываю {title}</div>

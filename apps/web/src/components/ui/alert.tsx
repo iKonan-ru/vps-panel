@@ -14,7 +14,13 @@ export function Alert({
   return (
     <div
       role="alert"
-      className={cn('animate-fade-in rounded-lg border px-3 py-2 text-sm', t, className)}
+      // [overflow-wrap:anywhere]: ошибки бывают длинными словами без пробелов (пути, ответы
+      // OpenSSL) - иначе строка вылезает за рамку и страница едет вбок
+      className={cn(
+        'animate-fade-in min-w-0 rounded-lg border px-3 py-2 text-sm [overflow-wrap:anywhere]',
+        t,
+        className,
+      )}
       {...r}
     />
   );
