@@ -10,6 +10,13 @@ ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 # ключи хоста сервера панели - KNOWN_HOSTS=<файл> (иначе ~/.ssh/known_hosts); проверка строгая
 SSH="ssh -i $KEY -o ConnectTimeout=15 -o StrictHostKeyChecking=yes -o UserKnownHostsFile=${KNOWN_HOSTS:-$HOME/.ssh/known_hosts}"
 
+# сервер переведён на релизы (vps-panel migrate): исходники туда больше не выкладываются -
+# новая версия ставится релизом (tools/release.sh), иначе две панели делили бы порты
+if $SSH "$HOST" 'test -f /opt/vps-panel/compose.yml'; then
+  echo "на сервере установка из релиза: выкладка исходников отключена - tools/release.sh"
+  exit 1
+fi
+
 # коммит - в отчёт о сборке (data/deploy.json), его показывает панель; незакоммиченное - с пометкой
 COMMIT="$(git -C "$ROOT" rev-parse --short HEAD 2>/dev/null || echo '?')"
 git -C "$ROOT" diff --quiet HEAD 2>/dev/null || COMMIT="$COMMIT+правки"
