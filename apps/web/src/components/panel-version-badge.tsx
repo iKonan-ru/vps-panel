@@ -35,7 +35,7 @@ export function PanelVersionBadge({ compact = false }: { compact?: boolean }) {
       ) : (
         <Chip
           tone={top ? 'update' : 'muted'}
-          className="max-w-[118px] cursor-pointer gap-1 px-2 font-mono text-[11px] hover:brightness-125"
+          className="max-w-[150px] cursor-pointer gap-1 px-2 py-0 font-mono text-[11px] hover:brightness-125"
         >
           {top && <ArrowUpCircle className="size-3 shrink-0" />}
           <span className="truncate">{version ?? '?'}</span>

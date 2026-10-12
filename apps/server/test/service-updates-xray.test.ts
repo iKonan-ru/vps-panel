@@ -76,6 +76,10 @@ describe('ServiceUpdates: Xray в 3X-UI', () => {
       .set({ statusCache: { inventory } } as never)
       .run();
     expect(await u.list('s1')).toEqual([]);
+    // в блоке "Версии" - без "v" у тега и без кнопки: это уже не обновление
+    const v = await u.versions('s1', ['xui', 'xray']);
+    expect(v.xray?.available).toBe(false);
+    expect(v.xray?.latest).toBe('26.10.10');
     // перепроверка запущена сама: после неё обновления тоже нет
     await new Promise((r) => setTimeout(r, 20));
     expect(await u.recheck('s1')).toEqual([]);

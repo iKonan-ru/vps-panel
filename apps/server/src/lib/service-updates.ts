@@ -174,7 +174,15 @@ export class ServiceUpdates {
       if (v) {
         const { notified: _, ...rest } = v;
         const u = listed.get(k);
-        out[k] = { ...rest, available: Boolean(u), ...(u?.current ? { current: u.current } : {}) };
+        // 3X-UI отдаёт последнюю версию тегом ("v3.10.0"), снимок - без "v": в блоке одинаково
+        const plain = (v: string) => v.replace(/^v(?=\d)/i, '');
+        const current = u?.current || rest.current;
+        out[k] = {
+          ...rest,
+          latest: plain(rest.latest),
+          ...(current ? { current: plain(current) } : {}),
+          available: Boolean(u),
+        };
       }
     }
     return out;
