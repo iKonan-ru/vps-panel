@@ -267,6 +267,8 @@ export async function commandRoutes(
           id: servers.id,
           name: servers.name,
           host: servers.host,
+          // адрес для клиентов: без него CLIENT_HOST в командах - всегда IP
+          clientHost: servers.clientHost,
           sshPort: servers.sshPort,
           agentVersion: servers.agentVersion,
         })
