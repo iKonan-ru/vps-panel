@@ -91,13 +91,6 @@ export const mtproxylCmd: CommandDef = {
   params: [
     { name: 'MT_PORT', label: 'Порт прокси', type: 'port', default: '443', required: true },
     {
-      name: 'MT_HOST',
-      label: 'Адрес в ссылках',
-      type: 'string',
-      hint: 'домен или пусто для IP; домен переносится на другой сервер, IP\u00a0\u2014 нет',
-      pattern: '^([a-z0-9.-]+)?$',
-    },
-    {
       name: 'MT_SNI',
       label: 'FakeTLS-домен',
       type: 'domain',
@@ -192,7 +185,8 @@ ${ENSURE_DOCKER}  fi
   say "Скачиваю установщик MTProxyL"
   fetch https://raw.githubusercontent.com/Liafanx/MTProxyL/main/install.sh -o /tmp/mtproxyl-install.sh
   args=(--mode manager --port "$MT_PORT" --sni "$MT_SNI" --engine "$MT_ENGINE" --zapret2 "$MT_ZAPRET2")
-  [ -n "$MT_HOST" ] && args+=(--host "$MT_HOST")
+  # адрес в ссылках - "Адрес для клиентов" сервера, если задано имя (lib/mtproxyl-host.ts)
+  [ "$CLIENT_HOST" != "$SERVER_HOST" ] && args+=(--host "$CLIENT_HOST")
   [ -n "$MT_ADTAG" ] && args+=(--ad-tag "$MT_ADTAG")
   if [ -n "$MT_TG_TOKEN" ] && [ -n "$MT_TG_ADMIN" ]; then args+=(--tgbot-token "$MT_TG_TOKEN" --tgbot-admin "$MT_TG_ADMIN"); fi
   IFS=',' read -ra users <<< "$MT_USERS"

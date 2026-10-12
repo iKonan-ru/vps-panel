@@ -4,7 +4,7 @@ import { api } from '@/lib/api';
 import { cn } from '@/lib/cn';
 import { useQuery } from '@tanstack/react-query';
 import { RefreshCw, X } from 'lucide-react';
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useState } from 'react';
 
 export interface DeployStatus {
   state: 'building' | 'done' | 'failed';
@@ -77,12 +77,12 @@ const mmss = (sec: number) =>
   `${Math.floor(sec / 60)}:${String(Math.max(0, sec % 60)).padStart(2, '0')}`;
 
 /**
- * Полоса сверху о выкладке панели: ход сборки (пока собирается новая версия, работает старая),
- * ошибка сборки с хвостом лога, "панель обновлена" после перезапуска - с кнопкой обновить.
+ * Полоса сверху о выкладке панели: ход сборки (пока собирается новая версия, работает старая)
+ * и ошибка с хвостом лога. После удачного обновления страница перезагружается сама (useFreshCode).
  */
 export function DeployBanner() {
   const { data } = useDeploy();
-  const firstBoot = useRef<string | null>(null);
+  useFreshCode();
   const [now, setNow] = useState(() => Date.now());
   // закрытую полосу помним в браузере, иначе "сборка упала" вернётся после перезагрузки
   const [hidden, setHidden] = useState<number | null>(() => {
@@ -99,7 +99,6 @@ export function DeployBanner() {
     } catch {}
   };
   const [showLog, setShowLog] = useState(false);
-  if (data && firstBoot.current === null) firstBoot.current = data.bootedAt;
   const st = data?.status ?? null;
   const building = st?.state === 'building';
 
@@ -110,7 +109,6 @@ export function DeployBanner() {
   }, [building]);
 
   if (!data || !st || hidden === st.startedAt) return null;
-  const restarted = firstBoot.current !== null && data.bootedAt !== firstBoot.current;
 
   if (building) {
     const pct = Math.round((st.step / Math.max(1, st.total)) * 100);
@@ -150,26 +148,49 @@ export function DeployBanner() {
       </Bar>
     );
   }
-  if (st.state === 'done' && restarted) {
-    return (
-      <Bar tone="ok" onClose={() => hide(st.startedAt)}>
-        <div className="min-w-0 grow">Панель обновлена до {st.commit}. Обновите страницу</div>
-        <Button
-          size="sm"
-          variant="primary"
-          onClick={() => location.reload()}
-          label="Обновить"
-          short="Обновить"
-        >
-          <RefreshCw className="size-3.5" />
-        </Button>
-      </Bar>
-    );
-  }
   return null;
 }
 
-function Bar({
+/** Главный скрипт интерфейса в разметке (имя с хешем сборки): /assets/index-<хеш>.js. */
+const mainScript = (html: string) => /\/assets\/index-[\w-]+\.js/.exec(html)?.[0] ?? null;
+
+/**
+ * Интерфейс в браузере старше панели (обновление панели, вкладка открыта до него): страница
+ * перезагружается сама. Проверка - при открытии и при каждом перезапуске или смене версии
+ * панели (/api/deploy): имя главного скрипта в свежем index.html не совпало с загруженным.
+ * Пока идёт обновление, работает прежняя версия - проверка ждёт его конца.
+ */
+export function useFreshCode() {
+  const { data } = useDeploy();
+  const building = data?.status?.state === 'building';
+  const key = data ? `${data.bootedAt}|${data.version ?? ''}|${data.commit ?? ''}` : null;
+  useEffect(() => {
+    if (!key || building) return;
+    const mine = mainScript(document.documentElement.innerHTML);
+    if (!mine) return; // разработка (vite): сборки с хешем нет
+    let cancelled = false;
+    fetch('/', { cache: 'no-store' })
+      .then((r) => (r.ok ? r.text() : ''))
+      .then((html) => {
+        const fresh = mainScript(html);
+        if (cancelled || !fresh || fresh === mine) return;
+        // от петли: один раз на каждую новую сборку
+        try {
+          if (sessionStorage.getItem(RELOAD_KEY) === fresh) return;
+          sessionStorage.setItem(RELOAD_KEY, fresh);
+        } catch {}
+        location.reload();
+      })
+      .catch(() => undefined);
+    return () => {
+      cancelled = true;
+    };
+  }, [key, building]);
+}
+const RELOAD_KEY = 'vps-reloaded-for';
+
+/** Полоса над страницей: ход обновления панели и агентов, итог, ошибка. */
+export function Bar({
   tone,
   onClose,
   children,

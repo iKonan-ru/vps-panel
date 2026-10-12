@@ -2,7 +2,6 @@ import { Alert } from '@/components/ui/alert';
 import { Button, ButtonLink } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { Chip } from '@/components/ui/chip';
-import { InfoTip } from '@/components/ui/info-tip';
 import { PageTitle } from '@/components/ui/page-title';
 import { TBody, THead, Table } from '@/components/ui/table';
 import { api } from '@/lib/api';
@@ -85,23 +84,11 @@ export function ServicesPage() {
     queryFn: () => api<StdMatrix>('/api/standard'),
     staleTime: 60_000,
   });
-  const full = data?.rows.filter((r) =>
-    Object.values(r.cells).every((c) => c.state === 'ok' || c.state === 'na'),
-  ).length;
 
   return (
     <>
       <div className="flex flex-wrap items-center gap-3">
         <PageTitle>Сервисы</PageTitle>
-        <InfoTip>
-          Эталон: 3X-UI со своими inbound, MTProxyL, AWG 3.1 и 2.0, WDTT и OpenFlux. Сервер панели
-          не входит.
-        </InfoTip>
-        {data && (
-          <Chip>
-            по эталону: {full} из {data.rows.length}
-          </Chip>
-        )}
         <div className="grow" />
         <Button size="sm" disabled={isFetching} onClick={() => void refetch()} label="Обновить">
           <RefreshCw className={cn('size-3.5', isFetching && 'animate-spin')} />

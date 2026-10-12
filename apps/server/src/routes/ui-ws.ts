@@ -21,6 +21,8 @@ export async function uiWsRoutes(
     hub.broadcast({ type: 'server.metrics', serverId, metrics }),
   );
   registry.on('inventory', (serverId) => hub.broadcast({ type: 'server.inventory', serverId }));
+  // перепроверка после действия: карточка сервера перечитывается сразу (кнопки и новое состояние)
+  registry.on('refreshing', (serverId) => hub.broadcast({ type: 'server.changed', serverId }));
 
   app.get('/ws/ui', { websocket: true }, async (socket, req) => {
     const s = await sessionOf(db, sessionToken(req));

@@ -51,6 +51,8 @@ export interface RegistryEvents {
   heartbeat: [serverId: string];
   /** Сообщение агента не прошло схему (null вместо массива, новое значение) - оно отброшено. */
   invalid: [serverId: string, error: string];
+  /** Началась или закончилась перепроверка состояния после действия (refreshInventory). */
+  refreshing: [serverId: string, on: boolean];
 }
 
 /**
@@ -83,15 +85,38 @@ export class AgentRegistry extends EventEmitter<RegistryEvents> {
     return true;
   }
 
-  /** Запрашивает свежий снимок у агента и раздаёт его как обычный inventory. Ошибки глотает. */
+  /** Сколько перепроверок состояния идёт по серверу (refreshInventory). */
+  private refreshes = new Map<string, number>();
+
+  /**
+   * Запрашивает свежий снимок у агента и раздаёт его как обычный inventory. Ошибки глотает.
+   * Пока снимок не пришёл, сервер "перепроверяется" (isRefreshing): интерфейс держит кнопки
+   * действий неактивными, чтобы старое состояние не выглядело как неудача только что
+   * завершённого действия.
+   */
   async refreshInventory(serverId: string): Promise<void> {
     if (!this.isOnline(serverId)) return;
+    const n = (this.refreshes.get(serverId) ?? 0) + 1;
+    this.refreshes.set(serverId, n);
+    if (n === 1) this.emit('refreshing', serverId, true);
     try {
       const raw = await this.request(serverId, 'inventory.get', {}, { timeoutMs: 120_000 });
       this.emit('inventory', serverId, InventorySchema.parse(raw));
     } catch {
       // агент отвалился или прислал мусор - следующий снимок придёт по расписанию
+    } finally {
+      const left = (this.refreshes.get(serverId) ?? 1) - 1;
+      if (left > 0) this.refreshes.set(serverId, left);
+      else {
+        this.refreshes.delete(serverId);
+        this.emit('refreshing', serverId, false);
+      }
     }
+  }
+
+  /** Идёт ли перепроверка состояния сервера после действия. */
+  isRefreshing(serverId: string): boolean {
+    return this.refreshes.has(serverId);
   }
 
   isOnline(serverId: string): boolean {

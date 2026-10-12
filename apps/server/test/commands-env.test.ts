@@ -28,8 +28,8 @@ async function preflightEnv(clientHost: string | null) {
   });
   const r = await app.inject({
     method: 'POST',
-    url: '/api/servers/s1/commands/mtproxyl-host/preflight',
-    payload: { MT_HOST_MODE: 'client' },
+    url: '/api/servers/s1/commands/mtproxyl/preflight',
+    payload: {},
   });
   expect(r.statusCode).toBe(200);
   await app.close();

@@ -328,7 +328,14 @@ export async function buildApp(opts: AppOptions) {
   // метрики агентов раз в 2 с, пока открыта вкладка панели, иначе раз в 30 с
   stops.push(startMetricsPace(registry, hub, app.log));
   await app.register(gclientRoutes, { db, registry, box, gc, env, hub });
-  await app.register(clientHostRoutes, { db, gc, hub, panelUrl: env.PANEL_PUBLIC_URL });
+  await app.register(clientHostRoutes, {
+    db,
+    gc,
+    hub,
+    panelUrl: env.PANEL_PUBLIC_URL,
+    registry,
+    journal: actionJournal(db, hub, registry),
+  });
   await app.register(ipChangeRoutes, {
     db,
     registry,

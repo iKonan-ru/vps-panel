@@ -62,6 +62,9 @@ export const actionTitles: Record<string, string> = {
   'mtproxyl:panel.restart': 'MTProxyL: перезапуск панели',
   'mtproxyl:engine.versions': 'MTProxyL: версии движка',
   'mtproxyl:engine.update': 'MTProxyL: обновление движка',
+  'mtproxyl:host': 'MTProxyL: адрес в ссылках',
+  // не действие: перепроверка состояния сервера после действия (кнопки недоступны)
+  'status.refresh': 'Проверка состояния сервера',
 };
 
 /**
