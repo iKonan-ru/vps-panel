@@ -93,7 +93,7 @@ compose() {
 
 # Последняя версия канала: stable - только релизы, beta - и пре-релизы. Наибольшая по semver.
 latest_version() { # latest_version <stable|beta>
-  curl -fsSL -m 30 -H 'Accept: application/vnd.github+json' "https://api.github.com/repos/$REPO/releases?per_page=50" |
+  curl -fsSL -m 30 -H 'Accept: application/vnd.github+json' "https://api.github.com/repos/$REPO/releases?per_page=100" |
     python3 -c '
 import json, re, sys
 beta = sys.argv[1] == "beta"

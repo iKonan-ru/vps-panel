@@ -147,7 +147,7 @@ export class PanelUpdates {
     const c = this.cache();
     try {
       const r = await this.fetchOut(
-        `https://api.github.com/repos/${PANEL_REPO}/releases?per_page=30`,
+        `https://api.github.com/repos/${PANEL_REPO}/releases?per_page=100`,
         {
           headers: { Accept: 'application/vnd.github+json', 'User-Agent': 'vps-panel' },
         },
