@@ -158,7 +158,7 @@ export function ServerPage() {
                 <span title={inv.host.agentVersion} className="gap-1.5">
                   агент {agentVersionShort(s.agentVersion ?? inv.host.agentVersion)}
                   {s.agentUpdating ? (
-                    <Chip tone="accent" dot pulse className="text-[11px]">
+                    <Chip tone="update" dot pulse className="text-[11px]">
                       обновляется
                     </Chip>
                   ) : (

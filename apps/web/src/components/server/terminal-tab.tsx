@@ -24,9 +24,29 @@ function b64decode(s: string): Uint8Array {
   return out;
 }
 
+/** Id сессии терминала сервера: по нему панель подхватывает сессию после ухода со вкладки. */
+const sidKey = (serverId: string) => `vps-term-sid:${serverId}`;
+function loadSid(serverId: string): string {
+  try {
+    return localStorage.getItem(sidKey(serverId)) ?? '';
+  } catch {
+    return '';
+  }
+}
+function saveSid(serverId: string, sid: string | null) {
+  try {
+    if (sid) localStorage.setItem(sidKey(serverId), sid);
+    else localStorage.removeItem(sidKey(serverId));
+  } catch {}
+}
+
+/** Код закрытия сокета "закрыть сессию сразу" (routes/terminal.ts). */
+const CLOSE_EXPLICIT = 4000;
+
 /**
- * Вкладка "Терминал": bash от root через агента. Сессия живёт, пока открыта вкладка;
- * при переходе на другую вкладку закрывается (и пишется в журнал).
+ * Вкладка "Терминал": bash от root через агента. Ушли со вкладки, закрыли страницу или PWA -
+ * сессия ждёт на панели 3 минуты и при возврате подхватывается с последним выводом; "Закрыть"
+ * закрывает сразу. Каждая сессия пишется в журнал.
  */
 export function TerminalTab({ s }: { s: ServerDetail }) {
   const online = s.status === 'online';
@@ -38,6 +58,14 @@ export function TerminalTab({ s }: { s: ServerDetail }) {
   const [note, setNote] = useState<string | null>(null);
   const [full, setFull] = useState(false);
   const [gen, setGen] = useState(0);
+  // сессия подхвачена (вывод - повтор с панели), а не открыта заново
+  const [resumed, setResumed] = useState(false);
+
+  /** "Закрыть": сессия закрывается на сервере сразу, без ожидания возврата. */
+  const closeNow = () => {
+    saveSid(s.id, null);
+    ws.current?.close(CLOSE_EXPLICIT, 'closed by user');
+  };
 
   const connect = useCallback(() => {
     const el = box.current;
@@ -68,28 +96,47 @@ export function TerminalTab({ s }: { s: ServerDetail }) {
     fit.current = f;
 
     const proto = location.protocol === 'https:' ? 'wss' : 'ws';
+    const sid = loadSid(s.id);
     const sock = new WebSocket(
-      `${proto}://${location.host}/ws/term/${s.id}?cols=${t.cols}&rows=${t.rows}`,
+      `${proto}://${location.host}/ws/term/${s.id}?cols=${t.cols}&rows=${t.rows}${
+        sid ? `&sid=${encodeURIComponent(sid)}` : ''
+      }`,
     );
     ws.current = sock;
     setState('connecting');
     setNote(null);
     sock.onopen = () => setState('open');
     sock.onmessage = (ev) => {
-      let m: { t: string; d?: string; code?: number; m?: string };
+      let m: {
+        t: string;
+        d?: string;
+        code?: number;
+        m?: string;
+        sid?: string;
+        resumed?: boolean;
+      };
       try {
         m = JSON.parse(String(ev.data));
       } catch {
         return;
       }
       if (m.t === 'data' && m.d) t.write(b64decode(m.d));
-      else if (m.t === 'exit') setNote(`Оболочка завершилась (код ${m.code ?? 0})`);
-      else if (m.t === 'error') setNote(`Ошибка: ${m.m ?? ''}`);
+      else if (m.t === 'session' && m.sid) {
+        saveSid(s.id, m.sid);
+        setResumed(m.resumed === true);
+      } else if (m.t === 'exit') {
+        saveSid(s.id, null);
+        setNote(`Оболочка завершилась (код ${m.code ?? 0})`);
+      } else if (m.t === 'error') {
+        saveSid(s.id, null);
+        setNote(`Ошибка: ${m.m ?? ''}`);
+      }
     };
     sock.onclose = (ev) => {
       setState('closed');
       if (ev.code === 4009) setNote('Агент не на связи');
       else if (ev.code === 4001) setNote('Сессия панели истекла, войди заново');
+      else if (ev.code === 4010) setNote('Сессию подхватила другая вкладка или окно');
     };
     t.onData((d) => {
       if (sock.readyState === sock.OPEN) sock.send(JSON.stringify({ t: 'input', d: b64encode(d) }));
@@ -131,7 +178,11 @@ export function TerminalTab({ s }: { s: ServerDetail }) {
         >
           {state === 'open' ? 'подключено' : state === 'connecting' ? 'подключаюсь' : 'закрыто'}
         </Chip>
-        <span className="text-xs text-muted">root@{s.host}, bash -l; сессия пишется в журнал</span>
+        <span className="text-xs text-muted">
+          root@{s.host}, bash -l
+          {resumed && state === 'open' ? ', сессия продолжена' : ''}; без вкладки живёт 3 минуты,
+          пишется в журнал
+        </span>
         <div className="grow" />
         {state === 'closed' && (
           <Button size="sm" onClick={() => setGen((g) => g + 1)} label="Подключить снова">
@@ -139,7 +190,7 @@ export function TerminalTab({ s }: { s: ServerDetail }) {
           </Button>
         )}
         {state === 'open' && (
-          <Button size="sm" onClick={() => ws.current?.close()} label="Закрыть">
+          <Button size="sm" onClick={closeNow} label="Закрыть">
             <Power className="size-3.5" />
           </Button>
         )}

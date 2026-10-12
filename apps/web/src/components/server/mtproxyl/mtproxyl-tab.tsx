@@ -47,10 +47,14 @@ export function MtproxylTab({ s }: { s: ServerDetail }) {
     enabled: online,
     staleTime: 20_000,
   });
-  // recheck - после действия перепроверить версии (это было обновление)
-  const [action, setAction] = useState<{ id: string; title: string; recheck?: boolean } | null>(
-    null,
-  );
+  // recheck - после действия перепроверить версии (это было обновление); inVersions - вывод
+  // внутри блока "Версии" (обновления и движок), иначе - сверху вкладки
+  const [action, setAction] = useState<{
+    id: string;
+    title: string;
+    recheck?: boolean;
+    inVersions?: boolean;
+  } | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   // пользователь, чьё окно со ссылками и QR открыто
@@ -92,12 +96,13 @@ export function MtproxylTab({ s }: { s: ServerDetail }) {
     op: string,
     args: Record<string, string> = {},
     recheckAfter = false,
+    inVersions = false,
   ) {
     setBusy(true);
     setError(null);
     try {
       const r = await mtApi.exec(s.id, op, args);
-      if (r.actionId) setAction({ id: r.actionId, title, recheck: recheckAfter });
+      if (r.actionId) setAction({ id: r.actionId, title, recheck: recheckAfter, inVersions });
       else await refresh();
       return r;
     } catch (e) {
@@ -117,14 +122,15 @@ export function MtproxylTab({ s }: { s: ServerDetail }) {
     });
     if (!ok) return;
     setEngineOpen(false);
-    await run(`Движок MTProxyL: версия ${tag}`, 'engine.update', { version: tag });
+    await run(`Движок MTProxyL: версия ${tag}`, 'engine.update', { version: tag }, false, true);
   }
 
   function updateComponent(kind: MtVersionKind, latest: string) {
-    if (kind === 'mtproxyl') return run(`Обновление MTProxyL до ${latest}`, 'update', {}, true);
+    if (kind === 'mtproxyl')
+      return run(`Обновление MTProxyL до ${latest}`, 'update', {}, true, true);
     // веб-панель - до последнего релиза сразу, без подтверждения: установщик берёт настройки из
     // её конфига, прокси и пользователи не затрагиваются
-    return run('Обновление панели MTProxyL', 'panel.update', {}, true);
+    return run('Обновление панели MTProxyL', 'panel.update', {}, true, true);
   }
 
   /** Включить или выключить пользователя. */
@@ -172,7 +178,7 @@ export function MtproxylTab({ s }: { s: ServerDetail }) {
           {e}
         </Alert>
       ))}
-      {action && (
+      {action && !action.inVersions && (
         <ActionPanel
           title={action.title}
           actionId={action.id}
@@ -330,6 +336,12 @@ export function MtproxylTab({ s }: { s: ServerDetail }) {
         onCheck={() => void recheck()}
         onUpdate={(kind, latest) => void updateComponent(kind, latest)}
         onEngine={() => setEngineOpen(true)}
+        action={action?.inVersions ? action : null}
+        onHideAction={() => setAction(null)}
+        onActionFinished={() => {
+          void refresh();
+          if (action?.recheck) void recheck();
+        }}
       />
 
       <Dialog open={engineOpen} onClose={() => setEngineOpen(false)} title="Версия движка telemt">

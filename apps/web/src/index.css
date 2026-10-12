@@ -15,6 +15,8 @@
   --ok: #1f9d6a;
   --warn: #b7791f;
   --bad: #d3403d;
+  /* доступные обновления: отдельно от плашек сервисов (accent) */
+  --update: #6c3fcc;
   /* графики: две серии (к клиенту, от клиента), пара проверена на различимость и контраст */
   --series-1: #2a78d6;
   --series-2: #eb6834;
@@ -31,6 +33,7 @@
   --ok: #3ecf8e;
   --warn: #f2b544;
   --bad: #f25f5c;
+  --update: #a985ff;
   --series-1: #3987e5;
   --series-2: #d95926;
   color-scheme: dark;
@@ -47,6 +50,7 @@
   --color-ok: var(--ok);
   --color-warn: var(--warn);
   --color-bad: var(--bad);
+  --color-update: var(--update);
   --font-sans: "IBM Plex Sans", system-ui, sans-serif;
   --font-mono: "JetBrains Mono", ui-monospace, monospace;
   --animate-fade-in: fade-in 0.2s ease-out backwards;

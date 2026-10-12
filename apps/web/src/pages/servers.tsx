@@ -176,7 +176,7 @@ function useServiceUpdates() {
  * Что на сервере требует действия: замечания аудита (firewall и docker мимо firewall - тоже
  * замечания), перезагрузка, обновления пакетов и сервисов, устаревший агент. Нечего делать -
  * пусто. Что именно - в подсказке плашки; плашка - ссылка туда, где действие: обновление
- * сервиса - его вкладка, остальное - "Обзор" (замечания и пакеты - блок "Безопасность", агент и
+ * сервиса - его вкладка, остальное - "Обзор" (замечания и пакеты - блок "Обслуживание", агент и
  * перезагрузка - кнопки в шапке карточки, оплата - "Хостинг"). mobile - ещё то, что на мобиле негде показать
  * отдельно: сервер не в сети и скорая оплата.
  */
@@ -186,7 +186,7 @@ function attention(
   mobile: boolean,
 ): {
   key: string;
-  tone: 'bad' | 'warn' | 'accent';
+  tone: 'bad' | 'warn' | 'update';
   text: string;
   title?: string;
   pulse?: boolean;
@@ -231,14 +231,14 @@ function attention(
     out.push({
       key: 'packages',
       tab: 'overview',
-      tone: 'accent',
+      tone: 'update',
       text: `пакеты: ${pending}`,
       title: 'Обновления безопасности ждут установки',
     });
   for (const u of updates)
     out.push({
       key: `svc-${u.kind}`,
-      tone: 'accent',
+      tone: 'update',
       text: `${u.title} ${u.latest}`,
       title: `Доступна версия ${u.title} ${u.latest}: обновить на вкладке сервиса`,
       tab: updateTab[u.kind],
@@ -246,7 +246,7 @@ function attention(
   if (s.agentUpdating)
     out.push({
       key: 'agent',
-      tone: 'accent',
+      tone: 'update',
       text: 'агент обновляется',
       pulse: true,
       tab: 'overview',
@@ -285,7 +285,7 @@ function AttentionChips({ s, mobile = false }: { s: ServerSummary; mobile?: bool
     ? 'text-bad'
     : items.some((i) => i.tone === 'warn')
       ? 'text-warn'
-      : 'text-accent';
+      : 'text-update';
   return (
     <div className="-mx-3.5 flex items-start gap-2 border-t border-border px-3.5 pt-2.5">
       <CircleAlert

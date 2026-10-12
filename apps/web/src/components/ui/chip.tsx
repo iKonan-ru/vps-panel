@@ -1,7 +1,8 @@
 import { cn } from '@/lib/cn';
 import type { HTMLAttributes } from 'react';
 
-type Tone = 'ok' | 'warn' | 'bad' | 'muted' | 'accent';
+/** update - доступное обновление: свой цвет, чтобы не путать с плашками сервисов (accent). */
+export type Tone = 'ok' | 'warn' | 'bad' | 'muted' | 'accent' | 'update';
 
 const tones: Record<Tone, string> = {
   ok: 'bg-ok/15 text-ok',
@@ -9,6 +10,7 @@ const tones: Record<Tone, string> = {
   bad: 'bg-bad/15 text-bad',
   muted: 'bg-muted/15 text-muted',
   accent: 'bg-accent/15 text-accent',
+  update: 'bg-update/15 text-update',
 };
 
 export interface ChipProps extends HTMLAttributes<HTMLSpanElement> {
