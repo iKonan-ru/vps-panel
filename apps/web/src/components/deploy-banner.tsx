@@ -6,7 +6,7 @@ import { useQuery } from '@tanstack/react-query';
 import { RefreshCw, X } from 'lucide-react';
 import { useEffect, useRef, useState } from 'react';
 
-interface DeployStatus {
+export interface DeployStatus {
   state: 'building' | 'done' | 'failed';
   commit: string;
   running: string | null;
@@ -17,7 +17,7 @@ interface DeployStatus {
   stepName: string;
   tail?: string[];
 }
-interface DeployInfo {
+export interface DeployInfo {
   status: DeployStatus | null;
   bootedAt: string;
   /** Версия релиза (1.2.3, 1.3.0-beta.1); сборка из исходников - "dev". */
@@ -27,11 +27,40 @@ interface DeployInfo {
 
 const HIDDEN_KEY = 'vps-deploy-hidden';
 
-/** Отчёт о выкладке (deploy/build.py): во время сборки опрашивается часто, иначе - редко. */
+/**
+ * Обновление панели запрошено из Настроек: до первого шага службы на хосте (секунда-другая)
+ * полоса показывает "запуск обновления", а не прошлый итог. Минута без ответа службы - забываем.
+ */
+let pending: DeployStatus | null = null;
+export function markPanelUpdate(version: string, running: string | null): DeployStatus {
+  const now = Math.floor(Date.now() / 1000);
+  pending = {
+    state: 'building',
+    commit: version,
+    running,
+    startedAt: now,
+    updatedAt: now,
+    step: 0,
+    total: 4,
+    stepName: 'запуск обновления',
+  };
+  return pending;
+}
+
+/** Отчёт о выкладке и обновлении: пока идёт, опрашивается часто, иначе - редко. */
 export function useDeploy() {
   return useQuery({
     queryKey: ['deploy'],
-    queryFn: () => api<DeployInfo>('/api/deploy'),
+    queryFn: async () => {
+      const d = await api<DeployInfo>('/api/deploy');
+      const p = pending;
+      if (p) {
+        const fresh = (d.status?.startedAt ?? 0) >= p.startedAt - 5;
+        if (fresh || Date.now() / 1000 - p.startedAt > 60) pending = null;
+        else return { ...d, status: p };
+      }
+      return d;
+    },
     refetchInterval: (q) => (q.state.data?.status?.state === 'building' ? 3000 : 30_000),
     retry: false,
   });

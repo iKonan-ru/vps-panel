@@ -153,9 +153,7 @@ func ofChannelExists(ch string) error {
 // OfStatus - каналы, ядро, автообновление.
 func OfStatus(ctx context.Context) OfStatusResult {
 	res := OfStatusResult{Channels: []OfChannel{}}
-	if _, err := os.Stat(ofInstaller); err == nil {
-		res.Installed = true
-	}
+	res.Installed = ofInstalled()
 	if t, err := os.Readlink(ofBin); err == nil {
 		res.Core = strings.TrimPrefix(filepath.Base(t), "openflux-node-v")
 	}
@@ -352,8 +350,8 @@ func OfExec(ctx context.Context, req OfRequest, stream func(channel, chunk strin
 
 // ofInstallerRun - node-install.sh с аргументами (без оболочки); ответ - JSON-строка установщика.
 func ofInstallerRun(ctx context.Context, log func(string), stream func(string, string), timeout time.Duration, args ...string) (map[string]any, error) {
-	if _, err := os.Stat(ofInstaller); err != nil {
-		return nil, errors.New("OpenFlux не установлен: нет " + ofInstaller)
+	if err := ofEnsureInstaller(ctx, log); err != nil {
+		return nil, err
 	}
 	return ofScript(ctx, ofInstaller, log, stream, timeout, args...)
 }
@@ -458,6 +456,72 @@ func ofCreate(ctx context.Context, req OfRequest, log func(string), stream func(
 	return map[string]any{"channel": ch, "port": port, "core": out["core"], "cupsonline": req.Cupsonline != ""}, nil
 }
 
+// ofDownloadInstaller - node-install.sh закреплённой версии с GitHub со сверкой sha256.
+func ofDownloadInstaller(ctx context.Context) ([]byte, error) {
+	c, cancel := context.WithTimeout(ctx, 60*time.Second)
+	defer cancel()
+	rq, _ := http.NewRequestWithContext(c, http.MethodGet, ofInstallerURL, nil)
+	resp, err := http.DefaultClient.Do(rq)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != 200 {
+		return nil, fmt.Errorf("установщик: GitHub ответил %d", resp.StatusCode)
+	}
+	b, err := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
+	if err != nil {
+		return nil, err
+	}
+	sum := sha256.Sum256(b)
+	if hex.EncodeToString(sum[:]) != ofInstallerSHA256 {
+		return nil, errors.New("установщик: sha256 не совпал - файл подменён или версия сменилась")
+	}
+	return b, nil
+}
+
+// ofInstalled - OpenFlux на сервере есть: установщик, ядро или каналы.
+func ofInstalled() bool {
+	if _, err := os.Stat(ofInstaller); err == nil {
+		return true
+	}
+	if _, err := os.Lstat(ofBin); err == nil {
+		return true
+	}
+	entries, _ := os.ReadDir(ofEtcDir)
+	for _, e := range entries {
+		if e.IsDir() {
+			return true
+		}
+	}
+	return false
+}
+
+// ofEnsureInstaller - установщик на месте. OpenFlux, поставленный не им напрямую (мастер
+// приложения без копии установщика, старая версия), его не имеет - тогда кладём ту же
+// закреплённую версию в /opt/openflux-node: им работают обновление ядра и автообновление.
+func ofEnsureInstaller(ctx context.Context, log func(string)) error {
+	if _, err := os.Stat(ofInstaller); err == nil {
+		return nil
+	}
+	if !ofInstalled() {
+		return errors.New("OpenFlux не установлен: нет " + ofInstaller)
+	}
+	log("нет " + ofInstaller + ": скачиваю установщик (закреплённая версия, проверка sha256)")
+	b, err := ofDownloadInstaller(ctx)
+	if err != nil {
+		return err
+	}
+	if err := os.MkdirAll(filepath.Dir(ofInstaller), 0o755); err != nil {
+		return err
+	}
+	tmp := ofInstaller + ".new"
+	if err := os.WriteFile(tmp, b, 0o755); err != nil {
+		return err
+	}
+	return os.Rename(tmp, ofInstaller)
+}
+
 // ofInstallerPath - установленный node-install.sh или скачанный той же версии с проверкой
 // sha256 (сервер без OpenFlux); второй - во временный файл, который потом удаляется.
 func ofInstallerPath(ctx context.Context, log func(string)) (string, func(), error) {
@@ -465,24 +529,9 @@ func ofInstallerPath(ctx context.Context, log func(string)) (string, func(), err
 		return ofInstaller, func() {}, nil
 	}
 	log("OpenFlux на сервере нет: скачиваю node-install.sh (проверка sha256)")
-	c, cancel := context.WithTimeout(ctx, 60*time.Second)
-	defer cancel()
-	rq, _ := http.NewRequestWithContext(c, http.MethodGet, ofInstallerURL, nil)
-	resp, err := http.DefaultClient.Do(rq)
+	b, err := ofDownloadInstaller(ctx)
 	if err != nil {
 		return "", nil, err
-	}
-	defer resp.Body.Close()
-	if resp.StatusCode != 200 {
-		return "", nil, fmt.Errorf("установщик: GitHub ответил %d", resp.StatusCode)
-	}
-	b, err := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
-	if err != nil {
-		return "", nil, err
-	}
-	sum := sha256.Sum256(b)
-	if hex.EncodeToString(sum[:]) != ofInstallerSHA256 {
-		return "", nil, errors.New("установщик: sha256 не совпал - файл подменён или версия сменилась")
 	}
 	f, err := os.CreateTemp("/root", "node-install-*.sh")
 	if err != nil {

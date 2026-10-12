@@ -1,4 +1,4 @@
-import { useDeploy } from '@/components/deploy-banner';
+import { type DeployInfo, markPanelUpdate, useDeploy } from '@/components/deploy-banner';
 import { Alert } from '@/components/ui/alert';
 import { Button } from '@/components/ui/button';
 import { Chip } from '@/components/ui/chip';
@@ -82,7 +82,17 @@ export function PanelVersionSettings() {
       }))
     )
       return;
-    await run(() => api('/api/panel/update', { method: 'POST', json: { version: v } }));
+    await run(async () => {
+      const view = await api<PanelUpdateView>('/api/panel/update', {
+        method: 'POST',
+        json: { version: v },
+      });
+      // полоса хода - сразу, не дожидаясь первого шага службы на хосте и опроса плашки (раз
+      // в 30 с): со статусом "идёт" она опрашивается раз в 3 с и сменится настоящим ходом
+      const status = markPanelUpdate(v, st?.current ?? null);
+      qc.setQueryData<DeployInfo>(['deploy'], (d) => (d ? { ...d, status } : d));
+      return view;
+    });
   }
 
   return (
