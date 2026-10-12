@@ -34,6 +34,7 @@ import { newId } from './ids.js';
 import { releaseOfDocs } from './openflux-docs.js';
 import { schedule } from './schedule.js';
 import type { SecretBox } from './secret-box.js';
+import { getSetting } from './settings.js';
 import { type WdttPassword, wdttApi } from './wdtt.js';
 import { type XuiCall, ownVlessInbounds, unwrap, xuiApi } from './xui-api.js';
 import { xuiToken } from './xui-token.js';
@@ -46,8 +47,10 @@ type Device = typeof gclientDevices.$inferSelect;
 interface ServerState {
   row: ServerRow;
   online: boolean;
+  /** Галочка участия: у сервера панели - только явное включение (PANEL_HOST_KEY). */
+  enabled: boolean;
   active: boolean;
-  /** сервер, на котором стоит панель (глобальные клиенты на нём не заводятся) */
+  /** сервер, на котором стоит панель: клиенты на нём - только если владелец включил */
   panelHost: boolean;
   xui: boolean;
   awg: boolean;
@@ -60,6 +63,17 @@ interface ServerState {
   xuiPorts: { at: string; ports: number[] } | null;
 }
 let lastStamp = 0;
+
+/**
+ * Глобальные клиенты на сервере панели - только по явному включению владельцем (setting): у
+ * сервера панели галочка участия в базе стоит по умолчанию, и без этого признака клиенты сами
+ * завелись бы на нём, как только он стал бы участвовать. 80 и 443 там держит Caddy панели.
+ */
+export const PANEL_HOST_KEY = 'gclients_on_panel_host';
+
+export function panelHostOptIn(db: Db): boolean {
+  return getSetting(db, PANEL_HOST_KEY) === '1';
+}
 
 /**
  * Метка updatedAt привязки: время, но строго позже прошлой метки. По ней сверка узнаёт правку
@@ -197,6 +211,7 @@ export class GClients {
    */
   async serverStates(): Promise<ServerState[]> {
     const ips = await this.panelIps();
+    const onPanel = panelHostOptIn(this.db);
     return this.db
       .select()
       .from(servers)
@@ -208,7 +223,8 @@ export class GClients {
         return {
           row,
           online: s.status === 'online',
-          active: row.gclients && !s.panelHost,
+          enabled: row.gclients && (!s.panelHost || onPanel),
+          active: row.gclients && (!s.panelHost || onPanel),
           panelHost: s.panelHost,
           xui: s.services.some((x) => x.kind === 'xui'),
           awg: s.services.some((x) => x.kind === 'amnezia'),

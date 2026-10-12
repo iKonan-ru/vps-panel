@@ -41,7 +41,7 @@ export const ServerSummarySchema = z.object({
   dockerVersion: z.string().nullable(),
   /**
    * На этом сервере стоит сама панель (jail vps-panel или его адрес - адрес домена панели):
-   * глобальные клиенты на нём не создаются.
+   * глобальные клиенты на нём - только если владелец включил (80 и 443 держит панель).
    */
   panelHost: z.boolean().default(false),
   /**

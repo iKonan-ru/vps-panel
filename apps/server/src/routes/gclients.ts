@@ -27,10 +27,11 @@ import { ClientStatsHub, liveOnServer } from '../lib/client-stats.js';
 import { extensionVersion } from '../lib/extension.js';
 import { clientSlug, newClientToken, newXuiSubId } from '../lib/gclient-names.js';
 import { awgRef, wdttKey, xuiTargets } from '../lib/gclient-services.js';
-import { type GClients, queued } from '../lib/gclients.js';
+import { type GClients, PANEL_HOST_KEY, queued } from '../lib/gclients.js';
 import { newId } from '../lib/ids.js';
 import { addOfDocs } from '../lib/openflux-docs.js';
 import type { SecretBox } from '../lib/secret-box.js';
+import { putSetting } from '../lib/settings.js';
 import type { UiHub } from '../lib/ui-hub.js';
 import { ownVlessInbounds, parseJson, readClient, unwrap, xuiApi } from '../lib/xui-api.js';
 import { savedXuiToken, xuiToken } from '../lib/xui-token.js';
@@ -703,7 +704,7 @@ export async function gclientRoutes(
         id: t.row.id,
         name: t.row.name,
         online: t.online,
-        enabled: t.row.gclients,
+        enabled: t.enabled,
         active: t.active,
         panelHost: t.panelHost,
         xui: t.xui,
@@ -719,6 +720,9 @@ export async function gclientRoutes(
   app.patch('/api/servers/:id/gclients', async (req) => {
     const { id } = Id.parse(req.params);
     const body = z.object({ enabled: z.boolean() }).parse(req.body ?? {});
+    // сервер панели: участие - отдельным признаком (явное включение владельцем)
+    const st = (await gc.serverStates()).find((t) => t.row.id === id);
+    if (st?.panelHost) putSetting(db, PANEL_HOST_KEY, body.enabled ? '1' : '');
     db.update(servers).set({ gclients: body.enabled }).where(eq(servers.id, id)).run();
     db.update(gclientBindings).set(queued()).where(eq(gclientBindings.serverId, id)).run();
     gc.kick();
