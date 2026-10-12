@@ -194,7 +194,7 @@ export function XraySettings() {
               {st.exits.map((x) => (
                 <div
                   key={x.serverId}
-                  className="flex flex-wrap items-center gap-x-3 gap-y-1 border-b border-border px-3 py-2 text-[13px] last:border-b-0"
+                  className="flex items-start gap-3 border-b border-border px-3 py-2 text-[13px] last:border-b-0"
                 >
                   <span className="min-w-0 grow">
                     <span className="font-medium">{x.serverName}</span>
@@ -211,12 +211,13 @@ export function XraySettings() {
                   {x.lastCheck ? (
                     <Chip
                       tone={x.lastCheck.ok ? 'ok' : 'bad'}
+                      className="mt-px"
                       title={`${ago(x.lastCheck.at)}${x.lastCheck.err ? `: ${x.lastCheck.err}` : ''}`}
                     >
                       {x.lastCheck.ok ? `${x.lastCheck.ms} мс` : 'не отвечает'}
                     </Chip>
                   ) : (
-                    <Chip>не проверялся</Chip>
+                    <Chip className="mt-px">не проверялся</Chip>
                   )}
                 </div>
               ))}
