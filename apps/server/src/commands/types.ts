@@ -38,7 +38,7 @@ export interface CommandParam {
 
 export interface RunContext {
   panelUrl: string;
-  server: { id: string; name: string; host: string };
+  server: { id: string; name: string; host: string; clientHost?: string | null };
   answers: Record<string, string>;
 }
 
@@ -73,6 +73,11 @@ export interface CommandDef {
   plan: (answers: Record<string, string>) => string[];
   /** Подсказка после успешного завершения. */
   after?: string;
+  /**
+   * Сервисы, чьи привязки глобальных клиентов на этом сервере после успешного запуска уходят в
+   * сверку (ссылки на личных страницах перевыпускаются).
+   */
+  resync?: string[];
   /**
    * Доступы после успешного выполнения (логин, пароль, ссылка на панель...):
    * панель сохраняет их в "Доступах" сервера. output - полный вывод команды.

@@ -100,12 +100,13 @@ export async function agentWsRoutes(
     serverId: string,
     hello: AgentHello,
     extra: Partial<PanelMessage & { type: 'welcome' }>,
+    addr: string,
   ) {
     await db
       .update(servers)
       .set({ agentVersion: hello.host.agentVersion, lastSeenAt: new Date().toISOString() })
       .where(eq(servers.id, serverId));
-    registry.attach({ serverId, ws: sock, methods: hello.methods });
+    registry.attach({ serverId, ws: sock, methods: hello.methods, addr });
     const welcome: PanelMessage = {
       type: 'welcome',
       serverId,
@@ -124,7 +125,7 @@ export async function agentWsRoutes(
     return { hello: hello.data };
   }
 
-  async function secure(socket: WebSocket) {
+  async function secure(socket: WebSocket, addr: string) {
     const raw = new Inbox(socket);
     const h = Hello2Schema.safeParse(parseJson(await raw.next()));
     raw.stop();
@@ -191,13 +192,17 @@ export async function agentWsRoutes(
         .run();
       if (done.changes !== 1) return socket.close(4003, 'bad registration token');
     }
-    await attach(sock as unknown as AgentSocket, serverId, res.hello, {
-      proof: proof(credHash, 'panel', th),
-    });
+    await attach(
+      sock as unknown as AgentSocket,
+      serverId,
+      res.hello,
+      { proof: proof(credHash, 'panel', th) },
+      addr,
+    );
   }
 
   app.get('/ws/agent', { websocket: true }, async (socket, req) => {
-    if ((req.query as { v?: string }).v === '2') return secure(socket);
+    if ((req.query as { v?: string }).v === '2') return secure(socket, req.ip);
     // без v=2 - не наш агент или слишком старый: переустановка (команда - в карточке сервера)
     return socket.close(4006, 'agent too old: reinstall');
   });

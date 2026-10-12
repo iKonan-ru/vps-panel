@@ -49,6 +49,13 @@ describe('XrayManager: основной и запасные выходы', () =>
     ]);
     expect(JSON.stringify(st)).not.toContain('00000000-0000-0000-0000-000000000000');
 
+    // сервер сменил IP: его выход - на новый адрес
+    await (x as unknown as { retarget: (id: string, a: string) => Promise<boolean> }).retarget(
+      'b',
+      '198.51.100.7',
+    );
+    expect(x.exits().find((e) => e.serverId === 'b')?.address).toBe('198.51.100.7');
+
     // выход выключен - запасных тоже нет
     await x.save(null);
     expect(x.exits()).toEqual([]);

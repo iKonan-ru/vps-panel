@@ -32,6 +32,8 @@ export interface AgentConn {
   ws: AgentSocket;
   /** Операции агента из hello; у старых агентов списка нет. */
   methods: readonly string[];
+  /** С какого адреса подключился агент (за Caddy - настоящий адрес сервера). */
+  addr?: string;
 }
 
 interface Pending {
