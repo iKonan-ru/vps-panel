@@ -30,6 +30,8 @@ export function InstallAgent({
   const [actionId, setActionId] = useState<string | null>(null);
   const [command, setCommand] = useState<string | null>(null);
   const [failed, setFailed] = useState(false);
+  // установка закончилась: до этого "Повторить" не даёт запустить второй установщик поверх
+  const [finished, setFinished] = useState(false);
   const [keyReset, setKeyReset] = useState(false);
   const key = useQuery({
     queryKey: ['panel-ssh-key'],
@@ -39,6 +41,7 @@ export function InstallAgent({
 
   async function start(e: FormEvent) {
     e.preventDefault();
+    if (busy) return;
     setBusy(true);
     setError(null);
     try {
@@ -76,6 +79,7 @@ export function InstallAgent({
         <ActionOutput
           actionId={actionId}
           onFinished={(code) => {
+            setFinished(true);
             setFailed(code !== 0);
             onDone?.(code === 0);
           }}
@@ -98,8 +102,10 @@ export function InstallAgent({
           )}
           <Button
             size="sm"
+            disabled={!finished}
             onClick={() => {
               setActionId(null);
+              setFinished(false);
               setFailed(false);
               setKeyReset(false);
               setError(null);

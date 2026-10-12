@@ -76,7 +76,7 @@ export function VersionsSection({
         <Button
           size="icon-sm"
           variant="ghost"
-          disabled={checking}
+          disabled={checking || disabled}
           onClick={onCheck}
           title="Проверить обновления"
           aria-label="Проверить обновления"

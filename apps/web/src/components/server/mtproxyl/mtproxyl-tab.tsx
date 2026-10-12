@@ -75,6 +75,8 @@ export function MtproxylTab({ s }: { s: ServerDetail }) {
   });
 
   const refresh = () => qc.invalidateQueries({ queryKey: ['mtproxyl', s.id] });
+  // проверка версий идёт - обновлять и менять версию нельзя (решение по старым данным)
+  const versionsBusy = checking || versions.isFetching;
 
   /** Проверить обновления сервера сейчас; итог виден и здесь, и в "Обзоре", и в списке. */
   async function recheck() {
@@ -85,10 +87,11 @@ export function MtproxylTab({ s }: { s: ServerDetail }) {
     } catch (e) {
       setError((e as Error).message);
     } finally {
-      setChecking(false);
+      // кнопки версий - только после свежего списка: иначе "Обновить" по старым данным
       await qc.invalidateQueries({ queryKey: ['mtproxyl-versions', s.id] });
       await qc.invalidateQueries({ queryKey: ['service-updates'] });
       await qc.invalidateQueries({ queryKey: ['service-updates-all'] });
+      setChecking(false);
     }
   }
 
@@ -372,8 +375,8 @@ export function MtproxylTab({ s }: { s: ServerDetail }) {
         data={versions.data}
         panel={panelInstalled}
         engine={data.engine}
-        checking={checking}
-        disabled={busy || lock.busy}
+        checking={versionsBusy}
+        disabled={busy || lock.busy || versionsBusy}
         reason={lock.reason}
         onCheck={() => void recheck()}
         onUpdate={(kind, latest) => void updateComponent(kind, latest)}
@@ -412,10 +415,16 @@ export function MtproxylTab({ s }: { s: ServerDetail }) {
             onToggle={() => void toggleUser(openUser)}
             onRemove={() => void removeUser(openUser).then((removed) => removed && setUser(null))}
             onRename={async (name) => {
-              // секрет тот же - ссылки пользователя не меняются; окно переходит на новое имя
-              await mtApi.exec(s.id, 'secret.rename', { label: openUser.label, new: name });
-              setUser(name);
-              await refresh();
+              // секрет тот же - ссылки пользователя не меняются; окно переходит на новое имя.
+              // Пока идёт - остальные действия вкладки заблокированы (busy)
+              setBusy(true);
+              try {
+                await mtApi.exec(s.id, 'secret.rename', { label: openUser.label, new: name });
+                setUser(name);
+                await refresh();
+              } finally {
+                setBusy(false);
+              }
             }}
           />
         )}

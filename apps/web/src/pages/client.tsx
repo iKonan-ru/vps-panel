@@ -24,6 +24,7 @@ import { QrCode } from '@/components/ui/qr-code';
 import { Section } from '@/components/ui/section';
 import { api } from '@/lib/api';
 import { cn } from '@/lib/cn';
+import { useAction } from '@/lib/use-action';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { Link, useNavigate, useParams } from '@tanstack/react-router';
 import type { GBinding, GClientDetail, GDevice } from '@vps/protocol';
@@ -66,14 +67,18 @@ export function ClientPage() {
   // подключение и трафик по привязкам: раз в 3 с, пока карточка открыта и вкладка видна
   const live = useClientLive(id, data?.bindings ?? []);
 
+  // пока идёт правка клиента, его кнопки недоступны (двойной тап по вкл/выкл - два запроса)
+  const op = useAction();
   async function call(fn: () => Promise<unknown>) {
     setErr(null);
-    try {
-      await fn();
-      await refresh();
-    } catch (e) {
-      setErr((e as Error).message);
-    }
+    await op.run(async () => {
+      try {
+        await fn();
+        await refresh();
+      } catch (e) {
+        setErr((e as Error).message);
+      }
+    });
   }
 
   async function sync() {
@@ -142,6 +147,7 @@ export function ClientPage() {
               key: 'toggle',
               label: c.enabled ? 'Выключить клиента' : 'Включить клиента',
               icon: <Power className="size-3.5" />,
+              disabled: op.busy || syncing,
               onClick: () =>
                 void call(() =>
                   api(`/api/gclients/${id}`, { method: 'PATCH', json: { enabled: !c.enabled } }),
@@ -153,6 +159,7 @@ export function ClientPage() {
               icon: <Trash2 className="size-3.5" />,
               variant: 'danger',
               group: 'danger',
+              disabled: op.busy || syncing,
               onClick: async () => {
                 const ok = await ask({
                   title: `Удалить клиента ${c.name}?`,

@@ -126,6 +126,23 @@ export function inboundTargets(
  * Итог проверки цели в её запись: процент, история, счётчик "не видно" подряд. Возвращает текст
  * уведомления, если пора (не видна вторую проверку подряд или снова видна после уведомления).
  */
+/**
+ * Ошибка проверки человеческим текстом: агент отдаёт "Globalping ответил <код>: <тело JSON,
+ * обрезанное>" - вместо куска JSON понятная причина и что делать.
+ */
+export function reachError(raw: string): string {
+  const m = /^Globalping ответил (\d{3})(?::\s*([\s\S]*))?$/.exec(raw.trim());
+  if (!m) return raw;
+  const code = Number(m[1]);
+  const detail = /"message"\s*:\s*"([^"]{1,200})"/.exec(m[2] ?? '')?.[1];
+  if (code === 401 || code === 403)
+    return 'Globalping не принял токен - проверь его в Настройках, блок "Доступность из России" (или убери: без токена лимит меньше)';
+  if (code === 429) return 'лимит проверок Globalping исчерпан - повтор при следующей проверке';
+  if (code >= 500)
+    return `Globalping временно недоступен (HTTP ${code}) - повтор при следующей проверке`;
+  return `Globalping отклонил запрос (HTTP ${code})${detail ? `: ${detail}` : ''}`;
+}
+
 export function apply(
   t: ReachTarget,
   r: { percent: number; total: number; ok: number; errors: string[]; at: string },
@@ -182,7 +199,13 @@ export class RuReach {
   }
 
   private load(): Store {
-    return getJsonSetting<Store>(this.db, KEY, {});
+    const store = getJsonSetting<Store>(this.db, KEY, {});
+    // сохранённые до человеческих текстов ошибки - тоже человеческим текстом
+    for (const r of Object.values(store)) {
+      if (r.error) r.error = reachError(r.error);
+      for (const t of r.targets) if (t.error) t.error = reachError(t.error);
+    }
+    return store;
   }
 
   private save(store: Store) {
@@ -330,14 +353,14 @@ export class RuReach {
           const t = targets.find((x) => x.key === res.key);
           if (!t) continue;
           if (res.error) {
-            t.error = res.error;
+            t.error = reachError(res.error);
             continue;
           }
           const msg = apply(t, { ...res, at: now });
           if (msg) messages.push({ key: t.key, ...msg });
         }
       } catch (e) {
-        out.error = (e as Error).message;
+        out.error = reachError((e as Error).message);
       }
     }
     out.targets.push(...targets);

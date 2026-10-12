@@ -1,5 +1,6 @@
 import { ConfirmProvider } from '@/components/ui/confirm';
-import { ApiError } from '@/lib/api';
+import { ApiError, onActionStarted } from '@/lib/api';
+import type { ServerDetail } from '@/lib/servers';
 import { applyTheme, getTheme } from '@/lib/theme';
 import { QueryCache, QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { RouterProvider } from '@tanstack/react-router';
@@ -31,6 +32,28 @@ const queryClient: QueryClient = new QueryClient({
       if (e instanceof ApiError && e.status === 401) queryClient.setQueryData(['me'], null);
     },
   }),
+});
+
+// действие запущено: сервер занят сразу (до свежей карточки с activeActions), кнопки всех
+// вкладок сервера блокирует serverLock; конец действия перезапрашивает карточку (lib/live.ts)
+onActionStarted((serverId, actionId) => {
+  queryClient.setQueryData<ServerDetail>(['servers', serverId], (s) =>
+    s && !s.activeActions.some((a) => a.id === actionId)
+      ? {
+          ...s,
+          activeActions: [
+            ...s.activeActions,
+            {
+              id: actionId,
+              kind: 'started',
+              title: 'запущенное действие',
+              startedAt: new Date().toISOString(),
+            },
+          ],
+        }
+      : s,
+  );
+  void queryClient.invalidateQueries({ queryKey: ['servers', serverId] });
 });
 
 const rootEl = document.getElementById('root');

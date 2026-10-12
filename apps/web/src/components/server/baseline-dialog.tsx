@@ -1,5 +1,4 @@
 import { ActionOutput } from '@/components/action-output';
-import { SshKeysDialog } from '@/components/server/ssh-keys-dialog';
 import { Alert } from '@/components/ui/alert';
 import { Button } from '@/components/ui/button';
 import { Checkbox } from '@/components/ui/checkbox';
@@ -19,13 +18,20 @@ export function BaselineDialog({
   open,
   preselect,
   onClose,
-}: { serverId: string; open: boolean; preselect?: string | null; onClose: () => void }) {
+  onKeys,
+}: {
+  serverId: string;
+  open: boolean;
+  preselect?: string | null;
+  onClose: () => void;
+  /** Перейти во вкладку "Ключи" (у root нет ключа - SSH без паролей не закрыть). */
+  onKeys: () => void;
+}) {
   const [plan, setPlan] = useState<BaselinePlan | null>(null);
   const [chosen, setChosen] = useState<Set<string>>(new Set());
   const [error, setError] = useState<string | null>(null);
   const [actionId, setActionId] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
-  const [keysOpen, setKeysOpen] = useState(false);
 
   const loadPlan = useCallback(() => {
     setPlan(null);
@@ -113,7 +119,7 @@ export function BaselineDialog({
                             <Button
                               size="sm"
                               className="ml-2"
-                              onClick={() => setKeysOpen(true)}
+                              onClick={onKeys}
                               label="Добавить ключ root"
                             >
                               <KeyRound className="size-3.5" />
@@ -168,17 +174,6 @@ export function BaselineDialog({
             </Button>
           </div>
         </>
-      )}
-      {/* окно монтируется при открытии: каждое открытие - с чистой формой, без прошлой ошибки */}
-      {keysOpen && (
-        <SshKeysDialog
-          serverId={serverId}
-          open={keysOpen}
-          onClose={() => {
-            setKeysOpen(false);
-            loadPlan();
-          }}
-        />
       )}
     </Dialog>
   );

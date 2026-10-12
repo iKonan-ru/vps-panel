@@ -28,7 +28,7 @@ interface DeployInfo {
 const HIDDEN_KEY = 'vps-deploy-hidden';
 
 /** Отчёт о выкладке (deploy/build.py): во время сборки опрашивается часто, иначе - редко. */
-function useDeploy() {
+export function useDeploy() {
   return useQuery({
     queryKey: ['deploy'],
     queryFn: () => api<DeployInfo>('/api/deploy'),

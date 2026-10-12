@@ -105,3 +105,19 @@ describe('доступность из России', () => {
     ]);
   });
 });
+
+describe('ошибки Globalping', () => {
+  it('вместо обрезанного JSON - причина и что делать', async () => {
+    const { reachError } = await import('../src/lib/ru-reach.js');
+    const raw =
+      'Globalping ответил 401: { "error": { "type": "unauthorized", "message": "Unauthorized." }, "links": { "documentation": "https://globalping.io/docs/api.globalping.io#p';
+    expect(reachError(raw)).toMatch(/не принял токен/);
+    expect(
+      reachError(
+        'Globalping ответил 400: {"error":{"type":"validation_error","message":"Parameter \\"target\\" must be valid."}}',
+      ),
+    ).toMatch(/отклонил запрос \(HTTP 400\): Parameter/);
+    expect(reachError('Globalping ответил 503: bad gateway')).toMatch(/временно недоступен/);
+    expect(reachError('агент не на связи')).toBe('агент не на связи');
+  });
+});

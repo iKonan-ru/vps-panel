@@ -6,7 +6,9 @@
 #   vps-panel rollback                                   вернуть прошлую версию
 #   vps-panel status | version | logs [panel|caddy] | restart
 #   vps-panel channel [stable|beta]                      канал для "update" без версии
-#   vps-panel uninstall [--purge]                        снять (данные - только с --purge)
+#   vps-panel uninstall [--purge | --full] [-y]           снять панель (данные - с --purge);
+#                                                        --full - всё, что ставила панель,
+#                                                        включая агента и VPN-сервисы
 #   vps-panel serve-request                              запрос обновления из панели (служба)
 #   vps-panel migrate [--beta] [--version X.Y.Z]         переезд со сборки из исходников
 #                                                        (<каталог>/deploy) на релизы
@@ -204,6 +206,7 @@ cmd_install() {
   say "установка VPS Panel $VERSION в $ROOT"
 
   local DOMAIN="${PANEL_DOMAIN:-}" SUB EMAIL
+  DOCKER_BY_PANEL=0
   while :; do
     ask "Домен панели (A-запись на этот сервер)" "$DOMAIN"
     DOMAIN="$(echo "$REPLY" | tr 'A-Z' 'a-z')"
@@ -263,6 +266,7 @@ cmd_install() {
     say "docker не установлен"
     confirm "Поставить docker официальным скриптом get.docker.com?" || die "нужен docker с compose plugin"
     curl -fsSL https://get.docker.com | sh
+    DOCKER_BY_PANEL=1
   fi
   docker compose version >/dev/null 2>&1 || die "нет docker compose plugin (пакет docker-compose-plugin)"
 
@@ -287,6 +291,8 @@ TG_PROXY_URL=
 # версия меняет "vps-panel update"; канал - для обновления без версии (stable или beta)
 PANEL_VERSION=$VERSION
 PANEL_CHANNEL=$CHANNEL
+# docker поставлен установщиком панели: полная зачистка (uninstall --full) снимет и его
+DOCKER_BY_PANEL=${DOCKER_BY_PANEL:-0}
 ENV
   umask 022
   chmod 600 "$ENV_FILE"
@@ -501,26 +507,177 @@ cmd_channel() {
   esac
 }
 
+# Снять панель. Без ключей - только панель (контейнеры, образы, служба обновлений, jail
+# fail2ban панели, команда vps-panel), данные остаются; --purge - и данные с сертификатами.
+# --full - всё, что ставила панель на этом сервере: панель с данными, агент, прокси для
+# браузера, port-sync, VPN-сервисы (3X-UI, MTProxyL, WDTT, OpenFlux, контейнеры Amnezia - их
+# список подтверждается отдельно) и docker, если его ставил установщик и других контейнеров
+# не осталось. Защита сервера (вход SSH по ключу, jail sshd, автообновления, ufw и его
+# правила) остаётся: снять её - значит открыть сервер.
 cmd_uninstall() {
   need_root
-  local purge=0
-  [ "${1:-}" = "--purge" ] && purge=1
+  local mode=panel
+  while [ $# -gt 0 ]; do
+    case "$1" in
+      --purge) mode=purge ;;
+      --full) mode=full ;;
+      -y) YES=1 ;;
+      *) die "uninstall: неизвестный ключ $1 (--purge, --full, -y)" ;;
+    esac
+    shift
+  done
+  if [ "$mode" = full ]; then
+    full_uninstall
+    return
+  fi
   confirm "Остановить и снять VPS Panel?" || exit 1
-  systemctl disable --now vps-panel-update.path >/dev/null 2>&1 || true
-  rm -f /etc/systemd/system/vps-panel-update.path /etc/systemd/system/vps-panel-update.service
-  systemctl daemon-reload
-  compose down || true
-  rm -f /etc/fail2ban/jail.d/vps-panel.conf /etc/fail2ban/filter.d/vps-panel.conf
-  systemctl restart fail2ban >/dev/null 2>&1 || true
-  if [ "$purge" = 1 ]; then
-    confirm "Удалить и данные ($DATA, сертификаты Caddy)? Без бэкапа их не вернуть" || exit 1
-    compose down -v || true
-    rm -rf "$ROOT"
-    rm -f "$CLI_PATH"
+  [ "$mode" = purge ] && { confirm "Удалить и данные ($DATA, сертификаты Caddy)? Без бэкапа их не вернуть" || exit 1; }
+  remove_panel "$mode"
+  if [ "$mode" = purge ]; then
     echo "снято вместе с данными"
   else
     echo "снято; данные остались в $ROOT (vps-panel uninstall --purge - удалить и их)"
   fi
+  echo "Агент, прокси для браузера и VPN-сервисы этого сервера не тронуты (всё сразу - uninstall --full)."
+}
+
+# remove_panel <panel|purge|full>: контейнеры и образы панели, службы, jail, каталог
+remove_panel() {
+  systemctl disable --now vps-panel-update.path >/dev/null 2>&1 || true
+  rm -f /etc/systemd/system/vps-panel-update.path /etc/systemd/system/vps-panel-update.service
+  systemctl daemon-reload
+  if [ -f "$ROOT/compose.yml" ] && [ -f "$ENV_FILE" ]; then
+    if [ "$1" = panel ]; then
+      compose down --rmi all || true
+    else
+      compose down -v --rmi all || true
+    fi
+  fi
+  rm -f /etc/fail2ban/jail.d/vps-panel.conf /etc/fail2ban/filter.d/vps-panel.conf
+  systemctl restart fail2ban >/dev/null 2>&1 || true
+  if [ "$1" != panel ]; then
+    rm -rf "$ROOT"
+    rm -f "$CLI_PATH"
+  fi
+}
+
+full_uninstall() {
+  local domain vpn=() items=() c
+  domain="$(env_get PANEL_DOMAIN)"
+  [ -x /usr/local/x-ui/x-ui ] && vpn+=("3X-UI (панель, Xray, база пользователей)")
+  command -v mtproxyl >/dev/null 2>&1 && vpn+=("MTProxyL (прокси Telegram, веб-панель, секреты)")
+  [ -x /usr/local/bin/wdtt-server ] && vpn+=("WDTT")
+  { [ -d /etc/openflux-node ] || [ -x /opt/openflux-node/node-install.sh ]; } && vpn+=("OpenFlux (все каналы)")
+  local awg=()
+  if command -v docker >/dev/null 2>&1; then
+    while read -r c; do [ -n "$c" ] && awg+=("$c"); done < <(docker ps -a --format '{{.Names}}' | grep -E '^amnezia-' || true)
+  fi
+  [ "${#awg[@]}" -gt 0 ] && vpn+=("Amnezia: ${awg[*]}")
+  [ -f "$ENV_FILE" ] && items+=("панель ${domain:-} с данными, сертификатами и образами")
+  [ -f /etc/systemd/system/vps-agent.service ] && items+=("агент панели (vps-agent)")
+  [ -f /etc/systemd/system/vps-naive.service ] && items+=("прокси для браузера (vps-naive)")
+  [ -x /usr/local/sbin/vps-portsync ] && items+=("port-sync (правила ufw по портам - остаются как есть)")
+  [ "$(env_get DOCKER_BY_PANEL)" = 1 ] && items+=("docker (ставил установщик панели; снимется, если других контейнеров нет)")
+
+  say "Полная зачистка сервера от VPS Panel"
+  printf '  - %s\n' "${items[@]}"
+  if [ "${#vpn[@]}" -gt 0 ]; then
+    echo "VPN-сервисы на этом сервере (люди перестанут подключаться, пользователи и ключи пропадут):"
+    printf '  - %s\n' "${vpn[@]}"
+  fi
+  echo "Остаётся: вход SSH по ключу, jail sshd, автообновления безопасности, ufw."
+  if [ "$YES" != 1 ]; then
+    local typed
+    read -r -p "Это необратимо. Введите домен панели (${domain:-vps-panel}) для подтверждения: " typed </dev/tty || die "нет терминала: запустите с -y"
+    [ "$typed" = "${domain:-vps-panel}" ] || die "не совпало - ничего не удалено"
+  fi
+  local drop_vpn=0
+  if [ "${#vpn[@]}" -gt 0 ]; then
+    if confirm "Удалить и VPN-сервисы из списка выше?"; then drop_vpn=1; else echo "VPN-сервисы остаются"; fi
+  fi
+
+  if [ "$drop_vpn" = 1 ]; then
+    if [ -x /usr/local/x-ui/x-ui ]; then
+      say "3X-UI"
+      printf 'y\n' | x-ui uninstall >/dev/null 2>&1 || true
+      rm -f /etc/fail2ban/jail.d/xui-panel.conf /etc/fail2ban/filter.d/xui-panel.conf
+      [ -e /usr/local/x-ui/x-ui ] && warn "3X-UI удалился не полностью: /usr/local/x-ui остался"
+    fi
+    if command -v mtproxyl >/dev/null 2>&1; then
+      say "MTProxyL"
+      if systemctl cat mtproxyl-panel >/dev/null 2>&1; then
+        printf 'y\n' | mtproxyl panel uninstall --no-confirm >/dev/null 2>&1 || true
+      fi
+      printf 'yes\nn\n' | mtproxyl uninstall >/dev/null 2>&1 || warn "mtproxyl uninstall завершился с ошибкой"
+    fi
+    if [ -x /usr/local/bin/wdtt-server ]; then
+      say "WDTT"
+      # установщик WDTT лежит в образе панели - пока панель ещё здесь
+      local pc
+      pc="$(docker ps --filter label=com.docker.compose.service=panel --format '{{.Names}}' 2>/dev/null | head -1)"
+      if [ -n "$pc" ] && docker cp "$pc:/app/files/wdtt/deploy.sh" /tmp/wdtt-deploy.sh 2>/dev/null; then
+        bash /tmp/wdtt-deploy.sh uninstall </dev/null >/dev/null 2>&1 || warn "WDTT: deploy.sh uninstall завершился с ошибкой"
+        rm -f /tmp/wdtt-deploy.sh
+      else
+        systemctl disable --now wdtt >/dev/null 2>&1 || true
+        rm -f /etc/systemd/system/wdtt.service /usr/local/bin/wdtt-server
+      fi
+    fi
+    if [ -x /opt/openflux-node/node-install.sh ]; then
+      say "OpenFlux"
+      sh /opt/openflux-node/node-install.sh uninstall </dev/null >/dev/null 2>&1 || warn "OpenFlux: uninstall завершился с ошибкой"
+    fi
+    for c in "${awg[@]}"; do
+      say "Amnezia: $c"
+      docker rm -f "$c" >/dev/null 2>&1 || true
+      docker image rm "$c" >/dev/null 2>&1 || true
+      rm -rf "/opt/amnezia/$c"
+    done
+    rmdir /opt/amnezia 2>/dev/null || true
+  fi
+
+  if [ -f /etc/systemd/system/vps-naive.service ]; then
+    say "прокси для браузера"
+    systemctl disable --now vps-naive vps-naive-cert.timer >/dev/null 2>&1 || true
+    rm -f /etc/systemd/system/vps-naive.service /etc/systemd/system/vps-naive-cert.service \
+      /etc/systemd/system/vps-naive-cert.timer /usr/local/sbin/vps-naive-cert
+    rm -rf /opt/vps-naive /etc/vps-naive /var/lib/vps-naive
+    userdel vps-naive 2>/dev/null || true
+  fi
+  if [ -x /usr/local/sbin/vps-portsync ]; then
+    say "port-sync"
+    systemctl disable --now vps-portsync.timer vps-portsync-xui.path vps-portsync-docker-watch.service vps-portsync.service >/dev/null 2>&1 || true
+    rm -f /etc/systemd/system/vps-portsync.service /etc/systemd/system/vps-portsync.timer \
+      /etc/systemd/system/vps-portsync-xui.path /etc/systemd/system/vps-portsync-docker-watch.service \
+      /usr/local/sbin/vps-portsync /etc/vps-portsync.conf
+    rm -rf /var/lib/vps-portsync
+  fi
+  if [ -f /etc/systemd/system/vps-agent.service ]; then
+    say "агент панели"
+    systemctl disable --now vps-agent >/dev/null 2>&1 || true
+    rm -f /etc/systemd/system/vps-agent.service /usr/local/bin/vps-agent
+    rm -rf /etc/vps-agent
+  fi
+  local docker_by_panel
+  docker_by_panel="$(env_get DOCKER_BY_PANEL)"
+  if [ -f "$ENV_FILE" ] || [ -d "$ROOT" ]; then
+    say "панель"
+    remove_panel full
+  fi
+  systemctl daemon-reload
+  if [ "$docker_by_panel" = 1 ] && command -v docker >/dev/null 2>&1; then
+    if [ -z "$(docker ps -aq)" ]; then
+      say "docker (ставил установщик панели)"
+      systemctl disable --now docker docker.socket containerd >/dev/null 2>&1 || true
+      DEBIAN_FRONTEND=noninteractive apt-get purge -y -qq docker-ce docker-ce-cli containerd.io \
+        docker-buildx-plugin docker-compose-plugin docker-ce-rootless-extras >/dev/null 2>&1 || true
+      rm -rf /var/lib/docker /var/lib/containerd /etc/apt/sources.list.d/docker.list /etc/apt/keyrings/docker.asc
+    else
+      echo "docker остаётся: на сервере есть другие контейнеры ($(docker ps -a --format '{{.Names}}' | tr '\n' ' '))"
+    fi
+  fi
+  say "готово: VPS Panel снята с сервера"
+  [ "$drop_vpn" = 1 ] || [ "${#vpn[@]}" -eq 0 ] || echo "VPN-сервисы оставлены и работают."
 }
 
 case "${1:-}" in
@@ -535,5 +692,5 @@ case "${1:-}" in
   logs) shift; compose logs --tail 200 -f "$@" ;;
   restart) need_root; compose restart ;;
   uninstall) shift; cmd_uninstall "$@" ;;
-  *) sed -n '2,14p' "$0" | sed 's/^# \{0,1\}//'; exit 1 ;;
+  *) sed -n '2,16p' "$0" | sed 's/^# \{0,1\}//'; exit 1 ;;
 esac

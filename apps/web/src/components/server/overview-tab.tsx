@@ -7,7 +7,6 @@ import { ClientHostCard } from '@/components/server/client-host-card';
 import { HostingCard } from '@/components/server/hosting-card';
 import { MetricCard } from '@/components/server/metric-card';
 import { ReachCard } from '@/components/server/reach-card';
-import { SshKeysDialog } from '@/components/server/ssh-keys-dialog';
 import { ActionBar } from '@/components/ui/action-bar';
 import { Alert } from '@/components/ui/alert';
 import { Button, ButtonLink } from '@/components/ui/button';
@@ -21,19 +20,10 @@ import { api } from '@/lib/api';
 import { gb } from '@/lib/format';
 import { type ServerDetail, serverLock } from '@/lib/servers';
 import { type ServiceUpdateKind, startServiceUpdate } from '@/lib/service-update';
+import { useAction } from '@/lib/use-action';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import type { Finding } from '@vps/protocol';
-import {
-  ArrowRight,
-  Box,
-  ClipboardCheck,
-  Download,
-  KeyRound,
-  Plus,
-  Trash2,
-  Wrench,
-  X,
-} from 'lucide-react';
+import { ArrowRight, Box, ClipboardCheck, Download, Plus, Trash2, Wrench, X } from 'lucide-react';
 import { type ReactNode, useState } from 'react';
 
 /** Команда каталога, которая удаляет сервис этого вида (кнопка-корзина в блоке Сервисы). */
@@ -81,7 +71,6 @@ export function OverviewTab({ s, onTab }: { s: ServerDetail; onTab?: (tab: strin
   const qc = useQueryClient();
   const [baseline, setBaseline] = useState<string | null>(null);
   const [cleanup, setCleanup] = useState(false);
-  const [keys, setKeys] = useState(false);
   // запущенное из блока "Обслуживание" действие с выводом: обновление пакетов или сервиса
   // recheck - это было обновление сервиса: по окончании перепроверить его версии
   const [upgrade, setUpgrade] = useState<{ id: string; title: string; recheck?: boolean } | null>(
@@ -90,30 +79,41 @@ export function OverviewTab({ s, onTab }: { s: ServerDetail; onTab?: (tab: strin
   const [error, setError] = useState<string | null>(null);
   const pending = s.audit?.pendingUpdates ?? 0;
 
+  // запуск из "Обслуживания": пока идёт запрос, все кнопки блока заблокированы (двойной тап,
+  // соседняя строка)
+  const starting = useAction();
   async function startUpgrade() {
     setError(null);
-    try {
-      const r = await actions.upgrade(s.id);
-      setUpgrade({ id: r.actionId, title: 'Обновление пакетов' });
-    } catch (e) {
-      setError((e as Error).message);
-    }
+    await starting.run(async () => {
+      try {
+        const r = await actions.upgrade(s.id);
+        setUpgrade({ id: r.actionId, title: 'Обновление пакетов' });
+      } catch (e) {
+        setError((e as Error).message);
+      }
+    });
   }
   // версии в ключе: после обновления инвентарь меняется, и список перезапрашивается
   const versions = s.services.map((v) => `${v.kind}:${v.version ?? ''}`).join(',');
-  const { data: svcUpdates } = useQuery({
+  const { data: svcUpdates, isFetching: svcFetching } = useQuery({
     queryKey: ['service-updates', s.id, versions],
     queryFn: () => api<ServiceUpdate[]>(`/api/servers/${s.id}/updates`),
     refetchInterval: 10 * 60_000,
   });
   async function updateService(u: ServiceUpdate) {
     setError(null);
-    try {
-      const r = await startServiceUpdate[u.kind](s.id);
-      setUpgrade({ id: r.actionId, title: `Обновление ${u.title} до ${u.latest}`, recheck: true });
-    } catch (e) {
-      setError((e as Error).message);
-    }
+    await starting.run(async () => {
+      try {
+        const r = await startServiceUpdate[u.kind](s.id);
+        setUpgrade({
+          id: r.actionId,
+          title: `Обновление ${u.title} до ${u.latest}`,
+          recheck: true,
+        });
+      } catch (e) {
+        setError((e as Error).message);
+      }
+    });
   }
   const m = s.metrics;
   const findings = s.audit?.findings ?? [];
@@ -127,7 +127,8 @@ export function OverviewTab({ s, onTab }: { s: ServerDetail; onTab?: (tab: strin
   const fixable = findings.filter((f) => f.url?.startsWith('fix:')).length;
 
   // Строки блока "Обслуживание": у каждой одна кнопка действия справа
-  const busy = !canAct || upgrade !== null;
+  // идёт запуск, своё действие с выводом или перепроверка версий - кнопки блока недоступны
+  const busy = !canAct || upgrade !== null || starting.busy || svcFetching;
   const rows: SecurityRow[] = [
     ...(svcUpdates ?? []).map((u) => ({
       key: `update-${u.kind}`,
@@ -397,16 +398,6 @@ export function OverviewTab({ s, onTab }: { s: ServerDetail; onTab?: (tab: strin
               <ActionBar
                 actions={[
                   {
-                    key: 'keys',
-                    label: 'Ключи root',
-                    short: 'Ключи',
-                    icon: <KeyRound className="size-3.5" />,
-                    disabled: !canAct,
-                    title:
-                      lock.reason ?? 'Ключи в authorized_keys root: просмотр, удаление, добавление',
-                    onClick: () => setKeys(true),
-                  },
-                  {
                     key: 'fix',
                     label: `Исправить проблемы (${fixable})`,
                     short: `Исправить (${fixable})`,
@@ -485,9 +476,11 @@ export function OverviewTab({ s, onTab }: { s: ServerDetail; onTab?: (tab: strin
         open={baseline !== null}
         preselect={baseline || null}
         onClose={() => setBaseline(null)}
+        onKeys={() => {
+          setBaseline(null);
+          onTab?.('keys');
+        }}
       />
-      {/* окно монтируется при открытии: каждое открытие - с чистой формой, без прошлой ошибки */}
-      {keys && <SshKeysDialog serverId={s.id} open={keys} onClose={() => setKeys(false)} />}
     </>
   );
 }

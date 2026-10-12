@@ -9,7 +9,7 @@ import { Pager, usePaged } from '@/components/ui/pager';
 import { Section } from '@/components/ui/section';
 import { TBody, THead, Table } from '@/components/ui/table';
 import { type CommandInfo, type CommandRun, commandsApi, groupTitles } from '@/lib/commands';
-import { ago, plural } from '@/lib/format';
+import { ago } from '@/lib/format';
 import { useServers } from '@/lib/servers';
 import { useQuery } from '@tanstack/react-query';
 import { Link } from '@tanstack/react-router';
@@ -148,16 +148,10 @@ export function CommandsPage() {
             <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
               {list.map((c) => {
                 const r = lastRun([c.id]);
-                const q = c.params.length;
                 return (
                   <CommandCard
                     key={c.id}
                     title={c.title}
-                    questions={
-                      q === 0
-                        ? 'без вопросов'
-                        : `${q} ${plural(q, 'вопрос', 'вопроса', 'вопросов')}`
-                    }
                     description={c.description}
                     run={r}
                     serverName={names.get(r?.serverId ?? '')}
@@ -255,7 +249,6 @@ export function CommandsPage() {
 /** Карточка каталога: команда или сервис (children - кнопки действий). */
 function CommandCard({
   title,
-  questions,
   description,
   run: r,
   runLabel = '',
@@ -263,7 +256,6 @@ function CommandCard({
   children,
 }: {
   title: string;
-  questions?: string;
   description: string;
   run: CommandRun | undefined;
   runLabel?: string;
@@ -278,9 +270,6 @@ function CommandCard({
         </div>
         <div className="min-w-0 truncate font-semibold">{title}</div>
         <div className="grow" />
-        {questions && (
-          <span className="shrink-0 whitespace-nowrap text-xs text-muted">{questions}</span>
-        )}
       </div>
       <div className="grow text-[13px] leading-relaxed text-muted">{description}</div>
       <div className="flex items-center gap-2">

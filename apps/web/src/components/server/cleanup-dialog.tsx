@@ -134,7 +134,9 @@ export function CleanupDialog({
             <Button onClick={onClose}>Отмена</Button>
             <Button
               variant="primary"
-              disabled={busy || !chosen || chosen.size === 0 || items.length === 0}
+              disabled={
+                busy || scan.isFetching || !chosen || chosen.size === 0 || items.length === 0
+              }
               onClick={run}
             >
               <Trash2 className="size-4" />

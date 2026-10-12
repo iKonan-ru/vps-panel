@@ -109,7 +109,13 @@ export function FirefoxSettings() {
             >
               <RefreshCw className="size-3.5" />
             </Button>
-            <Button size="sm" variant="ghost" disabled={busy} onClick={remove} label="Удалить ключ">
+            <Button
+              size="sm"
+              variant="ghost"
+              disabled={busy || st.busy}
+              onClick={remove}
+              label="Удалить ключ"
+            >
               <Power className="size-3.5" />
             </Button>
           </>

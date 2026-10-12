@@ -47,8 +47,9 @@ export function PanelBackupSettings() {
     } catch (e) {
       setMsg({ tone: 'bad', text: (e as Error).message });
     } finally {
-      setBusy(false);
+      // кнопки - только после свежего состояния (переключатель Telegram по старому значению)
       await qc.invalidateQueries({ queryKey: ['panel-backup'] });
+      setBusy(false);
     }
   }
 

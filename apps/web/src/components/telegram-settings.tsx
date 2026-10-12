@@ -7,11 +7,12 @@ import { useConfirm } from '@/components/ui/confirm';
 import { Field } from '@/components/ui/field';
 import { Input } from '@/components/ui/input';
 import { Section } from '@/components/ui/section';
+import { XrayRouteDialog, useXrayStatus, xrayState } from '@/components/xray-route';
 import { api } from '@/lib/api';
 import { ago } from '@/lib/format';
 import { useServers } from '@/lib/servers';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { Power, Search, Send, SlidersHorizontal } from 'lucide-react';
+import { Power, Route, Search, Send, SlidersHorizontal } from 'lucide-react';
 import { type FormEvent, useState } from 'react';
 
 interface TgSettings extends NotifyChoice {
@@ -43,6 +44,8 @@ export function TelegramSettings() {
   const [token, setToken] = useState('');
   const [chatId, setChatId] = useState<string | null>(null);
   const [choose, setChoose] = useState(false);
+  const [routeOpen, setRouteOpen] = useState(false);
+  const { data: route } = useXrayStatus();
   const [busy, setBusy] = useState(false);
   const [msg, setMsg] = useState<{ tone: 'ok' | 'bad'; text: string } | null>(null);
   const [found, setFound] = useState<{ id: string; title: string; when: string }[] | null>(null);
@@ -122,11 +125,14 @@ export function TelegramSettings() {
       }))
     )
       return;
+    setBusy(true);
     try {
       await api('/api/notify/telegram/clear', { method: 'POST' });
       await qc.invalidateQueries({ queryKey: ['tg-settings'] });
     } catch (err) {
       setMsg({ tone: 'bad', text: (err as Error).message });
+    } finally {
+      setBusy(false);
     }
   }
 
@@ -221,14 +227,30 @@ export function TelegramSettings() {
             <div className="text-xs text-muted">После выбора нажми "Сохранить", затем "Тест".</div>
           </div>
         )}
-        <div className="flex flex-wrap items-center gap-x-3 gap-y-1 rounded-lg border border-border px-3 py-2">
-          <div className="min-w-0 grow">
-            <div className="text-[13px]">Какие уведомления</div>
-            <div className="text-xs text-muted">{notifySummary(st)}</div>
+        <div className="flex flex-col rounded-lg border border-border">
+          <div className="flex flex-wrap items-center gap-x-3 gap-y-1 border-b border-border px-3 py-2">
+            <div className="min-w-0 grow">
+              <div className="text-[13px]">Какие уведомления</div>
+              <div className="text-xs text-muted">{notifySummary(st)}</div>
+            </div>
+            <Button type="button" size="sm" onClick={() => setChoose(true)} label="Настроить">
+              <SlidersHorizontal className="size-3.5" />
+            </Button>
           </div>
-          <Button type="button" size="sm" onClick={() => setChoose(true)} label="Настроить">
-            <SlidersHorizontal className="size-3.5" />
-          </Button>
+          <div className="flex flex-wrap items-center gap-x-3 gap-y-1 px-3 py-2">
+            <div className="min-w-0 grow">
+              <div className="flex flex-wrap items-center gap-2 text-[13px]">
+                Маршрут до Telegram
+                {route && <Chip tone={xrayState(route).tone}>{xrayState(route).label}</Chip>}
+              </div>
+              <div className="text-xs text-muted">
+                с сервера в России Telegram доступен только через свои серверы за границей (xray)
+              </div>
+            </div>
+            <Button type="button" size="sm" onClick={() => setRouteOpen(true)} label="Настроить">
+              <Route className="size-3.5" />
+            </Button>
+          </div>
         </div>
         {msg && <Alert tone={msg.tone}>{msg.text}</Alert>}
         <div className="flex justify-end">
@@ -238,6 +260,7 @@ export function TelegramSettings() {
         </div>
       </form>
       <NotifyDialog open={choose} onClose={() => setChoose(false)} value={st} />
+      <XrayRouteDialog open={routeOpen} onClose={() => setRouteOpen(false)} />
     </Section>
   );
 }
