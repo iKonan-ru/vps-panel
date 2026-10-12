@@ -16,6 +16,7 @@ import { type Db, createDb } from './db/index.js';
 import { actionLog, servers } from './db/schema.js';
 import { actionJournal } from './lib/action-journal.js';
 import { AppReleases } from './lib/apps.js';
+import { startFail2banIgnore } from './lib/fail2ban-ignore.js';
 import { FirefoxSigner } from './lib/firefox.js';
 import { GClients } from './lib/gclients.js';
 import { startHousekeeping } from './lib/housekeeping.js';
@@ -322,6 +323,8 @@ export async function buildApp(opts: AppOptions) {
     app.log,
   );
   stops.push(gc.start(), startHousekeeping(db, app.log));
+  // IP своих серверов - мимо fail2ban панели (lib/fail2ban-ignore.ts)
+  stops.push(startFail2banIgnore(db, registry, env.DATA_DIR, app.log));
   // метрики агентов раз в 2 с, пока открыта вкладка панели, иначе раз в 30 с
   stops.push(startMetricsPace(registry, hub, app.log));
   await app.register(gclientRoutes, { db, registry, box, gc, env, hub });

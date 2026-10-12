@@ -12,3 +12,6 @@ backend = polling
 # их не закрывает.
 banaction = iptables-allports
 chain = DOCKER-USER
+# IP своих серверов не баним: бан на всех портах отключил бы и агента этого сервера (вход в
+# панель через VPN на нём же). Список ведёт панель (lib/fail2ban-ignore.ts), код 0 - пропустить.
+ignorecommand = grep -qxF '<ip>' __DATA__/fail2ban-ignore.txt

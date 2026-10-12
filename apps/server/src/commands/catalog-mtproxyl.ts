@@ -86,6 +86,8 @@ export const mtproxylCmd: CommandDef = {
   service: 'MTProxyL',
   description:
     'MTProto-прокси Telegram (движок telemt) вместе с веб-панелью MTProxyL: порт, домен маскировки, пользователи, Zapret2, доступ к панели. Если прокси уже стоит - ставится только панель.',
+  // 443 занят (3X-UI, Caddy сервера панели) - форма предложит свободный порт
+  liveDefaults: 'mtproxyl',
   params: [
     { name: 'MT_PORT', label: 'Порт прокси', type: 'port', default: '443', required: true },
     {
