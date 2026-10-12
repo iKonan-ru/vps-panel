@@ -324,6 +324,39 @@ func MtproxyPort() int {
 	return 0
 }
 
+// mtReachFile - итог последней проверки "Доступность из России" MTProxyL (его таймер раз в 15
+// минут, зонды Globalping в домашних сетях РФ).
+const mtReachFile = "/opt/mtproxyl/availability/last.json"
+
+// mtproxylReach - итог проверки MTProxyL без ответов отдельных зондов; nil - проверок ещё не было.
+func mtproxylReach(path string) map[string]any {
+	raw, err := os.ReadFile(path)
+	if err != nil || len(raw) > 1<<20 {
+		return nil
+	}
+	var v struct {
+		CheckedAt  string  `json:"checked_at"`
+		Target     string  `json:"target"`
+		Level      string  `json:"level"`
+		Percentage float64 `json:"percentage"`
+		Total      int     `json:"total_probes"`
+		Success    int     `json:"success_probes"`
+		Error      string  `json:"error"`
+	}
+	if json.Unmarshal(raw, &v) != nil || v.CheckedAt == "" {
+		return nil
+	}
+	return map[string]any{
+		"checkedAt": v.CheckedAt,
+		"target":    v.Target,
+		"level":     v.Level,
+		"percent":   v.Percentage,
+		"total":     v.Total,
+		"ok":        v.Success,
+		"error":     v.Error,
+	}
+}
+
 func mtproxyl(ctx context.Context, publicIP string) (proto.Service, bool) {
 	port := MtproxyPort()
 	if port == 0 && !shell.Has("mtproxyl") {
@@ -340,6 +373,12 @@ func mtproxyl(ctx context.Context, publicIP string) (proto.Service, bool) {
 		break
 	}
 	markDown(&s, mtproxyDown(ctx, port), fmt.Sprintf("порт прокси %d никто не слушает", port))
+	if r := mtproxylReach(mtReachFile); r != nil {
+		if s.Details == nil {
+			s.Details = map[string]any{}
+		}
+		s.Details["ruReach"] = r
+	}
 	if v := shell.Out(ctx, "sh", "-c", "mtproxyl status --json 2>/dev/null"); v != "" {
 		var st map[string]any
 		if json.Unmarshal([]byte(v), &st) == nil {

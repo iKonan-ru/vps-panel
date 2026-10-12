@@ -5,6 +5,7 @@ import { BaselineDialog } from '@/components/server/baseline-dialog';
 import { CleanupDialog } from '@/components/server/cleanup-dialog';
 import { HostingCard } from '@/components/server/hosting-card';
 import { MetricCard } from '@/components/server/metric-card';
+import { ReachCard } from '@/components/server/reach-card';
 import { SshKeysDialog } from '@/components/server/ssh-keys-dialog';
 import { Alert } from '@/components/ui/alert';
 import { Button, ButtonLink } from '@/components/ui/button';
@@ -374,6 +375,7 @@ export function OverviewTab({ s, onTab }: { s: ServerDetail; onTab?: (tab: strin
               </div>
             ))}
           </Section>
+          <ReachCard serverId={s.id} online={online} />
           <HostingCard serverId={s.id} hosting={s.hosting} />
           <Section
             title={

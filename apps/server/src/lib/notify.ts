@@ -162,6 +162,13 @@ export class Notifier {
     }
   }
 
+  /** Доступность из России: цель не видна две проверки подряд или снова видна (lib/ru-reach.ts). */
+  async reach(id: string, text: string) {
+    const st = await this.tg.settings();
+    if (!st.events.reach || !st.token) return;
+    await this.tg.send(`${await this.serverName(id)}: ${text}`);
+  }
+
   /** Новая версия установленного сервиса (3x-ui, MTProxyL), один раз на версию. */
   async serviceUpdate(id: string, u: ServiceUpdate) {
     const st = await this.tg.settings();

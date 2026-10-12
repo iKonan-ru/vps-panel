@@ -34,6 +34,7 @@ export async function notifyRoutes(app: FastifyInstance, opts: { telegram: Teleg
             audit: z.boolean(),
             bans: z.boolean(),
             updates: z.boolean(),
+            reach: z.boolean().default(true),
           })
           .optional(),
         banThreshold: z.number().int().min(1).max(10_000).optional(),

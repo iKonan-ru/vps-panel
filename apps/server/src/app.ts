@@ -24,6 +24,7 @@ import { Notifier } from './lib/notify.js';
 import { PanelBackups } from './lib/panel-backup.js';
 import { panelAddresses } from './lib/panel-host.js';
 import { PanelProxy } from './lib/panel-proxy.js';
+import { RuReach } from './lib/ru-reach.js';
 import { schedule } from './lib/schedule.js';
 import { SecretBox } from './lib/secret-box.js';
 import { ServiceUpdates } from './lib/service-updates.js';
@@ -54,6 +55,7 @@ import { panelBackupRoutes } from './routes/panel-backup.js';
 import { personalRoutes } from './routes/personal.js';
 import { probeRoutes } from './routes/probe.js';
 import { proxyRoutes } from './routes/proxy.js';
+import { reachRoutes } from './routes/reach.js';
 import { securityRoutes } from './routes/security.js';
 import { serverRoutes } from './routes/servers.js';
 import { standardRoutes } from './routes/standard.js';
@@ -224,6 +226,10 @@ export async function buildApp(opts: AppOptions) {
   const notifier = new Notifier(db, registry, telegram);
   // остановка фоновых таймеров при закрытии: в тестах и при выключении они не трогают базу
   const stops: (() => void)[] = [];
+  // доступность из России: адрес и inbound-ы - агент через Globalping, MTProxyL - его итог
+  const ruReach = new RuReach(db, box, registry, app.log, (id, text) => notifier.reach(id, text));
+  stops.push(ruReach.start());
+  await app.register(reachRoutes, { reach: ruReach });
   stops.push(xraySpares.start());
   // доставка в Telegram: раз в 5 минут проверка выходов xray и getMe бота (lib/telegram.ts)
   stops.push(

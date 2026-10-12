@@ -1,5 +1,6 @@
 import { OpenfluxDocsSettings } from '@/components/openflux-docs-settings';
 import { PanelBackupSettings } from '@/components/panel-backup-settings';
+import { ReachSettings } from '@/components/reach-settings';
 import { MetricCard } from '@/components/server/metric-card';
 import { TelegramSettings } from '@/components/telegram-settings';
 import { Alert } from '@/components/ui/alert';
@@ -58,6 +59,8 @@ export function SettingsPage() {
       <PanelBackupSettings />
 
       <XraySettings />
+
+      <ReachSettings />
 
       <WdttSettings />
       <OpenfluxDocsSettings />
