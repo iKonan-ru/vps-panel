@@ -1,11 +1,14 @@
 import { eq } from 'drizzle-orm';
 import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
+import type { AgentRegistry } from '../agents/registry.js';
 import type { StatusCache } from '../agents/state.js';
 import type { Db } from '../db/index.js';
-import { gclientBindings, servers } from '../db/schema.js';
+import { servers } from '../db/schema.js';
+import type { actionJournal } from '../lib/action-journal.js';
 import { checkClientHost } from '../lib/client-host.js';
-import { type GClients, queued } from '../lib/gclients.js';
+import type { GClients } from '../lib/gclients.js';
+import { applyClientHost } from '../lib/mtproxyl-host.js';
 import { slugify } from '../lib/panel-proxy.js';
 import type { UiHub } from '../lib/ui-hub.js';
 
@@ -14,14 +17,22 @@ const Name = z.object({ name: z.string().trim().toLowerCase().max(253) });
 
 /**
  * Адрес сервера в конфигах людей (lib/client-host.ts): имя под A-записью вместо IP. Сохраняется
- * только имя, которое у публичных резолверов указывает на этот сервер; после смены - сверка
- * привязок сервера (ссылки и конфиги на личных страницах перевыпускаются с новым адресом).
+ * только имя, которое у публичных резолверов указывает на этот сервер; после смены - адрес в
+ * ссылках MTProxyL (lib/mtproxyl-host.ts) и синхронизация привязок сервера (ссылки и конфиги на
+ * личных страницах перевыпускаются с новым адресом).
  */
 export async function clientHostRoutes(
   app: FastifyInstance,
-  opts: { db: Db; gc: GClients; hub: UiHub; panelUrl: string },
+  opts: {
+    db: Db;
+    gc: GClients;
+    hub: UiHub;
+    panelUrl: string;
+    registry: AgentRegistry;
+    journal: ReturnType<typeof actionJournal>;
+  },
 ) {
-  const { db, gc, hub } = opts;
+  const { db, gc, hub, registry, journal } = opts;
   const row = (id: string) => db.select().from(servers).where(eq(servers.id, id)).get();
 
   app.get('/api/servers/:id/client-host', async (req, reply) => {
@@ -47,7 +58,7 @@ export async function clientHostRoutes(
     return checkClientHost(name, r.host);
   });
 
-  /** Задать имя (пусто - снова IP): имя проверяется, затем сверка привязок сервера. */
+  /** Задать имя (пусто - снова IP): имя проверяется, затем адрес MTProxyL и синхронизация. */
   app.put('/api/servers/:id/client-host', async (req, reply) => {
     const { id } = Id.parse(req.params);
     const r = row(id);
@@ -62,10 +73,9 @@ export async function clientHostRoutes(
       .set({ clientHost: name || null })
       .where(eq(servers.id, id))
       .run();
-    db.update(gclientBindings).set(queued()).where(eq(gclientBindings.serverId, id)).run();
-    gc.kick();
     hub.broadcast({ type: 'server.changed', serverId: id });
+    const actionId = applyClientHost({ db, registry, journal, gc }, id);
     app.log.info({ serverId: id, clientHost: name || null }, 'адрес для клиентов');
-    return { ok: true, changed: true };
+    return { ok: true, changed: true, actionId };
   });
 }

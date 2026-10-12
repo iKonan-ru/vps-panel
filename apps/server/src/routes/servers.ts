@@ -100,6 +100,14 @@ export async function serverRoutes(
         .where(and(eq(actionLog.serverId, id), isNull(actionLog.finishedAt)))
         .orderBy(actionLog.startedAt)
     ).map(({ params, ...a }) => ({ ...a, title: actionTitle(a.kind, params) }));
+    // после действия агент присылает свежее состояние: до него кнопки действий неактивны
+    if (registry.isRefreshing(id))
+      activeActions.push({
+        id: `refresh:${id}`,
+        kind: 'status.refresh',
+        title: actionTitle('status.refresh'),
+        startedAt: new Date().toISOString(),
+      });
     const inventory = cache.inventory ?? null;
     return {
       ...withLinks(toSummary(row, registry, latestAgentVersion(env.AGENT_DIR), await panelIps())),

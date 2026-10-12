@@ -1,13 +1,12 @@
-import { Button } from '@/components/ui/button';
+import { Bar } from '@/components/deploy-banner';
 import { Chip } from '@/components/ui/chip';
 import { useConfirm } from '@/components/ui/confirm';
-import { Section } from '@/components/ui/section';
+import { Meter } from '@/components/ui/meter';
 import { api } from '@/lib/api';
-import { cap } from '@/lib/format';
 import { subscribe } from '@/lib/live';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { Link } from '@tanstack/react-router';
-import { RefreshCw, X } from 'lucide-react';
+import { RefreshCw } from 'lucide-react';
 import { useEffect, useState } from 'react';
 
 interface RolloutItem {
@@ -21,17 +20,6 @@ interface Rollout {
   finishedAt: string | null;
   items: RolloutItem[];
 }
-
-const statusChip: Record<
-  RolloutItem['status'],
-  { tone: 'muted' | 'accent' | 'ok' | 'bad'; text: string }
-> = {
-  pending: { tone: 'muted', text: 'в очереди' },
-  running: { tone: 'accent', text: 'обновляется' },
-  ok: { tone: 'ok', text: 'обновлён' },
-  skipped: { tone: 'muted', text: 'пропущен' },
-  error: { tone: 'bad', text: 'ошибка' },
-};
 
 const HIDDEN_KEY = 'vps-agents-rollout-hidden';
 
@@ -121,51 +109,63 @@ export function useAgentsRollout(outdated: number) {
           </Chip>
         </button>
       ) : null,
-    card:
-      error || (rollout && hidden !== rollout.startedAt && !stale) ? (
-        <Section
-          title="Обновление агентов"
-          extra={
-            rollout &&
-            (running ? (
-              <Chip tone="accent" dot pulse>
-                идёт
-              </Chip>
-            ) : rollout.items.some((i) => i.status === 'error') ? (
-              <Chip tone="bad">остановлено</Chip>
-            ) : (
-              <Chip tone="ok">завершено</Chip>
-            ))
-          }
-          actions={
-            rollout &&
-            !running && (
-              <Button size="sm" onClick={() => hide(rollout.startedAt)} label="Скрыть">
-                <X className="size-3.5" />
-              </Button>
-            )
-          }
-        >
-          {error && <div className="px-4 py-3 text-[13px] text-bad">{cap(error)}</div>}
-          {rollout?.items.map((it) => (
-            <div
-              key={it.serverId}
-              className="flex items-center gap-3 border-b border-border px-4 py-2.5 text-[13px] last:border-b-0"
-            >
-              <Link
-                to="/servers/$id"
-                params={{ id: it.serverId }}
-                className="min-w-0 truncate font-medium hover:text-accent"
-              >
-                {it.name}
-              </Link>
-              <span className="min-w-0 grow truncate text-xs text-muted">{it.note}</span>
-              <Chip tone={statusChip[it.status].tone} dot={it.status === 'running'}>
-                {statusChip[it.status].text}
-              </Chip>
-            </div>
-          ))}
-        </Section>
-      ) : null,
+    card: error ? (
+      <Bar tone="bad" onClose={() => setError(null)}>
+        <div className="min-w-0 grow">Обновление агентов не запущено: {error}</div>
+      </Bar>
+    ) : rollout && hidden !== rollout.startedAt && !stale ? (
+      <RolloutBar rollout={rollout} onClose={() => hide(rollout.startedAt)} />
+    ) : null,
   };
+}
+
+/**
+ * Ход обновления агентов - полосой, как обновление панели: шкала по серверам и только тот,
+ * что обновляется сейчас; итог - успех или сервер, на котором обновление остановилось.
+ */
+function RolloutBar({ rollout, onClose }: { rollout: Rollout; onClose: () => void }) {
+  const total = rollout.items.length;
+  const done = rollout.items.filter((i) => i.status !== 'pending' && i.status !== 'running').length;
+  const failed = rollout.items.find((i) => i.status === 'error');
+  const server = (it: RolloutItem) => (
+    <Link to="/servers/$id" params={{ id: it.serverId }} className="font-medium underline">
+      {it.name}
+    </Link>
+  );
+  if (!rollout.finishedAt) {
+    const current = rollout.items.find((i) => i.status === 'running');
+    return (
+      <Bar tone="accent">
+        <RefreshCw className="size-4 shrink-0 animate-spin" />
+        <div className="min-w-0 grow">
+          <div>
+            Обновление агентов: {Math.min(done + 1, total)} из {total}
+            {current && <>, {server(current)}</>}
+          </div>
+          <Meter
+            pct={Math.round((done / Math.max(1, total)) * 100)}
+            className="mt-1.5 h-1 bg-accent/20"
+            fill="bg-accent"
+          />
+        </div>
+      </Bar>
+    );
+  }
+  if (failed)
+    return (
+      <Bar tone="bad" onClose={onClose}>
+        <div className="min-w-0 grow">
+          Обновление агентов остановлено на {server(failed)}
+          {failed.note ? `: ${failed.note}` : ''}
+        </div>
+      </Bar>
+    );
+  const ok = rollout.items.filter((i) => i.status === 'ok').length;
+  return (
+    <Bar tone="ok" onClose={onClose}>
+      <div className="min-w-0 grow">
+        Агенты обновлены: {ok} из {total}
+      </div>
+    </Bar>
+  );
 }

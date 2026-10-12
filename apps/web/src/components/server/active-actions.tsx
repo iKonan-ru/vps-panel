@@ -9,8 +9,16 @@ import { X } from 'lucide-react';
 import { useEffect, useRef, useState } from 'react';
 
 /**
- * Действия, которые шли на сервере ещё до открытия этой страницы (перезагрузка, другая
- * вкладка, запуск из каталога команд): показываем их вывод здесь. То, что запущено
+ * Действия, которые панель запускает сама, а не вкладка этой страницы: синхронизация клиентов,
+ * адрес в ссылках MTProxyL после смены адреса для клиентов, команды каталога. Их вывод - здесь,
+ * даже если они начались после открытия страницы.
+ */
+const SHOWN_ALWAYS = (kind: string) =>
+  kind === 'gclients.sync' || kind === 'mtproxyl:host' || kind.startsWith('command:');
+
+/**
+ * Действия на сервере, которые не показывает своя вкладка: шедшие ещё до открытия этой страницы
+ * (перезагрузка, другая вкладка) и запущенные панелью (SHOWN_ALWAYS). То, что запущено
  * с этой страницы, показывает свой блок сама вкладка - дублировать не нужно.
  */
 export function ActiveActions({ s }: { s: ServerDetail }) {
@@ -22,7 +30,11 @@ export function ActiveActions({ s }: { s: ServerDetail }) {
 
   const active = s.activeActions;
   useEffect(() => {
-    const before = active.filter((a) => new Date(a.startedAt).getTime() < openedAt.current - 1000);
+    const before = active.filter(
+      (a) =>
+        a.kind !== 'status.refresh' &&
+        (SHOWN_ALWAYS(a.kind) || new Date(a.startedAt).getTime() < openedAt.current - 1000),
+    );
     if (before.some((a) => !seen.has(a.id))) {
       setSeen((m) => {
         const next = new Map(m);
