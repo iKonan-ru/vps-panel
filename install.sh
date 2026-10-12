@@ -24,7 +24,12 @@ done
 if [ -z "$ver" ]; then
   # последний релиз (с --beta - и пре-релиз; GitHub отдаёт их от новых к старым)
   if [ "$beta" = 1 ]; then
-    tag="$(curl -fsSL -m 30 "https://api.github.com/repos/$REPO/releases?per_page=1" | grep -m1 '"tag_name"' | cut -d'"' -f4)"
+    # наибольшая версия, а не первая в списке: GitHub сортирует теги строкой (beta.10 у него
+    # раньше beta.2). Стабильная X.Y.Z новее своих бет: для sort -V ключ X.Y.Z-zz.
+    tag="$(curl -fsSL -m 30 "https://api.github.com/repos/$REPO/releases?per_page=100" |
+      grep '"tag_name"' | cut -d'"' -f4 | grep -E '^v[0-9]+\.[0-9]+\.[0-9]+(-beta\.[0-9]+)?$' |
+      while read -r t; do v="${t#v}"; case "$v" in *-*) k="$v" ;; *) k="$v-zz" ;; esac; echo "$k $t"; done |
+      sort -V -k1,1 | tail -1 | cut -d' ' -f2)"
   else
     tag="$(curl -fsSL -m 30 "https://api.github.com/repos/$REPO/releases/latest" | grep -m1 '"tag_name"' | cut -d'"' -f4 || true)"
   fi
