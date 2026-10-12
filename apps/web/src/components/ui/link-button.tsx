@@ -40,7 +40,9 @@ export function LinkButton({
   const iconCls = size === 'sm' ? 'size-3.5' : 'size-4';
   const cls = cn('min-w-0 rounded-r-none', wide && 'grow justify-center');
   return (
-    <span className={cn('inline-flex min-w-0', wide && 'flex w-full')}>
+    // без wide кнопка не сжимается: в строке с длинным текстом рядом она иначе меняла ширину и
+    // место от строки к строке
+    <span className={cn('inline-flex', wide ? 'flex w-full min-w-0' : 'shrink-0')}>
       {safe ? (
         <ButtonAnchor
           href={href}

@@ -231,7 +231,7 @@ export async function buildApp(opts: AppOptions) {
     ),
   );
   // обновления 3X-UI и MTProxyL (менеджер, веб-панель): проверка через агента,
-  // строки в блоке "Безопасность", версии во вкладке MTProxyL
+  // строки в блоке "Обслуживание", версии во вкладке MTProxyL
   const serviceUpdates = new ServiceUpdates(
     db,
     box,

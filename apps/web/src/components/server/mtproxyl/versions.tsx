@@ -1,3 +1,4 @@
+import { ActionOutput } from '@/components/action-output';
 import { Alert } from '@/components/ui/alert';
 import { Button } from '@/components/ui/button';
 import { Chip } from '@/components/ui/chip';
@@ -7,7 +8,7 @@ import { api } from '@/lib/api';
 import { cn } from '@/lib/cn';
 import { ago } from '@/lib/format';
 import { useQuery } from '@tanstack/react-query';
-import { Download, Layers, RefreshCw } from 'lucide-react';
+import { Download, Layers, RefreshCw, X } from 'lucide-react';
 import { useState } from 'react';
 
 /** Версии MTProxyL и его веб-панели, движок (образ или бинарник) с обновлением и откатом. */
@@ -41,6 +42,9 @@ export function VersionsSection({
   onCheck,
   onUpdate,
   onEngine,
+  action,
+  onHideAction,
+  onActionFinished,
 }: {
   data: MtVersions | undefined;
   panel: boolean;
@@ -51,6 +55,10 @@ export function VersionsSection({
   onCheck: () => void;
   onUpdate: (kind: MtVersionKind, latest: string) => void;
   onEngine: () => void;
+  /** Идущее или законченное обновление (или смена движка): вывод - здесь, как в "Обзоре". */
+  action: { id: string; title: string } | null;
+  onHideAction: () => void;
+  onActionFinished: () => void;
 }) {
   const rows: { kind: MtVersionKind; title: string }[] = [
     { kind: 'mtproxyl', title: 'MTProxyL' },
@@ -77,6 +85,18 @@ export function VersionsSection({
         </Button>
       }
     >
+      {action && (
+        <div className="flex flex-col gap-2 border-b border-border p-4">
+          <div className="flex items-center gap-2 text-sm font-medium">
+            {action.title}
+            <div className="grow" />
+            <Button size="sm" variant="ghost" onClick={onHideAction} label="Скрыть">
+              <X className="size-3.5" />
+            </Button>
+          </div>
+          <ActionOutput key={action.id} actionId={action.id} onFinished={onActionFinished} />
+        </div>
+      )}
       {rows.map(({ kind, title }) => {
         const v = data?.[kind];
         return (

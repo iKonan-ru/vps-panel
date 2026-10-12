@@ -167,7 +167,7 @@ export class Notifier {
     const st = await this.tg.settings();
     if (!st.events.updates || !st.token) return;
     await this.tg.send(
-      `${await this.serverName(id)}: доступно обновление ${u.title} ${esc(u.current)} -> ${esc(u.latest)}. Кнопка "Обновить" в блоке "Безопасность" на вкладке "Обзор".`,
+      `${await this.serverName(id)}: доступно обновление ${u.title} ${esc(u.current)} -> ${esc(u.latest)}. Кнопка "Обновить" в блоке "Обслуживание" на вкладке "Обзор".`,
     );
   }
 

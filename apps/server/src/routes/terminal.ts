@@ -4,73 +4,98 @@ import type { AgentRegistry } from '../agents/registry.js';
 import type { Db } from '../db/index.js';
 import { actionLog } from '../db/schema.js';
 import { newId } from '../lib/ids.js';
+import { type TermPeer, TermSessions } from '../lib/term-sessions.js';
 import { foreignOrigin, sessionOf, sessionToken } from './auth.js';
+
+/** Код закрытия сокета, которым браузер просит закрыть сессию сразу ("Закрыть"). */
+const CLOSE_EXPLICIT = 4000;
 
 /**
  * /ws/term/:serverId - веб-терминал: браузер <-> панель (websocket) <-> агент (term.*).
  * Вывод агента (base64) пересылается как есть, ввод и размер уходят отдельными запросами.
- * Каждая сессия пишется в журнал действий (когда открыли и закрыли).
+ * Сессия живёт на панели и без браузера ещё 3 минуты (lib/term-sessions.ts): `?sid=` её
+ * подхватывает. Каждая сессия пишется в журнал действий (когда открыли и закрыли).
  */
 export async function terminalRoutes(
   app: FastifyInstance,
   opts: { db: Db; registry: AgentRegistry },
 ) {
   const { db, registry } = opts;
+  const sessions = new TermSessions((s) => {
+    registry
+      .request(s.serverId, 'term.close', { id: s.sid }, { timeoutMs: 10_000 })
+      .catch(() => undefined);
+  });
 
   app.get('/ws/term/:serverId', { websocket: true }, async (socket, req) => {
-    const s = await sessionOf(db, sessionToken(req));
-    if (!s) return socket.close(4001, 'unauthorized');
+    const auth = await sessionOf(db, sessionToken(req));
+    if (!auth) return socket.close(4001, 'unauthorized');
     if (foreignOrigin(req)) return socket.close(4003, 'foreign origin');
     const { serverId } = req.params as { serverId: string };
     if (!registry.isOnline(serverId)) return socket.close(4009, 'agent offline');
+    // браузер ушёл, пока проверялась сессия: 'close' уже был, сессию не начинаем
+    if (socket.readyState !== socket.OPEN) return;
     const url = new URL(req.url, 'http://x');
     const cols = Math.min(Math.max(Number(url.searchParams.get('cols')) || 120, 20), 400);
     const rows = Math.min(Math.max(Number(url.searchParams.get('rows')) || 32, 5), 200);
+    const wanted = url.searchParams.get('sid') ?? '';
 
-    const sid = newId();
-    const actionId = newId();
-    await db.insert(actionLog).values({
-      id: actionId,
-      serverId,
-      kind: 'terminal',
-      params: { login: s.login },
-    });
-    let bytes = 0;
-    const send = (o: unknown) => {
-      if (socket.readyState === socket.OPEN) socket.send(JSON.stringify(o));
-    };
-    const finish = async (note: string) => {
-      await db
-        .update(actionLog)
-        .set({ finishedAt: new Date().toISOString(), exitCode: 0, output: note })
-        .where(eq(actionLog.id, actionId));
+    const peer: TermPeer = {
+      send: (o) => {
+        if (socket.readyState === socket.OPEN) socket.send(JSON.stringify(o));
+      },
+      close: (code, reason) => socket.close(code, reason),
     };
 
-    registry
-      .request(
-        serverId,
-        'term.open',
-        { id: sid, cols, rows },
-        {
-          timeoutMs: 24 * 60 * 60_000,
-          onStream: (_channel, chunk) => {
-            bytes += chunk.length;
-            send({ t: 'data', d: chunk });
+    let s = wanted ? sessions.resumable(wanted, serverId, auth.login) : null;
+    if (s) {
+      peer.send({ t: 'session', sid: s.sid, resumed: true });
+      sessions.attach(s, peer);
+      registry
+        .request(serverId, 'term.resize', { id: s.sid, cols, rows }, { timeoutMs: 10_000 })
+        .catch(() => undefined);
+    } else {
+      const sid = newId();
+      const created = sessions.create(sid, serverId, auth.login, peer);
+      s = created;
+      peer.send({ t: 'session', sid, resumed: false });
+      const actionId = newId();
+      // синхронно: обработчик закрытия сокета ниже должен появиться до любого await
+      db.insert(actionLog)
+        .values({ id: actionId, serverId, kind: 'terminal', params: { login: auth.login } })
+        .run();
+      registry
+        .request(
+          serverId,
+          'term.open',
+          { id: sid, cols, rows },
+          {
+            timeoutMs: 24 * 60 * 60_000,
+            onStream: (_channel, chunk) => sessions.output(created, chunk),
           },
-        },
-      )
-      .then((r) => {
-        send({ t: 'exit', code: (r as { exitCode?: number })?.exitCode ?? 0 });
-        socket.close(1000, 'shell exited');
-      })
-      .catch((e: Error) => {
-        send({ t: 'error', m: e.message });
-        socket.close(1011, 'agent error');
-      })
-      .finally(
-        () =>
-          void finish(`Терминал закрыт, передано ${Math.round((bytes * 3) / 4 / 1024)} КБ вывода`),
-      );
+        )
+        .then((r) => {
+          created.peer?.send({ t: 'exit', code: (r as { exitCode?: number })?.exitCode ?? 0 });
+          created.peer?.close(1000, 'shell exited');
+        })
+        .catch((e: Error) => {
+          created.peer?.send({ t: 'error', m: e.message });
+          created.peer?.close(1011, 'agent error');
+        })
+        .finally(() => {
+          sessions.end(created);
+          const kb = Math.round((created.total * 3) / 4 / 1024);
+          db.update(actionLog)
+            .set({
+              finishedAt: new Date().toISOString(),
+              exitCode: 0,
+              output: `Терминал закрыт, передано ${kb} КБ вывода`,
+            })
+            .where(eq(actionLog.id, actionId))
+            .run();
+        });
+    }
+    const session = s;
 
     socket.on('message', (raw) => {
       let m: { t: string; d?: string; cols?: number; rows?: number };
@@ -79,25 +104,22 @@ export async function terminalRoutes(
       } catch {
         return;
       }
+      if (session.peer !== peer) return;
       if (m.t === 'input' && typeof m.d === 'string') {
         registry
-          .request(serverId, 'term.input', { id: sid, data: m.d }, { timeoutMs: 10_000 })
+          .request(serverId, 'term.input', { id: session.sid, data: m.d }, { timeoutMs: 10_000 })
           .catch(() => undefined);
       } else if (m.t === 'resize' && m.cols && m.rows) {
         registry
           .request(
             serverId,
             'term.resize',
-            { id: sid, cols: m.cols, rows: m.rows },
+            { id: session.sid, cols: m.cols, rows: m.rows },
             { timeoutMs: 10_000 },
           )
           .catch(() => undefined);
       }
     });
-    socket.on('close', () => {
-      registry
-        .request(serverId, 'term.close', { id: sid }, { timeoutMs: 10_000 })
-        .catch(() => undefined);
-    });
+    socket.on('close', (code) => sessions.detach(session, peer, code === CLOSE_EXPLICIT));
   });
 }

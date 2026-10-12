@@ -23,10 +23,10 @@ import type { Finding } from '@vps/protocol';
 import {
   ArrowRight,
   Box,
+  ClipboardCheck,
   Download,
   KeyRound,
   Plus,
-  ShieldCheck,
   Trash2,
   Wrench,
   X,
@@ -72,14 +72,14 @@ function mbps(bps: number): string {
   return m >= 10 ? String(Math.round(m)) : m.toFixed(1);
 }
 
-/** Вкладка "Обзор": метрики, безопасность, сервисы, хостинг. */
+/** Вкладка "Обзор": метрики, сервисы, хостинг, обслуживание (обновления и проверки безопасности). */
 export function OverviewTab({ s, onTab }: { s: ServerDetail; onTab?: (tab: string) => void }) {
   // диалог исправления: null - закрыт, '' - все шаги, иначе - шаг из замечания
   const qc = useQueryClient();
   const [baseline, setBaseline] = useState<string | null>(null);
   const [cleanup, setCleanup] = useState(false);
   const [keys, setKeys] = useState(false);
-  // запущенное из блока "Безопасность" действие с выводом: обновление пакетов или сервиса
+  // запущенное из блока "Обслуживание" действие с выводом: обновление пакетов или сервиса
   // recheck - это было обновление сервиса: по окончании перепроверить его версии
   const [upgrade, setUpgrade] = useState<{ id: string; title: string; recheck?: boolean } | null>(
     null,
@@ -123,12 +123,12 @@ export function OverviewTab({ s, onTab }: { s: ServerDetail; onTab?: (tab: strin
   // есть ли замечания, которые чинит агент (url вида fix:<шаг>)
   const fixable = findings.filter((f) => f.url?.startsWith('fix:')).length;
 
-  // Строки блока "Безопасность": у каждой одна кнопка действия справа
+  // Строки блока "Обслуживание": у каждой одна кнопка действия справа
   const busy = !canAct || upgrade !== null;
   const rows: SecurityRow[] = [
     ...(svcUpdates ?? []).map((u) => ({
       key: `update-${u.kind}`,
-      chip: <Chip tone="accent">обновление</Chip>,
+      chip: <Chip tone="update">обновление</Chip>,
       text: `${u.title}: доступна версия ${u.latest}`,
       hint: u.current ? `сейчас ${u.current}` : undefined,
       action: (
@@ -378,11 +378,11 @@ export function OverviewTab({ s, onTab }: { s: ServerDetail; onTab?: (tab: strin
           <Section
             title={
               <span className="inline-flex items-center gap-2">
-                <ShieldCheck className="size-4 text-muted" />
-                Безопасность
+                <ClipboardCheck className="size-4 text-muted" />
+                Обслуживание
               </span>
             }
-            info="Проверки: SSH без паролей, ufw + port-sync, fail2ban, автообновления безопасности, сертификаты, настройки панелей. Перед исправлением покажет, что именно изменится."
+            info="Обновления сервисов и пакетов и проверки безопасности: SSH без паролей, ufw + port-sync, fail2ban, автообновления безопасности, сертификаты, настройки панелей. Перед исправлением покажет, что именно изменится."
             extra={
               <>
                 {high > 0 && <Chip tone="bad">{high} критичных</Chip>}

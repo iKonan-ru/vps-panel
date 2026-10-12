@@ -2,7 +2,7 @@ import type { FastifyInstance } from 'fastify';
 import type { AgentRegistry } from '../agents/registry.js';
 import type { ServiceUpdates } from '../lib/service-updates.js';
 
-/** Обновления 3X-UI и MTProxyL: блок "Безопасность", версии во вкладке MTProxyL. */
+/** Обновления 3X-UI и MTProxyL: блок "Обслуживание", версии во вкладке MTProxyL. */
 export async function updateRoutes(
   app: FastifyInstance,
   opts: { registry: AgentRegistry; updates: ServiceUpdates },
