@@ -37,7 +37,13 @@ export function History({
         </div>
         <div className="grow" />
         {!showAll && (
-          <Button size="sm" variant="ghost" onClick={onShowAll} label="Показать все команды">
+          <Button
+            size="sm"
+            variant="ghost"
+            onClick={onShowAll}
+            label="Показать все команды"
+            short="Все команды"
+          >
             <List className="size-3.5" />
           </Button>
         )}
@@ -60,7 +66,13 @@ export function History({
                 <ActionStatusChip finishedAt={r.finishedAt} exitCode={r.exitCode} />
               </td>
               <td className="text-right">
-                <Button size="sm" variant="ghost" onClick={() => onOpen(r.id)} label="Вывод">
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  onClick={() => onOpen(r.id)}
+                  label="Вывод"
+                  short="Вывод"
+                >
                   <FileText className="size-3.5" />
                 </Button>
               </td>

@@ -2,6 +2,7 @@ import { ActionPanel } from '@/components/action-output';
 import { MetricCard } from '@/components/server/metric-card';
 import { XuiClients } from '@/components/server/xui-clients';
 import { type Inbound, XuiInbounds } from '@/components/server/xui-inbounds';
+import { ActionBar } from '@/components/ui/action-bar';
 import { Alert } from '@/components/ui/alert';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
@@ -20,7 +21,18 @@ import { uptime } from '@/lib/format';
 import { type ServerDetail, serverLock } from '@/lib/servers';
 import { startServiceUpdate } from '@/lib/service-update';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { Download, KeyRound, Play, Power, RefreshCw, ScrollText, Square } from 'lucide-react';
+import {
+  Download,
+  ExternalLink,
+  KeyRound,
+  Play,
+  Power,
+  RefreshCw,
+  RotateCcw,
+  ScrollText,
+  Square,
+  Zap,
+} from 'lucide-react';
 import { type FormEvent, useState } from 'react';
 
 interface XuiInfo {
@@ -278,93 +290,102 @@ export function XuiTab({ s }: { s: ServerDetail }) {
         />
       </div>
 
-      <div className="flex flex-wrap items-center gap-2">
-        {(
-          [
-            'restart',
-            'restart-xray',
-            data.active ? 'stop' : 'start',
-            data.enabled ? 'disable' : 'enable',
-          ] as const
-        ).map((a) => (
-          <Button
-            key={a}
-            size="sm"
-            disabled={busy || lock.busy}
-            title={lock.reason}
-            onClick={() => start(`3X-UI: ${a}`, () => xuiApi.service(s.id, a))}
-            label={
+      {/* панель действий: на узком экране - "Панель 3X-UI" и меню "Ещё" с подписями */}
+      <ActionBar
+        actions={[
+          {
+            key: 'panel',
+            label: 'Открыть панель 3X-UI',
+            icon: <ExternalLink className="size-3.5" />,
+            hidden: !panelUrl,
+            ...(panelUrl ? { href: panelUrl } : {}),
+            node: panelUrl && (
+              <LinkButton
+                href={panelUrl}
+                variant="primary"
+                title={data.version ? `Открыть панель 3X-UI (${data.version})` : panelUrl}
+              >
+                Открыть панель 3X-UI
+              </LinkButton>
+            ),
+            mobileNode: panelUrl && (
+              <LinkButton href={panelUrl} variant="primary">
+                Панель 3X-UI
+              </LinkButton>
+            ),
+            mobile: true,
+            group: 'panel',
+          },
+          ...(
+            [
               {
-                restart: 'Перезапустить',
-                'restart-xray': 'Перезапустить Xray',
-                stop: 'Остановить',
-                start: 'Запустить',
-                disable: 'Выключить автозапуск',
-                enable: 'Включить автозапуск',
-              }[a]
-            }
+                a: 'restart',
+                label: 'Перезапустить 3X-UI',
+                icon: <RotateCcw className="size-3.5" />,
+              },
+              {
+                a: 'restart-xray',
+                label: 'Перезапустить Xray',
+                icon: <Zap className="size-3.5" />,
+              },
+              data.active
+                ? { a: 'stop', label: 'Остановить 3X-UI', icon: <Square className="size-3.5" /> }
+                : { a: 'start', label: 'Запустить 3X-UI', icon: <Play className="size-3.5" /> },
+              {
+                a: data.enabled ? 'disable' : 'enable',
+                label: data.enabled ? 'Выключить автозапуск' : 'Включить автозапуск',
+                icon: <Power className="size-3.5" />,
+              },
+            ] as const
+          ).map(({ a, label, icon }) => ({
+            key: a,
+            label,
+            icon,
+            onClick: () => void start(`3X-UI: ${a}`, () => xuiApi.service(s.id, a)),
+            disabled: busy || lock.busy,
+            title: lock.reason,
+            group: 'service',
+          })),
+          {
+            key: 'update',
+            label: 'Обновить 3X-UI',
+            icon: <Download className="size-3.5" />,
+            onClick: () => void start('Обновление 3X-UI', () => xuiApi.update(s.id)),
+            disabled: busy || lock.busy,
+            title: lock.reason,
+            group: 'more',
+          },
+          {
+            key: 'token',
+            label: noToken ? 'Выпустить API-токен' : 'Перевыпустить API-токен',
+            icon: <KeyRound className="size-3.5" />,
+            onClick: () => void issueToken(),
+            disabled: busy,
+            title: 'Токен для REST API 3X-UI: статус Xray, inbound-ы, клиенты панели',
+            group: 'more',
+          },
+          {
+            key: 'log',
+            label: 'Журнал 3X-UI',
+            icon: <ScrollText className="size-3.5" />,
+            onClick: () => setShowLog(true),
+            title: 'Последние строки журнала 3X-UI',
+            group: 'more',
+          },
+        ]}
+        end={
+          <Button
+            size="icon-sm"
+            variant="ghost"
+            disabled={isFetching}
+            onClick={refresh}
+            title="Обновить данные вкладки"
+            aria-label="Обновить данные вкладки"
           >
-            {a === 'restart' || a === 'restart-xray' ? (
-              <RefreshCw className="size-3.5" />
-            ) : a === 'stop' ? (
-              <Square className="size-3.5" />
-            ) : a === 'start' ? (
-              <Play className="size-3.5" />
-            ) : (
-              <Power className="size-3.5" />
-            )}
+            <RefreshCw className={cn('size-3.5', isFetching && 'animate-spin')} />
           </Button>
-        ))}
-        {panelUrl && (
-          <>
-            <span className="mx-1 hidden h-5 w-px bg-border md:block" />
-            <LinkButton
-              href={panelUrl}
-              variant="primary"
-              label="Открыть панель 3X-UI"
-              title={data.version ? `Открыть панель 3X-UI (${data.version})` : panelUrl}
-            />
-            <span className="mx-1 hidden h-5 w-px bg-border md:block" />
-          </>
-        )}
-        <Button
-          size="sm"
-          disabled={busy || lock.busy}
-          title={lock.reason}
-          onClick={() => start('Обновление 3X-UI', () => xuiApi.update(s.id))}
-          label="Обновить 3X-UI"
-        >
-          <Download className="size-3.5" />
-        </Button>
-        <Button
-          size="sm"
-          disabled={busy}
-          onClick={issueToken}
-          title="Токен для REST API 3X-UI: статус Xray, inbound-ы, клиенты панели"
-          label={noToken ? 'Выпустить API-токен' : 'Перевыпустить API-токен'}
-        >
-          <KeyRound className="size-3.5" />
-        </Button>
-        <Button
-          size="sm"
-          onClick={() => setShowLog(true)}
-          title="Последние строки журнала 3X-UI"
-          label="Журнал"
-        >
-          <ScrollText className="size-3.5" />
-        </Button>
-        <div className="grow" />
-        <Button
-          size="icon-sm"
-          variant="ghost"
-          disabled={isFetching}
-          onClick={refresh}
-          title="Обновить данные"
-          aria-label="Обновить данные"
-        >
-          <RefreshCw className={cn('size-3.5', isFetching && 'animate-spin')} />
-        </Button>
-      </div>
+        }
+      />
 
       <XuiInbounds serverId={s.id} disabled={busy || lock.busy} reason={lock.reason} />
       <XuiClients

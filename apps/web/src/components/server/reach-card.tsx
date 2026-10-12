@@ -111,6 +111,7 @@ export function ReachCard({ serverId, online }: { serverId: string; online: bool
           disabled={busy || !online}
           onClick={() => void check()}
           label={busy ? 'Проверяю...' : 'Проверить сейчас'}
+          short={busy ? 'Проверяю...' : 'Проверить'}
         >
           <Radar className={cn('size-3.5', busy && 'animate-pulse')} />
         </Button>

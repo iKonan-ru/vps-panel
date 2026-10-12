@@ -1,3 +1,4 @@
+import { ActionBar } from '@/components/ui/action-bar';
 import { Alert } from '@/components/ui/alert';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
@@ -272,63 +273,53 @@ function ContainerActions({
   const running = c.state === 'running';
   const dis = !online || busy !== null;
   return (
-    <div className={`flex gap-1 ${className ?? ''}`}>
-      {running ? (
-        <>
-          <Button
-            size="sm"
-            variant="ghost"
-            aria-label="Остановить"
-            title="Остановить"
-            disabled={dis}
-            onClick={() => onAction(c, 'stop')}
-          >
-            <Square className="size-3.5" />
-          </Button>
-          <Button
-            size="sm"
-            variant="ghost"
-            aria-label="Перезапустить"
-            title="Перезапустить"
-            disabled={dis}
-            onClick={() => onAction(c, 'restart')}
-          >
-            <RotateCw className="size-3.5" />
-          </Button>
-        </>
-      ) : (
-        <Button
-          size="sm"
-          variant="ghost"
-          aria-label="Запустить"
-          title="Запустить"
-          disabled={dis}
-          onClick={() => onAction(c, 'start')}
-        >
-          <Play className="size-3.5" />
-        </Button>
-      )}
-      <Button
-        size="sm"
-        variant="ghost"
-        aria-label="Логи"
-        title="Логи"
-        disabled={!online}
-        onClick={() => onLogs(c)}
-      >
-        <FileText className="size-3.5" />
-      </Button>
-      <Button
-        size="sm"
-        variant="ghost"
-        aria-label="Удалить"
-        title="Удалить"
-        disabled={dis}
-        onClick={() => onAction(c, 'remove')}
-      >
-        <Trash2 className="size-3.5 text-bad" />
-      </Button>
-    </div>
+    <ActionBar
+      dense
+      {...(className ? { className } : {})}
+      actions={[
+        {
+          key: 'logs',
+          label: 'Логи',
+          icon: <FileText className="size-3.5" />,
+          disabled: !online,
+          onClick: () => onLogs(c),
+          mobile: true,
+        },
+        {
+          key: 'stop',
+          label: 'Остановить',
+          icon: <Square className="size-3.5" />,
+          hidden: !running,
+          disabled: dis,
+          onClick: () => onAction(c, 'stop'),
+        },
+        {
+          key: 'restart',
+          label: 'Перезапустить',
+          icon: <RotateCw className="size-3.5" />,
+          hidden: !running,
+          disabled: dis,
+          onClick: () => onAction(c, 'restart'),
+        },
+        {
+          key: 'start',
+          label: 'Запустить',
+          icon: <Play className="size-3.5" />,
+          hidden: running,
+          disabled: dis,
+          onClick: () => onAction(c, 'start'),
+        },
+        {
+          key: 'remove',
+          label: 'Удалить контейнер',
+          icon: <Trash2 className="size-3.5" />,
+          variant: 'danger',
+          group: 'danger',
+          disabled: dis,
+          onClick: () => onAction(c, 'remove'),
+        },
+      ]}
+    />
   );
 }
 

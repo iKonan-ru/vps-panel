@@ -90,6 +90,7 @@ export function InstallAgent({
               size="sm"
               onClick={resetHostKey}
               label="Сбросить отпечаток SSH"
+              short="Сбросить отпечаток"
               title="Если сервер переустановлен и его ключ SSH сменился"
             >
               <KeyRound className="size-3.5" />
@@ -104,6 +105,7 @@ export function InstallAgent({
               setError(null);
             }}
             label="Повторить"
+            short="Повторить"
           >
             <RotateCcw className="size-3.5" />
           </Button>
@@ -231,6 +233,7 @@ function CopyButton({ text }: { text: string }) {
         disabled={!text}
         onClick={() => copy(text)}
         label={copied ? 'Скопировано' : 'Скопировать'}
+        short={copied ? 'Скопировано' : 'Скопировать'}
       >
         <Copy className="size-3.5" />
       </Button>

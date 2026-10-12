@@ -9,6 +9,7 @@ import {
   type MtVersions,
   VersionsSection,
 } from '@/components/server/mtproxyl/versions';
+import { ActionBar } from '@/components/ui/action-bar';
 import { Alert } from '@/components/ui/alert';
 import { Button, ButtonLink } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
@@ -24,7 +25,7 @@ import { ago, bytes, uptime } from '@/lib/format';
 import { reachLevel, reachTone } from '@/lib/reach';
 import { type ServerDetail, serverLock } from '@/lib/servers';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { MonitorCog, Plus, RefreshCw, RotateCcw, UserRound } from 'lucide-react';
+import { ExternalLink, MonitorCog, Plus, RefreshCw, RotateCcw, UserRound } from 'lucide-react';
 import { useState } from 'react';
 
 /**
@@ -233,63 +234,86 @@ export function MtproxylTab({ s }: { s: ServerDetail }) {
         />
       </div>
 
-      {/* Группы: прокси (перезапуск), панель MTProxyL (открыть и перезапуск), справа - обновление
-          данных вкладки; обновления версий - в блоке "Версии". На мобиле подписей нет. */}
-      <div className="flex flex-wrap items-center gap-2">
-        <Button
-          size="sm"
-          disabled={busy || lock.busy}
-          title={lock.reason}
-          onClick={() => run('Перезапуск MTProxyL', 'restart')}
-          label="Перезапустить прокси"
-        >
-          <RotateCcw className="size-3.5" />
-        </Button>
-        <span className="mx-1 hidden h-5 w-px bg-border md:block" />
-        {panelUrl ? (
-          <>
-            <LinkButton
-              href={panelUrl}
-              variant="primary"
-              label="Открыть панель MTProxyL"
-              title={panelVersion ? `Открыть панель MTProxyL (${panelVersion})` : panelUrl}
-            />
-            {panelInstalled && (
-              <Button
-                size="sm"
-                disabled={busy || lock.busy}
-                title={lock.reason ?? 'Перезапустить панель MTProxyL'}
-                aria-label="Перезапустить панель MTProxyL"
-                onClick={() => void run('Перезапуск панели', 'panel.restart')}
+      {/* панель действий: на узком экране - "Панель MTProxyL" и меню "Ещё" с подписями;
+          обновления версий - в блоке "Версии" */}
+      <ActionBar
+        actions={[
+          {
+            key: 'panel',
+            label: 'Открыть панель MTProxyL',
+            icon: <ExternalLink className="size-3.5" />,
+            hidden: !panelUrl,
+            ...(panelUrl ? { href: panelUrl } : {}),
+            node: panelUrl && (
+              <LinkButton
+                href={panelUrl}
+                variant="primary"
+                title={panelVersion ? `Открыть панель MTProxyL (${panelVersion})` : panelUrl}
               >
-                <MonitorCog className="size-3.5" />
-              </Button>
-            )}
-          </>
-        ) : (
-          <ButtonLink
-            to="/commands/$id"
-            params={{ id: 'mtproxyl' }}
-            search={{ server: s.id, run: undefined, tab: undefined }}
-            size="sm"
-            title="Панель не найдена: установить командой из каталога"
-            label="Установить панель"
+                Открыть панель MTProxyL
+              </LinkButton>
+            ),
+            mobileNode: panelUrl && (
+              <LinkButton href={panelUrl} variant="primary">
+                Панель MTProxyL
+              </LinkButton>
+            ),
+            mobile: true,
+            group: 'panel',
+          },
+          {
+            key: 'install-panel',
+            label: 'Установить панель',
+            icon: <Plus className="size-3.5" />,
+            hidden: Boolean(panelUrl),
+            node: (
+              <ButtonLink
+                to="/commands/$id"
+                params={{ id: 'mtproxyl' }}
+                search={{ server: s.id, run: undefined, tab: undefined }}
+                size="sm"
+                title="Панель не найдена: установить командой из каталога"
+              >
+                <Plus className="size-3.5" />
+                Установить панель
+              </ButtonLink>
+            ),
+            mobile: true,
+            group: 'panel',
+          },
+          {
+            key: 'restart',
+            label: 'Перезапустить прокси',
+            icon: <RotateCcw className="size-3.5" />,
+            onClick: () => void run('Перезапуск MTProxyL', 'restart'),
+            disabled: busy || lock.busy,
+            title: lock.reason,
+            group: 'service',
+          },
+          {
+            key: 'panel-restart',
+            label: 'Перезапустить панель MTProxyL',
+            icon: <MonitorCog className="size-3.5" />,
+            hidden: !panelUrl || !panelInstalled,
+            onClick: () => void run('Перезапуск панели', 'panel.restart'),
+            disabled: busy || lock.busy,
+            title: lock.reason,
+            group: 'service',
+          },
+        ]}
+        end={
+          <Button
+            size="icon-sm"
+            variant="ghost"
+            disabled={isFetching}
+            onClick={() => void refresh()}
+            title="Обновить данные вкладки"
+            aria-label="Обновить данные вкладки"
           >
-            <Plus className="size-3.5" />
-          </ButtonLink>
-        )}
-        <div className="grow" />
-        <Button
-          size="icon-sm"
-          variant="ghost"
-          disabled={isFetching}
-          onClick={() => void refresh()}
-          title="Обновить данные"
-          aria-label="Обновить данные"
-        >
-          <RefreshCw className={cn('size-3.5', isFetching && 'animate-spin')} />
-        </Button>
-      </div>
+            <RefreshCw className={cn('size-3.5', isFetching && 'animate-spin')} />
+          </Button>
+        }
+      />
 
       <Section
         title="Пользователи"

@@ -170,10 +170,17 @@ export function XraySettings() {
       actions={
         st.configured ? (
           <>
-            <Button size="sm" disabled={busy} onClick={check} label="Проверить">
+            <Button size="sm" disabled={busy} onClick={check} label="Проверить" short="Проверить">
               <Activity className="size-3.5" />
             </Button>
-            <Button size="sm" variant="ghost" disabled={busy} onClick={disable} label="Отключить">
+            <Button
+              size="sm"
+              variant="ghost"
+              disabled={busy}
+              onClick={disable}
+              label="Отключить"
+              short="Отключить"
+            >
               <Power className="size-3.5" />
             </Button>
           </>
@@ -232,6 +239,7 @@ export function XraySettings() {
                 disabled={busy}
                 onClick={prepareSpares}
                 label="Подготовить запасные"
+                short="Подготовить"
               >
                 <RefreshCw className="size-3.5" />
               </Button>
@@ -307,6 +315,7 @@ export function XraySettings() {
                 disabled={busy || !serverId || inboundId === '' || !st.binary}
                 onClick={setup}
                 label={busy ? 'Настраиваю...' : 'Настроить'}
+                short={busy ? 'Настраиваю...' : 'Настроить'}
               >
                 <Route className="size-4" />
               </Button>

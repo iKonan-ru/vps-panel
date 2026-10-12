@@ -1,5 +1,6 @@
 import { ActionPanel } from '@/components/action-output';
 import { OwnerLink, useOwners } from '@/components/owner-link';
+import { ActionBar } from '@/components/ui/action-bar';
 import { Alert } from '@/components/ui/alert';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
@@ -130,6 +131,7 @@ export function OpenfluxTab({ s }: { s: ServerDetail }) {
             title={lock.reason ?? 'Поставить новейшее ядро node-v* и перезапустить каналы'}
             onClick={() => void call('OpenFlux: обновление ядра', { op: 'update' })}
             label="Обновить ядро"
+            short="Обновить ядро"
           >
             <Download className="size-3.5" />
           </Button>
@@ -164,7 +166,7 @@ export function OpenfluxTab({ s }: { s: ServerDetail }) {
           return (
             <div
               key={c.channel}
-              className="flex flex-wrap items-center gap-x-3 gap-y-1 border-b border-border px-4 py-2.5 last:border-b-0"
+              className="flex items-center gap-3 border-b border-border px-4 py-2.5 last:border-b-0"
             >
               <div className="min-w-0 grow">
                 <div className="flex flex-wrap items-center gap-2 text-[13px]">
@@ -192,92 +194,89 @@ export function OpenfluxTab({ s }: { s: ServerDetail }) {
                   {c.memoryMb > 0 && `, ${c.memoryMb} МБ`}
                 </div>
               </div>
-              <Button
-                size="sm"
-                onClick={async () => {
-                  setErr(null);
-                  try {
-                    const r = await api<{ link: string }>(`/api/servers/${s.id}/openflux/link`, {
-                      method: 'POST',
-                      json: { channel: c.channel },
-                    });
-                    setLink(r.link);
-                  } catch (e) {
-                    setErr((e as Error).message);
-                  }
-                }}
-                label="Ссылка"
-              >
-                <QrCodeIcon className="size-3.5" />
-              </Button>
-              <Button
-                size="icon-sm"
-                variant="ghost"
-                title="Журнал канала"
-                onClick={async () => {
-                  setErr(null);
-                  try {
-                    const r = await api<{ text: string }>(`/api/servers/${s.id}/openflux/logs`, {
-                      method: 'POST',
-                      json: { channel: c.channel, lines: 300 },
-                    });
-                    setLogs(r.text || 'Журнал пуст');
-                  } catch (e) {
-                    setErr((e as Error).message);
-                  }
-                }}
-              >
-                <FileText className="size-3.5" />
-              </Button>
-              <Button
-                size="icon-sm"
-                variant="ghost"
-                disabled={lock.busy}
-                title="Перезапустить канал"
-                onClick={() =>
-                  void call('OpenFlux: перезапуск', { op: 'restart', channel: c.channel })
-                }
-              >
-                <RotateCcw className="size-3.5" />
-              </Button>
-              <Button
-                size="icon-sm"
-                variant="ghost"
-                disabled={lock.busy}
-                title={active ? 'Остановить канал' : 'Запустить канал'}
-                onClick={() =>
-                  void call(active ? 'OpenFlux: остановка' : 'OpenFlux: запуск', {
-                    op: active ? 'stop' : 'start',
-                    channel: c.channel,
-                  })
-                }
-              >
-                {active ? <Square className="size-3.5" /> : <Play className="size-3.5" />}
-              </Button>
-              <Button
-                size="icon-sm"
-                variant="ghost"
-                disabled={lock.busy}
-                title="Удалить канал"
-                onClick={async () => {
-                  const last = data.channels.length === 1;
-                  const ok = await ask({
-                    title: `Удалить канал ${c.channel}?`,
-                    text: last
-                      ? 'Это последний канал: установщик OpenFlux удалит вместе с ним и ядро, и службу обновлений. Приложения с этим каналом перестанут подключаться.'
-                      : 'Приложения с этим каналом перестанут подключаться, ключ и порт удаляются.',
-                    okLabel: 'Удалить',
-                    danger: true,
-                  });
-                  if (ok)
-                    await call(`OpenFlux: удаление ${c.channel}`, {
-                      op: 'remove',
-                      channel: c.channel,
-                    });
-                }}
-              >
-                <Trash2 className="size-3.5 text-bad" />
-              </Button>
+              <ActionBar
+                dense
+                actions={[
+                  {
+                    key: 'link',
+                    label: 'Ссылка',
+                    icon: <QrCodeIcon className="size-3.5" />,
+                    mobile: true,
+                    onClick: async () => {
+                      setErr(null);
+                      try {
+                        const r = await api<{ link: string }>(
+                          `/api/servers/${s.id}/openflux/link`,
+                          { method: 'POST', json: { channel: c.channel } },
+                        );
+                        setLink(r.link);
+                      } catch (e) {
+                        setErr((e as Error).message);
+                      }
+                    },
+                  },
+                  {
+                    key: 'log',
+                    label: 'Журнал канала',
+                    icon: <FileText className="size-3.5" />,
+                    onClick: async () => {
+                      setErr(null);
+                      try {
+                        const r = await api<{ text: string }>(
+                          `/api/servers/${s.id}/openflux/logs`,
+                          { method: 'POST', json: { channel: c.channel, lines: 300 } },
+                        );
+                        setLogs(r.text || 'Журнал пуст');
+                      } catch (e) {
+                        setErr((e as Error).message);
+                      }
+                    },
+                  },
+                  {
+                    key: 'restart',
+                    label: 'Перезапустить канал',
+                    icon: <RotateCcw className="size-3.5" />,
+                    disabled: lock.busy,
+                    onClick: () =>
+                      void call('OpenFlux: перезапуск', { op: 'restart', channel: c.channel }),
+                  },
+                  {
+                    key: 'toggle',
+                    label: active ? 'Остановить канал' : 'Запустить канал',
+                    icon: active ? <Square className="size-3.5" /> : <Play className="size-3.5" />,
+                    disabled: lock.busy,
+                    onClick: () =>
+                      void call(active ? 'OpenFlux: остановка' : 'OpenFlux: запуск', {
+                        op: active ? 'stop' : 'start',
+                        channel: c.channel,
+                      }),
+                  },
+                  {
+                    key: 'remove',
+                    label: 'Удалить канал',
+                    icon: <Trash2 className="size-3.5" />,
+                    variant: 'danger',
+                    group: 'danger',
+                    disabled: lock.busy,
+                    onClick: async () => {
+                      const last = data.channels.length === 1;
+                      const ok = await ask({
+                        title: `Удалить канал ${c.channel}?`,
+                        text: last
+                          ? 'Это последний канал: установщик OpenFlux удалит вместе с ним и ядро, и службу обновлений. Приложения с этим каналом перестанут подключаться.'
+                          : 'Приложения с этим каналом перестанут подключаться, ключ и порт удаляются.',
+                        okLabel: 'Удалить',
+                        danger: true,
+                      });
+                      if (ok)
+                        await call(`OpenFlux: удаление ${c.channel}`, {
+                          op: 'remove',
+                          channel: c.channel,
+                        });
+                    },
+                  },
+                ]}
+              />
             </div>
           );
         })}

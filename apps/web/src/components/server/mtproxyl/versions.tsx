@@ -102,7 +102,7 @@ export function VersionsSection({
         return (
           <div
             key={kind}
-            className="flex flex-wrap items-center gap-x-3 gap-y-2 border-b border-border px-4 py-3 last:border-b-0"
+            className="flex items-center gap-3 border-b border-border px-4 py-3 last:border-b-0"
           >
             <div className="min-w-0 grow">
               <div className="font-medium">
@@ -127,7 +127,7 @@ export function VersionsSection({
                 onClick={() => onUpdate(kind, v.latest)}
               >
                 <Download className="size-3.5" />
-                Обновить до {v.latest}
+                Обновить<span className="hidden md:inline"> до {v.latest}</span>
               </Button>
             ) : (
               v && !v.error && <Chip tone="ok">последняя</Chip>
@@ -135,14 +135,14 @@ export function VersionsSection({
           </div>
         );
       })}
-      <div className="flex flex-wrap items-center gap-x-3 gap-y-2 px-4 py-3">
+      <div className="flex items-center gap-3 px-4 py-3">
         <div className="min-w-0 grow">
           <div className="font-medium">Движок telemt</div>
           <div className="text-xs text-muted">установлена {engine || '?'}</div>
         </div>
         <Button size="sm" disabled={disabled} title={reason} onClick={onEngine}>
           <Layers className="size-3.5" />
-          Сменить версию
+          Сменить<span className="hidden md:inline"> версию</span>
         </Button>
       </div>
     </Section>

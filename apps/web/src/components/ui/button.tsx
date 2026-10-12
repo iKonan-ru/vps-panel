@@ -52,11 +52,19 @@ export function buttonClass({
   );
 }
 
-/** Иконка (children) и подпись, которая на узком экране прячется. */
-function Content({ label, children }: { label?: ReactNode; children?: ReactNode }) {
+/**
+ * Иконка (children) и подпись, которая на узком экране прячется; short - короткая подпись,
+ * которая на узком экране остаётся (значок без слов там, где он не очевиден).
+ */
+function Content({
+  label,
+  short,
+  children,
+}: { label?: ReactNode; short?: ReactNode; children?: ReactNode }) {
   return (
     <>
       {children}
+      {short !== undefined && <span className="md:hidden">{short}</span>}
       {label !== undefined && <span className="hidden md:inline">{label}</span>}
     </>
   );
@@ -67,6 +75,8 @@ interface Look {
   size?: Size;
   /** Подпись: на широком экране рядом с иконкой, на узком - в title и aria-label. */
   label?: ReactNode;
+  /** Короткая подпись, видимая на узком экране вместо одного значка. */
+  short?: ReactNode;
 }
 
 export interface ButtonProps extends ButtonHTMLAttributes<HTMLButtonElement> {
@@ -77,6 +87,8 @@ export interface ButtonProps extends ButtonHTMLAttributes<HTMLButtonElement> {
    * скрыта - остаётся только иконка, подпись уходит в title и aria-label.
    */
   label?: ReactNode;
+  /** Короткая подпись, видимая на узком экране вместо одного значка. */
+  short?: ReactNode;
 }
 
 export function Button({
@@ -85,6 +97,7 @@ export function Button({
   size = 'md',
   type = 'button',
   label,
+  short,
   children,
   title,
   ...rest
@@ -95,10 +108,17 @@ export function Button({
       type={type}
       title={title ?? labelText}
       aria-label={rest['aria-label'] ?? labelText}
-      className={buttonClass({ variant, size, labelled: label !== undefined, className })}
+      className={buttonClass({
+        variant,
+        size,
+        labelled: label !== undefined && short === undefined,
+        className,
+      })}
       {...rest}
     >
-      <Content label={label}>{children}</Content>
+      <Content label={label} short={short}>
+        {children}
+      </Content>
     </button>
   );
 }
@@ -108,6 +128,7 @@ function ButtonA({
   variant,
   size,
   label,
+  short,
   className,
   children,
   title,
@@ -120,10 +141,17 @@ function ButtonA({
       ref={ref}
       title={title ?? labelText}
       aria-label={rest['aria-label'] ?? labelText}
-      className={buttonClass({ variant, size, labelled: label !== undefined, className })}
+      className={buttonClass({
+        variant,
+        size,
+        labelled: label !== undefined && short === undefined,
+        className,
+      })}
       {...rest}
     >
-      <Content label={label}>{children}</Content>
+      <Content label={label} short={short}>
+        {children}
+      </Content>
     </a>
   );
 }
@@ -136,6 +164,7 @@ export function ButtonAnchor({
   variant,
   size,
   label,
+  short,
   className,
   children,
   title,
@@ -146,10 +175,17 @@ export function ButtonAnchor({
     <a
       title={title ?? labelText}
       aria-label={rest['aria-label'] ?? labelText}
-      className={buttonClass({ variant, size, labelled: label !== undefined, className })}
+      className={buttonClass({
+        variant,
+        size,
+        labelled: label !== undefined && short === undefined,
+        className,
+      })}
       {...rest}
     >
-      <Content label={label}>{children}</Content>
+      <Content label={label} short={short}>
+        {children}
+      </Content>
     </a>
   );
 }

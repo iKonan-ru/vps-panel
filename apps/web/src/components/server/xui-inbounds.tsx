@@ -126,7 +126,7 @@ export function XuiInbounds({
       {list.map((i) => (
         <div
           key={i.id}
-          className="flex flex-wrap items-center gap-x-3 gap-y-1 border-b border-border px-4 py-2.5 last:border-b-0"
+          className="flex items-center gap-3 border-b border-border px-4 py-2.5 last:border-b-0"
         >
           <Switch
             checked={i.enable}

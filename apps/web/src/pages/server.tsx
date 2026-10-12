@@ -15,6 +15,7 @@ import { OverviewTab } from '@/components/server/overview-tab';
 import { RebootDialog } from '@/components/server/reboot-dialog';
 import { WdttTab } from '@/components/server/wdtt-tab';
 import { XuiTab } from '@/components/server/xui-tab';
+import { ActionBar } from '@/components/ui/action-bar';
 import { Alert } from '@/components/ui/alert';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
@@ -175,35 +176,52 @@ export function ServerPage() {
           </div>
         </div>
         <div className="grow" />
-        <div className="flex flex-wrap gap-2">
-          <Button
-            disabled={!online || lock.busy || agentBusy || s.agentUpdating || agentRunning}
-            onClick={updateAgent}
-            title={lock.reason ?? 'Скачать свежий бинарник агента с панели и перезапустить'}
-            label={s.agentUpdating || agentRunning ? 'Агент обновляется...' : 'Обновить агента'}
-          >
-            <RefreshCw
-              className={cn(
-                'size-4',
-                (agentBusy || agentRunning || s.agentUpdating) && 'animate-spin',
-              )}
-            />
-          </Button>
-          <Button onClick={() => setReinstall(true)} label="Переустановить">
-            <Wrench className="size-4" />
-          </Button>
-          <Button
-            disabled={!online || lock.busy}
-            title={lock.reason}
-            onClick={() => setReboot(true)}
-            label="Перезагрузить"
-          >
-            <Power className="size-4" />
-          </Button>
-          <Button variant="danger" onClick={() => setRemove(true)} label="Удалить из панели">
-            <Trash2 className="size-4" />
-          </Button>
-        </div>
+        <ActionBar
+          size="md"
+          topbar
+          actions={[
+            {
+              key: 'agent',
+              label: s.agentUpdating || agentRunning ? 'Агент обновляется...' : 'Обновить агента',
+              short: s.agentUpdating || agentRunning ? 'Обновляется...' : 'Обновить агента',
+              icon: (
+                <RefreshCw
+                  className={cn(
+                    'size-4',
+                    (agentBusy || agentRunning || s.agentUpdating) && 'animate-spin',
+                  )}
+                />
+              ),
+              onClick: () => void updateAgent(),
+              disabled: !online || lock.busy || agentBusy || s.agentUpdating || agentRunning,
+              title: lock.reason ?? 'Скачать свежий бинарник агента с панели и перезапустить',
+              // на узком экране кнопкой - только когда есть что обновлять
+              mobile: Boolean(s.agentUpdateAvailable || s.agentUpdating || agentRunning),
+            },
+            {
+              key: 'reinstall',
+              label: 'Переустановить агента',
+              icon: <Wrench className="size-4" />,
+              onClick: () => setReinstall(true),
+            },
+            {
+              key: 'reboot',
+              label: 'Перезагрузить сервер',
+              icon: <Power className="size-4" />,
+              onClick: () => setReboot(true),
+              disabled: !online || lock.busy,
+              title: lock.reason,
+            },
+            {
+              key: 'remove',
+              label: 'Удалить из панели',
+              icon: <Trash2 className="size-4" />,
+              onClick: () => setRemove(true),
+              variant: 'danger',
+              group: 'danger',
+            },
+          ]}
+        />
       </div>
 
       <Tabs items={available} value={tab} onChange={setTab} />

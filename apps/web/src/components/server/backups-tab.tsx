@@ -1,4 +1,5 @@
 import { ActionPanel } from '@/components/action-output';
+import { ActionBar } from '@/components/ui/action-bar';
 import { Alert } from '@/components/ui/alert';
 import { Button, buttonClass } from '@/components/ui/button';
 import { Checkbox } from '@/components/ui/checkbox';
@@ -95,23 +96,44 @@ export function BackupsTab({ s }: { s: ServerDetail }) {
     ));
   /** Кнопки бэкапа: в строке таблицы и в карточке на мобиле. */
   const backupActions = (b: Backup) => (
-    <>
-      <a
-        href={`/api/backups/${b.id}/download`}
-        download
-        className={buttonClass({ size: 'icon-sm', variant: 'ghost' })}
-        title="Скачать себе"
-        aria-label="Скачать себе"
-      >
-        <Download className="size-3.5" />
-      </a>
-      <Button size="sm" onClick={() => setRestore(b)} label="Восстановить на...">
-        <ArchiveRestore className="size-3.5" />
-      </Button>
-      <Button size="sm" variant="ghost" title="Удалить" onClick={() => remove(b)}>
-        <Trash2 className="size-3.5 text-bad" />
-      </Button>
-    </>
+    <ActionBar
+      dense
+      actions={[
+        {
+          key: 'download',
+          label: 'Скачать себе',
+          icon: <Download className="size-3.5" />,
+          href: `/api/backups/${b.id}/download`,
+          node: (
+            <a
+              href={`/api/backups/${b.id}/download`}
+              download
+              className={buttonClass({ size: 'icon-sm', variant: 'ghost' })}
+              title="Скачать себе"
+              aria-label="Скачать себе"
+            >
+              <Download className="size-3.5" />
+            </a>
+          ),
+        },
+        {
+          key: 'restore',
+          label: 'Восстановить на...',
+          short: 'Восстановить',
+          icon: <ArchiveRestore className="size-3.5" />,
+          onClick: () => setRestore(b),
+          mobile: true,
+        },
+        {
+          key: 'remove',
+          label: 'Удалить бэкап',
+          icon: <Trash2 className="size-3.5" />,
+          variant: 'danger',
+          group: 'danger',
+          onClick: () => void remove(b),
+        },
+      ]}
+    />
   );
 
   return (
