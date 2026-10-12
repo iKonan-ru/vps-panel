@@ -23,7 +23,7 @@ function History({ t }: { t: ReachTarget }) {
   const pts = t.history.slice(-24);
   if (pts.length < 2) return null;
   return (
-    <span className="flex h-5 items-end gap-px" aria-hidden="true">
+    <span className="mt-1.5 flex h-5 items-end gap-px" aria-hidden="true">
       {pts.map((p) => {
         const lv = reachLevel(p.percent) ?? 'bad';
         return (
@@ -47,24 +47,26 @@ function Row({ t }: { t: ReachTarget }) {
       : t.kind === 'tls'
         ? `TLS на порт ${t.port}${t.sni ? `, SNI ${t.sni}` : ''}`
         : `TCP до порта ${t.port}`;
+  // плашка всегда справа у названия: строка не переносится, длинное описание обрезается, история
+  // - под описанием (на узком экране плашка иначе уезжала вниз то у одной строки, то у другой)
   return (
-    <div className="flex flex-wrap items-center gap-x-3 gap-y-1 border-b border-border px-4 py-2.5 text-[13px] last:border-b-0">
+    <div className="flex items-start gap-3 border-b border-border px-4 py-2.5 text-[13px] last:border-b-0">
       <span className="min-w-0 grow">
-        <span className="font-medium">{t.title}</span>
+        <span className="block truncate font-medium">{t.title}</span>
         <span className="block truncate text-xs text-muted" title={t.errors.join('\n')}>
           {what}
           {t.checkedAt ? `, ${ago(t.checkedAt)}` : ''}
           {lv && lv !== 'ok' && t.errors[0] ? ` - ${t.errors[0]}` : ''}
         </span>
         {t.error && <span className="block text-xs text-warn">{t.error}</span>}
+        <History t={t} />
       </span>
-      <History t={t} />
       {lv ? (
-        <Chip tone={reachTone[lv]} title={`дошли ${t.ok} из ${t.total} зондов`}>
+        <Chip tone={reachTone[lv]} className="mt-px" title={`дошли ${t.ok} из ${t.total} зондов`}>
           {lv === 'ok' ? 'виден' : lv === 'partial' ? 'частично' : 'не виден'} {t.percent}%
         </Chip>
       ) : (
-        <Chip>нет данных</Chip>
+        <Chip className="mt-px">нет данных</Chip>
       )}
     </div>
   );
