@@ -6,6 +6,8 @@
 #   vps-panel admin [show | password | 2fa | login <имя> | init [имя]] [-y]
 #                                                        администратор: сброс пароля и 2FA
 #   vps-panel domain <имя> [--sub <имя>]                 домен панели (была по IP или другой)
+#   vps-panel restore <файл .enc> [-y]                   восстановить панель из бэкапа
+#                                                        (пароль - вопросом или BACKUP_PASSWORD)
 #   vps-panel update [X.Y.Z] [--beta] [--force]          обновление до версии или до последней
 #   vps-panel rollback                                   вернуть прошлую версию
 #   vps-panel status | version | logs [panel|caddy] | restart
@@ -673,7 +675,7 @@ full_uninstall() {
   [ -f "$ENV_FILE" ] && items+=("панель ${domain:-} с данными, сертификатами и образами")
   [ -f /etc/systemd/system/vps-agent.service ] && items+=("агент панели (vps-agent)")
   [ -f /etc/systemd/system/vps-naive.service ] && items+=("прокси для браузера (vps-naive)")
-  [ -x /usr/local/sbin/vps-portsync ] && items+=("port-sync (правила ufw по портам - остаются как есть)")
+  [ -x /usr/local/sbin/vps-portsync ] && items+=("port-sync (порты снятых сервисов в ufw закрываются, SSH остаётся)")
   [ "$(env_get DOCKER_BY_PANEL)" = 1 ] && items+=("docker (ставил установщик панели; снимется, если других контейнеров нет)")
 
   say "Полная зачистка сервера от VPS Panel"
@@ -743,6 +745,8 @@ full_uninstall() {
   fi
   if [ -x /usr/local/sbin/vps-portsync ]; then
     say "port-sync"
+    # последний проход: сервисы уже сняты - он закроет их порты в ufw (SSH остаётся)
+    timeout 120 /usr/local/sbin/vps-portsync >/dev/null 2>&1 || true
     systemctl disable --now vps-portsync.timer vps-portsync-xui.path vps-portsync-docker-watch.service vps-portsync.service >/dev/null 2>&1 || true
     rm -f /etc/systemd/system/vps-portsync.service /etc/systemd/system/vps-portsync.timer \
       /etc/systemd/system/vps-portsync-xui.path /etc/systemd/system/vps-portsync-docker-watch.service \
@@ -873,8 +877,59 @@ MTProxyL через панель откроются, когда в DNS буде�
 MSG
 }
 
+# Восстановление из бэкапа панели (Настройки -> Бэкап панели) на установленной панели: база,
+# ключ панели для агентов, ключ SSH панели (если есть), выход xray и SESSION_SECRET. Прежние
+# данные этой установки - в data/before-restore-<время>.
+cmd_restore() {
+  need_root
+  [ -f "$ENV_FILE" ] || die "панель не установлена в $ROOT: сначала установка (install), потом restore"
+  local file="" a
+  for a in "$@"; do case "$a" in -y) YES=1 ;; -*) die "restore: неизвестный ключ $a" ;; *) file="$a" ;; esac; done
+  [ -n "$file" ] && [ -f "$file" ] || die "vps-panel restore <файл бэкапа .tar.gz.enc>"
+  local pw="${BACKUP_PASSWORD:-}"
+  if [ -z "$pw" ]; then
+    read -r -s -p "Пароль бэкапа: " pw </dev/tty 2>/dev/null || die "нет терминала: пароль - в BACKUP_PASSWORD"
+    echo
+  fi
+  TMPD="$(mktemp -d)"
+  local b="$TMPD/vps-panel-backup"
+  if ! printf '%s' "$pw" | openssl enc -d -aes-256-cbc -pbkdf2 -iter 100000 -pass stdin -in "$file" 2>/dev/null | tar xz -C "$TMPD" 2>/dev/null; then
+    die "не расшифровать: неверный пароль или это не бэкап панели"
+  fi
+  [ -f "$b/panel.db" ] && [ -f "$b/panel.env" ] && [ -f "$b/panel_agent_ed25519.pem" ] || die "в архиве нет panel.db, panel.env или ключа панели"
+  local secret
+  secret="$(sed -n 's/^SESSION_SECRET=//p' "$b/panel.env" | tail -1)"
+  [ -n "$secret" ] || die "в panel.env архива нет SESSION_SECRET"
+  echo "в архиве: $(sed -n 's/^PANEL_PUBLIC_URL=//p' "$b/panel.env") ($(du -h "$b/panel.db" | cut -f1) база)"
+  confirm "Заменить данные этой панели данными из бэкапа?" || exit 1
+  local keep="$DATA/before-restore-$(date +%Y%m%d-%H%M%S)"
+  say "останавливаю панель, прежние данные - в $keep"
+  compose stop panel >/dev/null
+  mkdir -p "$keep"
+  for a in panel.db panel_agent_ed25519.pem panel_ssh_ed25519 panel_ssh_ed25519.pub xray; do
+    [ -e "$DATA/$a" ] && mv "$DATA/$a" "$keep/"
+  done
+  rm -f "$DATA/panel.db-wal" "$DATA/panel.db-shm"
+  cp "$ENV_FILE" "$keep/env"
+  install -m 600 "$b/panel.db" "$b/panel_agent_ed25519.pem" "$DATA/"
+  [ -f "$b/panel_ssh_ed25519" ] && install -m 600 "$b/panel_ssh_ed25519" "$DATA/"
+  [ -f "$b/panel_ssh_ed25519.pub" ] && install -m 644 "$b/panel_ssh_ed25519.pub" "$DATA/"
+  [ -d "$b/xray" ] && cp -r "$b/xray" "$DATA/"
+  chown -R 1000:1000 "$DATA"
+  env_set SESSION_SECRET "$secret"
+  say "запуск"
+  compose up -d >/dev/null
+  if wait_health "$(env_get PANEL_VERSION)" 180; then
+    echo "панель восстановлена: https://$(env_get PANEL_DOMAIN) - вход прежним логином, паролем и 2FA"
+    echo "агенты на серверах подключатся сами (они верят ключу панели из бэкапа)"
+  else
+    warn "панель не ответила за 3 минуты: vps-panel logs; прежние данные - в $keep"
+  fi
+}
+
 case "${1:-}" in
   install) shift; cmd_install "$@" ;;
+  restore) shift; cmd_restore "$@" ;;
   admin) shift; cmd_admin "$@" ;;
   domain) shift; cmd_domain "$@" ;;
   update) shift; cmd_update "$@" ;;
@@ -887,6 +942,6 @@ case "${1:-}" in
   logs) shift; compose logs --tail 200 -f "$@" ;;
   restart) need_root; compose restart ;;
   uninstall) shift; cmd_uninstall "$@" ;;
-  help | -h | --help) sed -n '2,21p' "$0" | sed 's/^# \{0,1\}//' ;;
-  *) sed -n '2,21p' "$0" | sed 's/^# \{0,1\}//'; exit 1 ;;
+  help | -h | --help) sed -n '2,23p' "$0" | sed 's/^# \{0,1\}//' ;;
+  *) sed -n '2,23p' "$0" | sed 's/^# \{0,1\}//'; exit 1 ;;
 esac

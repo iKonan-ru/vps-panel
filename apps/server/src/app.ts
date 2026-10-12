@@ -238,7 +238,12 @@ export async function buildApp(opts: AppOptions) {
   await app.register(backupRoutes, { db, env, registry, hub });
   await app.register(probeRoutes);
   await app.register(agentWsRoutes, { db, registry, dataDir: env.DATA_DIR });
-  await app.register(proxyRoutes, { proxy: panelProxy, db, certs: panelCerts });
+  await app.register(proxyRoutes, {
+    proxy: panelProxy,
+    db,
+    certs: panelCerts,
+    selfIp: env.PANEL_SNI,
+  });
   await app.register(cspRoutes);
   await app.register(uiWsRoutes, { db, registry, hub });
   await app.register(terminalRoutes, { db, registry });

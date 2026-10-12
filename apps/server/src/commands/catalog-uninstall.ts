@@ -107,18 +107,31 @@ export const wdttUninstallCmd: CommandDef = {
   script: `${PROLOGUE}
 ${GUARD}
 [ -x /usr/local/bin/wdtt-server ] || { echo "WDTT не установлен" >&2; exit 3; }
+# порты WDTT до удаления: deploy.sh uninstall оставляет их "зеркальные" правила iptables
+ports="$(ss -lunpH 2>/dev/null | awk '/wdtt-server/ {n=split($5,a,":"); print a[n]}' | sort -u | tr '\n' ' ')"
 say "Скачиваю deploy.sh с панели"
 fetch "$PANEL_URL/files/wdtt/deploy.sh" -o /tmp/wdtt-deploy.sh
 say "Удаляю WDTT (deploy.sh uninstall)"
 bash /tmp/wdtt-deploy.sh uninstall </dev/null
 rm -f /tmp/wdtt-deploy.sh
+if [ -n "$ports" ] && need iptables; then
+  say "Убираю правила iptables WDTT_MIRRORED для портов WDTT: $ports"
+  for p in $ports; do
+    for proto in udp tcp; do
+      while iptables -D INPUT -p "$proto" -m "$proto" --dport "$p" -m comment --comment WDTT_MIRRORED -j ACCEPT 2>/dev/null; do :; done
+    done
+  done
+  need netfilter-persistent && netfilter-persistent save >/dev/null 2>&1 || true
+fi
 say "Готово"
 `,
   preflight: `if [ -x /usr/local/bin/wdtt-server ]; then echo "WARN|WDTT установлен: клиенты перестанут подключаться"; else echo "FAIL|WDTT не установлен"; fi`,
   plan: () => [
     'deploy.sh uninstall: остановить службу, удалить бинарник, интерфейс и правила',
     'Конфиг с ключами удаляется, база доступа остаётся в /etc/wdtt',
+    'Правила iptables WDTT_MIRRORED для портов WDTT убираются',
   ],
+  dropsBindings: ['wdtt'],
 };
 
 export const awgUninstallCmd: CommandDef = {
@@ -154,4 +167,6 @@ say "Готово: port-sync закроет порт"
     `docker rm -f ${a.AWG_CONTAINER}: ключи сервера и клиентов внутри контейнера пропадут`,
     `Удалить образ ${a.AWG_CONTAINER} и /opt/amnezia/${a.AWG_CONTAINER} на хосте`,
   ],
+  dropsBindings: ['awg'],
+  dropsBindingsRef: (a) => `|${a.AWG_CONTAINER ?? ''}|`,
 };

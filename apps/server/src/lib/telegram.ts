@@ -419,7 +419,12 @@ export class Telegram {
       this.lastRoute = { via, at: new Date().toISOString() };
       if (via.startsWith('proxy:')) this.xray.worked(via.slice(6));
     };
-    const fresh = this.route && Date.now() - this.route.at < 60 * 60_000;
+    // Агент - запасной путь: при настроенных выходах xray (или прокси) он запоминается на 10
+    // минут, потом снова пробуем основной - иначе после настройки маршрута до Telegram сообщения
+    // ещё час шли бы через агента.
+    const ttl =
+      this.route?.via.startsWith('agent:') && proxies.length > 0 ? 10 * 60_000 : 60 * 60_000;
+    const fresh = this.route && Date.now() - this.route.at < ttl;
     if (fresh && this.route) {
       const via = this.route.via;
       const r = await attempt(via);
