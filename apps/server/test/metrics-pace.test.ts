@@ -58,6 +58,8 @@ describe('частота метрик агентов', () => {
     const old = new FakeAgent();
     reg.attach({ serverId: 's1', ws: fresh as never, methods: ['metrics.interval'] });
     reg.attach({ serverId: 's2', ws: old as never, methods: ['inventory.get'] });
+    // online приходит после welcome (setImmediate): эти агенты подключились до запуска
+    vi.advanceTimersByTime(0);
     startMetricsPace(reg, hub, { warn: () => {} });
     const intervals = (a: FakeAgent) =>
       a.sent.filter((m) => m.method === 'metrics.interval').map((m) => m.params.sec);
