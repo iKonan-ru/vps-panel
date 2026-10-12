@@ -1,6 +1,6 @@
 import { randomBytes } from 'node:crypto';
 import type { CommandDef } from './types.js';
-import { PROLOGUE } from './util.js';
+import { PROLOGUE, WDTT_FW_FUNCS } from './util.js';
 
 /**
  * WDTT (qWDTT) без приложения. Приложение делает ровно это: заливает deploy.sh,
@@ -105,6 +105,12 @@ export WDTT_DTLS_PORT WDTT_WG_PORT WDTT_ADMIN_PORT WDTT_DNS_SERVERS WDTT_ADMIN_I
 export WDTT_SSH_PORT="$SERVER_SSH_PORT"
 say "Запускаю deploy.sh (порты: DTLS $WDTT_DTLS_PORT, WG $WDTT_WG_PORT, admin $WDTT_ADMIN_PORT)"
 bash /tmp/wdtt-deploy.sh install </dev/null
+${WDTT_FW_FUNCS}
+if portsync_governs; then
+  say "Порты ведут ufw и port-sync: открываю порты WDTT в ufw, убираю зеркальные правила iptables"
+  timeout 120 /usr/local/sbin/vps-portsync >/dev/null 2>&1 || true
+  wdtt_mirrors_drop
+fi
 say "Проверка"
 systemctl is-active wdtt
 ss -lunp | grep -E ":$WDTT_DTLS_PORT " | head -1 || true

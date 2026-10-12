@@ -1,5 +1,5 @@
 import type { CommandDef } from './types.js';
-import { NAIVE_FUNCS, PROLOGUE } from './util.js';
+import { NAIVE_FUNCS, PROLOGUE, WDTT_FW_FUNCS } from './util.js';
 
 /**
  * Удаление сервисов, поставленных командами каталога. Каждая команда сначала
@@ -107,21 +107,21 @@ export const wdttUninstallCmd: CommandDef = {
   script: `${PROLOGUE}
 ${GUARD}
 [ -x /usr/local/bin/wdtt-server ] || { echo "WDTT не установлен" >&2; exit 3; }
-# порты WDTT до удаления: deploy.sh uninstall оставляет их "зеркальные" правила iptables
-ports="$(ss -lunpH 2>/dev/null | awk '/wdtt-server/ {n=split($5,a,":"); print a[n]}' | sort -u | tr '\n' ' ')"
+# порты WDTT до удаления (ss -tu -H: Netid, State, Recv-Q, Send-Q, Local - 5-я колонка)
+ports="$(ss -lntupH 2>/dev/null | awk '/wdtt-server/ {n=split($5,a,":"); print a[n]}' | sort -u | tr '\n' ' ')"
 say "Скачиваю deploy.sh с панели"
 fetch "$PANEL_URL/files/wdtt/deploy.sh" -o /tmp/wdtt-deploy.sh
 say "Удаляю WDTT (deploy.sh uninstall)"
 bash /tmp/wdtt-deploy.sh uninstall </dev/null
 rm -f /tmp/wdtt-deploy.sh
-if [ -n "$ports" ] && need iptables; then
+${WDTT_FW_FUNCS}
+if portsync_governs; then
+  say "Убираю зеркальные правила iptables WDTT (порты ведёт port-sync)"
+  wdtt_mirrors_drop
+  timeout 120 /usr/local/sbin/vps-portsync >/dev/null 2>&1 || true
+elif [ -n "$ports" ]; then
   say "Убираю правила iptables WDTT_MIRRORED для портов WDTT: $ports"
-  for p in $ports; do
-    for proto in udp tcp; do
-      while iptables -D INPUT -p "$proto" -m "$proto" --dport "$p" -m comment --comment WDTT_MIRRORED -j ACCEPT 2>/dev/null; do :; done
-    done
-  done
-  need netfilter-persistent && netfilter-persistent save >/dev/null 2>&1 || true
+  wdtt_mirrors_drop $ports
 fi
 say "Готово"
 `,

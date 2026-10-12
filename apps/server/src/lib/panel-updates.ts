@@ -78,6 +78,8 @@ export class PanelUpdates {
     /** Новая версия в канале - уведомление (один раз на версию). */
     private onNew: (r: PanelRelease) => Promise<void>,
     readonly current = PANEL_VERSION,
+    /** Канал установки (PANEL_CHANNEL из .env, install --beta): пока владелец не выбрал свой. */
+    private defaultChannel: PanelChannel = 'stable',
   ) {}
 
   get managed(): boolean {
@@ -98,7 +100,7 @@ export class PanelUpdates {
     const s = getJsonSetting<Partial<PanelUpdateSettings>>(this.db, 'panel_update', {});
     const hour = Number(s.autoHour);
     return {
-      channel: s.channel === 'beta' ? 'beta' : 'stable',
+      channel: s.channel === 'beta' || s.channel === 'stable' ? s.channel : this.defaultChannel,
       autoUpdate: s.autoUpdate === true,
       autoHour: Number.isInteger(hour) && hour >= 0 && hour <= 23 ? hour : 2,
       agentsAuto: s.agentsAuto !== false,

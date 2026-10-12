@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { findCommand } from '../src/commands/index.js';
+import { WDTT_FW_FUNCS } from '../src/commands/util.js';
 
 describe('удаление сервиса стирает привязки клиентов сразу', () => {
   it('у всех команд удаления сервиса с клиентами', () => {
@@ -21,7 +22,13 @@ describe('удаление сервиса стирает привязки кли
     expect('3|amnezia-awg|/jx2n'.includes('|amnezia-awg2|')).toBe(false);
   });
 
-  it('WDTT: правила WDTT_MIRRORED его портов убираются', () => {
-    expect(findCommand('wdtt-uninstall')?.script).toMatch(/iptables -D INPUT .*WDTT_MIRRORED/);
+  it('WDTT: зеркальные правила WDTT_MIRRORED убираются при удалении и установке', () => {
+    expect(WDTT_FW_FUNCS).toContain('--comment WDTT_MIRRORED');
+    expect(WDTT_FW_FUNCS).toContain("sed 's/^-A /-D /'");
+    for (const cmd of ['wdtt-uninstall', 'wdtt']) {
+      const s = findCommand(cmd)?.script ?? '';
+      expect(s, cmd).toContain('portsync_governs()');
+      expect(s, cmd).toMatch(/if portsync_governs; then[\s\S]*wdtt_mirrors_drop/);
+    }
   });
 });

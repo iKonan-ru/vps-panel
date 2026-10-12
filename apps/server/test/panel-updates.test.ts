@@ -91,4 +91,22 @@ describe('обновления панели', () => {
     expect(mk('1.0.1').versionChanged()).toBe(true);
     expect(mk('1.0.1').versionChanged()).toBe(false);
   });
+
+  it('канал по умолчанию - канал установки (install --beta), пока владелец не выбрал свой', () => {
+    const db = createDb(':memory:');
+    const mk = (ch: 'stable' | 'beta') =>
+      new PanelUpdates(
+        db,
+        '/nonexistent',
+        fetch,
+        { warn: () => undefined },
+        async () => undefined,
+        '1.0.0',
+        ch,
+      );
+    expect(mk('beta').settings().channel).toBe('beta');
+    expect(mk('stable').settings().channel).toBe('stable');
+    mk('beta').saveSettings({ channel: 'stable' });
+    expect(mk('beta').settings().channel).toBe('stable');
+  });
 });

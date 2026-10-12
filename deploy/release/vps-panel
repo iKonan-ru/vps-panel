@@ -86,7 +86,7 @@ resolve4() { { getent ahostsv4 "$1" 2>/dev/null || true; } | awk '{print $1}' | 
 # PANEL_DOMAIN из "PANEL_DOMAIN= vps-panel install -y" (панель по IP) оставил бы контейнеры без
 # адреса.
 COMPOSE_VARS=(PANEL_VERSION PANEL_DOMAIN SUB_DOMAIN ACME_EMAIL SESSION_SECRET LOG_LEVEL TG_PROXY_URL
-  PANEL_TLS PANEL_SNI PANEL_ALIAS CADDY_DATA_VOLUME CADDY_CONFIG_VOLUME)
+  PANEL_TLS PANEL_SNI PANEL_ALIAS PANEL_CHANNEL CADDY_DATA_VOLUME CADDY_CONFIG_VOLUME)
 compose() {
   local u=() v
   for v in "${COMPOSE_VARS[@]}"; do u+=(-u "$v"); done
