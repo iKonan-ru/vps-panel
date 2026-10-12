@@ -272,21 +272,29 @@ function CommandCard({
         <div className="grow" />
       </div>
       <div className="grow text-[13px] leading-relaxed text-muted">{description}</div>
-      <div className="flex items-center gap-2">
-        <span className="min-w-0 truncate text-xs text-muted">
+      {/* последний запуск - целиком, своей строкой (рядом с кнопками он обрезался), кнопки - ниже */}
+      <div className="text-xs leading-6 text-muted">
+        {r &&
+          (r.finishedAt === null ? (
+            <Chip tone="accent" className="mr-2 align-middle">
+              идёт
+            </Chip>
+          ) : r.exitCode === 0 ? (
+            <Chip tone="ok" className="mr-2 align-middle">
+              успех
+            </Chip>
+          ) : (
+            <Chip tone="bad" className="mr-2 align-middle">
+              ошибка
+            </Chip>
+          ))}
+        <span className="break-words">
           {r
             ? `последний: ${runLabel}${serverName ?? 'сервер удалён'} - ${ago(r.startedAt)}`
             : 'ещё не запускалась'}
         </span>
-        {r &&
-          (r.finishedAt === null ? (
-            <Chip tone="accent">идёт</Chip>
-          ) : r.exitCode === 0 ? (
-            <Chip tone="ok">успех</Chip>
-          ) : (
-            <Chip tone="bad">ошибка</Chip>
-          ))}
-        <div className="grow" />
+      </div>
+      <div className="flex flex-wrap items-center justify-end gap-2 border-t border-border pt-2.5">
         {children}
       </div>
     </Card>

@@ -14,6 +14,7 @@ import (
 
 	"github.com/iKonan-ru/vps-panel/apps/agent/internal/firewall"
 	"github.com/iKonan-ru/vps-panel/apps/agent/internal/proto"
+	"github.com/iKonan-ru/vps-panel/apps/agent/internal/reach"
 	"github.com/iKonan-ru/vps-panel/apps/agent/internal/shell"
 	_ "modernc.org/sqlite"
 )
@@ -328,7 +329,8 @@ func MtproxyPort() int {
 // минут, зонды Globalping в домашних сетях РФ).
 const mtReachFile = "/opt/mtproxyl/availability/last.json"
 
-// mtproxylReach - итог проверки MTProxyL без ответов отдельных зондов; nil - проверок ещё не было.
+// mtproxylReach - итог проверки MTProxyL и коротко зонды (город, сеть, дошёл ли) - без сырых
+// ответов и сертификатов; nil - проверок ещё не было.
 func mtproxylReach(path string) map[string]any {
 	raw, err := os.ReadFile(path)
 	if err != nil || len(raw) > 1<<20 {
@@ -342,11 +344,39 @@ func mtproxylReach(path string) map[string]any {
 		Total      int     `json:"total_probes"`
 		Success    int     `json:"success_probes"`
 		Error      string  `json:"error"`
+		Probes     []struct {
+			City       string `json:"city"`
+			ASN        int    `json:"asn"`
+			Network    string `json:"network"`
+			Status     string `json:"status"`
+			TLSSuccess bool   `json:"tls_success"`
+			Error      string `json:"error"`
+			RawOutput  string `json:"raw_output"`
+		} `json:"probes"`
 	}
 	if json.Unmarshal(raw, &v) != nil || v.CheckedAt == "" {
 		return nil
 	}
+	probes := []reach.Probe{}
+	for _, p := range v.Probes {
+		if p.Status == "" || p.Status == "in-progress" || len(probes) >= 50 {
+			continue
+		}
+		pr := reach.Probe{City: reach.Clip(p.City, 60), ASN: p.ASN, Network: reach.Clip(p.Network, 60), OK: p.Status == "finished" && p.TLSSuccess}
+		if !pr.OK {
+			e := p.Error
+			if e == "" {
+				e = reach.LastLine(p.RawOutput)
+			}
+			if e == "" {
+				e = "TLS не получен"
+			}
+			pr.Error = reach.Clip(e, 160)
+		}
+		probes = append(probes, pr)
+	}
 	return map[string]any{
+		"probes":    probes,
 		"checkedAt": v.CheckedAt,
 		"target":    v.Target,
 		"level":     v.Level,
