@@ -7,7 +7,7 @@ import type { gclientBindings, gclientDevices, gclients, servers } from '../db/s
 import { awgForgetKey, awgSaveKey } from './awg-clients.js';
 import { awgTunnelNames } from './awg-config.js';
 import { awgKeyPair } from './awg-keys.js';
-import { clientHost } from './client-host.js';
+import { clientHost, openfluxLink } from './client-host.js';
 import { peerName } from './gclient-names.js';
 import { takeOfDocs } from './openflux-docs.js';
 import type { SecretBox } from './secret-box.js';
@@ -498,12 +498,7 @@ export async function ofEnsure(
       country: row.country,
       serverName: row.name,
     }).title;
-    const r = await deps.registry.request<{ link: string }>(
-      row.id,
-      'openflux.link',
-      { channel: b.ref, name: title, host: clientHost(row) },
-      { timeoutMs: 60_000 },
-    );
+    const r = await openfluxLink(deps.registry, row, b.ref, title);
     links = [r.link];
   }
   return { links, secret: deps.box.seal(JSON.stringify(want)), warning };
