@@ -36,9 +36,10 @@ jobs:
           awk -v v="$ver" '$0 ~ "^## " { if (on) exit; if (index($0, "## " v " ") == 1 || $0 == "## " v) { on = 1; next } } on' CHANGELOG.md > notes.md
           [ -s notes.md ] || { echo "в CHANGELOG.md нет раздела ## $ver"; exit 1; }
 
+      # последний стабильный Go: им собираются и установки (сборка Caddy naive требует новый)
       - uses: actions/setup-go@v5
         with:
-          go-version-file: apps/agent/go.mod
+          go-version: stable
           cache-dependency-path: apps/agent/go.sum
 
       - name: агент, naive, wdtt
@@ -106,7 +107,12 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          files="dist/vps-agent-linux-amd64 dist/vps-agent-linux-arm64 dist/SHA256SUMS"
-          for f in deploy/release/*; do [ -f "$f" ] && files="$files $f"; done
+          # файлы установки и обновления (их качает vps-panel) и сверка для них
+          mkdir rel
+          cp deploy/release/vps-panel deploy/release/compose.yml deploy/release/fail2ban-panel.jail \
+            deploy/Caddyfile deploy/fail2ban-panel.conf rel/
+          (cd rel && sha256sum vps-panel compose.yml Caddyfile fail2ban-panel.conf fail2ban-panel.jail > release.sha256)
           pre=""; [ "${{ steps.v.outputs.pre }}" = true ] && pre="--prerelease"
-          gh release create "$GITHUB_REF_NAME" $files --title "$GITHUB_REF_NAME" --notes-file notes.md $pre --verify-tag
+          gh release create "$GITHUB_REF_NAME" rel/* install.sh \
+            dist/vps-agent-linux-amd64 dist/vps-agent-linux-arm64 dist/SHA256SUMS \
+            --title "$GITHUB_REF_NAME" --notes-file notes.md $pre --verify-tag

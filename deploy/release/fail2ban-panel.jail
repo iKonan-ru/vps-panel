@@ -1,0 +1,14 @@
+# jail для панели: /etc/fail2ban/jail.d/vps-panel.conf (путь к логу подставляет vps-panel
+# install: лог Caddy лежит в его docker-томе).
+[vps-panel]
+enabled = true
+filter = vps-panel
+logpath = __CADDY_LOG__
+maxretry = 5
+findtime = 15m
+bantime = 1h
+backend = polling
+# Caddy в docker: опубликованные порты идут через FORWARD (цепочка DOCKER-USER), бан в INPUT
+# их не закрывает.
+banaction = iptables-allports
+chain = DOCKER-USER
