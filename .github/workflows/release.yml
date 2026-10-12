@@ -1,0 +1,112 @@
+# Релиз по тегу vX.Y.Z (стабильный) или vX.Y.Z-beta.N (пре-релиз, канал "бета"):
+# агент, naive и wdtt собираются здесь и кладутся в образ панели; образы панели и Caddy -
+# в ghcr.io (amd64 и arm64); релиз на GitHub с текстом раздела версии из CHANGELOG.md.
+name: release
+
+on:
+  push:
+    tags: ['v*']
+
+permissions:
+  contents: write
+  packages: write
+
+concurrency:
+  group: release-${{ github.ref }}
+
+env:
+  REGISTRY: ghcr.io/ikonan-ru
+
+jobs:
+  release:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: версия из тега
+        id: v
+        run: |
+          ver="${GITHUB_REF_NAME#v}"
+          echo "$ver" | grep -qE '^[0-9]+\.[0-9]+\.[0-9]+(-beta\.[0-9]+)?$' || { echo "тег $GITHUB_REF_NAME: нужен vX.Y.Z или vX.Y.Z-beta.N"; exit 1; }
+          echo "version=$ver" >> "$GITHUB_OUTPUT"
+          echo "commit=$(git rev-parse --short HEAD)" >> "$GITHUB_OUTPUT"
+          case "$ver" in *-*) echo "pre=true" >> "$GITHUB_OUTPUT" ;; *) echo "pre=false" >> "$GITHUB_OUTPUT" ;; esac
+          # текст релиза - раздел версии из CHANGELOG.md (до следующего "## ")
+          awk -v v="$ver" '$0 ~ "^## " { if (on) exit; if (index($0, "## " v " ") == 1 || $0 == "## " v) { on = 1; next } } on' CHANGELOG.md > notes.md
+          [ -s notes.md ] || { echo "в CHANGELOG.md нет раздела ## $ver"; exit 1; }
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: apps/agent/go.mod
+          cache-dependency-path: apps/agent/go.sum
+
+      - name: агент, naive, wdtt
+        run: |
+          export GO="$(command -v go)" GOPATH="$RUNNER_TEMP/gopath" GOCACHE="$RUNNER_TEMP/gocache" GOTOOLCHAIN=local
+          make -C apps/agent build-all
+          sh tools/build-naive.sh
+          sh tools/build-wdtt.sh
+          mkdir -p artifacts/agent-dist artifacts/files
+          cp dist/* artifacts/agent-dist/
+          cp -r deploy/files/naive deploy/files/wdtt artifacts/files/
+          chmod -R a+rX artifacts
+          (cd dist && sha256sum vps-agent-linux-amd64 vps-agent-linux-arm64 > SHA256SUMS)
+          cat dist/version.txt
+
+      - uses: docker/setup-qemu-action@v3
+      - uses: docker/setup-buildx-action@v3
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: метки образов
+        id: tags
+        run: |
+          v="${{ steps.v.outputs.version }}"
+          p="$REGISTRY/vps-panel:$v"; c="$REGISTRY/vps-panel-caddy:$v"
+          if [ "${{ steps.v.outputs.pre }}" = false ]; then p="$p,$REGISTRY/vps-panel:latest"; c="$c,$REGISTRY/vps-panel-caddy:latest"; fi
+          echo "panel=$p" >> "$GITHUB_OUTPUT"
+          echo "caddy=$c" >> "$GITHUB_OUTPUT"
+
+      - name: образ панели
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: deploy/Dockerfile
+          platforms: linux/amd64,linux/arm64
+          build-contexts: artifacts=artifacts
+          build-args: |
+            PANEL_VERSION=${{ steps.v.outputs.version }}
+            PANEL_COMMIT=${{ steps.v.outputs.commit }}
+          labels: |
+            org.opencontainers.image.source=https://github.com/${{ github.repository }}
+            org.opencontainers.image.version=${{ steps.v.outputs.version }}
+            org.opencontainers.image.licenses=AGPL-3.0-only
+          tags: ${{ steps.tags.outputs.panel }}
+          push: true
+          cache-from: type=gha,scope=panel
+          cache-to: type=gha,scope=panel,mode=max
+
+      - name: образ Caddy
+        uses: docker/build-push-action@v6
+        with:
+          context: deploy
+          file: deploy/Dockerfile.caddy
+          platforms: linux/amd64,linux/arm64
+          labels: |
+            org.opencontainers.image.source=https://github.com/${{ github.repository }}
+            org.opencontainers.image.version=${{ steps.v.outputs.version }}
+          tags: ${{ steps.tags.outputs.caddy }}
+          push: true
+
+      - name: релиз на GitHub
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          files="dist/vps-agent-linux-amd64 dist/vps-agent-linux-arm64 dist/SHA256SUMS"
+          for f in deploy/release/*; do [ -f "$f" ] && files="$files $f"; done
+          pre=""; [ "${{ steps.v.outputs.pre }}" = true ] && pre="--prerelease"
+          gh release create "$GITHUB_REF_NAME" $files --title "$GITHUB_REF_NAME" --notes-file notes.md $pre --verify-tag
