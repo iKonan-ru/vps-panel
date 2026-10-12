@@ -6,14 +6,16 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { buildApp } from '../src/app.js';
 import { loadEnv } from '../src/config.js';
 import { createDb } from '../src/db/index.js';
+import { initAdmin } from '../src/lib/auth.js';
 
 // каталог данных - временный: маршруты создают в нём backups/ (с ':memory:' - в рабочей копии)
 const dir = mkdtempSync(join(tmpdir(), 'vps-auth-'));
 const env = loadEnv({ NODE_ENV: 'test', DATA_DIR: dir });
+const db = createDb(':memory:');
 let app: Awaited<ReturnType<typeof buildApp>>['app'];
 
 beforeAll(async () => {
-  ({ app } = await buildApp({ env, db: createDb(':memory:') }));
+  ({ app } = await buildApp({ env, db }));
   await app.ready();
 });
 afterAll(async () => {
@@ -57,33 +59,57 @@ describe('setup and login', () => {
     expect(res.json().error).toBe('unknown arch');
   });
 
-  it('runs the first-start wizard and logs in with TOTP', async () => {
+  it('no browser wizard: the admin comes from the console, 2FA is set up at first login', async () => {
     let res: Awaited<ReturnType<typeof app.inject>> = await app.inject({
       method: 'GET',
       url: '/api/setup/status',
     });
     expect(res.json().setupDone).toBe(false);
-
     res = await app.inject({
       method: 'POST',
       url: '/api/setup',
       payload: { login: 'admin', password: 'correct horse battery' },
     });
-    expect(res.statusCode).toBe(200);
-    const { totpSecret, backupCodes } = res.json();
-    expect(backupCodes).toHaveLength(8);
-    const pendingCookie = must(cookiesOf(res).vps_pending);
+    expect(res.statusCode).toBe(404);
 
+    const created = await initAdmin(db, 'admin');
+    expect(created?.password).toMatch(/^[A-Za-z0-9]{20}$/);
+    expect(await initAdmin(db, 'other')).toBeNull();
+    const password = must(created?.password);
+
+    // first login: password -> new secret with backup codes -> first code enables 2FA
     res = await app.inject({
       method: 'POST',
-      url: '/api/setup/confirm',
-      cookies: { vps_pending: pendingCookie },
+      url: '/api/auth/login',
+      payload: { login: 'admin', password },
+    });
+    expect(res.json().next).toBe('enroll');
+    const { totpSecret, backupCodes } = res.json();
+    expect(backupCodes).toHaveLength(8);
+    let pend = must(cookiesOf(res).vps_pending);
+    // the totp step does not accept a code before 2FA is enrolled
+    res = await app.inject({
+      method: 'POST',
+      url: '/api/auth/totp',
+      cookies: { vps_pending: pend },
+      payload: { code: authenticator.generate(totpSecret) },
+    });
+    expect(res.statusCode).toBe(401);
+    res = await app.inject({
+      method: 'POST',
+      url: '/api/auth/enroll',
+      cookies: { vps_pending: pend },
+      payload: { code: '000000' },
+    });
+    expect(res.statusCode).toBe(400);
+    res = await app.inject({
+      method: 'POST',
+      url: '/api/auth/enroll',
+      cookies: { vps_pending: pend },
       payload: { code: authenticator.generate(totpSecret) },
     });
     expect(res.statusCode).toBe(200);
     const session = must(cookiesOf(res).vps_session);
-    expect(session).toBeTruthy();
-
     res = await app.inject({
       method: 'GET',
       url: '/api/auth/me',
@@ -91,15 +117,7 @@ describe('setup and login', () => {
     });
     expect(res.json().login).toBe('admin');
 
-    // second setup is refused
-    res = await app.inject({
-      method: 'POST',
-      url: '/api/setup',
-      payload: { login: 'x', password: 'y'.repeat(12) },
-    });
-    expect(res.statusCode).toBe(409);
-
-    // full login: password then totp
+    // next login: password then totp (a backup code works too)
     res = await app.inject({
       method: 'POST',
       url: '/api/auth/login',
@@ -109,14 +127,21 @@ describe('setup and login', () => {
     res = await app.inject({
       method: 'POST',
       url: '/api/auth/login',
-      payload: { login: 'admin', password: 'correct horse battery' },
+      payload: { login: 'admin', password },
     });
-    expect(res.json().next).toBe('totp');
-    const p2 = must(cookiesOf(res).vps_pending);
+    expect(res.json()).toEqual({ next: 'totp' });
+    pend = must(cookiesOf(res).vps_pending);
+    res = await app.inject({
+      method: 'POST',
+      url: '/api/auth/enroll',
+      cookies: { vps_pending: pend },
+      payload: { code: authenticator.generate(totpSecret) },
+    });
+    expect(res.statusCode).toBe(401);
     res = await app.inject({
       method: 'POST',
       url: '/api/auth/totp',
-      cookies: { vps_pending: p2 },
+      cookies: { vps_pending: pend },
       payload: { code: must(backupCodes[0]) },
     });
     expect(res.statusCode).toBe(200);

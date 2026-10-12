@@ -11,7 +11,7 @@ import Fastify from 'fastify';
 import { ZodError } from 'zod';
 import { AgentRegistry } from './agents/registry.js';
 import { type StatusCache, bindStateToDb } from './agents/state.js';
-import type { Env } from './config.js';
+import { type Env, panelDomain } from './config.js';
 import { type Db, createDb } from './db/index.js';
 import { actionLog, servers } from './db/schema.js';
 import { actionJournal } from './lib/action-journal.js';
@@ -37,6 +37,7 @@ import { PANEL_VERSION } from './lib/version.js';
 import { XraySpares } from './lib/xray-exits.js';
 import { XrayManager } from './lib/xray.js';
 import { accessRoutes } from './routes/access.js';
+import { accountRoutes } from './routes/account.js';
 import { agentDistRoutes } from './routes/agent-dist.js';
 import { agentUpdateRoutes } from './routes/agent-update.js';
 import { agentWsRoutes } from './routes/agent-ws.js';
@@ -148,7 +149,8 @@ export async function buildApp(opts: AppOptions) {
   proxy = new PanelProxy(
     db,
     registry,
-    secure ? new URL(env.PANEL_PUBLIC_URL).hostname : '',
+    // без домена (панель по IP) поддоменов нет: панели сервисов - напрямую, без прокси
+    secure ? panelDomain(env) : '',
     env.SESSION_SECRET ?? 'dev-only-secret-change-me-please-32b',
     app.log,
   );
@@ -230,6 +232,7 @@ export async function buildApp(opts: AppOptions) {
   await app.register(xuiRoutes, serverRouteOpts);
   await app.register(installRoutes, { db, env, registry, hub });
   await app.register(securityRoutes, { db });
+  await app.register(accountRoutes, { db, secure });
   await app.register(commandRoutes, { db, env, registry, hub, box, certs: panelCerts });
   await app.register(accessRoutes, { db, box });
   await app.register(backupRoutes, { db, env, registry, hub });
@@ -359,6 +362,19 @@ export async function buildApp(opts: AppOptions) {
     if (Date.now() - (invalidAt.get(serverId) ?? 0) < 10 * 60_000) return;
     invalidAt.set(serverId, Date.now());
     app.log.warn({ serverId, err }, 'agent: сообщение не прошло схему, отброшено');
+  });
+  // Адрес панели сменился (vps-panel domain: у панели появился домен): агент, подключившийся по
+  // старому адресу, получает новый и переподключается (старый Caddy тоже обслуживает). Адрес тот
+  // же - агент ничего не делает.
+  registry.on('online', (serverId) => {
+    if (!secure || !registry.supports(serverId, 'panel.url')) return;
+    registry
+      .request(serverId, 'panel.url', { url: env.PANEL_PUBLIC_URL }, { timeoutMs: 15_000 })
+      .then((r) => {
+        if ((r as { changed?: boolean }).changed)
+          app.log.info({ serverId, url: env.PANEL_PUBLIC_URL }, 'agent: новый адрес панели');
+      })
+      .catch(() => undefined);
   });
 
   // Собранный фронтенд в проде; в dev его отдаёт Vite с прокси на /api.

@@ -6,14 +6,16 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { buildApp } from '../src/app.js';
 import { loadEnv } from '../src/config.js';
 import { createDb } from '../src/db/index.js';
+import { createAdmin } from '../src/lib/auth.js';
 
 // Панель на https: cookie входа с префиксом __Host- (поддомены панели не могут её подменить)
 const dir = mkdtempSync(join(tmpdir(), 'vps-hostcookie-'));
 const env = loadEnv({ NODE_ENV: 'test', DATA_DIR: dir, PANEL_PUBLIC_URL: 'https://panel.example' });
+const db = createDb(':memory:');
 let app: Awaited<ReturnType<typeof buildApp>>['app'];
 
 beforeAll(async () => {
-  ({ app } = await buildApp({ env, db: createDb(':memory:') }));
+  ({ app } = await buildApp({ env, db }));
   await app.ready();
 });
 afterAll(async () => {
@@ -22,10 +24,11 @@ afterAll(async () => {
 });
 
 describe('cookie __Host- на https', () => {
-  it('мастер и вход выдают __Host- cookie с Secure, Path=/ и без Domain', async () => {
+  it('вход выдаёт __Host- cookie с Secure, Path=/ и без Domain', async () => {
+    await createAdmin(db, 'admin', 'correct horse battery');
     let res = await app.inject({
       method: 'POST',
-      url: '/api/setup',
+      url: '/api/auth/login',
       payload: { login: 'admin', password: 'correct horse battery' },
     });
     const pend = res.cookies.find((c) => c.name === '__Host-vps_pending');
@@ -34,7 +37,7 @@ describe('cookie __Host- на https', () => {
     expect(pend?.domain).toBeUndefined();
     res = await app.inject({
       method: 'POST',
-      url: '/api/setup/confirm',
+      url: '/api/auth/enroll',
       cookies: { '__Host-vps_pending': pend?.value ?? '' },
       payload: { code: authenticator.generate(res.json().totpSecret) },
     });

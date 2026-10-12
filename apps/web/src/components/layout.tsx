@@ -127,15 +127,23 @@ export function AppLayout({ login }: { login: string }) {
             collapsed ? 'flex-col' : '',
           )}
         >
-          <div
-            className="flex size-8 shrink-0 items-center justify-center rounded-full bg-surface-2 text-[13px] font-semibold uppercase"
-            title={login}
+          <Link
+            to="/account"
+            className="flex size-8 shrink-0 items-center justify-center rounded-full bg-surface-2 text-[13px] font-semibold uppercase hover:ring-1 hover:ring-accent"
+            title={`${login}: аккаунт`}
+            aria-label="Аккаунт"
           >
             {login.slice(0, 2)}
-          </div>
+          </Link>
           {!collapsed && (
             <div className="min-w-0 grow">
-              <div className="truncate text-sm">{login}</div>
+              <Link
+                to="/account"
+                className="block truncate text-sm hover:text-accent"
+                title="Аккаунт"
+              >
+                {login}
+              </Link>
               <div className="truncate text-[11px] text-muted" title="Адрес и версия панели">
                 {location.hostname}
                 {version && `, ${version}`}
@@ -254,15 +262,22 @@ export function AppLayout({ login }: { login: string }) {
             </Link>
           ))}
         <div className="flex items-center gap-3">
-          <div className="flex size-10 shrink-0 items-center justify-center rounded-full bg-surface-2 text-sm font-semibold uppercase">
-            {login.slice(0, 2)}
-          </div>
-          <div className="min-w-0 grow">
-            <div className="truncate text-sm">{login}</div>
-            <div className="truncate text-xs text-muted">
-              {location.hostname}, панель {version ?? '?'}
+          <Link
+            to="/account"
+            onClick={() => setMore(false)}
+            className="flex min-w-0 grow items-center gap-3"
+            aria-label="Аккаунт"
+          >
+            <div className="flex size-10 shrink-0 items-center justify-center rounded-full bg-surface-2 text-sm font-semibold uppercase">
+              {login.slice(0, 2)}
             </div>
-          </div>
+            <div className="min-w-0 grow">
+              <div className="truncate text-sm">{login}</div>
+              <div className="truncate text-xs text-muted">
+                {location.hostname}, панель {version ?? '?'}
+              </div>
+            </div>
+          </Link>
           <Button
             size="icon"
             variant="ghost"

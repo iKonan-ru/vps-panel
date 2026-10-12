@@ -231,6 +231,7 @@ export type AgentMessage = z.infer<typeof AgentMessageSchema>;
 
 export const AgentMethodSchema = z.enum([
   'inventory.get',
+  'panel.url',
   'metrics.interval',
   'baseline.plan',
   'baseline.apply',

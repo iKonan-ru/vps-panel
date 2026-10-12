@@ -274,11 +274,17 @@ fi
 
 say "готово"
 if [ "$MODE" = install ]; then
+  # администратор со случайным паролем (мастера в браузере нет); уже есть - пропускаем
+  admin="$(docker compose exec -T panel node server/dist/cli.js admin-init 2>/dev/null || true)"
+  if [ -n "$admin" ]; then
+    printf '\nАдминистратор: %s\nПароль: %s\n(сохраните: показан один раз; сброс - docker compose exec panel node server/dist/cli.js admin-password)\n' \
+      "$(echo "$admin" | python3 -c 'import json,sys;print(json.load(sys.stdin)["login"])')" \
+      "$(echo "$admin" | python3 -c 'import json,sys;print(json.load(sys.stdin)["password"])')"
+  fi
   cat <<MSG
 Панель: https://$DOMAIN
 ${SUB:+Подписки и личные страницы: https://$SUB
-}Сразу откройте панель и пройдите мастер первой настройки (администратор, пароль, 2FA):
-до этого он открыт любому, кто первым зайдёт на адрес.
+}При первом входе панель попросит настроить 2FA.
 Затем - "Серверы" -> "Добавить сервер". Бэкап панели (Настройки) - включить сразу.
 Обновление - снова deploy/install.sh.
 MSG

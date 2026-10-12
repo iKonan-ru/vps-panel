@@ -2,11 +2,14 @@ import { and, desc, eq, gt, sql } from 'drizzle-orm';
 import type { FastifyInstance } from 'fastify';
 import type { Db } from '../db/index.js';
 import { loginAttempts, sessions } from '../db/schema.js';
+import { sha256 } from '../lib/auth.js';
+import { sessionToken } from './auth.js';
 
 /** Сводка безопасности самой панели: попытки входа и активные сессии. */
 export async function securityRoutes(app: FastifyInstance, opts: { db: Db }) {
   const { db } = opts;
-  app.get('/api/security', async () => {
+  app.get('/api/security', async (req) => {
+    const mine = sha256(sessionToken(req) ?? '');
     const day = new Date(Date.now() - 86_400_000).toISOString();
     const week = new Date(Date.now() - 7 * 86_400_000).toISOString();
     const [failed24] = await db
@@ -54,7 +57,7 @@ export async function securityRoutes(app: FastifyInstance, opts: { db: Db }) {
       failed7d: failed7d?.n ?? 0,
       topIps,
       recent,
-      sessions: active,
+      sessions: active.map((x) => ({ ...x, current: x.id === mine })),
     };
   });
 }

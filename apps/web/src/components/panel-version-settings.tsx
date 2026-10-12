@@ -3,6 +3,7 @@ import { Alert } from '@/components/ui/alert';
 import { Button } from '@/components/ui/button';
 import { Chip } from '@/components/ui/chip';
 import { useConfirm } from '@/components/ui/confirm';
+import { LinkButton } from '@/components/ui/link-button';
 import { Section } from '@/components/ui/section';
 import { Select } from '@/components/ui/select';
 import { Switch } from '@/components/ui/switch';
@@ -11,6 +12,9 @@ import { ago } from '@/lib/format';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { ArrowUpCircle, ExternalLink, RefreshCw } from 'lucide-react';
 import { useState } from 'react';
+
+/** Репозиторий панели: исходники, релизы, документация. */
+const REPO_URL = 'https://github.com/iKonan-ru/vps-panel';
 
 interface PanelRelease {
   version: string;
@@ -113,14 +117,23 @@ export function PanelVersionSettings() {
         </>
       }
       actions={
-        <Button
-          size="sm"
-          disabled={busy}
-          onClick={() => run(() => api('/api/panel/update/check', { method: 'POST' }))}
-          label="Проверить"
-        >
-          <RefreshCw className={working && !st.requested ? 'size-3.5 animate-spin' : 'size-3.5'} />
-        </Button>
+        <>
+          <LinkButton
+            href={REPO_URL}
+            label="GitHub"
+            title="Панель на GitHub: исходники, релизы, документация, вопросы"
+          />
+          <Button
+            size="sm"
+            disabled={busy}
+            onClick={() => run(() => api('/api/panel/update/check', { method: 'POST' }))}
+            label="Проверить"
+          >
+            <RefreshCw
+              className={working && !st.requested ? 'size-3.5 animate-spin' : 'size-3.5'}
+            />
+          </Button>
+        </>
       }
     >
       <div className="flex flex-col gap-4 p-4">

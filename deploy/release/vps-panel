@@ -1,7 +1,11 @@
 #!/bin/bash
 # vps-panel - установка, обновление и обслуживание VPS Panel из релизов GitHub.
 #
-#   vps-panel install [-y] [--beta] [--version X.Y.Z]   установка (вопросы: домен, подписки, почта)
+#   vps-panel install [-y] [--beta] [--version X.Y.Z]   установка (вопросы: домен - можно без
+#                                                        него, по IP; подписки, почта, логин)
+#   vps-panel admin [show | password | 2fa | login <имя> | init [имя]]
+#                                                        администратор: сброс пароля и 2FA
+#   vps-panel domain <имя> [--sub <имя>]                 домен панели (была по IP или другой)
 #   vps-panel update [X.Y.Z] [--beta] [--force]          обновление до версии или до последней
 #   vps-panel rollback                                   вернуть прошлую версию
 #   vps-panel status | version | logs [panel|caddy] | restart
@@ -43,7 +47,7 @@ need_root() { [ "$(id -u)" = 0 ] || die "запускать от root (sudo vps-
 ask() { # ask <вопрос> <по умолчанию> - ответ в $REPLY
   if [ "$YES" = 1 ]; then REPLY="$2"; return; fi
   read -r -p "$1${2:+ [$2]}: " REPLY </dev/tty 2>/dev/null ||
-    die "нет терминала для вопросов: задайте PANEL_DOMAIN, ACME_EMAIL, SUB_DOMAIN и запустите с -y"
+    die "нет терминала для вопросов: задайте PANEL_DOMAIN (пусто - по IP), ACME_EMAIL, SUB_DOMAIN, PANEL_LOGIN и запустите с -y"
   [ -n "$REPLY" ] || REPLY="$2"
 }
 confirm() {
@@ -126,7 +130,8 @@ wait_health() { # wait_health <версия> <секунд>: /api/health отв�
   local v="$1" n=$(($2 / 5)) dom
   dom="$(env_get PANEL_DOMAIN)"
   for _ in $(seq 1 "$n"); do
-    if curl -kfsS -m 8 --resolve "$dom:443:127.0.0.1" "https://$dom/api/health" 2>/dev/null | grep -q "\"version\":\"$v\""; then
+    # --connect-to: и для имени, и для IP (за NAT свой внешний адрес изнутри недоступен)
+    if curl -kfsS -m 8 --connect-to "$dom:443:127.0.0.1:443" "https://$dom/api/health" 2>/dev/null | grep -q "\"version\":\"$v\""; then
       return 0
     fi
     sleep 5
@@ -179,6 +184,42 @@ install_fail2ban() {
 }
 
 # ---------------------------------------------------------------- install
+LOGIN_RE='^[A-Za-z0-9._-]{3,32}$'
+DOMAIN_RE='^([a-z0-9]([a-z0-9-]*[a-z0-9])?\.)+[a-z0-9-]{2,}$'
+
+public_ip() { # внешний IPv4 сервера
+  curl -4 -fsS -m 10 https://api.ipify.org 2>/dev/null || curl -4 -fsS -m 10 https://ifconfig.me 2>/dev/null || true
+}
+
+# Администратор в контейнере панели (apps/server/src/cli.ts): ответ - JSON. Панель запущена -
+# exec, нет - разовый контейнер (база та же, ./data).
+panel_cli() {
+  if [ -n "$(compose ps -q --status running panel 2>/dev/null)" ]; then
+    compose exec -T panel node server/dist/cli.js "$@"
+  else
+    compose run --rm --no-deps -T panel node server/dist/cli.js "$@"
+  fi
+}
+json_field() { python3 -c 'import json,sys; print(json.load(sys.stdin).get(sys.argv[1], ""))' "$1"; }
+
+# Сводка для входа, как у других панелей: адрес, логин, пароль - пароль показывается один раз.
+print_access() { # print_access <логин> <пароль> [заголовок]
+  local url sub line
+  url="https://$(env_get PANEL_DOMAIN)"
+  sub="$(env_get SUB_DOMAIN)"
+  line="$(printf '%.0s=' $(seq 1 64))"
+  printf '\n%s\n %s\n%s\n' "$line" "${3:-VPS Panel}" "$line"
+  printf ' %-11s %s\n' "Адрес:" "$url"
+  printf ' %-11s %s\n' "Логин:" "$1"
+  [ -n "$2" ] && printf ' %-11s %s\n' "Пароль:" "$2"
+  printf ' %-11s %s\n' "2FA:" "настраивается при первом входе (приложение-аутентификатор)"
+  [ -n "$sub" ] && printf ' %-11s %s\n' "Подписки:" "https://$sub"
+  printf '%s\n' "$line"
+  [ -n "$2" ] && echo " Сохраните пароль сейчас: он показан один раз, восстановления нет."
+  echo " Сброс пароля или 2FA - только здесь, в консоли: vps-panel admin password | 2fa"
+  printf '%s\n' "$line"
+}
+
 cmd_install() {
   need_root
   local VERSION="" CHANNEL=stable
@@ -205,52 +246,77 @@ cmd_install() {
   echo "$VERSION" | grep -qE "$SEMVER" || die "версия $VERSION: нужна вида X.Y.Z или X.Y.Z-beta.N"
   say "установка VPS Panel $VERSION в $ROOT"
 
-  local DOMAIN="${PANEL_DOMAIN:-}" SUB EMAIL
+  local DOMAIN="${PANEL_DOMAIN:-}" SUB EMAIL LOGIN="${PANEL_LOGIN:-}" IP TLS=domain SNI=""
   DOCKER_BY_PANEL=0
+  IP="$(public_ip)"
   while :; do
-    ask "Домен панели (A-запись на этот сервер)" "$DOMAIN"
+    ask "Домен панели (A-запись на этот сервер; Enter - без домена, по IP-адресу)" "$DOMAIN"
     DOMAIN="$(echo "$REPLY" | tr 'A-Z' 'a-z')"
-    echo "$DOMAIN" | grep -qE '^([a-z0-9]([a-z0-9-]*[a-z0-9])?\.)+[a-z0-9-]{2,}$' && break
-    [ "$YES" = 1 ] && die "PANEL_DOMAIN не задан или неверный: '$DOMAIN'"
-    warn "нужен домен вида panel.example.com (IDN - в punycode, xn--...)"
+    [ -z "$DOMAIN" ] && break
+    echo "$DOMAIN" | grep -qE "$DOMAIN_RE" && break
+    [ "$YES" = 1 ] && die "PANEL_DOMAIN неверный: '$DOMAIN' (пусто - панель по IP)"
+    warn "нужен домен вида panel.example.com (IDN - в punycode, xn--...) или пусто - по IP"
   done
-  SUB="${SUB_DOMAIN-sub.$DOMAIN}"
-  ask "Имя для подписок и личных страниц клиентов (своя A-запись; - = на домене панели)" "${SUB:--}"
-  SUB="$(echo "$REPLY" | tr 'A-Z' 'a-z')"
-  [ "$SUB" = "-" ] && SUB=""
+  if [ -z "$DOMAIN" ]; then
+    # без домена: https://<IP> с сертификатом Let's Encrypt на IP-адрес (6 дней, Caddy продлевает)
+    echo "$IP" | grep -qE '^[0-9]+(\.[0-9]+){3}$' || die "внешний IPv4 сервера определить не удалось - без домена панель не поставить"
+    DOMAIN="$IP" TLS=ip SNI="$IP" SUB=""
+    say "без домена: панель будет по адресу https://$IP"
+    cat <<TXT
+Сертификат - Let's Encrypt на IP-адрес (короткий, 6 дней; Caddy продлевает сам), браузер не
+ругается. Без домена не будет: открытия панелей 3X-UI и MTProxyL через панель (поддомены) -
+они открываются напрямую, если их порт открыт; отдельного имени для подписок; имени naive на
+этом сервере по умолчанию. Домен можно добавить позже: vps-panel domain <имя> - прежний адрес
+по IP продолжит работать для агентов и подписок.
+TXT
+  else
+    SUB="${SUB_DOMAIN-sub.$DOMAIN}"
+    ask "Имя для подписок и личных страниц клиентов (своя A-запись; - = на домене панели)" "${SUB:--}"
+    SUB="$(echo "$REPLY" | tr 'A-Z' 'a-z')"
+    [ "$SUB" = "-" ] && SUB=""
+  fi
   EMAIL="${ACME_EMAIL:-}"
   while :; do
-    ask "Почта для Let's Encrypt (письма об истечении сертификатов)" "$EMAIL"
+    ask "Почта для Let's Encrypt (учётная запись сертификатов)" "$EMAIL"
     EMAIL="$REPLY"
     echo "$EMAIL" | grep -qE '^[^@ ]+@[^@ ]+\.[^@ ]+$' && break
     [ "$YES" = 1 ] && die "ACME_EMAIL не задан или неверный"
     warn "нужен адрес почты"
   done
-
-  say "проверка DNS"
-  local IP got name dns_bad=0
-  IP="$(curl -4 -fsS -m 10 https://api.ipify.org 2>/dev/null || curl -4 -fsS -m 10 https://ifconfig.me 2>/dev/null || true)"
-  [ -n "$IP" ] && echo "внешний адрес сервера: $IP" || warn "внешний адрес сервера определить не удалось"
-  for name in "$DOMAIN" ${SUB:+"$SUB"}; do
-    got="$(resolve4 "$name")"
-    if [ -z "$got" ]; then
-      warn "$name: A-записи нет"
-      dns_bad=1
-    elif [ -n "$IP" ] && ! echo " $got" | grep -q " $IP "; then
-      warn "$name указывает на $got, а не на $IP"
-      dns_bad=1
-    else
-      echo "$name -> $got ок"
-    fi
+  while :; do
+    ask "Логин администратора панели (Enter - случайный)" "$LOGIN"
+    LOGIN="$REPLY"
+    [ -z "$LOGIN" ] && break
+    echo "$LOGIN" | grep -qE "$LOGIN_RE" && break
+    [ "$YES" = 1 ] && die "PANEL_LOGIN неверный: 3-32 символа, латиница, цифры, точка, дефис, подчёркивание"
+    warn "логин: 3-32 символа, латиница, цифры, точка, дефис, подчёркивание"
   done
-  if [ -n "$(resolve4 "vpsp-check-$RANDOM.$DOMAIN")" ]; then
-    echo "*.$DOMAIN есть: панели сервисов через поддомены будут работать"
-  else
-    warn "*.$DOMAIN в DNS нет: панели сервисов (3X-UI, MTProxyL) через поддомены не откроются, пока не заведена wildcard-запись на этот сервер"
-  fi
-  if [ "$dns_bad" = 1 ]; then
-    warn "Caddy не получит сертификат, пока имена не указывают на этот сервер"
-    confirm "Продолжить всё равно?" || exit 1
+
+  if [ "$TLS" = domain ]; then
+    say "проверка DNS"
+    local got name dns_bad=0
+    [ -n "$IP" ] && echo "внешний адрес сервера: $IP" || warn "внешний адрес сервера определить не удалось"
+    for name in "$DOMAIN" ${SUB:+"$SUB"}; do
+      got="$(resolve4 "$name")"
+      if [ -z "$got" ]; then
+        warn "$name: A-записи нет"
+        dns_bad=1
+      elif [ -n "$IP" ] && ! echo " $got" | grep -q " $IP "; then
+        warn "$name указывает на $got, а не на $IP"
+        dns_bad=1
+      else
+        echo "$name -> $got ок"
+      fi
+    done
+    if [ -n "$(resolve4 "vpsp-check-$RANDOM.$DOMAIN")" ]; then
+      echo "*.$DOMAIN есть: панели сервисов через поддомены будут работать"
+    else
+      warn "*.$DOMAIN в DNS нет: панели сервисов (3X-UI, MTProxyL) через поддомены не откроются, пока не заведена wildcard-запись на этот сервер"
+    fi
+    if [ "$dns_bad" = 1 ]; then
+      warn "Caddy не получит сертификат, пока имена не указывают на этот сервер"
+      confirm "Продолжить всё равно?" || exit 1
+    fi
   fi
 
   say "проверка портов 80 и 443"
@@ -284,6 +350,11 @@ cmd_install() {
 PANEL_DOMAIN=$DOMAIN
 SUB_DOMAIN=$SUB
 ACME_EMAIL=$EMAIL
+# сертификаты: domain - на имена; ip - и на IP-адрес (панель без домена или прежний адрес по IP)
+PANEL_TLS=$TLS
+PANEL_SNI=$SNI
+# прежний адрес панели после "vps-panel domain": по нему продолжают ходить агенты и подписки
+PANEL_ALIAS=
 SESSION_SECRET=$(openssl rand -base64 48 | tr -d '\n')
 LOG_LEVEL=info
 # внешний HTTP-прокси для api.telegram.org вместо встроенного xray; пусто - без него
@@ -301,6 +372,12 @@ ENV
 
   say "образы и запуск (первый раз - минута-две)"
   compose pull || die "образы не скачались с ghcr.io: проверьте доступ к ghcr.io и pkg-containers.githubusercontent.com"
+  say "администратор панели"
+  local admin_json ADMIN_LOGIN ADMIN_PASSWORD
+  admin_json="$(panel_cli admin-init ${LOGIN:+"$LOGIN"})" || die "администратор не создан: vps-panel admin init"
+  ADMIN_LOGIN="$(echo "$admin_json" | json_field login)"
+  ADMIN_PASSWORD="$(echo "$admin_json" | json_field password)"
+  echo "создан: $ADMIN_LOGIN (пароль - в сводке в конце)"
   compose up -d
   say "жду ответа https://$DOMAIN/api/health"
   if wait_health "$VERSION" 300; then echo "панель отвечает"; else warn "за 5 минут панель не ответила: vps-panel logs"; fi
@@ -316,13 +393,11 @@ ENV
   install_units
 
   say "готово"
+  print_access "$ADMIN_LOGIN" "$ADMIN_PASSWORD" "VPS Panel $VERSION установлена"
   cat <<MSG
-Панель: https://$DOMAIN
-${SUB:+Подписки и личные страницы: https://$SUB
-}Сразу откройте панель и пройдите мастер первой настройки (администратор, пароль, 2FA):
-до этого он открыт любому, кто первым зайдёт на адрес.
-Затем - "Серверы" -> "Добавить сервер". Бэкап панели (Настройки) - включить сразу.
-Обновления приходят в саму панель (Настройки -> Версия панели); из консоли - vps-panel update.
+Дальше: войдите в панель и настройте 2FA, затем "Серверы" -> "Добавить сервер". Бэкап панели
+(Настройки) - включить сразу. Обновления приходят в саму панель (Настройки -> Версия панели);
+из консоли - vps-panel update. Все команды: vps-panel help
 MSG
 }
 
@@ -680,8 +755,104 @@ full_uninstall() {
   [ "$drop_vpn" = 1 ] || [ "${#vpn[@]}" -eq 0 ] || echo "VPN-сервисы оставлены и работают."
 }
 
+# Администратор панели из консоли: восстановления пароля в панели нет - сброс только здесь.
+cmd_admin() {
+  need_root
+  [ -f "$ENV_FILE" ] || die "панель не установлена в $ROOT"
+  local r login pw
+  case "${1:-show}" in
+    show)
+      r="$(panel_cli admin-show)" || exit 1
+      echo "логин: $(echo "$r" | json_field login)"
+      echo "2FA: $([ "$(echo "$r" | json_field totpEnabled)" = True ] && echo включена || echo "не настроена - при входе")"
+      echo "открытых сессий: $(echo "$r" | json_field sessions)"
+      echo "адрес: https://$(env_get PANEL_DOMAIN)"
+      ;;
+    password)
+      confirm "Задать администратору новый случайный пароль? Все сессии панели закроются" || exit 1
+      r="$(panel_cli admin-password)" || exit 1
+      print_access "$(echo "$r" | json_field login)" "$(echo "$r" | json_field password)" "Новый пароль администратора"
+      ;;
+    2fa)
+      confirm "Сбросить 2FA? Её настроят заново при следующем входе; все сессии закроются" || exit 1
+      r="$(panel_cli admin-2fa)" || exit 1
+      echo "2FA сброшена: при следующем входе (логин $(echo "$r" | json_field login)) панель покажет новый QR-код"
+      ;;
+    login)
+      login="${2:-}"
+      echo "$login" | grep -qE "$LOGIN_RE" || die "vps-panel admin login <имя>: 3-32 символа, латиница, цифры, точка, дефис, подчёркивание"
+      r="$(panel_cli admin-login "$login")" || exit 1
+      echo "логин администратора: $(echo "$r" | json_field login)"
+      ;;
+    init)
+      login="${2:-}"
+      [ -z "$login" ] || echo "$login" | grep -qE "$LOGIN_RE" || die "логин: 3-32 символа, латиница, цифры, точка, дефис, подчёркивание"
+      r="$(panel_cli admin-init ${login:+"$login"})" || exit 1
+      pw="$(echo "$r" | json_field password)"
+      print_access "$(echo "$r" | json_field login)" "$pw" "Администратор создан"
+      ;;
+    *) die "vps-panel admin [show | password | 2fa | login <имя> | init [имя]]" ;;
+  esac
+}
+
+# Домен панели: была по IP (или другой домен). Прежний адрес остаётся (PANEL_ALIAS): по нему
+# ходят агенты и подписки клиентов, выданные раньше; агенты новой версии сами переходят на новый
+# адрес при следующем подключении.
+cmd_domain() {
+  need_root
+  [ -f "$ENV_FILE" ] || die "панель не установлена в $ROOT"
+  local DOMAIN="" SUB="" set_sub=0 OLD IP got
+  while [ $# -gt 0 ]; do
+    case "$1" in
+      --sub) SUB="$(echo "${2:-}" | tr 'A-Z' 'a-z')"; set_sub=1; shift ;;
+      -y) YES=1 ;;
+      -*) die "domain: неизвестный ключ $1" ;;
+      *) DOMAIN="$(echo "$1" | tr 'A-Z' 'a-z')" ;;
+    esac
+    shift
+  done
+  OLD="$(env_get PANEL_DOMAIN)"
+  if [ -z "$DOMAIN" ]; then
+    got="$(env_get PANEL_ALIAS)"
+    echo "адрес панели: https://$OLD${got:+ (и прежний https://$got)}"
+    echo "сменить: vps-panel domain <имя> [--sub <имя для подписок>]"
+    return
+  fi
+  echo "$DOMAIN" | grep -qE "$DOMAIN_RE" || die "нужен домен вида panel.example.com"
+  [ "$DOMAIN" = "$OLD" ] && die "панель уже на $DOMAIN"
+  [ "$set_sub" = 0 ] || [ -z "$SUB" ] || echo "$SUB" | grep -qE "$DOMAIN_RE" || die "--sub: нужен домен вида sub.example.com"
+  IP="$(public_ip)"
+  for name in "$DOMAIN" ${SUB:+"$SUB"}; do
+    got="$(resolve4 "$name")"
+    if [ -z "$got" ] || { [ -n "$IP" ] && ! echo " $got" | grep -q " $IP "; }; then
+      warn "$name: A-запись ${got:-не найдена}${IP:+, а сервер - $IP}"
+      confirm "Caddy не получит сертификат, пока имя не указывает на этот сервер. Продолжить?" || exit 1
+    else
+      echo "$name -> $got ок"
+    fi
+  done
+  env_set PANEL_DOMAIN "$DOMAIN"
+  env_set PANEL_ALIAS "$OLD"
+  [ "$set_sub" = 1 ] && env_set SUB_DOMAIN "$SUB"
+  # прежний адрес - IP: его сертификат (на IP) продолжает выпускаться
+  if echo "$OLD" | grep -qE '^[0-9]+(\.[0-9]+){3}$'; then
+    env_set PANEL_TLS ip
+    env_set PANEL_SNI "$OLD"
+  fi
+  say "перезапуск панели с новым адресом"
+  compose up -d
+  if wait_health "$(env_get PANEL_VERSION)" 180; then echo "панель отвечает"; else warn "панель не ответила за 3 минуты: vps-panel logs"; fi
+  cat <<MSG
+Панель: https://$DOMAIN (прежний адрес https://$OLD тоже работает).
+Агенты новой версии перейдут на новый адрес сами при следующем подключении. Панели 3X-UI и
+MTProxyL через панель откроются, когда в DNS будет *.$DOMAIN на этот сервер.
+MSG
+}
+
 case "${1:-}" in
   install) shift; cmd_install "$@" ;;
+  admin) shift; cmd_admin "$@" ;;
+  domain) shift; cmd_domain "$@" ;;
   update) shift; cmd_update "$@" ;;
   rollback) cmd_rollback ;;
   serve-request) cmd_serve_request ;;
@@ -692,5 +863,6 @@ case "${1:-}" in
   logs) shift; compose logs --tail 200 -f "$@" ;;
   restart) need_root; compose restart ;;
   uninstall) shift; cmd_uninstall "$@" ;;
-  *) sed -n '2,16p' "$0" | sed 's/^# \{0,1\}//'; exit 1 ;;
+  help | -h | --help) sed -n '2,21p' "$0" | sed 's/^# \{0,1\}//' ;;
+  *) sed -n '2,21p' "$0" | sed 's/^# \{0,1\}//'; exit 1 ;;
 esac

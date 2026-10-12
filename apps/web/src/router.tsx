@@ -1,9 +1,8 @@
 import { APP_SCROLL_ID, AppLayout } from '@/components/layout';
 import { Button } from '@/components/ui/button';
 import { useMe, useSetupStatus } from '@/lib/auth';
-import { LoginPage } from '@/pages/login';
+import { LoginPage, NoAdminPage } from '@/pages/login';
 import { ServersPage } from '@/pages/servers';
-import { SetupPage } from '@/pages/setup';
 import {
   Navigate,
   Outlet,
@@ -31,12 +30,13 @@ const ServerPage = lazyRouteComponent(() => import('@/pages/server'), 'ServerPag
 const ServerNewPage = lazyRouteComponent(() => import('@/pages/server-new'), 'ServerNewPage');
 const ServicesPage = lazyRouteComponent(() => import('@/pages/services'), 'ServicesPage');
 const SettingsPage = lazyRouteComponent(() => import('@/pages/settings'), 'SettingsPage');
+const AccountPage = lazyRouteComponent(() => import('@/pages/account'), 'AccountPage');
 
 function Root() {
   return <Outlet />;
 }
 
-/** Корень: без администратора - мастер, без сессии - вход, иначе приложение. */
+/** Корень: без администратора или сессии - страница входа, иначе приложение. */
 function Gate() {
   const setup = useSetupStatus();
   const me = useMe();
@@ -56,13 +56,13 @@ function Gate() {
 }
 
 const rootRoute = createRootRoute({ component: Root });
-/** Одна страница входа: без администратора показывает мастер первого запуска. */
+/** Одна страница входа: без администратора - как его создать из консоли. */
 function Entry() {
   const setup = useSetupStatus();
   const me = useMe();
   if (setup.isLoading || me.isLoading) return <div className="p-8 text-muted">Загрузка...</div>;
   if (me.data) return <Navigate to="/" />;
-  if (setup.data && !setup.data.setupDone) return <SetupPage />;
+  if (setup.data && !setup.data.setupDone) return <NoAdminPage />;
   return <LoginPage />;
 }
 
@@ -157,6 +157,11 @@ const settingsRoute = createRoute({
   path: '/settings',
   component: SettingsPage,
 });
+const accountRoute = createRoute({
+  getParentRoute: () => appRoute,
+  path: '/account',
+  component: AccountPage,
+});
 
 const routeTree = rootRoute.addChildren([
   loginRoute,
@@ -175,6 +180,7 @@ const routeTree = rootRoute.addChildren([
     clientServerRoute,
     appsRoute,
     settingsRoute,
+    accountRoute,
   ]),
 ]);
 

@@ -216,11 +216,13 @@ function Details({
   const first = slots[0];
   return (
     <Dialog open onClose={onClose} title={`${t.title}: доступность из России`}>
-      <div className="space-y-4 px-5 py-4">
+      <div className="space-y-4">
         <div className="text-xs text-muted">
-          {what(t).charAt(0).toUpperCase() + what(t).slice(1)}. Столбик - полчаса, высота - худшая
-          проверка за это время (у MTProxyL их в получасе две). Нажми на столбик, чтобы увидеть, из
-          каких городов и сетей сервис виден, а из каких нет.
+          {what(t).charAt(0).toUpperCase() + what(t).slice(1)}. Столбик - полчаса, высота -{' '}
+          {t.source === 'mtproxyl'
+            ? 'худшая из двух проверок за это время'
+            : 'проверка за это время'}
+          . Нажми на столбик, чтобы увидеть, из каких городов и сетей сервис виден, а из каких нет.
         </div>
         <div>
           <div className="flex h-20 items-end gap-0.5">
