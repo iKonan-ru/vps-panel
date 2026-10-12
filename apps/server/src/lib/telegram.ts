@@ -1,4 +1,13 @@
 import { randomBytes } from 'node:crypto';
+import {
+  NOTIFY_DEFAULTS,
+  NOTIFY_PARAM_DEFAULTS,
+  NOTIFY_PARAM_LIMITS,
+  type NotifyEvent,
+  type NotifyEvents,
+  type NotifyParams,
+  readNotifyEvents,
+} from '@vps/protocol';
 import { ProxyAgent, fetch as ufetch } from 'undici';
 import { AGENT_OUTDATED, type AgentRegistry } from '../agents/registry.js';
 import type { Db } from '../db/index.js';
@@ -11,27 +20,21 @@ import type { XrayRoute } from './xray.js';
 type TgMethod = 'sendMessage' | 'getUpdates' | 'getMe';
 
 /** Настройки Telegram в таблице setting (ключ tg_*). */
-export interface TgSettings {
+export interface TgSettings extends NotifyParams {
   token: string;
   chatId: string;
-  events: {
-    offline: boolean;
-    audit: boolean;
-    bans: boolean;
-    updates: boolean;
-    /** Доступность из России: цель перестала быть видна и снова видна (lib/ru-reach.ts). */
-    reach: boolean;
-  };
-  banThreshold: number; // банов в час, после которых шлём
-  paymentDays: number; // за сколько дней предупреждать о платеже
+  /** События по одному (каталог - NOTIFY_GROUPS в protocol). */
+  events: NotifyEvents;
+  /** Серверы, о которых не уведомлять совсем (тестовые, выводимые из работы). */
+  mutedServers: string[];
 }
 
 export const defaultTg: TgSettings = {
   token: '',
   chatId: '',
-  events: { offline: true, audit: true, bans: true, updates: true, reach: true },
-  banThreshold: 10,
-  paymentDays: 3,
+  events: { ...NOTIFY_DEFAULTS },
+  mutedServers: [],
+  ...NOTIFY_PARAM_DEFAULTS,
 };
 
 interface TgChat {
@@ -172,16 +175,34 @@ export class Telegram {
     out.token = this.box.open(get('tg_token') ?? '');
     out.chatId = get('tg_chat_id') ?? '';
     try {
-      const ev = get('tg_events');
-      if (ev) out.events = { ...out.events, ...(JSON.parse(ev) as Partial<TgSettings['events']>) };
+      out.events = readNotifyEvents(
+        JSON.parse(get('tg_events') ?? '{}') as Record<string, unknown>,
+      );
     } catch {
       // оставляем по умолчанию
     }
-    out.banThreshold =
-      Number(get('tg_ban_threshold') ?? defaultTg.banThreshold) || defaultTg.banThreshold;
-    out.paymentDays =
-      Number(get('tg_payment_days') ?? defaultTg.paymentDays) || defaultTg.paymentDays;
+    try {
+      const m = JSON.parse(get('tg_muted_servers') ?? '[]') as unknown;
+      if (Array.isArray(m)) out.mutedServers = m.filter((x): x is string => typeof x === 'string');
+    } catch {}
+    const num = (k: string, key: keyof NotifyParams) => {
+      const [lo, hi] = NOTIFY_PARAM_LIMITS[key];
+      const v = Number(get(k));
+      return Number.isInteger(v) && v >= lo && v <= hi && get(k) !== undefined
+        ? v
+        : NOTIFY_PARAM_DEFAULTS[key];
+    };
+    out.banThreshold = num('tg_ban_threshold', 'banThreshold');
+    out.paymentDays = num('tg_payment_days', 'paymentDays');
+    out.offlineMinutes = num('tg_offline_minutes', 'offlineMinutes');
     return out;
+  }
+
+  /** Включено ли событие для сервера (сервер не отключён в уведомлениях). */
+  async wants(event: NotifyEvent, serverId?: string): Promise<boolean> {
+    const st = await this.settings();
+    if (!st.token || !st.chatId || !st.events[event]) return false;
+    return !serverId || !st.mutedServers.includes(serverId);
   }
 
   async save(patch: { [K in keyof TgSettings]?: TgSettings[K] | undefined }) {
@@ -190,8 +211,12 @@ export class Telegram {
       await put('tg_token', patch.token ? this.box.seal(patch.token) : '');
     if (patch.chatId !== undefined) await put('tg_chat_id', patch.chatId);
     if (patch.events !== undefined) await put('tg_events', JSON.stringify(patch.events));
+    if (patch.mutedServers !== undefined)
+      await put('tg_muted_servers', JSON.stringify(patch.mutedServers));
     if (patch.banThreshold !== undefined) await put('tg_ban_threshold', String(patch.banThreshold));
     if (patch.paymentDays !== undefined) await put('tg_payment_days', String(patch.paymentDays));
+    if (patch.offlineMinutes !== undefined)
+      await put('tg_offline_minutes', String(patch.offlineMinutes));
   }
 
   /** Кто последний раз успешно доставил: 'direct' или id сервера-ретранслятора. */

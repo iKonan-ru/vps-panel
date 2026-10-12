@@ -26,7 +26,7 @@ services:
       LOG_LEVEL: ${LOG_LEVEL:-info}
       AGENT_DIR: /agent-dist
       FILES_DIR: /files
-      # Внешний HTTP-прокси для Telegram, если не хочется встроенного xray (Настройки -> Выход в Telegram)
+      # Внешний HTTP-прокси для Telegram, если не хочется встроенного xray (Настройки -> Маршрут до Telegram)
       TG_PROXY_URL: ${TG_PROXY_URL:-}
     volumes:
       - ./data:/data

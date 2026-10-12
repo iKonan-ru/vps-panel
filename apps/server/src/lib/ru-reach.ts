@@ -129,7 +129,7 @@ export function inboundTargets(
 export function apply(
   t: ReachTarget,
   r: { percent: number; total: number; ok: number; errors: string[]; at: string },
-): string | null {
+): { text: string; back: boolean } | null {
   t.percent = r.percent;
   t.total = r.total;
   t.ok = r.ok;
@@ -142,16 +142,22 @@ export function apply(
     t.badStreak += 1;
     if (t.badStreak >= 2 && !t.notified) {
       t.notified = true;
-      return `${t.title} не виден из России: дошли ${r.ok} из ${r.total} зондов (${r.percent}%).${
-        r.errors[0] ? ` ${r.errors[0]}` : ''
-      }`;
+      return {
+        back: false,
+        text: `${t.title} не виден из России: дошли ${r.ok} из ${r.total} зондов (${r.percent}%).${
+          r.errors[0] ? ` ${r.errors[0]}` : ''
+        }`,
+      };
     }
     return null;
   }
   t.badStreak = 0;
   if (lv === 'ok' && t.notified) {
     t.notified = false;
-    return `${t.title} снова виден из России: ${r.ok} из ${r.total} зондов (${r.percent}%).`;
+    return {
+      back: true,
+      text: `${t.title} снова виден из России: ${r.ok} из ${r.total} зондов (${r.percent}%).`,
+    };
   }
   return null;
 }
@@ -165,7 +171,10 @@ export class RuReach {
     private box: SecretBox,
     private registry: AgentRegistry,
     private log: { warn: (o: unknown, m?: string) => void },
-    private notify: (serverId: string, text: string) => Promise<void>,
+    private notify: (
+      serverId: string,
+      note: { key: string; text: string; back: boolean },
+    ) => Promise<void>,
   ) {}
 
   start() {
@@ -275,7 +284,7 @@ export class RuReach {
         source,
       };
     };
-    const messages: string[] = [];
+    const messages: { key: string; text: string; back: boolean }[] = [];
     const out: ServerReach = { checkedAt: now, targets: [] };
 
     // свои проверки агента: адрес и inbound-ы
@@ -325,7 +334,7 @@ export class RuReach {
             continue;
           }
           const msg = apply(t, { ...res, at: now });
-          if (msg) messages.push(msg);
+          if (msg) messages.push({ key: t.key, ...msg });
         }
       } catch (e) {
         out.error = (e as Error).message;
@@ -357,7 +366,7 @@ export class RuReach {
           errors: [],
           at: mr.checkedAt,
         });
-        if (msg) messages.push(msg);
+        if (msg) messages.push({ key: t.key, ...msg });
       }
       out.targets.push(t);
     }

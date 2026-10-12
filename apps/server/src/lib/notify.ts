@@ -1,4 +1,4 @@
-import type { Inventory } from '@vps/protocol';
+import type { Inventory, NotifyEvent } from '@vps/protocol';
 import { eq } from 'drizzle-orm';
 import type { AgentRegistry } from '../agents/registry.js';
 import type { StatusCache } from '../agents/state.js';
@@ -6,15 +6,33 @@ import type { Db } from '../db/index.js';
 import { servers } from '../db/schema.js';
 import { daysToPayment, rollPaymentDate } from './billing.js';
 import { schedule } from './schedule.js';
-import type { ServiceUpdate } from './service-updates.js';
+import type { ServiceUpdate, ServiceUpdateKind } from './service-updates.js';
 import { type Telegram, esc } from './telegram.js';
 
-const OFFLINE_GRACE_MS = 3 * 60_000;
 const STARTUP_QUIET_MS = 2 * 60_000;
+/** Сервис считаем упавшим, если он down в снимках агента дольше этого (перезапуск - не падение). */
+const SERVICE_DOWN_MS = 2 * 60_000;
+
+const UPDATE_EVENT: Record<ServiceUpdateKind, NotifyEvent> = {
+  xui: 'updXui',
+  xray: 'updXray',
+  mtproxyl: 'updMtproxyl',
+  'mtproxyl-panel': 'updMtproxylPanel',
+};
+
+/** Событие уведомления о доступности из России по ключу цели (lib/ru-reach.ts). */
+export function reachEvent(key: string, back: boolean): NotifyEvent {
+  if (back) return 'reachBack';
+  if (key === 'ip') return 'reachAddr';
+  if (key.startsWith('xui:')) return 'reachInbound';
+  return 'reachMtproxy';
+}
 
 /**
  * Уведомления в Telegram по событиям панели. Состояние держим в памяти, при старте
  * заполняем из status_cache, чтобы после перезапуска панели не рассылать всё заново.
+ * Что слать - по событиям из настроек (tg.wants: событие включено, сервер не отключён).
+ * "Снова работает" шлём только после отправленного "пропал"/"упал".
  */
 export class Notifier {
   private startedAt = Date.now();
@@ -25,6 +43,8 @@ export class Notifier {
   private pendingUpdates = new Map<string, number>();
   private updatesNotifiedAt = new Map<string, number>();
   private paymentNotified = new Map<string, string>(); // serverId -> дата платежа, о которой сказали
+  /** serverId -> сервис (kind:title) -> с какого момента down и сказали ли. */
+  private downs = new Map<string, Map<string, { since: number; notified: boolean }>>();
 
   constructor(
     private db: Db,
@@ -51,10 +71,7 @@ export class Notifier {
     for (const s of seed) {
       if (s.cache.inventory) this.remember(s.id, s.cache.inventory, true);
     }
-    this.registry.on('offline', (id) => {
-      const t = setTimeout(() => void this.onStillOffline(id), OFFLINE_GRACE_MS);
-      this.offlineTimers.set(id, t);
-    });
+    this.registry.on('offline', (id) => void this.onOffline(id));
     this.registry.on('online', (id) => {
       const t = this.offlineTimers.get(id);
       if (t) clearTimeout(t);
@@ -73,19 +90,56 @@ export class Notifier {
     return Date.now() - this.startedAt < STARTUP_QUIET_MS;
   }
 
-  private async onStillOffline(id: string) {
+  private async onOffline(id: string) {
+    const st = await this.tg.settings();
+    const old = this.offlineTimers.get(id);
+    if (old) clearTimeout(old);
+    const t = setTimeout(
+      () => void this.onStillOffline(id, st.offlineMinutes),
+      st.offlineMinutes * 60_000,
+    );
+    this.offlineTimers.set(id, t);
+  }
+
+  private async onStillOffline(id: string, minutes: number) {
     this.offlineTimers.delete(id);
     if (this.registry.isOnline(id) || this.registry.isUpdating(id)) return;
-    const st = await this.tg.settings();
-    if (!st.events.offline) return;
+    if (!(await this.tg.wants('offline', id))) return;
     this.notifiedOffline.add(id);
-    await this.tg.send(`Сервер ${await this.serverName(id)} не на связи уже 3 минуты.`);
+    await this.tg.send(`Сервер ${await this.serverName(id)} не на связи уже ${minutes} мин.`);
   }
 
   private async notifyOnline(id: string) {
-    const st = await this.tg.settings();
-    if (!st.events.offline) return;
+    if (!(await this.tg.wants('online', id))) return;
     await this.tg.send(`Сервер ${await this.serverName(id)} снова на связи.`);
+  }
+
+  /** Сервисы из снимка: упал (down дольше SERVICE_DOWN_MS) и снова работает. */
+  private async services(id: string, inv: Inventory, name: string) {
+    const prev = this.downs.get(id) ?? new Map<string, { since: number; notified: boolean }>();
+    const next = new Map<string, { since: number; notified: boolean }>();
+    const now = Date.now();
+    for (const s of inv.services) {
+      const key = `${s.kind}:${s.title}`;
+      const was = prev.get(key);
+      if (s.details?.down === true) {
+        const d = was ?? { since: now, notified: false };
+        if (
+          !d.notified &&
+          now - d.since >= SERVICE_DOWN_MS &&
+          (await this.tg.wants('serviceDown', id))
+        ) {
+          d.notified = true;
+          const why =
+            typeof s.details.downReason === 'string' ? `: ${esc(s.details.downReason)}` : '';
+          await this.tg.send(`${name}: ${esc(s.title)} не работает${why}.`);
+        }
+        next.set(key, d);
+      } else if (was?.notified && (await this.tg.wants('serviceUp', id))) {
+        await this.tg.send(`${name}: ${esc(s.title)} снова работает.`);
+      }
+    }
+    this.downs.set(id, next);
   }
 
   /** Запоминает состояние без уведомлений (старт панели или первый снимок сервера). */
@@ -97,6 +151,15 @@ export class Notifier {
     const total = (inv.audit?.jails ?? []).reduce((a, j) => a + j.totalBanned, 0);
     if (initial || !this.bans.has(id)) this.bans.set(id, { at: Date.now(), total, notifiedAt: 0 });
     this.pendingUpdates.set(id, inv.audit?.pendingUpdates ?? 0);
+    if (initial) {
+      // уже лежащие сервисы (старт панели, сервер отключён в уведомлениях): ни "упал",
+      // ни "снова работает" - since бесконечность
+      const down = new Map<string, { since: number; notified: boolean }>();
+      for (const sv of inv.services)
+        if (sv.details?.down === true)
+          down.set(`${sv.kind}:${sv.title}`, { since: Number.POSITIVE_INFINITY, notified: false });
+      this.downs.set(id, down);
+    }
   }
 
   private async onInventory(id: string, inv: Inventory) {
@@ -106,7 +169,12 @@ export class Notifier {
       return;
     }
     const st = await this.tg.settings();
+    if (!st.token || !st.chatId || st.mutedServers.includes(id)) {
+      this.remember(id, inv, true);
+      return;
+    }
     const name = await this.serverName(id);
+    await this.services(id, inv, name);
 
     // критичные замечания: новые и ушедшие
     const prev = this.highFindings.get(id) ?? new Set<string>();
@@ -116,16 +184,14 @@ export class Notifier {
     const appeared = [...cur].filter((t) => !prev.has(t));
     const gone = [...prev].filter((t) => !cur.has(t));
     this.highFindings.set(id, cur);
-    if (st.events.audit) {
-      if (appeared.length)
-        await this.tg.send(
-          `${name}: критичные замечания\n${appeared.map((t) => `- ${esc(t)}`).join('\n')}`,
-        );
-      if (gone.length)
-        await this.tg.send(
-          `${name}: замечания закрыты\n${gone.map((t) => `- ${esc(t)}`).join('\n')}`,
-        );
-    }
+    if (st.events.auditNew && appeared.length)
+      await this.tg.send(
+        `${name}: критичные замечания\n${appeared.map((t) => `- ${esc(t)}`).join('\n')}`,
+      );
+    if (st.events.auditClosed && gone.length)
+      await this.tg.send(
+        `${name}: замечания закрыты\n${gone.map((t) => `- ${esc(t)}`).join('\n')}`,
+      );
 
     // баны fail2ban: рост суммарного счётчика за последний час
     const total = (inv.audit?.jails ?? []).reduce((a, j) => a + j.totalBanned, 0);
@@ -150,7 +216,7 @@ export class Notifier {
     const prevPend = this.pendingUpdates.get(id) ?? 0;
     this.pendingUpdates.set(id, pend);
     if (
-      st.events.updates &&
+      st.events.pkgUpdates &&
       pend > 0 &&
       prevPend === 0 &&
       now - (this.updatesNotifiedAt.get(id) ?? 0) > 24 * 60 * 60_000
@@ -163,16 +229,16 @@ export class Notifier {
   }
 
   /** Доступность из России: цель не видна две проверки подряд или снова видна (lib/ru-reach.ts). */
-  async reach(id: string, text: string) {
-    const st = await this.tg.settings();
-    if (!st.events.reach || !st.token) return;
-    await this.tg.send(`${await this.serverName(id)}: ${text}`);
+  async reach(id: string, note: { key: string; text: string; back: boolean }) {
+    if (!(await this.tg.wants(reachEvent(note.key, note.back), id))) return;
+    // "снова виден" - только если о пропаже этой цели вообще уведомляем
+    if (note.back && !(await this.tg.wants(reachEvent(note.key, false), id))) return;
+    await this.tg.send(`${await this.serverName(id)}: ${note.text}`);
   }
 
-  /** Новая версия установленного сервиса (3x-ui, MTProxyL), один раз на версию. */
+  /** Новая версия установленного сервиса (3x-ui, Xray, MTProxyL), один раз на версию. */
   async serviceUpdate(id: string, u: ServiceUpdate) {
-    const st = await this.tg.settings();
-    if (!st.events.updates || !st.token) return;
+    if (!(await this.tg.wants(UPDATE_EVENT[u.kind], id))) return;
     await this.tg.send(
       `${await this.serverName(id)}: доступно обновление ${u.title} ${esc(u.current)} -> ${esc(u.latest)}. Кнопка "Обновить" в блоке "Обслуживание" на вкладке "Обзор".`,
     );
@@ -193,9 +259,9 @@ export class Notifier {
       r.nextPaymentAt = next;
     }
     const st = await this.tg.settings();
-    if (!st.events.updates || !st.token) return;
+    if (!st.events.payment || !st.token || !st.chatId) return;
     for (const r of rows) {
-      if (!r.nextPaymentAt) continue;
+      if (!r.nextPaymentAt || st.mutedServers.includes(r.id)) continue;
       const days = daysToPayment(r.nextPaymentAt, now);
       if (days > st.paymentDays || days < 0) continue;
       if (this.paymentNotified.get(r.id) === r.nextPaymentAt) continue;

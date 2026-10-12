@@ -87,11 +87,14 @@ describe('доступность из России', () => {
     const at = '2026-10-12T00:00:00Z';
     const r = (ok: number) => ({ percent: ok * 10, total: 10, ok, errors: ['timeout'], at });
     expect(apply(t, r(1))).toBeNull();
-    expect(apply(t, r(2))).toMatch(/не виден из России: дошли 2 из 10/);
+    expect(apply(t, r(2))?.text).toMatch(/не виден из России: дошли 2 из 10/);
     expect(apply(t, r(1))).toBeNull();
     expect(apply(t, r(6))).toBeNull();
     expect(t.badStreak).toBe(0);
-    expect(apply(t, r(9))).toMatch(/снова виден/);
+    expect(apply(t, r(9))).toMatchObject({
+      back: true,
+      text: expect.stringMatching(/снова виден/),
+    });
     expect(apply(t, r(10))).toBeNull();
     expect(t.history).toHaveLength(6);
     expect([level(null), level(49.9), level(50), level(80)]).toEqual([

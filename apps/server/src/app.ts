@@ -229,7 +229,7 @@ export async function buildApp(opts: AppOptions) {
   // остановка фоновых таймеров при закрытии: в тестах и при выключении они не трогают базу
   const stops: (() => void)[] = [];
   // доступность из России: адрес и inbound-ы - агент через Globalping, MTProxyL - его итог
-  const ruReach = new RuReach(db, box, registry, app.log, (id, text) => notifier.reach(id, text));
+  const ruReach = new RuReach(db, box, registry, app.log, (id, note) => notifier.reach(id, note));
   stops.push(ruReach.start());
   await app.register(reachRoutes, { reach: ruReach });
   stops.push(xraySpares.start());
@@ -299,7 +299,11 @@ export async function buildApp(opts: AppOptions) {
     db,
     box,
     { dataDir: env.DATA_DIR, sessionSecret, panelUrl: env.PANEL_PUBLIC_URL },
-    telegram,
+    {
+      sendDocument: (name, data, caption) => telegram.sendDocument(name, data, caption),
+      // сбой бэкапа - событие backupFail в настройках уведомлений
+      send: async (text) => ((await telegram.wants('backupFail')) ? telegram.send(text) : null),
+    },
     app.log,
   );
   stops.push(panelBackups.start());

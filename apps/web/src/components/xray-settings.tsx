@@ -151,7 +151,7 @@ export function XraySettings() {
 
   return (
     <Section
-      title="Выход в Telegram (прокси)"
+      title="Маршрут до Telegram"
       info={
         <>
           С хоста панели Telegram недоступен, поэтому панель держит xray-клиент к твоему же 3X-UI на
@@ -170,17 +170,10 @@ export function XraySettings() {
       actions={
         st.configured ? (
           <>
-            <Button size="sm" disabled={busy} onClick={check} label="Проверить" short="Проверить">
+            <Button size="sm" disabled={busy} onClick={check} label="Проверить">
               <Activity className="size-3.5" />
             </Button>
-            <Button
-              size="sm"
-              variant="ghost"
-              disabled={busy}
-              onClick={disable}
-              label="Отключить"
-              short="Отключить"
-            >
+            <Button size="sm" variant="ghost" disabled={busy} onClick={disable} label="Отключить">
               <Power className="size-3.5" />
             </Button>
           </>
