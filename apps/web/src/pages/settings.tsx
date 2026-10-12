@@ -1,6 +1,7 @@
 import { FirefoxSettings } from '@/components/firefox-settings';
 import { OpenfluxDocsSettings } from '@/components/openflux-docs-settings';
 import { PanelBackupSettings } from '@/components/panel-backup-settings';
+import { PANEL_VERSION_ANCHOR } from '@/components/panel-version-badge';
 import { PanelVersionSettings } from '@/components/panel-version-settings';
 import { ReachSettings } from '@/components/reach-settings';
 import { TelegramSettings } from '@/components/telegram-settings';
@@ -16,7 +17,10 @@ export function SettingsPage() {
     <>
       <PageTitle>Настройки</PageTitle>
 
-      <PanelVersionSettings />
+      {/* якорь: сюда ведёт плашка версии у логотипа */}
+      <div id={PANEL_VERSION_ANCHOR} className="scroll-mt-4">
+        <PanelVersionSettings />
+      </div>
 
       <PanelBackupSettings />
 

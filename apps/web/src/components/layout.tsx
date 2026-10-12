@@ -2,6 +2,7 @@ import { MOBILE_CRUMBS_ID } from '@/components/breadcrumbs';
 import { DeployBanner, usePanelVersion } from '@/components/deploy-banner';
 import { Logo } from '@/components/logo';
 import { MOBILE_ACTIONS_ID } from '@/components/mobile-actions';
+import { PanelVersionBadge } from '@/components/panel-version-badge';
 import { TelegramBanner } from '@/components/telegram-banner';
 import { Button } from '@/components/ui/button';
 import { BottomSheet } from '@/components/ui/sheet';
@@ -99,10 +100,17 @@ export function AppLayout({ login }: { login: string }) {
         )}
       >
         {/* в свёрнутом меню знак - размером с пункт меню (h-9.5) и по центру полосы */}
-        <div className={cn('pt-1 pb-5', collapsed ? 'flex justify-center' : 'px-2')}>
+        {/* у логотипа - версия панели (подсвечена, если есть новая): клик - блок обновлений */}
+        <div
+          className={cn(
+            'pt-1 pb-5',
+            collapsed ? 'flex flex-col items-center gap-1.5' : 'flex items-center gap-2 px-2',
+          )}
+        >
           <Link to="/" aria-label="На главную" className="inline-flex">
             <Logo compact={collapsed} size={collapsed ? 38 : 28} />
           </Link>
+          <PanelVersionBadge compact={collapsed} />
         </div>
         {nav.map((n) => (
           <Link
@@ -144,9 +152,8 @@ export function AppLayout({ login }: { login: string }) {
               >
                 {login}
               </Link>
-              <div className="truncate text-[11px] text-muted" title="Адрес и версия панели">
+              <div className="truncate text-[11px] text-muted" title="Адрес панели">
                 {location.hostname}
-                {version && `, ${version}`}
               </div>
             </div>
           )}
@@ -189,6 +196,7 @@ export function AppLayout({ login }: { login: string }) {
           <Link to="/" aria-label="На главную" className="inline-flex">
             <Logo size={26} />
           </Link>
+          <PanelVersionBadge compact />
           <div id={MOBILE_CRUMBS_ID} className="flex min-w-0 grow items-center" />
           <div id={MOBILE_ACTIONS_ID} className="flex items-center gap-1.5" />
         </header>
