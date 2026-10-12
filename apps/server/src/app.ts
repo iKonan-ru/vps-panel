@@ -31,6 +31,7 @@ import { SecretBox } from './lib/secret-box.js';
 import { ServiceUpdates } from './lib/service-updates.js';
 import { Telegram } from './lib/telegram.js';
 import { UiHub } from './lib/ui-hub.js';
+import { PANEL_VERSION } from './lib/version.js';
 import { XraySpares } from './lib/xray-exits.js';
 import { XrayManager } from './lib/xray.js';
 import { accessRoutes } from './routes/access.js';
@@ -180,7 +181,7 @@ export async function buildApp(opts: AppOptions) {
 
   app.get('/api/health', async () => ({
     ok: true,
-    version: '0.1.0',
+    version: PANEL_VERSION,
     now: new Date().toISOString(),
   }));
   await app.register(authRoutes, { db, secure });

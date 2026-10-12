@@ -1,0 +1,58 @@
+# Проверки на каждый push и pull request: то же, что tools/check.sh (без закрытых строк
+# своей установки): протокол, типы, biome, тесты сервера, агент, символы в файлах.
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  node:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: corepack enable
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm --filter @vps/protocol build
+      - run: pnpm -r --filter @vps/protocol --filter @vps/server --filter @vps/web exec tsc --noEmit
+      - run: npx biome check apps/web/src apps/server/src apps/server/test packages/protocol/src
+      - run: npx vitest run
+        working-directory: apps/server
+      - run: pnpm --filter @vps/web build
+
+  agent:
+    runs-on: ubuntu-24.04
+    defaults:
+      run:
+        working-directory: apps/agent
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: apps/agent/go.mod
+          cache-dependency-path: apps/agent/go.sum
+      - name: gofmt
+        run: test -z "$(gofmt -l .)" || { gofmt -l .; exit 1; }
+      - run: go vet ./...
+      - run: go test ./...
+      - run: make build-all
+
+  text:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - name: только клавиатурные символы в своих файлах
+        run: |
+          bad="$(git ls-files | grep -v -E '^deploy/files/' | xargs -d '\n' grep -IlP '[^\x00-\x7F\p{Cyrillic}]' || true)"
+          if [ -n "$bad" ]; then echo "неклавиатурные символы: $bad"; exit 1; fi

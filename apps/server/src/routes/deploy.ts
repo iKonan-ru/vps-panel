@@ -1,6 +1,7 @@
 import { readFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import type { FastifyInstance } from 'fastify';
+import { PANEL_COMMIT, PANEL_VERSION } from '../lib/version.js';
 
 /** Когда запущен этот процесс панели: браузер по смене значения понимает, что панель обновилась. */
 const bootedAt = new Date().toISOString();
@@ -15,6 +16,6 @@ export async function deployRoutes(app: FastifyInstance, opts: { dataDir: string
     try {
       status = JSON.parse(await readFile(join(opts.dataDir, 'deploy.json'), 'utf8'));
     } catch {}
-    return { status, bootedAt };
+    return { status, bootedAt, version: PANEL_VERSION, commit: PANEL_COMMIT };
   });
 }
