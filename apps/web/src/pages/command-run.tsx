@@ -104,12 +104,25 @@ export function CommandRunPage() {
     commandsApi
       .defaults(serverId, cmd.id)
       .then((d) => {
-        setAnswers(d);
+        // ответы из ссылки (preset): только для сервера из ссылки и только обычные поля команды -
+        // пароли и подтверждение удаления ссылкой не задаются
+        const preset =
+          search.preset && serverId === search.server
+            ? Object.fromEntries(
+                Object.entries(search.preset).filter(([k]) =>
+                  cmd.params.some(
+                    (p) =>
+                      p.name === k && p.name !== 'CONFIRM' && p.type !== 'password' && !p.secret,
+                  ),
+                ),
+              )
+            : {};
+        setAnswers({ ...d, ...preset });
         setLoadedFor(`${cmd.id}:${serverId}`);
         setChecks(null);
       })
       .catch((e: Error) => setError(e.message));
-  }, [cmd, serverId, loadedFor]);
+  }, [cmd, serverId, loadedFor, search.preset, search.server]);
 
   // План пересчитывается с задержкой после правок
   const planTimer = useRef<ReturnType<typeof setTimeout> | null>(null);

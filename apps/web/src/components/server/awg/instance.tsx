@@ -25,6 +25,7 @@ export function Instance({
   addDisabled,
   addTitle,
   onSetParams,
+  onUninstall,
   owner,
 }: {
   inst: AwgInstance;
@@ -36,7 +37,20 @@ export function Instance({
   addTitle: string | undefined;
   /** Смена параметров экземпляра; ошибка - текстом (показывается в окне параметров). */
   onSetParams: (profile: string) => Promise<string | null>;
+  /** Удаление экземпляра: команда каталога с этим контейнером (план и подтверждение - там). */
+  onUninstall: () => void;
 }) {
+  const uninstall = (
+    <Button
+      variant="link"
+      className="text-xs text-bad"
+      disabled={addDisabled}
+      title={addTitle ?? `Удалить контейнер ${inst.container} со всеми его клиентами`}
+      onClick={onUninstall}
+    >
+      Удалить экземпляр
+    </Button>
+  );
   const [showParams, setShowParams] = useState(false);
   const [changing, setChanging] = useState(false);
   const [paramsError, setParamsError] = useState<string | null>(null);
@@ -77,8 +91,11 @@ export function Instance({
       }
     >
       {inst.error ? (
-        <div className="p-4">
-          <Alert tone="bad">{inst.error}</Alert>
+        <div className="flex flex-col items-start gap-2 p-4">
+          <Alert tone="bad" className="self-stretch">
+            {inst.error}
+          </Alert>
+          {uninstall}
         </div>
       ) : (
         <>
@@ -138,9 +155,12 @@ export function Instance({
             </div>
           )}
           <div className="border-t border-border px-4 py-2.5">
-            <Button variant="link" className="text-xs" onClick={() => setShowParams(!showParams)}>
-              {showParams ? 'Скрыть параметры' : `Параметры протокола (${params.length})`}
-            </Button>
+            <div className="flex items-center justify-between gap-3">
+              <Button variant="link" className="text-xs" onClick={() => setShowParams(!showParams)}>
+                {showParams ? 'Скрыть параметры' : `Параметры протокола (${params.length})`}
+              </Button>
+              {uninstall}
+            </div>
             {showParams && (
               <dl className="mt-2 grid grid-cols-[auto_minmax(0,1fr)] gap-x-4 gap-y-1 font-mono text-xs">
                 {params.map((p) => (

@@ -20,21 +20,12 @@ import { api } from '@/lib/api';
 import { gb } from '@/lib/format';
 import { type ServerDetail, serverLock } from '@/lib/servers';
 import { type ServiceUpdateKind, startServiceUpdate } from '@/lib/service-update';
+import { uninstallCommand } from '@/lib/uninstall';
 import { useAction } from '@/lib/use-action';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import type { Finding } from '@vps/protocol';
 import { ArrowRight, Box, ClipboardCheck, Download, Plus, Trash2, Wrench, X } from 'lucide-react';
 import { type ReactNode, useState } from 'react';
-
-/** Команда каталога, которая удаляет сервис этого вида (кнопка-корзина в блоке Сервисы). */
-const uninstallCommand: Record<string, string> = {
-  xui: 'xui-uninstall',
-  mtproxyl: 'mtproxyl-uninstall',
-  wdtt: 'wdtt-uninstall',
-  amnezia: 'awg-uninstall',
-  openflux: 'openflux-uninstall',
-  naive: 'naive-uninstall',
-};
 
 /** Обновление установленного сервиса (проверяет панель раз в 6 часов). */
 interface ServiceUpdate {

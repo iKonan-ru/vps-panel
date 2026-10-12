@@ -115,14 +115,28 @@ const commandsRoute = createRoute({
 const commandRunRoute = createRoute({
   getParentRoute: () => appRoute,
   path: '/commands/$id',
-  validateSearch: (raw: Record<string, unknown>) => ({
-    server: typeof raw.server === 'string' ? raw.server : undefined,
-    run: typeof raw.run === 'string' ? raw.run : undefined,
-    tab:
-      raw.tab === 'form' || raw.tab === 'output' || raw.tab === 'history'
-        ? (raw.tab as 'form' | 'output' | 'history')
-        : undefined,
-  }),
+  validateSearch: (raw: Record<string, unknown>) => {
+    // preset - ответы формы, заданные ссылкой (удаление экземпляра AWG из его блока): только
+    // строки; что из них применить, решает форма (поля команды, без паролей и подтверждения)
+    const p = raw.preset;
+    const preset =
+      p && typeof p === 'object' && !Array.isArray(p)
+        ? Object.fromEntries(
+            Object.entries(p as Record<string, unknown>).filter(
+              (e): e is [string, string] => typeof e[1] === 'string',
+            ),
+          )
+        : undefined;
+    return {
+      server: typeof raw.server === 'string' ? raw.server : undefined,
+      run: typeof raw.run === 'string' ? raw.run : undefined,
+      tab:
+        raw.tab === 'form' || raw.tab === 'output' || raw.tab === 'history'
+          ? (raw.tab as 'form' | 'output' | 'history')
+          : undefined,
+      ...(preset ? { preset } : {}),
+    };
+  },
   component: CommandRunPage,
 });
 const logRoute = createRoute({
