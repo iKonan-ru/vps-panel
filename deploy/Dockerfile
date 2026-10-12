@@ -30,7 +30,10 @@ RUN apk add --no-cache curl unzip && \
     unzip -q /tmp/xray.zip xray -d /out && chmod 755 /out/xray
 
 FROM node:22-alpine
-ENV NODE_ENV=production
+# версия релиза (тег без v) и коммит: их показывает панель и по ним сверяет обновления
+ARG PANEL_VERSION=dev
+ARG PANEL_COMMIT=
+ENV NODE_ENV=production PANEL_VERSION=$PANEL_VERSION PANEL_COMMIT=$PANEL_COMMIT
 WORKDIR /app
 COPY --from=xray /out/xray /usr/local/bin/xray
 COPY --from=build /out/server /app/server

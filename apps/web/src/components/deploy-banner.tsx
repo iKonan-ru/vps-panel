@@ -20,6 +20,9 @@ interface DeployStatus {
 interface DeployInfo {
   status: DeployStatus | null;
   bootedAt: string;
+  /** Версия релиза (1.2.3, 1.3.0-beta.1); сборка из исходников - "dev". */
+  version?: string;
+  commit?: string;
 }
 
 const HIDDEN_KEY = 'vps-deploy-hidden';
@@ -34,9 +37,10 @@ function useDeploy() {
   });
 }
 
-/** Версия работающей панели (коммит последней удачной выкладки). */
+/** Версия работающей панели: релиз, иначе коммит последней удачной выкладки. */
 export function usePanelVersion(): string | null {
   const { data } = useDeploy();
+  if (data?.version && data.version !== 'dev') return data.version;
   return data?.status?.running ?? null;
 }
 
