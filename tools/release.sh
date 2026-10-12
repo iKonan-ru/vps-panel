@@ -6,6 +6,7 @@
 # коммит CHANGELOG, push main, тег v<версия>, push тега - дальше работает
 # .github/workflows/release.yml (образы ghcr.io и релиз). Скрипт ждёт её и печатает итог.
 # update - после релиза обновить свою панель: ssh на PANEL_HOST и "vps-panel update <версия>".
+# nowait - только тег, без ожидания сборки (за ней смотреть в Actions).
 # Настройки - .ship.env (как у tools/ship.sh): GITHUB_TOKEN_FILE, PANEL_HOST, PANEL_SSH_KEY,
 # KNOWN_HOSTS, LEAK_PATTERNS.
 set -euo pipefail
@@ -36,7 +37,9 @@ fi
 g push -q origin HEAD
 git tag -a "v$ver" -m "v$ver"
 g push -q origin "v$ver"
-echo "тег v$ver отправлен, жду сборку релиза"
+echo "тег v$ver отправлен"
+[ "${2:-}" = nowait ] && exit 0
+echo "жду сборку релиза"
 
 api() { curl -fsS -H "Authorization: token $(tr -d '[:space:]' <"$token")" -H 'Accept: application/vnd.github+json' "https://api.github.com/repos/$repo/$1"; }
 sha="$(git rev-parse HEAD)"
