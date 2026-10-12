@@ -87,12 +87,12 @@ func main() {
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
 
-	// port-sync - наш скрипт: при обновлении агента подтягиваем и его, чтобы правки
+	// port-sync - наш скрипт и юниты: при обновлении агента подтягиваем и их, чтобы правки
 	// (например, чтение 3x-ui из PostgreSQL) не ждали повторного "Привести к эталону"
-	if updated, err := baseline.RefreshPortsyncScript(); err != nil {
-		log.Warn("port-sync: не удалось обновить скрипт", "err", err)
+	if updated, err := baseline.RefreshPortsync(ctx); err != nil {
+		log.Warn("port-sync: не удалось обновить", "err", err)
 	} else if updated {
-		log.Info("port-sync: скрипт обновлён до версии агента")
+		log.Info("port-sync: скрипт и юниты обновлены до версии агента")
 	}
 
 	collector := metrics.NewCollector()

@@ -14,7 +14,20 @@ export const PROLOGUE = `set -euo pipefail
 export DEBIAN_FRONTEND=noninteractive
 say() { printf '\\n== %s\\n' "$*"; }
 need() { command -v "$1" >/dev/null 2>&1; }
-apt_install() { need apt-get || { echo "поддерживаются только Debian и Ubuntu" >&2; exit 2; }; dpkg --configure -a >/dev/null 2>&1 || true; apt-get update -qq; apt-get install -y -qq "$@"; }
+# apt занят другим процессом (сразу после включения автообновлений systemd запускает их
+# службу apt-daily) - ждать до 10 минут, иначе apt-get и установщики падают на блокировке.
+# Шаблоны pgrep - с [x]: иначе совпадут с командной строкой самого скрипта (bash -c)
+apt_wait() {
+  local i=0
+  while pgrep -x apt-get >/dev/null || pgrep -x apt >/dev/null || pgrep -x dpkg >/dev/null ||
+    pgrep -f '[u]nattended-upgrade --' >/dev/null || pgrep -f '/usr/bin/[u]nattended-upgrade$' >/dev/null ||
+    pgrep -f '[a]pt.systemd.daily' >/dev/null; do
+    [ $i -eq 0 ] && echo "apt занят другим процессом (обычно автообновления) - жду, до 10 минут"
+    i=$((i + 1)); [ $i -gt 120 ] && { echo "apt так и не освободился за 10 минут" >&2; return 1; }
+    sleep 5
+  done
+}
+apt_install() { need apt-get || { echo "поддерживаются только Debian и Ubuntu" >&2; exit 2; }; apt_wait; dpkg --configure -a >/dev/null 2>&1 || true; apt-get update -qq; apt-get -o DPkg::Lock::Timeout=300 install -y -qq "$@"; }
 fetch() { curl -fsSL --retry 3 --retry-delay 2 "$@"; }
 `;
 
@@ -87,6 +100,7 @@ naive_mask_on() {
 export const ENSURE_DOCKER = `if ! need docker; then
   say "Docker не найден - ставлю официальным установщиком"
   fetch https://get.docker.com -o /tmp/get-docker.sh
+  apt_wait
   sh /tmp/get-docker.sh
   rm -f /tmp/get-docker.sh
   systemctl enable --now docker

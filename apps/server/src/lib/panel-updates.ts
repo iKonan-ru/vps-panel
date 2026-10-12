@@ -2,6 +2,7 @@ import { existsSync } from 'node:fs';
 import { mkdir, rename, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import type { Db } from '../db/index.js';
+import { githubError } from './github.js';
 import { schedule } from './schedule.js';
 import { getJsonSetting, getSetting, putSetting } from './settings.js';
 import { PANEL_VERSION } from './version.js';
@@ -154,7 +155,7 @@ export class PanelUpdates {
           headers: { Accept: 'application/vnd.github+json', 'User-Agent': 'vps-panel' },
         },
       );
-      if (!r.ok) throw new Error(`GitHub: ${r.status}`);
+      if (!r.ok) throw githubError(r);
       const list = (await r.json()) as {
         tag_name: string;
         html_url: string;

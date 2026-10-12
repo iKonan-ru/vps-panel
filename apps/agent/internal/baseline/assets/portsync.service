@@ -2,6 +2,9 @@
 Description=vps-portsync: firewall follows server config
 After=network-online.target docker.service ufw.service
 Wants=network-online.target
+# без лимита запусков: пока 3X-UI ставится, его база меняется десятки раз подряд, служба
+# упиралась в лимит, и systemd выключал vps-portsync-xui.path до перезагрузки
+StartLimitIntervalSec=0
 
 [Service]
 Type=oneshot

@@ -351,7 +351,9 @@ export function CommandRunPage() {
               (кроме паролей).
             </InfoTip>
             <div className="grow" />
-            <ButtonLink to="/commands">Отмена</ButtonLink>
+            <ButtonLink to="/commands" search={{ server: undefined }}>
+              Отмена
+            </ButtonLink>
             <Button
               variant="primary"
               disabled={!canRun || secretsMissing || lock.busy}

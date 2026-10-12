@@ -106,6 +106,10 @@ const serverTabRoute = createRoute({
 const commandsRoute = createRoute({
   getParentRoute: () => appRoute,
   path: '/commands',
+  // server - пришли из карточки сервера: форма команды откроется сразу с ним
+  validateSearch: (raw: Record<string, unknown>) => ({
+    server: typeof raw.server === 'string' ? raw.server : undefined,
+  }),
   component: CommandsPage,
 });
 const commandRunRoute = createRoute({

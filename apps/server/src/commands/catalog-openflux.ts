@@ -121,6 +121,7 @@ cfg=$(mktemp /root/openflux-cfg-XXXXXX)
   printf 'autoupdate=%s\\n' "$OF_AUTOUPDATE"
 } > "$cfg"
 # установщик читает конфигурацию из файла 0600 и сам его удаляет
+apt_wait
 sh "$OF_INST" apply "$cfg"
 say "Каналы на сервере"
 sh ${INSTALLED} list

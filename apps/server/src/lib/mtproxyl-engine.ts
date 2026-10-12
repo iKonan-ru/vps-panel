@@ -1,4 +1,5 @@
 import type { AgentRegistry } from '../agents/registry.js';
+import { githubError } from './github.js';
 
 /**
  * Версии движка telemt MTProxyL. Готовые образы docker MTProxyL кладёт в
@@ -55,7 +56,7 @@ export class EngineCatalog {
     const r = await this.fetchOut(RELEASES, {
       headers: { Accept: 'application/vnd.github+json', 'User-Agent': 'vps-panel' },
     });
-    if (!r.ok) throw new Error(`GitHub: ${r.status}`);
+    if (!r.ok) throw githubError(r);
     const rel = (await r.json()) as { tag_name: string; target_commitish: string }[];
     const commits = new Map(rel.map((x) => [x.tag_name, x.target_commitish]));
     this.cache = { at: Date.now(), tags, commits };

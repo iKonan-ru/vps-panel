@@ -54,8 +54,13 @@ export XUI_USERNAME XUI_PASSWORD XUI_PANEL_PORT
 # установщик ждёт путь без косых
 export XUI_WEB_BASE_PATH="$(echo "$XUI_WEB_BASE_PATH" | tr -d '/')"
 say "Запускаю установщик (неинтерактивно)"
-bash /tmp/xui-install.sh </dev/null
+apt_wait
+# установщик 3.10+ печатает пароль и токен API открытым текстом - в журнал панели они не идут
+bash /tmp/xui-install.sh </dev/null 2>&1 | sed -u -E 's/((Password|API Token)[^:]*:[[:space:]]*).*/\\1********/'
 rm -f /tmp/xui-install.sh
+# итог установщика 3.10+: логин, пароль и токен API открытым текстом. Панели он не нужен (токен
+# агент берёт сам, доступы - в "Доступах" панели), на диске не оставляем
+rm -f /etc/x-ui/install-result.env
 say "Панель - только на 127.0.0.1, свой сервер подписок 3X-UI - выключен"
 systemctl stop x-ui
 /usr/local/x-ui/x-ui setting -listenIP 127.0.0.1 || echo "ВНИМАНИЕ: listenIP не задан" >&2

@@ -66,6 +66,19 @@ func truncate(s string, n int) string {
 	return s[:n] + "..."
 }
 
+// aptWait - префикс команд apt: пока apt занят другим процессом, ждать до 10 минут. Сразу после
+// включения автообновлений systemd запускает их службу apt-daily, и dpkg/apt-get падали на
+// блокировке ("dpkg frontend lock was locked by another process"). Шаблоны pgrep - с [x]: иначе
+// совпадут с командной строкой самой команды (sh -c).
+const aptWait = `i=0; while pgrep -x apt-get >/dev/null || pgrep -x apt >/dev/null || pgrep -x dpkg >/dev/null || ` +
+	`pgrep -f '[u]nattended-upgrade --' >/dev/null || pgrep -f '/usr/bin/[u]nattended-upgrade$' >/dev/null || ` +
+	`pgrep -f '[a]pt.systemd.daily' >/dev/null; do ` +
+	`[ $i -eq 0 ] && echo "apt занят другим процессом (обычно автообновления) - жду, до 10 минут"; ` +
+	`i=$((i+1)); [ $i -gt 120 ] && { echo "apt так и не освободился за 10 минут" >&2; exit 1; }; sleep 5; done; `
+
+// aptLock - apt-get сам ждёт блокировку dpkg (гонка с запуском автообновлений после aptWait).
+const aptLock = "-o DPkg::Lock::Timeout=300 "
+
 // Upgrade ставит обновления пакетов. Пакеты docker и ядро НЕ трогаются:
 // обновление docker перезапускает демон и рвёт VPN-контейнеры, ядро требует
 // перезагрузки - это делается отдельно и осознанно.
@@ -93,8 +106,9 @@ func Upgrade(ctx context.Context, stream func(channel, chunk string)) error {
 			_, _ = shell.Exec(context.Background(), time.Minute, nil, "apt-mark", append([]string{"unhold"}, ours...)...)
 		}()
 	}
-	cmd := "dpkg --configure -a && apt-get update -qq && DEBIAN_FRONTEND=noninteractive apt-get upgrade -y -qq " +
-		"-o Dpkg::Options::=--force-confdef -o Dpkg::Options::=--force-confold && apt-get autoremove -y -qq"
+	cmd := aptWait + "dpkg --configure -a && apt-get update -qq && DEBIAN_FRONTEND=noninteractive apt-get " + aptLock +
+		"upgrade -y -qq -o Dpkg::Options::=--force-confdef -o Dpkg::Options::=--force-confold && apt-get " + aptLock +
+		"autoremove -y -qq"
 	log("== apt-get upgrade")
 	res, err := shell.Run(ctx, cmd, 30*time.Minute, stream)
 	if err != nil {

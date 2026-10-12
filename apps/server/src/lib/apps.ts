@@ -1,4 +1,5 @@
 import type { Db } from '../db/index.js';
+import { githubError } from './github.js';
 import { schedule } from './schedule.js';
 import { getJsonSetting, putSetting } from './settings.js';
 
@@ -269,10 +270,11 @@ export class AppReleases {
           r.headers.get('x-ratelimit-remaining') === '0'
         ) {
           // дальше спрашивать бесполезно: остальные репозитории получат ту же ошибку
-          limited = 'лимит запросов GitHub исчерпан, повтор при следующей проверке';
-          throw new Error(limited);
+          const e = githubError(r);
+          limited = e.message;
+          throw e;
         }
-        if (!r.ok) throw new Error(`GitHub: ${r.status}`);
+        if (!r.ok) throw githubError(r);
         const list = (await r.json()) as {
           tag_name: string;
           html_url: string;

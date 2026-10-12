@@ -4,6 +4,7 @@ import type { StatusCache } from '../agents/state.js';
 import type { Db } from '../db/index.js';
 import { servers } from '../db/schema.js';
 import type { Action } from './action-journal.js';
+import { githubError } from './github.js';
 import { schedule } from './schedule.js';
 import type { SecretBox } from './secret-box.js';
 import { getJsonSetting, putSetting } from './settings.js';
@@ -92,6 +93,8 @@ export class ServiceUpdates {
   /** Проверки по очереди: расписание и кнопка не затирают общий store друг друга. */
   private queue: Promise<unknown> = Promise.resolve();
   private panelRelease: { at: number; version: string } | null = null;
+  /** Когда перепроверяли сервер из-за устаревшей записи (не чаще раза в 5 минут). */
+  private staleAt = new Map<string, number>();
 
   constructor(
     private db: Db,
@@ -129,6 +132,13 @@ export class ServiceUpdates {
           (s) => s.kind === (kind === 'xui' || kind === 'xray' ? 'xui' : 'mtproxyl'),
         );
         if (!c?.available || !svc) continue;
+        // Xray проверялся при другой версии 3X-UI (её обновили или поставили заново после
+        // переустановки): у новой свой Xray - строка устарела, перепроверить
+        const xuiAt = checked.xui?.current;
+        if (kind === 'xray' && svc.version && xuiAt && norm(svc.version) !== norm(xuiAt)) {
+          this.recheckStale(r.id);
+          continue;
+        }
         // у 3X-UI и MTProxyL версия из инвентаря свежее проверки: обновили - строка пропадает
         const current =
           kind === 'xui' || kind === 'mtproxyl' ? (svc.version ?? '') : (c.current ?? '');
@@ -138,6 +148,13 @@ export class ServiceUpdates {
       if (out.length) res[r.id] = out;
     }
     return res;
+  }
+
+  private recheckStale(serverId: string) {
+    const now = Date.now();
+    if (now - (this.staleAt.get(serverId) ?? 0) < 5 * 60_000) return;
+    this.staleAt.set(serverId, now);
+    if (this.registry.isOnline(serverId)) void this.recheck(serverId).catch(() => undefined);
   }
 
   /** Версии MTProxyL и панели с последней проверки - для вкладки MTProxyL. */
@@ -397,7 +414,7 @@ export class ServiceUpdates {
       'https://api.github.com/repos/Liafanx/MTProxyL/releases?per_page=100',
       { headers: { Accept: 'application/vnd.github+json', 'User-Agent': 'vps-panel' } },
     );
-    if (!r.ok) throw new Error(`GitHub: ${r.status}`);
+    if (!r.ok) throw githubError(r);
     const list = (await r.json()) as { tag_name: string }[];
     const tag = list.find((x) => x.tag_name.startsWith(PANEL_TAG))?.tag_name;
     if (!tag) throw new Error('GitHub: релизов веб-панели нет');

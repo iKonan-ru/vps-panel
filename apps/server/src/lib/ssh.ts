@@ -44,7 +44,7 @@ export class HostKeyMismatch extends Error {
     public actual: string,
   ) {
     super(
-      `Ключ SSH-хоста изменился: ожидался ${expected}, получен ${actual}. Если сервер переустановлен - нажми "Сбросить отпечаток SSH" под выводом установки и повтори.`,
+      `Ключ SSH-хоста изменился: ожидался ${expected}, получен ${actual}. Если сервер переустановлен - нажми "Сбросить отпечаток SSH" под выводом установки и повтори. Если нет - не сбрасывай: на этом адресе может отвечать чужой сервер.`,
     );
   }
 }
@@ -91,13 +91,16 @@ export async function sshRun(
         });
       })
       .on('error', (e: Error & { level?: string }) => {
+        // ключ хоста не тот: ssh2 сам отвечает "Host denied (verification failed)" - объясняем
+        if (target.knownFingerprint && seen && seen !== target.knownFingerprint)
+          return done(() => reject(new HostKeyMismatch(target.knownFingerprint, seen)));
         const msg =
           e.level === 'client-authentication'
             ? 'SSH: сервер не принял пароль или ключ'
             : e.level === 'client-timeout'
               ? 'SSH: сервер не отвечает'
               : `SSH: ${e.message}`;
-        done(() => reject(e instanceof HostKeyMismatch ? e : new Error(msg)));
+        done(() => reject(new Error(msg)));
       })
       .connect({
         host: target.host,
@@ -107,15 +110,8 @@ export async function sshRun(
         keepaliveInterval: 15_000,
         hostVerifier: (key: Buffer) => {
           seen = fingerprint(key);
-          if (target.knownFingerprint && target.knownFingerprint !== seen) {
-            // Бросать из verifier нельзя - отдаём false и объясняем через error ниже.
-            setTimeout(
-              () => conn.emit('error', new HostKeyMismatch(target.knownFingerprint, seen)),
-              0,
-            );
-            return false;
-          }
-          return true;
+          // бросать из verifier нельзя: false, а причину объясняет обработчик error выше
+          return !target.knownFingerprint || target.knownFingerprint === seen;
         },
         ...auth,
       });

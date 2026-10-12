@@ -268,7 +268,7 @@ func Apply(ctx context.Context, steps []string, stream func(channel, chunk strin
 	if pk := missingPackages(ctx); sel["packages"] && len(pk) > 0 {
 		log("== Пакеты: %s", strings.Join(pk, ", "))
 		// dpkg --configure -a чинит полусобранные пакеты, если прошлую установку прервали.
-		if err := run("dpkg --configure -a && apt-get update -qq && DEBIAN_FRONTEND=noninteractive apt-get install -y -qq " + strings.Join(pk, " ")); err != nil {
+		if err := run(aptWait + "dpkg --configure -a && apt-get update -qq && DEBIAN_FRONTEND=noninteractive apt-get " + aptLock + "install -y -qq " + strings.Join(pk, " ")); err != nil {
 			return err
 		}
 	}
