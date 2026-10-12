@@ -2,6 +2,7 @@ import { MOBILE_CRUMBS_ID } from '@/components/breadcrumbs';
 import { DeployBanner, usePanelVersion } from '@/components/deploy-banner';
 import { Logo } from '@/components/logo';
 import { MOBILE_ACTIONS_ID } from '@/components/mobile-actions';
+import { TelegramBanner } from '@/components/telegram-banner';
 import { Button } from '@/components/ui/button';
 import { BottomSheet } from '@/components/ui/sheet';
 import { api } from '@/lib/api';
@@ -191,6 +192,7 @@ export function AppLayout({ login }: { login: string }) {
           className="flex flex-col gap-5 overflow-auto p-4 pt-[calc(56px+env(safe-area-inset-top)+16px)] pb-[calc(72px+env(safe-area-inset-bottom))] md:p-7 [&>*]:shrink-0"
         >
           <DeployBanner />
+          <TelegramBanner />
           <Outlet />
         </div>
       </main>

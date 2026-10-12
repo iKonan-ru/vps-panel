@@ -13,7 +13,14 @@ export async function notifyRoutes(app: FastifyInstance, opts: { telegram: Teleg
       token: st.token ? `${st.token.slice(0, 6)}...` : '',
       tokenSet: Boolean(st.token),
       lastRoute: telegram.lastRoute,
+      health: telegram.health(),
     };
+  });
+
+  /** Доходят ли уведомления: для плашки в каркасе панели (опрос раз в минуту). */
+  app.get('/api/notify/telegram/health', async () => {
+    const st = await telegram.settings();
+    return { configured: Boolean(st.token && st.chatId), ...telegram.health() };
   });
 
   app.put('/api/notify/telegram', async (req) => {
@@ -53,7 +60,9 @@ export async function notifyRoutes(app: FastifyInstance, opts: { telegram: Teleg
   });
 
   app.post('/api/notify/telegram/test', async (_req, reply) => {
-    const err = await telegram.send('VPS Panel: тестовое сообщение, уведомления работают.');
+    const err = await telegram.send('VPS Panel: тестовое сообщение, уведомления работают.', {
+      keep: false,
+    });
     if (err) return reply.code(502).send({ error: err });
     return { ok: true };
   });
