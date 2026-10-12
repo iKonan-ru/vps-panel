@@ -83,6 +83,30 @@ func TestNaiveRender443And80(t *testing.T) {
 	}
 }
 
+// Сервер панели: сертификат файлами от Caddy панели, без выпуска, 443 и 80 не слушаем.
+func TestNaiveRenderExternalCert(t *testing.T) {
+	c := naiveTestConfig()
+	c.Mask443, c.ExternalCert = false, true
+	text, err := NaiveRender(c, map[string]string{"ivan-a1b2": "AAAAAAAAAAAAAAAAAAAAAAAA"}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	crt, key := NaiveCertPaths(c.Domain)
+	if !strings.Contains(text, "\ttls "+crt+" "+key+"\n") {
+		t.Errorf("нет tls с файлами в\n%s", text)
+	}
+	if strings.Contains(text, "http_port") || strings.Contains(text, "cert_issuer") || strings.Contains(text, ":443") {
+		t.Errorf("с сертификатом панели прокси не выпускает и не слушает 443/80:\n%s", text)
+	}
+	if !strings.HasSuffix(crt, "/certificates/panel/hoster.example.com/hoster.example.com.crt") {
+		t.Errorf("путь сертификата %s: NaiveCertExpiry ищет certificates/*/<имя>/<имя>.crt", crt)
+	}
+	c.HTTP80 = true
+	if _, err := NaiveRender(c, nil, nil); err == nil {
+		t.Error("сертификат панели и 80 вместе - ошибка")
+	}
+}
+
 // Все раскладки 443 и 80 - настоящим Caddy (caddy adapt разбирает конфиг без запуска служб).
 // Бинарник собирает tools/build-naive.sh; его нет - тест пропускается.
 func TestNaiveRenderCaddyAdapts(t *testing.T) {
@@ -91,12 +115,13 @@ func TestNaiveRenderCaddyAdapts(t *testing.T) {
 		t.Skip("нет сборки Caddy: tools/build-naive.sh")
 	}
 	users := map[string]string{"ivan-a1b2": "AAAAAAAAAAAAAAAAAAAAAAAA"}
-	for _, mode := range []struct{ listen, mask, http80 bool }{
-		{false, false, false}, {false, false, true}, {true, false, false},
-		{true, false, true}, {false, true, false}, {false, true, true},
+	for _, mode := range []struct{ listen, mask, http80, ext bool }{
+		{false, false, false, false}, {false, false, true, false}, {true, false, false, false},
+		{true, false, true, false}, {false, true, false, false}, {false, true, true, false},
+		{false, false, false, true},
 	} {
 		c := naiveTestConfig()
-		c.Listen443, c.Mask443, c.HTTP80 = mode.listen, mode.mask, mode.http80
+		c.Listen443, c.Mask443, c.HTTP80, c.ExternalCert = mode.listen, mode.mask, mode.http80, mode.ext
 		for _, u := range []map[string]string{nil, users} {
 			text, err := NaiveRender(c, u, []string{"203.0.113.7/32"})
 			if err != nil {

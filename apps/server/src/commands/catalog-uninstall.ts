@@ -50,6 +50,7 @@ say "Готово"
     'Убрать jail fail2ban панели; port-sync закроет порты панели и inbound-ов',
   ],
   after: 'Запись в "Доступах" и сертификат панели остаются - удали вручную, если не нужны.',
+  dropsBindings: ['xui'],
 };
 
 export const mtproxylUninstallCmd: CommandDef = {
@@ -91,6 +92,7 @@ if naive_installed && grep -q '"mask443": true' /etc/vps-naive/config.json 2>/de
     'mtproxyl uninstall: остановить движок, снять правила nft, удалить /opt/mtproxyl без выгрузки секретов',
     'Прокси для браузера, если он отвечал на 443 через MTProxyL, снова слушает 443 сам',
   ],
+  dropsBindings: ['mtproxyl'],
 };
 
 export const wdttUninstallCmd: CommandDef = {

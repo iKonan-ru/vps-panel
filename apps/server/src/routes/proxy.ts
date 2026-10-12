@@ -1,23 +1,26 @@
 import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
 import { sha256 } from '../lib/auth.js';
+import type { PanelCerts } from '../lib/panel-certs.js';
 import type { PanelProxy } from '../lib/panel-proxy.js';
 import { sessionOf, sessionToken } from './auth.js';
 
 /** Поддомены панелей сервисов: ask для Caddy и вход по тикету (lib/panel-proxy.ts). */
 export async function proxyRoutes(
   app: FastifyInstance,
-  opts: { proxy: PanelProxy; db: Parameters<typeof sessionOf>[0] },
+  opts: { proxy: PanelProxy; db: Parameters<typeof sessionOf>[0]; certs?: PanelCerts },
 ) {
-  const { proxy, db } = opts;
+  const { proxy, db, certs } = opts;
 
   /**
    * Caddy on_demand_tls: выпускать ли сертификат на этот хост. Без входа (ходит только Caddy):
    * да - только для поддомена, который знает панель, иначе сканер из CT-логов заставил бы
-   * выпускать сертификаты на что угодно.
+   * выпускать сертификаты на что угодно. Ещё - имена сервисов самого сервера панели
+   * (lib/panel-certs.ts): запросы к ним панель не обслуживает (PanelProxy.foreign).
    */
   app.get('/api/proxy/ask', async (req, reply) => {
     const { domain } = z.object({ domain: z.string().max(253) }).parse(req.query);
+    if (certs && (await certs.allowed(domain))) return reply.send('ok');
     const label = proxy.labelOf(domain);
     if (!label || !(await proxy.target(label))) return reply.code(404).send('no');
     return reply.send('ok');
