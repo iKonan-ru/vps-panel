@@ -1,12 +1,16 @@
-# Деплой панели
+# Сборка панели из исходников
 
-Сервер: Ubuntu 24.04, docker + compose plugin. Панель живёт в /opt/vps-panel,
-данные (SQLite, ключ SSH панели) - в /opt/vps-panel/deploy/data. Код -
-https://github.com/iKonan-ru/vps-panel (AGPL-3.0).
+Обычная установка и обновления - из релизов, см. [docs/install.md](../docs/install.md). Здесь -
+сборка из исходников (для разработки и своих правок) и тонкости, общие для обоих способов:
+Caddy, fail2ban, маршрут до Telegram, файлы для команд.
+
+Сервер: Ubuntu 24.04, docker + compose plugin. Панель из исходников живёт в /opt/vps-panel,
+данные (SQLite, ключ SSH панели) - в /opt/vps-panel/deploy/data. Переезд такой установки на
+релизы - `vps-panel migrate` (docs/install.md).
 
 ## Установка
 
-Основной способ - скрипт `deploy/install.sh` на сервере. Он интерактивный:
+Скрипт `deploy/install.sh` на сервере после `git clone` в /opt/vps-panel. Он интерактивный:
 спрашивает домен панели, имя подписок и почту для Let's Encrypt, проверяет DNS и
 порты, при необходимости ставит docker, пишет `deploy/.env` с `SESSION_SECRET`,
 собирает агента, настраивает ufw и fail2ban для входа в панель, запускает панель и
@@ -137,10 +141,11 @@ docker compose up -d panel
 только так или остановив панель) плюс panel_ssh_ed25519, panel_agent_ed25519.pem и
 SESSION_SECRET из .env.
 
-## Выкладка
+## Выкладка исходников
 
-Обычно - `tools/ship.sh <файл с сообщением>` с машины разработки: проверки,
-коммит, отправка на GitHub, push.sh и wait.sh. Настройки - файл
+Только для установки из исходников: `tools/ship.sh <файл с сообщением> deploy` с машины
+разработки - проверки, коммит, отправка на GitHub, push.sh и wait.sh (на сервер с установкой
+из релиза push.sh не выкладывает). Настройки - файл
 `.ship.env` в корне репозитория (в git и на сервер не попадает; другой путь -
 `SHIP_ENV`): `PANEL_HOST`, `PANEL_DOMAIN`, `SUB_DOMAIN`, `PANEL_SSH_KEY`,
 `KNOWN_HOSTS`, `GITHUB_TOKEN_FILE`, `LEAK_PATTERNS` (шапка `tools/ship.sh`).
