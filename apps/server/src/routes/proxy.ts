@@ -8,9 +8,15 @@ import { sessionOf, sessionToken } from './auth.js';
 /** Поддомены панелей сервисов: ask для Caddy и вход по тикету (lib/panel-proxy.ts). */
 export async function proxyRoutes(
   app: FastifyInstance,
-  opts: { proxy: PanelProxy; db: Parameters<typeof sessionOf>[0]; certs?: PanelCerts },
+  opts: {
+    proxy: PanelProxy;
+    db: Parameters<typeof sessionOf>[0];
+    certs?: PanelCerts;
+    /** IP-адрес панели (PANEL_SNI): панель без домена или её прежний адрес. */
+    selfIp?: string;
+  },
 ) {
-  const { proxy, db, certs } = opts;
+  const { proxy, db, certs, selfIp } = opts;
 
   /**
    * Caddy on_demand_tls: выпускать ли сертификат на этот хост. Без входа (ходит только Caddy):
@@ -20,6 +26,10 @@ export async function proxyRoutes(
    */
   app.get('/api/proxy/ask', async (req, reply) => {
     const { domain } = z.object({ domain: z.string().max(253) }).parse(req.query);
+    // Свой IP панели: запрос без имени (https://<IP>: браузер, curl и агенты не передают SNI для
+    // адреса) Caddy ведёт по правилу on_demand, хотя сертификат на IP уже выпущен. Отказ здесь рвал
+    // рукопожатие; разрешение - Caddy берёт готовый сертификат из хранилища, ничего не выпуская.
+    if (selfIp && domain === selfIp) return reply.send('ok');
     if (certs && (await certs.allowed(domain))) return reply.send('ok');
     const label = proxy.labelOf(domain);
     if (!label || !(await proxy.target(label))) return reply.code(404).send('no');

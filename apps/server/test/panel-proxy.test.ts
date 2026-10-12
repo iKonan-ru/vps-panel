@@ -16,6 +16,8 @@ const env = loadEnv({
   NODE_ENV: 'test',
   DATA_DIR: dir,
   PANEL_PUBLIC_URL: 'https://panel.example',
+  // прежний адрес панели по IP (vps-panel domain после установки без домена)
+  PANEL_SNI: '203.0.113.10',
   SUB_DOMAIN: 'sub.panel.example',
 });
 let built: Awaited<ReturnType<typeof buildApp>>;
@@ -79,6 +81,9 @@ describe('поддомены панелей сервисов', () => {
       (await get('panel.example', '/api/proxy/ask?domain=netcore-mtproxyl.panel.example')).status,
     ).toBe(404);
     expect((await get('panel.example', '/api/proxy/ask?domain=evil.example')).status).toBe(404);
+    // свой IP панели: запросы без SNI Caddy ведёт через ask - иначе рукопожатие рвётся
+    expect((await get('panel.example', '/api/proxy/ask?domain=203.0.113.10')).status).toBe(200);
+    expect((await get('panel.example', '/api/proxy/ask?domain=203.0.113.11')).status).toBe(404);
   });
 
   it('неизвестный поддомен - 404, без входа - на вход через панель, xhr - 401', async () => {

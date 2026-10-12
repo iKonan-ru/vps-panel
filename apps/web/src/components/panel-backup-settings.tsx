@@ -64,8 +64,10 @@ export function PanelBackupSettings() {
           В бэкапе база панели, SESSION_SECRET (без него зашифрованные в базе доступы и ключи
           клиентов не прочитать) и SSH-ключ панели; бэкапы серверов не входят. Файл шифруется
           паролем. Расшифровать на любой машине:{' '}
-          <span className="break-all font-mono">{st.decryptHint}</span>. Порядок восстановления - в
-          README.txt внутри архива.
+          <span className="break-all font-mono">{st.decryptHint}</span>. Восстановить панель:
+          установить её и на сервере выполнить{' '}
+          <span className="font-mono">vps-panel restore &lt;файл&gt;</span> (спросит пароль бэкапа);
+          по шагам - README.txt внутри архива.
         </>
       }
       extra={

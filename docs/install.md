@@ -207,17 +207,32 @@ OpenFlux, расширение Firefox) настраивается в интер
 "Отправить сейчас" и "Скачать". В архиве - снимок базы, `SESSION_SECRET`, ключ SSH панели,
 ключ панели для агентов и конфиг xray.
 
-Восстановление на новом сервере - после установки панели:
+Восстановление на новом сервере - после установки панели (тем же или другим адресом), одной
+командой: она расшифрует архив (спросит пароль бэкапа), остановит панель, разложит базу и ключи,
+подставит `SESSION_SECRET` в `.env`, запустит панель и проверит её ответ. Прежние данные этой
+установки остаются в `/opt/vps-panel/data/before-restore-<время>`.
 
 ```bash
-openssl enc -d -aes-256-cbc -pbkdf2 -iter 100000 -in vps-panel-backup-<дата>.tar.gz.enc | tar xz
+vps-panel restore vps-panel-backup-<дата>.tar.gz.enc        # -y - без вопроса; пароль - BACKUP_PASSWORD
+```
+
+После восстановления вход - прежним логином, паролем и 2FA; агенты подключаются сами. Сервер,
+агента которого переставляли уже после этого бэкапа, будет "не в сети" (токен агента новее
+базы): переустановить агента в его карточке. Ключа SSH панели в бэкапе нет, если панель им ещё
+не пользовалась: для установки агента ключом добавьте новый ключ панели на сервер.
+
+Вручную (то же самое по шагам):
+
+```bash
+cd /root && openssl enc -d -aes-256-cbc -pbkdf2 -iter 100000 -in vps-panel-backup-<дата>.tar.gz.enc | tar xz
+B=/root/vps-panel-backup
 cd /opt/vps-panel && docker compose stop panel
-cp vps-panel-backup/panel.db vps-panel-backup/panel_ssh_ed25519* vps-panel-backup/panel_agent_ed25519.pem data/
-chmod 600 data/panel_ssh_ed25519 data/panel_agent_ed25519.pem
-mkdir -p data/xray && cp vps-panel-backup/xray/config.json data/xray/
-rm -f data/panel.db-wal data/panel.db-shm && chown -R 1000:1000 data
-# SESSION_SECRET из vps-panel-backup/panel.env - в /opt/vps-panel/.env
-docker compose up -d panel
+cp $B/panel.db $B/panel_agent_ed25519.pem data/
+cp $B/panel_ssh_ed25519* data/ 2>/dev/null || true    # есть, если панель уже входила по ключу
+mkdir -p data/xray && cp $B/xray/config.json data/xray/
+rm -f data/panel.db-wal data/panel.db-shm && chown -R 1000:1000 data && chmod 600 data/panel_agent_ed25519.pem
+grep -v '^SESSION_SECRET=' .env > .env.new && grep '^SESSION_SECRET=' $B/panel.env >> .env.new && mv .env.new .env && chmod 600 .env
+docker compose up -d
 ```
 
 Без ключа панели для агентов (`panel_agent_ed25519.pem`) восстановленной панели не поверит ни

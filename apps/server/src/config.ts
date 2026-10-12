@@ -28,6 +28,11 @@ const EnvSchema = z.object({
   EXTENSION_DIR: z.string().default('../extension'),
   /** HTTP-прокси для api.telegram.org (xray рядом с панелью); пусто - без прокси. */
   TG_PROXY_URL: z.string().default(''),
+  /**
+   * IP-адрес панели при сертификате на IP (панель без домена или прежний адрес после
+   * vps-panel domain): Caddy спрашивает о нём /api/proxy/ask для запросов без SNI.
+   */
+  PANEL_SNI: z.string().default(''),
 });
 
 export type Env = z.infer<typeof EnvSchema>;

@@ -24,6 +24,8 @@ services:
       WEB_DIST: /app/web
       LOG_LEVEL: ${LOG_LEVEL:-info}
       TG_PROXY_URL: ${TG_PROXY_URL:-}
+      # IP-адрес панели при сертификате на IP: его разрешает /api/proxy/ask (запросы без SNI)
+      PANEL_SNI: ${PANEL_SNI:-}
     volumes:
       - ./data:/data
     expose:

@@ -1,6 +1,6 @@
 import { existsSync, statSync } from 'node:fs';
 import { join, normalize } from 'node:path';
-import { and, desc, eq, inArray, like } from 'drizzle-orm';
+import { and, desc, eq, inArray, like, sql } from 'drizzle-orm';
 import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
 import type { AgentRegistry } from '../agents/registry.js';
@@ -192,15 +192,18 @@ export async function commandRoutes(
           .set(queued())
           .where(and(eq(gclientBindings.serverId, id), inArray(gclientBindings.service, c.resync)))
           .run();
-      if (exitCode === 0 && c.dropsBindings?.length)
+      if (exitCode === 0 && c.dropsBindings?.length) {
+        const refPart = c.dropsBindingsRef?.(answers);
         db.delete(gclientBindings)
           .where(
             and(
               eq(gclientBindings.serverId, id),
               inArray(gclientBindings.service, c.dropsBindings),
+              refPart ? sql`instr(${gclientBindings.ref}, ${refPart}) > 0` : undefined,
             ),
           )
           .run();
+      }
       if (exitCode === 0 && c.forgetsAccess?.length)
         db.delete(access)
           .where(and(eq(access.serverId, id), inArray(access.kind, c.forgetsAccess)))

@@ -64,13 +64,18 @@ const README = (panelUrl: string) => `Бэкап VPS Panel (${panelUrl}).
 панель заходит на серверы, panel_agent_ed25519.pem - ключ, которому верят агенты (без него
 восстановленной панели не поверит ни один агент), xray/config.json - выход панели в Telegram.
 
-Восстановление на сервере панели (подробно - deploy/README.md, раздел "Бэкап"):
+Восстановление: установить панель и выполнить на её сервере
+  vps-panel restore <этот файл>
+(спросит пароль бэкапа и сделает всё сам). Вручную - по шагам ниже.
+
+По шагам (подробно - docs/install.md, раздел
+"Бэкап и восстановление"; каталог установки из релиза - /opt/vps-panel, из исходников - deploy):
 1. ${DECRYPT_HINT}
-2. docker compose stop panel
-3. panel.db, panel_ssh_ed25519(.pub), panel_agent_ed25519.pem, xray/ - в deploy/data
-   (владелец uid 1000, ключи - права 600);
-   старые panel.db-wal и panel.db-shm удалить.
-4. SESSION_SECRET из panel.env - в deploy/.env (без него зашифрованное в базе не прочитать).
+2. cd /opt/vps-panel && docker compose stop panel
+3. panel.db, panel_agent_ed25519.pem, panel_ssh_ed25519(.pub) (если есть в архиве - панель
+   создаёт его при первом входе на сервер по ключу), xray/ - в data
+   (владелец uid 1000, ключи - права 600); старые panel.db-wal и panel.db-shm удалить.
+4. SESSION_SECRET из panel.env - в .env (без него зашифрованное в базе не прочитать).
 5. docker compose up -d panel
 `;
 
