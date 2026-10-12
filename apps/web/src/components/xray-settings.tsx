@@ -9,8 +9,25 @@ import { api } from '@/lib/api';
 import { ago } from '@/lib/format';
 import { useServers } from '@/lib/servers';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { Activity, Power, Route } from 'lucide-react';
+import { Activity, Power, RefreshCw, Route } from 'lucide-react';
 import { useState } from 'react';
+
+type XrayCheck = { at: string; ok: boolean; ms: number; err: string | null };
+
+/** Выход xray (lib/xray.ts XrayExitView). */
+interface XrayExit {
+  serverId: string;
+  serverName: string;
+  inboundId: number;
+  inboundRemark: string;
+  address: string;
+  port: number;
+  uuid: string;
+  sni: string;
+  updatedAt: string;
+  primary: boolean;
+  lastCheck: XrayCheck | null;
+}
 
 interface XrayStatus {
   configured: boolean;
@@ -20,18 +37,10 @@ interface XrayStatus {
   startedAt: string | null;
   restarts: number;
   lastError: string | null;
-  lastCheck: { at: string; ok: boolean; ms: number; err: string | null } | null;
-  outbound: {
-    serverId: string;
-    serverName: string;
-    inboundId: number;
-    inboundRemark: string;
-    address: string;
-    port: number;
-    uuid: string;
-    sni: string;
-    updatedAt: string;
-  } | null;
+  lastCheck: XrayCheck | null;
+  outbound: XrayExit | null;
+  exits: XrayExit[];
+  spares: { at: string | null; errors: { server: string; error: string }[] };
 }
 
 interface Inbound {
@@ -39,11 +48,13 @@ interface Inbound {
   remark: string;
   port: number;
   enable: boolean;
+  tcp: boolean;
 }
 
 /**
- * Выход панели в Telegram через xray (VLESS-Reality к 3x-ui на заграничном сервере):
- * выбор сервера и инбаунда, статус процесса, проверка, отключение.
+ * Выход панели в Telegram через xray (VLESS-Reality к 3x-ui на заграничных серверах):
+ * основной выход - выбор сервера и инбаунда, запасные панель готовит сама; статус каждого
+ * выхода, проверка, отключение.
  */
 export function XraySettings() {
   const ask = useConfirm();
@@ -100,20 +111,23 @@ export function XraySettings() {
 
   const check = () =>
     run('', async () => {
-      const r = await api<{ check: NonNullable<XrayStatus['lastCheck']> }>('/api/xray/check', {
-        method: 'POST',
-      });
+      const r = await api<{ status: XrayStatus }>('/api/xray/check', { method: 'POST' });
+      const all = r.status.exits;
+      const ok = all.filter((x) => x.lastCheck?.ok).length;
       setMsg(
-        r.check.ok
-          ? { tone: 'ok', text: `Telegram отвечает через прокси за ${r.check.ms} мс` }
-          : { tone: 'bad', text: `Не прошло: ${r.check.err ?? ''}` },
+        ok > 0
+          ? { tone: 'ok', text: `Telegram отвечает через ${ok} из ${all.length} выходов` }
+          : { tone: 'bad', text: `Ни один выход не отвечает: ${all[0]?.lastCheck?.err ?? ''}` },
       );
     });
+
+  const prepareSpares = () =>
+    run('Запасные выходы подготовлены', () => api('/api/xray/spares', { method: 'POST' }));
 
   const disable = async () => {
     const ok = await ask({
       title: 'Отключить выход через xray?',
-      text: 'Уведомления пойдут напрямую или через агентов. Клиент vps-panel в 3X-UI останется.',
+      text: 'Основной и запасные выходы выключатся, уведомления пойдут напрямую или через агентов. Клиенты vps-panel в 3X-UI останутся.',
       okLabel: 'Отключить',
       danger: true,
     });
@@ -141,9 +155,11 @@ export function XraySettings() {
       info={
         <>
           С хоста панели Telegram недоступен, поэтому панель держит xray-клиент к твоему же 3X-UI на
-          заграничном сервере (VLESS-Reality) и ходит к Telegram через него. Клиент{' '}
-          <span className="font-mono">vps-panel</span> в 3X-UI заводится автоматически. Если прокси
-          не отвечает, панель пробует напрямую и через агентов.
+          заграничных серверах (VLESS-Reality) и ходит к Telegram через него. Основной выход
+          выбираешь ты, запасные панель готовит сама на остальных серверах с 3X-UI (раз в 6 часов):
+          клиент <span className="font-mono">vps-panel</span> на первом Reality-inbound-е по TCP.
+          Каждый выход проверяется раз в 5 минут; не отвечает основной - сообщение уйдёт через
+          следующий, затем напрямую и через агентов.
         </>
       }
       extra={
@@ -165,38 +181,66 @@ export function XraySettings() {
       }
     >
       <div className="flex flex-col gap-4 p-4">
-        {st.configured && st.outbound && (
-          <div className="grid gap-x-6 gap-y-1 text-[13px] sm:grid-cols-2">
-            <div>
-              <span className="text-muted">Сервер: </span>
-              {st.outbound.serverName} ({st.outbound.address}:{st.outbound.port})
-            </div>
-            <div>
-              <span className="text-muted">Inbound: </span>
-              {st.outbound.inboundRemark || `#${st.outbound.inboundId}`}, SNI {st.outbound.sni}
-            </div>
-            <div>
-              <span className="text-muted">Клиент: </span>
-              <span className="font-mono">vps-panel {st.outbound.uuid}</span>
-            </div>
-            <div>
-              <span className="text-muted">Процесс: </span>
+        {st.configured && (
+          <div className="flex flex-col gap-2">
+            <div className="text-[13px] text-muted">
+              Процесс:{' '}
               {st.running
                 ? `pid ${st.pid}, запущен ${st.startedAt ? ago(st.startedAt) : ''}`
                 : 'не запущен'}
               {st.restarts > 0 ? `, перезапусков ${st.restarts}` : ''}
             </div>
-            <div className="sm:col-span-2">
-              <span className="text-muted">Последняя проверка: </span>
-              {st.lastCheck
-                ? st.lastCheck.ok
-                  ? `${ago(st.lastCheck.at)}, ${st.lastCheck.ms} мс`
-                  : `${ago(st.lastCheck.at)}, ошибка: ${st.lastCheck.err ?? ''}`
-                : 'не было'}
+            <div className="flex flex-col rounded-lg border border-border">
+              {st.exits.map((x) => (
+                <div
+                  key={x.serverId}
+                  className="flex flex-wrap items-center gap-x-3 gap-y-1 border-b border-border px-3 py-2 text-[13px] last:border-b-0"
+                >
+                  <span className="min-w-0 grow">
+                    <span className="font-medium">{x.serverName}</span>
+                    {x.primary && (
+                      <Chip tone="accent" className="ml-2">
+                        основной
+                      </Chip>
+                    )}
+                    <span className="block truncate text-xs text-muted">
+                      {x.inboundRemark || `#${x.inboundId}`}, порт {x.port}, SNI {x.sni}, клиент{' '}
+                      <span className="font-mono">vps-panel {x.uuid}</span>
+                    </span>
+                  </span>
+                  {x.lastCheck ? (
+                    <Chip
+                      tone={x.lastCheck.ok ? 'ok' : 'bad'}
+                      title={`${ago(x.lastCheck.at)}${x.lastCheck.err ? `: ${x.lastCheck.err}` : ''}`}
+                    >
+                      {x.lastCheck.ok ? `${x.lastCheck.ms} мс` : 'не отвечает'}
+                    </Chip>
+                  ) : (
+                    <Chip>не проверялся</Chip>
+                  )}
+                </div>
+              ))}
             </div>
-            {st.lastError && (
-              <div className="font-mono text-xs text-warn sm:col-span-2">{st.lastError}</div>
-            )}
+            <div className="flex flex-wrap items-center gap-2 text-xs text-muted">
+              <span className="grow">
+                Запасные: {st.exits.length > 1 ? st.exits.length - 1 : 'нет'}
+                {st.spares.at ? `, подготовлены ${ago(st.spares.at)}` : ''}
+              </span>
+              <Button
+                size="sm"
+                disabled={busy}
+                onClick={prepareSpares}
+                label="Подготовить запасные"
+              >
+                <RefreshCw className="size-3.5" />
+              </Button>
+            </div>
+            {st.spares.errors.map((e) => (
+              <div key={e.server} className="text-xs text-warn">
+                {e.server}: {e.error}
+              </div>
+            ))}
+            {st.lastError && <div className="font-mono text-xs text-warn">{st.lastError}</div>}
           </div>
         )}
 
@@ -208,7 +252,7 @@ export function XraySettings() {
 
         <div className="flex flex-col gap-2">
           <div className="text-[13px] font-medium">
-            {st.configured ? 'Сменить сервер выхода' : 'Настроить выход'}
+            {st.configured ? 'Сменить основной выход' : 'Настроить выход'}
           </div>
           {candidates.length === 0 ? (
             <div className="text-[13px] text-muted">
@@ -250,9 +294,9 @@ export function XraySettings() {
                           : 'выбери inbound'}
                   </option>
                   {inbounds.data?.inbounds.map((i) => (
-                    <option key={i.id} value={i.id} disabled={!i.enable}>
+                    <option key={i.id} value={i.id} disabled={!i.enable || !i.tcp}>
                       {i.remark || `#${i.id}`} : {i.port}
-                      {i.enable ? '' : ' (выключен)'}
+                      {!i.enable ? ' (выключен)' : !i.tcp ? ' (не TCP)' : ''}
                     </option>
                   ))}
                 </Select>

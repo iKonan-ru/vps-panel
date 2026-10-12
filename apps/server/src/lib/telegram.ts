@@ -4,7 +4,11 @@ import { AGENT_OUTDATED, type AgentRegistry } from '../agents/registry.js';
 import type { Db } from '../db/index.js';
 import { settings } from '../db/schema.js';
 import type { SecretBox } from './secret-box.js';
-import { putSetting } from './settings.js';
+import { getJsonSetting, putSetting } from './settings.js';
+import type { XrayRoute } from './xray.js';
+
+/** Методы Bot API, которые зовёт панель (getMe - проверка доставки). */
+type TgMethod = 'sendMessage' | 'getUpdates' | 'getMe';
 
 /** Настройки Telegram в таблице setting (ключ tg_*). */
 export interface TgSettings {
@@ -42,8 +46,55 @@ interface TgMsg {
 }
 
 /**
- * Telegram Bot API: настройки бота (token, chat id, события) и доставка - прокси xray, напрямую,
- * через агента на другом сервере. Правила событий - lib/notify.ts.
+ * Состояние доставки (setting tg_health): доходят ли уведомления. Пишут его отправки и проверка
+ * раз в 5 минут (probe); пока не доходят - плашка в каркасе панели и строка в настройках.
+ */
+export interface TgHealth {
+  /** null - ещё не проверяли. */
+  ok: boolean | null;
+  /** С какого времени не доходит (первая неудача подряд). */
+  failingSince: string | null;
+  lastOkAt: string | null;
+  /** Каким путём дошло последнее: direct, env, proxy:<id сервера>, agent:<id сервера>. */
+  lastOkVia: string | null;
+  lastError: string | null;
+  checkedAt: string | null;
+}
+
+/** Недоставленное сообщение: уйдёт после восстановления. */
+interface Pending {
+  at: string;
+  text: string;
+}
+
+const HEALTH_KEY = 'tg_health';
+const PENDING_KEY = 'tg_pending';
+/** Сколько недоставленных сообщений хранить (старые вытесняются). */
+const PENDING_MAX = 30;
+const emptyHealth: TgHealth = {
+  ok: null,
+  failingSince: null,
+  lastOkAt: null,
+  lastOkVia: null,
+  lastError: null,
+  checkedAt: null,
+};
+
+/** Время для текста сообщений: интерфейс и владелец - по Москве. */
+export function tgTime(iso: string): string {
+  return new Date(iso).toLocaleString('ru-RU', {
+    timeZone: 'Europe/Moscow',
+    day: '2-digit',
+    month: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+  });
+}
+
+/**
+ * Telegram Bot API: настройки бота (token, chat id, события) и доставка - выходы xray (основной
+ * и запасные, lib/xray.ts), прокси из окружения, напрямую, через агентов на серверах. Правила
+ * событий - lib/notify.ts. Недоставленное копится и уходит после восстановления со сводкой.
  */
 export class Telegram {
   /** Сообщения уходят по одному, в порядке вызова: цепочка отправок. */
@@ -52,6 +103,7 @@ export class Telegram {
   private envProxy: ProxyAgent | null;
   /** Последняя успешная доставка: каким путём и когда (для настроек). */
   lastRoute: { via: string; at: string } | null = null;
+  private healthState: TgHealth;
 
   constructor(
     private db: Db,
@@ -59,15 +111,56 @@ export class Telegram {
     private box: SecretBox,
     private registry: AgentRegistry,
     private log: { info: (o: unknown, m?: string) => void; warn: (o: unknown, m?: string) => void },
-    /** Прокси xray, которым управляет панель (null, если не запущен). */
-    private xrayProxy: () => ProxyAgent | null = () => null,
+    /** Выходы xray по порядку (пусто, если xray не запущен) и отметка "через этот дошло". */
+    private xray: { routes: () => XrayRoute[]; worked: (serverId: string) => void } = {
+      routes: () => [],
+      worked: () => {},
+    },
     envProxyUrl = '',
   ) {
     this.envProxy = envProxyUrl ? new ProxyAgent(envProxyUrl) : null;
+    this.healthState = { ...emptyHealth, ...getJsonSetting<TgHealth>(db, HEALTH_KEY, emptyHealth) };
   }
 
-  private get proxy(): ProxyAgent | null {
-    return this.xrayProxy() ?? this.envProxy;
+  /** Прокси по порядку: выходы xray, затем прокси из окружения. */
+  private proxies(): { via: string; dispatcher: ProxyAgent }[] {
+    return [
+      ...this.xray.routes().map((r) => ({ via: `proxy:${r.serverId}`, dispatcher: r.dispatcher })),
+      ...(this.envProxy ? [{ via: 'env', dispatcher: this.envProxy }] : []),
+    ];
+  }
+
+  health(): TgHealth & { pending: number } {
+    return { ...this.healthState, pending: this.pending().length };
+  }
+
+  private pending(): Pending[] {
+    return getJsonSetting<Pending[]>(this.db, PENDING_KEY, []);
+  }
+
+  private setPending(list: Pending[]) {
+    putSetting(this.db, PENDING_KEY, JSON.stringify(list.slice(-PENDING_MAX)));
+  }
+
+  /**
+   * Итог отправки или проверки. Вернулась доставка после сбоя - true: пора отправить
+   * накопленное (flush).
+   */
+  private record(ok: boolean, via: string | null, err: string | null): boolean {
+    const now = new Date().toISOString();
+    const h = this.healthState;
+    const recovered = ok && h.ok === false;
+    this.healthState = ok
+      ? { ...h, ok: true, failingSince: null, lastOkAt: now, lastOkVia: via, checkedAt: now }
+      : {
+          ...h,
+          ok: false,
+          failingSince: h.ok === false && h.failingSince ? h.failingSince : now,
+          lastError: err,
+          checkedAt: now,
+        };
+    putSetting(this.db, HEALTH_KEY, JSON.stringify(this.healthState));
+    return recovered;
   }
 
   async settings(): Promise<TgSettings> {
@@ -108,19 +201,80 @@ export class Telegram {
    * запоминаем на час. Возвращает ошибку текстом или null - каждому вызову свою: второй вызов
    * во время отправки не получает чужой "успех", а ошибка не выбрасывает всю очередь.
    */
-  send(text: string): Promise<string | null> {
+  send(text: string, opts: { keep?: boolean } = {}): Promise<string | null> {
+    const keep = opts.keep ?? true;
     const run = async () => {
       const st = await this.settings();
       if (!st.token || !st.chatId) return 'не заданы токен бота или chat id';
-      const err = await this.deliver(st, text);
-      if (err) this.log.warn({ err }, 'telegram: не отправлено');
+      const pending = this.pending();
+      // пока не доходит - копим, не тратя время на заведомо мёртвые пути при каждом событии
+      // (проверка раз в 5 минут и тестовое сообщение пробуют заново)
+      if (keep && this.healthState.ok === false && pending.length > 0) {
+        this.setPending([...pending, { at: new Date().toISOString(), text }]);
+        return 'уведомления сейчас не доходят: сообщение отложено';
+      }
+      const r = await this.deliver(st, text);
+      if (r.err) {
+        this.log.warn({ err: r.err }, 'telegram: не отправлено');
+        this.record(false, null, r.err);
+        if (keep) this.setPending([...pending, { at: new Date().toISOString(), text }]);
+      } else if (this.record(true, r.via, null) || pending.length > 0) {
+        await this.flush(st);
+      }
       // пауза между сообщениями: у Telegram лимит на частоту
       await new Promise((r) => setTimeout(r, 300));
-      return err;
+      return r.err;
     };
     const p = this.chain.then(run, run);
     this.chain = p.catch(() => undefined);
     return p;
+  }
+
+  /**
+   * Проверка доставки раз в 5 минут: getMe бота по обычному пути (агентам - getUpdates). Если
+   * доставка вернулась - уходит накопленное со сводкой.
+   */
+  probe(): Promise<void> {
+    const run = async () => {
+      const st = await this.settings();
+      if (!st.token || !st.chatId) return;
+      const r = await this.call(st.token, 'getMe', {});
+      if (r.err) {
+        this.record(false, null, r.err);
+        return;
+      }
+      if (this.record(true, r.via ?? null, null) || this.pending().length > 0) await this.flush(st);
+    };
+    const p = this.chain.then(run, run);
+    this.chain = p.catch(() => undefined);
+    return p;
+  }
+
+  /** Сводка о перерыве и накопленные сообщения по порядку; не ушло - остаётся на потом. */
+  private async flush(st: TgSettings) {
+    const list = this.pending();
+    if (!list.length) return;
+    const first = list[0]?.at ?? new Date().toISOString();
+    const head = await this.deliver(
+      st,
+      `VPS Panel: уведомления не доходили с ${tgTime(first)} по ${tgTime(new Date().toISOString())}. Отложенных сообщений: ${list.length}, ниже они.`,
+    );
+    // getMe проходит и при неверном chat id: доставку решает сама отправка
+    if (head.err) {
+      this.record(false, null, head.err);
+      return;
+    }
+    for (let i = 0; i < list.length; i++) {
+      const m = list[i] as Pending;
+      await new Promise((r) => setTimeout(r, 300));
+      const r = await this.deliver(st, `[${tgTime(m.at)}] ${m.text}`);
+      if (r.err) {
+        this.record(false, null, r.err);
+        this.setPending(list.slice(i));
+        return;
+      }
+    }
+    this.setPending([]);
   }
 
   /** Ответ Telegram (HTTP не 200) человеческим языком. */
@@ -152,34 +306,36 @@ export class Telegram {
    */
   private async direct(
     token: string,
-    method: 'sendMessage' | 'getUpdates',
+    method: TgMethod,
     params: Record<string, unknown>,
-    viaProxy: boolean,
+    proxy: ProxyAgent | null,
   ): Promise<{ raw?: string; err?: string }> {
     try {
       const init = {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
         body: JSON.stringify(params),
-        signal: AbortSignal.timeout(viaProxy ? 15_000 : 8_000),
+        signal: AbortSignal.timeout(proxy ? 15_000 : 8_000),
       };
       const url = `https://api.telegram.org/bot${token}/${method}`;
-      const res =
-        viaProxy && this.proxy
-          ? await ufetch(url, { ...init, dispatcher: this.proxy })
-          : await fetch(url, init);
+      const res = proxy
+        ? await ufetch(url, { ...init, dispatcher: proxy })
+        : await fetch(url, init);
       const raw = await res.text();
       if (res.ok) return { raw };
       return { err: this.explain(res.status, raw) };
     } catch (e) {
-      return { err: `${viaProxy ? 'через прокси' : 'с хоста панели'}: ${(e as Error).message}` };
+      const err = e as Error & { cause?: Error };
+      return {
+        err: `${proxy ? 'через прокси' : 'с хоста панели'}: ${err.cause?.message ?? err.message}`,
+      };
     }
   }
 
   private async viaAgent(
     serverId: string,
     token: string,
-    method: 'sendMessage' | 'getUpdates',
+    method: TgMethod,
     params: Record<string, unknown>,
   ): Promise<{ raw?: string; err?: string }> {
     try {
@@ -213,40 +369,53 @@ export class Telegram {
   }
 
   /**
-   * Вызов Bot API. Пути по порядку: HTTP-прокси xray (если настроен) - напрямую - через агент
-   * на другом сервере (api.telegram.org с хоста панели в РФ недоступен). Рабочий путь
-   * запоминаем на час; ответ самого Telegram (401/403/400) - окончательный, другие пути не пробуем.
+   * Вызов Bot API. Пути по порядку: выходы xray (последний рабочий первым) и прокси из
+   * окружения - напрямую - через агентов на серверах (api.telegram.org с хоста панели в РФ
+   * недоступен). Рабочий путь запоминаем на час; ответ самого Telegram (401/403/400) -
+   * окончательный, другие пути не пробуем. via в ответе - каким путём дошло.
    */
   async call(
     token: string,
-    method: 'sendMessage' | 'getUpdates',
+    method: TgMethod,
     params: Record<string, unknown>,
-  ): Promise<{ raw?: string; err?: string }> {
-    const attempt = (via: string) =>
-      via === 'proxy'
-        ? this.direct(token, method, params, true)
-        : via === 'direct'
-          ? this.direct(token, method, params, false)
-          : this.viaAgent(via, token, method, params);
+  ): Promise<{ raw?: string; err?: string; via?: string }> {
+    const proxies = this.proxies();
+    const attempt = (via: string) => {
+      if (via === 'direct') return this.direct(token, method, params, null);
+      if (via.startsWith('agent:')) return this.viaAgent(via.slice(6), token, method, params);
+      const p = proxies.find((x) => x.via === via);
+      return p
+        ? this.direct(token, method, params, p.dispatcher)
+        : Promise.resolve({ err: 'выход больше не настроен' });
+    };
+    const done = (via: string) => {
+      this.lastRoute = { via, at: new Date().toISOString() };
+      if (via.startsWith('proxy:')) this.xray.worked(via.slice(6));
+    };
     const fresh = this.route && Date.now() - this.route.at < 60 * 60_000;
     if (fresh && this.route) {
-      const r = await attempt(this.route.via);
-      if (!r.err) this.lastRoute = { via: this.route.via, at: new Date().toISOString() };
-      if (!r.err || this.isTelegramAnswer(r.err)) return r;
+      const via = this.route.via;
+      const r = await attempt(via);
+      if (!r.err) done(via);
+      if (!r.err || this.isTelegramAnswer(r.err)) return { ...r, via };
       this.route = null;
     }
     const errors: string[] = [];
-    const paths = [...(this.proxy ? ['proxy'] : []), 'direct', ...this.registry.onlineIds()];
+    const paths = [
+      ...proxies.map((p) => p.via),
+      'direct',
+      ...this.registry.onlineIds().map((id) => `agent:${id}`),
+    ];
     for (const via of paths) {
       const r = await attempt(via);
       if (!r.err) {
         this.route = { via, at: Date.now() };
-        this.lastRoute = { via, at: new Date().toISOString() };
+        done(via);
         this.log.info({ via }, 'telegram: путь доставки');
-        return r;
+        return { ...r, via };
       }
       // ответ Telegram (не сетевая ошибка) означает, что дошли: другой путь не поможет
-      if (this.isTelegramAnswer(r.err)) return r;
+      if (this.isTelegramAnswer(r.err)) return { ...r, via };
       errors.push(`${via}: ${r.err}`);
     }
     const agentErrors = errors.filter((e) => !e.startsWith('proxy:') && !e.startsWith('direct:'));
@@ -280,7 +449,7 @@ export class Telegram {
       Buffer.from(`\r\n--${boundary}--\r\n`),
     ]);
     const errors: string[] = [];
-    for (const viaProxy of [...(this.proxy ? [true] : []), false]) {
+    for (const p of [...this.proxies(), null]) {
       try {
         const init = {
           method: 'POST',
@@ -289,28 +458,30 @@ export class Telegram {
           signal: AbortSignal.timeout(120_000),
         };
         const url = `https://api.telegram.org/bot${st.token}/sendDocument`;
-        const res =
-          viaProxy && this.proxy
-            ? await ufetch(url, { ...init, dispatcher: this.proxy })
-            : await fetch(url, init);
+        const res = p
+          ? await ufetch(url, { ...init, dispatcher: p.dispatcher })
+          : await fetch(url, init);
         const raw = await res.text();
         // ответ самого Telegram окончательный: другой путь не поможет
         return res.ok ? null : this.explain(res.status, raw);
       } catch (e) {
-        errors.push(`${viaProxy ? 'через прокси' : 'с хоста панели'}: ${(e as Error).message}`);
+        errors.push(`${p ? 'через прокси' : 'с хоста панели'}: ${(e as Error).message}`);
       }
     }
     return `Telegram недоступен: ${errors.join('; ')} (через агентов файлы не пересылаются)`;
   }
 
-  private async deliver(st: TgSettings, msg: string): Promise<string | null> {
+  private async deliver(
+    st: TgSettings,
+    msg: string,
+  ): Promise<{ err: string | null; via: string | null }> {
     const r = await this.call(st.token, 'sendMessage', {
       chat_id: st.chatId,
       text: msg,
       parse_mode: 'HTML',
       disable_web_page_preview: true,
     });
-    return r.err ?? null;
+    return { err: r.err ?? null, via: r.via ?? null };
   }
 
   /** Кто писал боту: подбор chat id для настроек. Токен - из формы или сохранённый. */

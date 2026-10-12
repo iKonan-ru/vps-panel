@@ -1,3 +1,4 @@
+import { type TgHealth, failingFor } from '@/components/telegram-banner';
 import { Alert } from '@/components/ui/alert';
 import { Button } from '@/components/ui/button';
 import { Checkbox } from '@/components/ui/checkbox';
@@ -21,20 +22,23 @@ interface TgSettings {
   banThreshold: number;
   paymentDays: number;
   lastRoute: { via: string; at: string } | null;
+  health: TgHealth;
 }
 
+/** Путь доставки (lib/telegram.ts): proxy:<id> - выход xray, agent:<id> - агент сервера. */
 function routeTitle(via: string, servers: { id: string; name: string }[] | undefined): string {
-  if (via === 'proxy') return 'через прокси xray';
+  const name = (id: string) => servers?.find((x) => x.id === id)?.name ?? id;
   if (via === 'direct') return 'напрямую с хоста панели';
-  const s = servers?.find((x) => x.id === via);
-  return `через агент ${s ? s.name : via}`;
+  if (via === 'env' || via === 'proxy') return 'через прокси';
+  if (via.startsWith('proxy:')) return `через выход xray ${name(via.slice(6))}`;
+  return `через агент ${name(via.replace(/^agent:/, ''))}`;
 }
 
 const eventTitles: Record<keyof TgSettings['events'], string> = {
   offline: 'Сервер пропал (3 минуты без агента) и вернулся',
   audit: 'Новые и закрытые критичные замечания аудита',
   bans: 'Рост банов fail2ban (порог ниже)',
-  updates: 'Обновления пакетов и сервисов (3X-UI, MTProxyL), платежи хостингу',
+  updates: 'Обновления пакетов и сервисов (3X-UI, Xray, MTProxyL), платежи хостингу',
 };
 
 /** Настройки Telegram-уведомлений: бот, чат, какие события, тест. */
@@ -93,6 +97,8 @@ export function TelegramSettings() {
       setMsg({ tone: 'bad', text: (err as Error).message });
     } finally {
       setBusy(false);
+      void qc.invalidateQueries({ queryKey: ['tg-settings'] });
+      void qc.invalidateQueries({ queryKey: ['tg-health'] });
     }
   }
 
@@ -146,7 +152,16 @@ export function TelegramSettings() {
       info='Создай бота у @BotFather и вставь его токен. Chat id - это номер чата, куда бот будет писать (твой личный чат с ботом, группа или канал). Открой чат с ботом, нажми Start, затем нажми "Найти chat id" - панель подставит номер сама. Панель шлёт только выбранные события, не чаще раза в час на сервер для банов и раза в сутки для обновлений.'
       extra={
         <>
-          {st.tokenSet ? <Chip tone="ok">бот задан</Chip> : <Chip tone="warn">не настроено</Chip>}
+          {!st.tokenSet ? (
+            <Chip tone="warn">не настроено</Chip>
+          ) : st.health.ok === false ? (
+            <Chip tone="bad" title={st.health.lastError ?? undefined}>
+              не доходят{failingFor(st.health.failingSince)}
+              {st.health.pending > 0 ? `, отложено ${st.health.pending}` : ''}
+            </Chip>
+          ) : (
+            <Chip tone="ok">бот задан</Chip>
+          )}
           {st.lastRoute && (
             <span className="text-xs text-muted">
               последняя доставка {ago(st.lastRoute.at)} {routeTitle(st.lastRoute.via, servers)}

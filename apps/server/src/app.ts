@@ -24,10 +24,12 @@ import { Notifier } from './lib/notify.js';
 import { PanelBackups } from './lib/panel-backup.js';
 import { panelAddresses } from './lib/panel-host.js';
 import { PanelProxy } from './lib/panel-proxy.js';
+import { schedule } from './lib/schedule.js';
 import { SecretBox } from './lib/secret-box.js';
 import { ServiceUpdates } from './lib/service-updates.js';
 import { Telegram } from './lib/telegram.js';
 import { UiHub } from './lib/ui-hub.js';
+import { XraySpares } from './lib/xray-exits.js';
 import { XrayManager } from './lib/xray.js';
 import { accessRoutes } from './routes/access.js';
 import { agentDistRoutes } from './routes/agent-dist.js';
@@ -206,19 +208,35 @@ export async function buildApp(opts: AppOptions) {
   await app.register(terminalRoutes, { db, registry });
   await app.register(agentDistRoutes, { agentDir: env.AGENT_DIR });
   await app.register(deployRoutes, { dataDir: env.DATA_DIR });
-  await app.register(xrayRoutes, { db, registry, box, xray });
+  // запасные выходы xray: клиент vps-panel на каждом сервере с 3X-UI (lib/xray-exits.ts)
+  const exitDeps = { db, registry, box, xray, log: app.log, panelUrl: env.PANEL_PUBLIC_URL };
+  const xraySpares = new XraySpares(exitDeps);
+  await app.register(xrayRoutes, { db, registry, box, xray, spares: xraySpares, deps: exitDeps });
   const telegram = new Telegram(
     db,
     box,
     registry,
     app.log,
-    () => xray.dispatcher(),
+    { routes: () => xray.routes(), worked: (id) => xray.worked(id) },
     env.TG_PROXY_URL,
   );
   await app.register(notifyRoutes, { telegram });
   const notifier = new Notifier(db, registry, telegram);
   // остановка фоновых таймеров при закрытии: в тестах и при выключении они не трогают базу
   const stops: (() => void)[] = [];
+  stops.push(xraySpares.start());
+  // доставка в Telegram: раз в 5 минут проверка выходов xray и getMe бота (lib/telegram.ts)
+  stops.push(
+    schedule(
+      () =>
+        void xray
+          .checkAll()
+          .then(() => telegram.probe())
+          .catch((e: Error) => app.log.warn({ err: e.message }, 'telegram: проверка')),
+      90_000,
+      5 * 60_000,
+    ),
+  );
   app.addHook('onClose', async () => {
     for (const stop of stops) stop();
   });
