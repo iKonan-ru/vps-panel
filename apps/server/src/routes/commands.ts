@@ -167,7 +167,16 @@ export async function commandRoutes(
 
     const action = journal.open(id, `command:${cmd}`, { title: c.title, answers: publicAnswers });
     const actionId = action.id;
-    const onStream = action.stream;
+    // секреты, известные до запуска (пароли из формы, токены панели): не уходят даже в живой
+    // вывод в браузер; в журнале они заменяются ещё раз целиком (кусок мог разрезать значение)
+    const known = [
+      ...c.params.filter((p) => p.secret || p.type === 'password').map((p) => answers[p.name]),
+      ...Object.entries(extraEnv)
+        .filter(([k]) => /(TOKEN|SECRET|PASSWORD)$/.test(k))
+        .map(([, v]) => v),
+    ].filter((v): v is string => Boolean(v));
+    const onStream = (channel: string, chunk: string) =>
+      action.stream(channel, redactOutput(chunk, known));
     const finish = async (exitCode: number) => {
       // доступы к установленной панели: логин, пароль, ссылки - в "Доступы" сервера
       let entries: Parameters<typeof upsertAccess>[3][] = [];
@@ -180,12 +189,9 @@ export async function commandRoutes(
       }
       // секреты в журнал не пишутся: в "Доступах" они зашифрованы, а журнал - открытым текстом
       const secrets = [
-        ...c.params.filter((p) => p.secret || p.type === 'password').map((p) => answers[p.name]),
+        // включая переменные-секреты, которые панель генерирует сама (токен admin API WDTT)
+        ...known,
         ...entries.flatMap((e) => e.fields.filter((f) => f.secret).map((f) => f.value)),
-        // переменные-секреты, которые панель генерирует сама (токен admin API WDTT)
-        ...Object.entries(extraEnv)
-          .filter(([k]) => /(TOKEN|SECRET|PASSWORD)$/.test(k))
-          .map(([, v]) => v),
       ].filter((v): v is string => Boolean(v));
       if (exitCode === 0 && c.resync?.length)
         db.update(gclientBindings)

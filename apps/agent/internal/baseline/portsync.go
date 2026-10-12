@@ -112,21 +112,59 @@ func WritePortsyncConfig(cfg PortsyncConfig) error {
 	return os.WriteFile(portsyncConf, b, 0o644)
 }
 
-// RefreshPortsyncScript обновляет установленный скрипт port-sync до встроенного в агента.
-// Ничего не делает, если port-sync не установлен. Возвращает true, если файл заменён.
-func RefreshPortsyncScript() (bool, error) {
+// portsyncUnits - юниты port-sync: имя в systemd -> файл в assets.
+var portsyncUnits = map[string]string{
+	"vps-portsync.service":              "portsync.service",
+	"vps-portsync.timer":                "portsync.timer",
+	"vps-portsync-xui.path":             "portsync-xui.path",
+	"vps-portsync-docker-watch.service": "portsync-docker-watch.service",
+}
+
+// RefreshPortsync обновляет установленный port-sync до встроенного в агента: скрипт и юниты
+// (только уже лежащие на сервере), и поднимает vps-portsync-xui.path, если systemd его
+// выключил (лимит запусков службы в старых юнитах). Ничего не делает, если port-sync не
+// установлен. Возвращает true, если что-то заменено.
+func RefreshPortsync(ctx context.Context) (bool, error) {
 	cur, err := os.ReadFile(portsyncBin)
 	if err != nil {
 		return false, nil
 	}
+	changed := false
 	script, _ := assets.ReadFile("assets/vps-portsync.py")
-	if bytes.Equal(cur, script) {
-		return false, nil
+	if !bytes.Equal(cur, script) {
+		if err := os.WriteFile(portsyncBin+".new", script, 0o755); err != nil {
+			return false, err
+		}
+		if err := os.Rename(portsyncBin+".new", portsyncBin); err != nil {
+			return false, err
+		}
+		changed = true
 	}
-	if err := os.WriteFile(portsyncBin+".new", script, 0o755); err != nil {
-		return false, err
+	units := false
+	for unit, a := range portsyncUnits {
+		path := "/etc/systemd/system/" + unit
+		old, err := os.ReadFile(path)
+		if err != nil {
+			continue
+		}
+		b, _ := assets.ReadFile("assets/" + a)
+		if bytes.Equal(old, b) {
+			continue
+		}
+		if err := os.WriteFile(path, b, 0o644); err != nil {
+			return changed, err
+		}
+		units = true
 	}
-	return true, os.Rename(portsyncBin+".new", portsyncBin)
+	if units {
+		changed = true
+		_, _ = shell.Run(ctx, "systemctl daemon-reload", time.Minute, nil)
+	}
+	_, _ = shell.Run(ctx, "if systemctl is-enabled --quiet vps-portsync-xui.path 2>/dev/null && "+
+		"! systemctl is-active --quiet vps-portsync-xui.path; then systemctl reset-failed "+
+		"vps-portsync.service vps-portsync-xui.path; systemctl restart vps-portsync-xui.path; fi",
+		time.Minute, nil)
+	return changed, nil
 }
 
 // InstallPortsync кладёт скрипт, конфиг (если нет) и юниты.
@@ -145,13 +183,7 @@ func InstallPortsync(ctx context.Context, stream func(channel, chunk string)) er
 			return err
 		}
 	}
-	units := map[string]string{
-		"vps-portsync.service":              "portsync.service",
-		"vps-portsync.timer":                "portsync.timer",
-		"vps-portsync-xui.path":             "portsync-xui.path",
-		"vps-portsync-docker-watch.service": "portsync-docker-watch.service",
-	}
-	for unit, a := range units {
+	for unit, a := range portsyncUnits {
 		b, _ := assets.ReadFile("assets/" + a)
 		if err := os.WriteFile("/etc/systemd/system/"+unit, b, 0o644); err != nil {
 			return err

@@ -5,7 +5,7 @@ import { eq } from 'drizzle-orm';
 import { authenticator } from 'otplib';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { buildApp } from '../src/app.js';
-import { validateAnswers } from '../src/commands/index.js';
+import { findCommand, validateAnswers } from '../src/commands/index.js';
 import type { CommandDef } from '../src/commands/types.js';
 import { loadEnv } from '../src/config.js';
 import { createDb } from '../src/db/index.js';
@@ -134,6 +134,22 @@ describe('redactOutput', () => {
     expect(out).not.toContain('ee0011aabb');
     expect(out).toContain('secret=********');
     expect(out).toContain('port 1');
+  });
+
+  it('токен API, который печатает установщик 3X-UI, в журнал не попадает', () => {
+    const out = redactOutput(
+      '\x1b[0;32mAPI Token:   QKBcfHN47VPkpzsp7AKx\x1b[0m\napi_token=abc123def456\nPort: 47016\n',
+      [],
+    );
+    expect(out).not.toContain('QKBcfHN47VPkpzsp7AKx');
+    expect(out).not.toContain('abc123def456');
+    expect(out).toContain('API Token:   ********\x1b[0m');
+    expect(out).toContain('Port: 47016');
+  });
+
+  it('скрипт 3X-UI маскирует пароль и токен в выводе установщика', () => {
+    const s = findCommand('xui')?.script ?? '';
+    expect(s).toMatch(/xui-install\.sh <\/dev\/null 2>&1 \| sed -u -E .*Password\|API Token/);
   });
 });
 

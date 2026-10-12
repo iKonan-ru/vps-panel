@@ -207,6 +207,7 @@ ${ENSURE_DOCKER}  fi
     naive_moved=true
   fi
   say "Запускаю: mtproxyl install (аргументы без секретов и токена: --mode manager --port $MT_PORT --sni $MT_SNI --engine $MT_ENGINE --zapret2 $MT_ZAPRET2)"
+  apt_wait
   bash /tmp/mtproxyl-install.sh -- "\${args[@]}" </dev/null || {
     rc=$?
     if [ "$naive_moved" = true ] && [ -z "$(port_owner 443)" ]; then
@@ -236,6 +237,7 @@ say "Скачиваю установщик панели"
 fetch https://raw.githubusercontent.com/Liafanx/MTProxyL/main/mtproxyl-panel/install.sh -o /tmp/mtproxyl-panel-install.sh
 say "Запускаю установщик панели (отвечаю на его вопросы автоматически)"
 export MTP_USER MTP_PASSWORD MTP_PORT SERVER_HOST
+apt_wait
 python3 /tmp/mtproxyl-panel-driver.py /tmp/mtproxyl-panel-install.sh
 say "Проверяю службу панели"
 systemctl is-active mtproxyl-panel

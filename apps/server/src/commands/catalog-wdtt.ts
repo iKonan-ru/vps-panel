@@ -104,6 +104,7 @@ chmod 600 /tmp/wdtt-admin.token /tmp/wdtt-main.password
 export WDTT_DTLS_PORT WDTT_WG_PORT WDTT_ADMIN_PORT WDTT_DNS_SERVERS WDTT_ADMIN_ID
 export WDTT_SSH_PORT="$SERVER_SSH_PORT"
 say "Запускаю deploy.sh (порты: DTLS $WDTT_DTLS_PORT, WG $WDTT_WG_PORT, admin $WDTT_ADMIN_PORT)"
+apt_wait
 bash /tmp/wdtt-deploy.sh install </dev/null
 ${WDTT_FW_FUNCS}
 if portsync_governs; then

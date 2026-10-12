@@ -12,12 +12,13 @@ import { type CommandInfo, type CommandRun, commandsApi, groupTitles } from '@/l
 import { ago } from '@/lib/format';
 import { useServers } from '@/lib/servers';
 import { useQuery } from '@tanstack/react-query';
-import { Link } from '@tanstack/react-router';
+import { Link, useSearch } from '@tanstack/react-router';
 import { Box, Download, FileText, Play, Search, Trash2 } from 'lucide-react';
 import { type ReactNode, useMemo, useState } from 'react';
 
 /** Каталог команд: карточки по группам и последние запуски. */
 export function CommandsPage() {
+  const { server } = useSearch({ from: '/app/commands' });
   const { data: cmds } = useQuery({
     queryKey: ['commands'],
     queryFn: commandsApi.list,
@@ -117,7 +118,7 @@ export function CommandsPage() {
                       key={c.id}
                       to="/commands/$id"
                       params={{ id: c.id }}
-                      search={{ server: undefined, run: undefined, tab: undefined }}
+                      search={{ server, run: undefined, tab: undefined }}
                       size="sm"
                       variant={c.group === 'install' ? 'primary' : 'danger'}
                       label={c.group === 'install' ? 'Установить' : 'Удалить с сервера'}
@@ -159,7 +160,7 @@ export function CommandsPage() {
                     <ButtonLink
                       to="/commands/$id"
                       params={{ id: c.id }}
-                      search={{ server: undefined, run: undefined, tab: undefined }}
+                      search={{ server, run: undefined, tab: undefined }}
                       size="sm"
                       variant="primary"
                       label="Запустить"

@@ -73,9 +73,14 @@ export function OverviewTab({ s, onTab }: { s: ServerDetail; onTab?: (tab: strin
   const [cleanup, setCleanup] = useState(false);
   // запущенное из блока "Обслуживание" действие с выводом: обновление пакетов или сервиса
   // recheck - это было обновление сервиса: по окончании перепроверить его версии
-  const [upgrade, setUpgrade] = useState<{ id: string; title: string; recheck?: boolean } | null>(
-    null,
-  );
+  // done - действие завершилось: вывод остаётся на экране, но кнопки снова доступны (повтор
+  // после ошибки, например apt был занят автообновлениями)
+  const [upgrade, setUpgrade] = useState<{
+    id: string;
+    title: string;
+    recheck?: boolean;
+    done?: boolean;
+  } | null>(null);
   const [error, setError] = useState<string | null>(null);
   const pending = s.audit?.pendingUpdates ?? 0;
 
@@ -128,7 +133,7 @@ export function OverviewTab({ s, onTab }: { s: ServerDetail; onTab?: (tab: strin
 
   // Строки блока "Обслуживание": у каждой одна кнопка действия справа
   // идёт запуск, своё действие с выводом или перепроверка версий - кнопки блока недоступны
-  const busy = !canAct || upgrade !== null || starting.busy || svcFetching;
+  const busy = !canAct || (upgrade !== null && !upgrade.done) || starting.busy || svcFetching;
   const rows: SecurityRow[] = [
     ...(svcUpdates ?? []).map((u) => ({
       key: `update-${u.kind}`,
@@ -316,6 +321,7 @@ export function OverviewTab({ s, onTab }: { s: ServerDetail; onTab?: (tab: strin
             actions={
               <ButtonLink
                 to="/commands"
+                search={{ server: s.id }}
                 size="sm"
                 title="Каталог команд: установка и удаление сервисов"
                 label="Установить сервис"
@@ -428,6 +434,7 @@ export function OverviewTab({ s, onTab }: { s: ServerDetail; onTab?: (tab: strin
                 <ActionOutput
                   actionId={upgrade.id}
                   onFinished={() => {
+                    setUpgrade((u) => (u && u.id === upgrade.id ? { ...u, done: true } : u));
                     if (!upgrade.recheck) return;
                     void api(`/api/servers/${s.id}/updates/check`, { method: 'POST' })
                       .catch(() => {})

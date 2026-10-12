@@ -7,7 +7,7 @@ import { SecretBox } from '../src/lib/secret-box.js';
 import { type ServiceUpdate, ServiceUpdates } from '../src/lib/service-updates.js';
 
 /** 3X-UI через агента: версия Xray, список версий, которые он умеет ставить, установка. */
-function fake3xui(state: { xray: string; offered: string[]; installs: string[] }) {
+function fake3xui(state: { xray: string; offered: string[]; installs: string[]; panel?: string }) {
   return {
     isOnline: () => true,
     request: async (_id: string, method: string, p: { method: string; path: string }) => {
@@ -15,7 +15,11 @@ function fake3xui(state: { xray: string; offered: string[]; installs: string[] }
       if (method !== 'xui.api') throw new Error(`неожиданный вызов ${method}`);
       const ok = (obj: unknown) => ({ status: 200, data: { success: true, obj } });
       if (p.path === 'server/getPanelUpdateInfo')
-        return ok({ currentVersion: '3.9.0', latestVersion: '3.9.0', updateAvailable: false });
+        return ok({
+          currentVersion: state.panel ?? '3.9.0',
+          latestVersion: state.panel ?? '3.9.0',
+          updateAvailable: false,
+        });
       if (p.path === 'server/status')
         return ok({ xray: { state: 'running', version: state.xray } });
       if (p.path === 'server/getXrayVersion') return ok(state.offered);
@@ -49,10 +53,34 @@ function setup(state: { xray: string; offered: string[]; installs: string[] }) {
       throw new Error('GitHub не нужен');
     },
   );
-  return { u, sent };
+  return { u, sent, db };
 }
 
 describe('ServiceUpdates: Xray в 3X-UI', () => {
+  it('3X-UI поставили заново с новым Xray - старая строка "обновить Xray" не висит', async () => {
+    const state = {
+      xray: '26.9.30',
+      offered: ['v26.10.10', 'v26.9.30'],
+      installs: [] as string[],
+      panel: '3.9.0',
+    };
+    const { u, db } = setup(state);
+    expect((await u.recheck('s1')).map((x) => x.kind)).toEqual(['xray']);
+    // переустановка ОС и 3X-UI 3.10.0 со своим Xray 26.10.10: проверки по расписанию ещё не было
+    state.xray = '26.10.10';
+    state.panel = '3.10.0';
+    const inventory = {
+      services: [{ kind: 'xui', title: '3X-UI', version: '3.10.0', ports: [] }],
+    };
+    db.update(servers)
+      .set({ statusCache: { inventory } } as never)
+      .run();
+    expect(await u.list('s1')).toEqual([]);
+    // перепроверка запущена сама: после неё обновления тоже нет
+    await new Promise((r) => setTimeout(r, 20));
+    expect(await u.recheck('s1')).toEqual([]);
+  });
+
   it('новейшая из предложенных 3X-UI - обновление; ставится и пропадает', async () => {
     const state = {
       xray: '26.9.30',

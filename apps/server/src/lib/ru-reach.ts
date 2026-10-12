@@ -262,6 +262,13 @@ export function blank(
   };
 }
 
+/** Убрать цели inbound-ов 3X-UI (сервиса на сервере больше нет); true - что-то убрано. */
+export function dropXui(entry: ServerReach): boolean {
+  const n = entry.targets.length;
+  entry.targets = entry.targets.filter((t) => !t.key.startsWith('xui:'));
+  return entry.targets.length !== n;
+}
+
 /**
  * MTProxyL в запись сервера: цель из его собственной проверки в снимке, новая точка - если
  * проверка новая; нет MTProxyL - нет и цели. Возвращает уведомление и зонды новой проверки.
@@ -448,6 +455,11 @@ export class RuReach {
         if (!inv) continue;
         const mt = inv.services.find((s) => s.kind === 'mtproxyl');
         const entry = store[row.id] ?? { checkedAt: null, targets: [] };
+        // 3X-UI сняли (удаление, переустановка ОС): его inbound-ы не ждут проверки агента в :00/:30
+        if (!inv.services.some((s) => s.kind === 'xui') && dropXui(entry)) {
+          store[row.id] = entry;
+          changed = true;
+        }
         const had = entry.targets.some((t) => t.key === 'mtproxyl');
         if (!mt && !had) continue;
         const before = JSON.stringify(entry.targets.find((t) => t.key === 'mtproxyl') ?? null);

@@ -143,6 +143,21 @@ describe('общее время графиков и MTProxyL', () => {
     );
   });
 
+  it('3X-UI снят с сервера - цели его inbound-ов убираются, остальные остаются', async () => {
+    const { blank, dropXui } = await import('../src/lib/ru-reach.js');
+    const entry: ServerReach = {
+      checkedAt: null,
+      targets: [
+        blank('ip', 'Адрес сервера', 'tcp', 22, 'agent'),
+        blank('xui:1', '3X-UI VLESS Reality', 'tls', 443, 'agent', 'www.microsoft.com'),
+        blank('xui:2', '3X-UI VLESS XHTTP', 'tls', 8443, 'agent'),
+      ],
+    };
+    expect(dropXui(entry)).toBe(true);
+    expect(entry.targets.map((t) => t.key)).toEqual(['ip']);
+    expect(dropXui(entry)).toBe(false);
+  });
+
   it('каждая новая проверка MTProxyL - точка с зондами; без MTProxyL цели нет', async () => {
     const { mergeMt } = await import('../src/lib/ru-reach.js');
     const entry: ServerReach = { checkedAt: null, targets: [] };
