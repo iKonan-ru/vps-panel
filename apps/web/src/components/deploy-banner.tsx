@@ -96,7 +96,7 @@ export function DeployBanner() {
           </div>
           <Meter pct={pct} className="mt-1.5 h-1 bg-accent/20" fill="bg-accent" />
           <div className="mt-1 text-xs opacity-80">
-            Пока идёт сборка, работает прежняя версия; после перезапуска здесь появится кнопка
+            Пока готовится новая версия, работает прежняя; после перезапуска здесь появится кнопка
             обновить страницу.
           </div>
         </div>
@@ -108,7 +108,8 @@ export function DeployBanner() {
       <Bar tone="bad" onClose={() => hide(st.startedAt)}>
         <div className="min-w-0 grow">
           <div>
-            Сборка {st.commit} упала на шаге "{st.stepName}" за {took}: работает прежняя версия
+            Обновление до {st.commit} не удалось на шаге "{st.stepName}" за {took}: работает прежняя
+            версия
             {st.running ? ` (${st.running})` : ''}.
           </div>
           {st.tail && (
@@ -129,8 +130,8 @@ export function DeployBanner() {
     return (
       <Bar tone="ok" onClose={() => hide(st.startedAt)}>
         <div className="min-w-0 grow">
-          Панель обновлена до {st.commit} (сборка {took}). Обнови страницу, чтобы загрузить новую
-          версию интерфейса.
+          Панель обновлена до {st.commit} (за {took}). Обнови страницу, чтобы загрузить новую версию
+          интерфейса.
         </div>
         <Button
           size="sm"

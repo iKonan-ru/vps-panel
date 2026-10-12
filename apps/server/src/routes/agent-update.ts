@@ -10,7 +10,13 @@ import { agentChecksums, latestAgentVersion } from '../lib/agent-dist.js';
 const Id = z.object({ id: z.string() });
 
 /** Обновление агента: на одном сервере (с ожиданием возвращения) и раскатка по всем по очереди. */
-export async function agentUpdateRoutes(app: FastifyInstance, opts: ServerRouteOpts) {
+export async function agentUpdateRoutes(
+  app: FastifyInstance,
+  opts: ServerRouteOpts & {
+    /** После старта: раскатить устаревших агентов (панель обновилась и это включено). */
+    autoRollout?: () => boolean;
+  },
+) {
   const { db, env, registry, hub } = opts;
   const journal = actionJournal(db, hub, registry);
 
@@ -125,13 +131,30 @@ export async function agentUpdateRoutes(app: FastifyInstance, opts: ServerRouteO
 
   app.get('/api/agents/rollout', async () => rollout);
   app.post('/api/agents/rollout', async (_req, reply) => {
-    if (rollout && !rollout.finishedAt)
-      return reply.code(409).send({ error: 'Раскатка агентов уже идёт' });
+    const r = await startRollout();
+    if (typeof r === 'string')
+      return reply.code(r === 'busy' ? 409 : 400).send({ error: errors[r] });
+    return r;
+  });
+  const errors = { busy: 'Раскатка агентов уже идёт', fresh: 'Все агенты уже свежие' };
+
+  // панель обновилась (релиз) и включено "обновлять агентов": через 90 с - агенты успевают
+  // переподключиться к новой панели
+  if (opts.autoRollout?.())
+    setTimeout(() => {
+      void startRollout().then((r) => {
+        if (typeof r !== 'string')
+          app.log.info({ servers: r.items.length }, 'agents: автораскатка');
+      });
+    }, 90_000).unref();
+
+  async function startRollout(): Promise<NonNullable<typeof rollout> | 'busy' | 'fresh'> {
+    if (rollout && !rollout.finishedAt) return 'busy';
     const latest = latestAgentVersion(env.AGENT_DIR);
     const rows = (await db.select().from(servers).orderBy(servers.name)).filter(
       (r) => latest && r.agentVersion && r.agentVersion !== latest,
     );
-    if (rows.length === 0) return reply.code(400).send({ error: 'Все агенты уже свежие' });
+    if (rows.length === 0) return 'fresh';
     const cur = {
       startedAt: new Date().toISOString(),
       finishedAt: null as string | null,
@@ -178,6 +201,6 @@ export async function agentUpdateRoutes(app: FastifyInstance, opts: ServerRouteO
       cur.finishedAt = new Date().toISOString();
       rolloutChanged();
     })();
-    return rollout;
-  });
+    return cur;
+  }
 }

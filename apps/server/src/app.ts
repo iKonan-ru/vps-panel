@@ -16,6 +16,7 @@ import { type Db, createDb } from './db/index.js';
 import { actionLog, servers } from './db/schema.js';
 import { actionJournal } from './lib/action-journal.js';
 import { AppReleases } from './lib/apps.js';
+import { FirefoxSigner } from './lib/firefox.js';
 import { GClients } from './lib/gclients.js';
 import { startHousekeeping } from './lib/housekeeping.js';
 import { startMetricsPace } from './lib/metrics-pace.js';
@@ -25,6 +26,7 @@ import { PanelBackups } from './lib/panel-backup.js';
 import { PanelCerts } from './lib/panel-certs.js';
 import { panelAddresses } from './lib/panel-host.js';
 import { PanelProxy } from './lib/panel-proxy.js';
+import { type PanelRelease, PanelUpdates } from './lib/panel-updates.js';
 import { RuReach } from './lib/ru-reach.js';
 import { schedule } from './lib/schedule.js';
 import { SecretBox } from './lib/secret-box.js';
@@ -48,6 +50,7 @@ import { commandRoutes } from './routes/commands.js';
 import { cspRoutes } from './routes/csp.js';
 import { deployRoutes } from './routes/deploy.js';
 import { dockerRoutes } from './routes/docker.js';
+import { firefoxRoutes } from './routes/firefox.js';
 import { gclientRoutes } from './routes/gclients.js';
 import { installRoutes } from './routes/install.js';
 import { ipChangeRoutes } from './routes/ip-change.js';
@@ -56,6 +59,7 @@ import { mtproxylRoutes } from './routes/mtproxyl.js';
 import { notifyRoutes } from './routes/notify.js';
 import { openfluxRoutes } from './routes/openflux.js';
 import { panelBackupRoutes } from './routes/panel-backup.js';
+import { panelUpdateRoutes } from './routes/panel-update.js';
 import { personalRoutes } from './routes/personal.js';
 import { probeRoutes } from './routes/probe.js';
 import { proxyRoutes } from './routes/proxy.js';
@@ -199,7 +203,23 @@ export async function buildApp(opts: AppOptions) {
   await app.register(serverRoutes, { db, registry, env, hub, proxy: panelProxy });
   // действия над сервером через агента - по файлу на область
   const serverRouteOpts = { db, env, registry, hub, box, engines };
-  await app.register(agentUpdateRoutes, serverRouteOpts);
+  // новые версии панели (релизы GitHub) и обновление через службу на хосте; уведомление -
+  // через notifier, он создаётся ниже
+  let onPanelRelease: (r: PanelRelease) => Promise<void> = async () => undefined;
+  const panelUpdates = new PanelUpdates(
+    db,
+    env.DATA_DIR,
+    (url, init) => xray.fetch(url, init),
+    app.log,
+    (r) => onPanelRelease(r),
+  );
+  await app.register(panelUpdateRoutes, { updates: panelUpdates });
+  // панель обновилась - агенты за ней, если это не выключено
+  const panelUpdated = panelUpdates.versionChanged();
+  await app.register(agentUpdateRoutes, {
+    ...serverRouteOpts,
+    autoRollout: () => panelUpdated && panelUpdates.settings().agentsAuto,
+  });
   await app.register(awgRoutes, serverRouteOpts);
   await app.register(baselineFirewallRoutes, serverRouteOpts);
   await app.register(dockerRoutes, serverRouteOpts);
@@ -235,8 +255,10 @@ export async function buildApp(opts: AppOptions) {
   );
   await app.register(notifyRoutes, { telegram });
   const notifier = new Notifier(db, registry, telegram);
+  onPanelRelease = (r) => notifier.panelRelease(r);
   // остановка фоновых таймеров при закрытии: в тестах и при выключении они не трогают базу
   const stops: (() => void)[] = [];
+  stops.push(panelUpdates.start());
   // доступность из России: адрес и inbound-ы - агент через Globalping, MTProxyL - его итог
   const ruReach = new RuReach(db, box, registry, app.log, (id, note) => notifier.reach(id, note));
   stops.push(ruReach.start());
@@ -318,6 +340,10 @@ export async function buildApp(opts: AppOptions) {
     app.log,
   );
   stops.push(panelBackups.start());
+  // расширение Firefox: подпись ключом addons.mozilla.org из Настроек, новая версия - сама
+  const firefox = new FirefoxSigner(db, box, env, app.log);
+  stops.push(firefox.start());
+  await app.register(firefoxRoutes, { firefox });
   // ссылки на клиентские приложения: релизы GitHub раз в 6 часов
   const appReleases = new AppReleases(db, (url, init) => xray.fetch(url, init), app.log);
   stops.push(appReleases.start());
