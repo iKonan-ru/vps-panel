@@ -22,7 +22,14 @@ import {
   plural,
   uptime,
 } from '@/lib/format';
-import { type ReachTarget, type ServerReach, reachLevel, useReachAll } from '@/lib/reach';
+import {
+  type ReachTarget,
+  type ServerReach,
+  ms,
+  reachLevel,
+  serverRtt,
+  useReachAll,
+} from '@/lib/reach';
 import { useServers } from '@/lib/servers';
 import { useQuery } from '@tanstack/react-query';
 import { Link, useNavigate } from '@tanstack/react-router';
@@ -354,6 +361,21 @@ function AttentionItem({
   );
 }
 
+/** Задержка из России (медиана зондов Globalping последней проверки): "из РФ 46 мс". */
+function RuRtt({ s, short = false }: { s: ServerSummary; short?: boolean }) {
+  const { data: reach } = useReachAll();
+  const rtt = serverRtt(reach?.[s.id]);
+  if (rtt === null) return null;
+  return (
+    <span
+      className="whitespace-nowrap tabular-nums"
+      title="Задержка из домашних сетей России: медиана по зондам Globalping последней проверки"
+    >
+      {short ? 'РФ' : 'из РФ'} {ms(rtt)}
+    </span>
+  );
+}
+
 function PayCell({ s }: { s: ServerSummary }) {
   const h = s.hosting;
   const days = daysUntil(h.nextPaymentAt);
@@ -424,6 +446,9 @@ function Row({ s }: { s: ServerSummary }) {
         {s.metrics && s.status === 'online' && (
           <div className="mt-1 text-xs text-muted">аптайм {uptime(s.metrics.uptimeSec)}</div>
         )}
+        <div className="mt-0.5 text-xs text-muted empty:hidden">
+          <RuRtt s={s} />
+        </div>
       </td>
       <td>
         <Resources s={s} />
@@ -475,7 +500,7 @@ function MobileCard({ s }: { s: ServerSummary }) {
           <ServerStatusChip s={s} dotOnly />
         </div>
         {s.metrics && s.status === 'online' && (
-          <div className="flex gap-2.5 text-xs text-muted">
+          <div className="flex flex-wrap gap-x-2.5 gap-y-0.5 text-xs text-muted">
             <span>CPU {Math.round(s.metrics.cpuPercent)}%</span>
             <span>
               RAM {Math.round((s.metrics.memUsedMb / Math.max(1, s.metrics.memTotalMb)) * 100)}%
@@ -483,6 +508,7 @@ function MobileCard({ s }: { s: ServerSummary }) {
             <span>
               Диск {Math.round((s.metrics.diskUsedGb / Math.max(1, s.metrics.diskTotalGb)) * 100)}%
             </span>
+            <RuRtt s={s} short />
           </div>
         )}
         <div className="flex flex-wrap items-center gap-1.5">

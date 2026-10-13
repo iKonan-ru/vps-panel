@@ -20,17 +20,22 @@ import { savedXuiToken } from './xui-token.js';
  * Время у всех целей общее: проверки агента - в :00 и :30, интерфейс рисует историю получасовыми
  * интервалами (SLOT_MS), поэтому графики разных целей и серверов совпадают по времени. Зонды
  * последних проверок (откуда дошли, откуда нет) - отдельно, по серверу: ru_reach_probes:<id>.
+ *
+ * Задержка (rtt, мс) - время установки TCP-соединения у дошедших зондов: медиана по проверке у
+ * цели и в точке истории, своя у каждого зонда. Её даёт только проверка агента (новые агенты);
+ * у MTProxyL в его итоге времени нет.
  */
 
 export type ReachLevel = 'ok' | 'partial' | 'bad';
 
-/** Зонд проверки: город, сеть и её AS, дошёл ли; ошибка - если нет. */
+/** Зонд проверки: город, сеть и её AS, дошёл ли; ошибка - если нет; задержка - если дошёл. */
 export interface ReachProbe {
   city: string;
   asn: number;
   network: string;
   ok: boolean;
   error?: string;
+  rtt?: number;
 }
 
 /** Зонды проверок цели по времени проверки (последние PROBES_MS). */
@@ -40,6 +45,8 @@ export interface ReachPoint {
   at: string;
   percent: number;
   total: number;
+  /** Медиана задержки проверки, мс. */
+  rtt?: number;
 }
 
 export interface ReachTarget {
@@ -56,6 +63,8 @@ export interface ReachTarget {
   /** Проверка не состоялась (квота Globalping, агент устарел, сеть). */
   error?: string | undefined;
   checkedAt: string | null;
+  /** Медиана задержки последней проверки, мс; нет - не мерили (MTProxyL, старый агент). */
+  rtt?: number | undefined;
   history: ReachPoint[];
   /** Проверок подряд "не видно" и было ли уведомление о нём. */
   badStreak: number;
@@ -90,6 +99,7 @@ interface AgentReply {
     errors: string[];
     error?: string;
     probes?: unknown;
+    rtt?: number;
   }[];
   remaining: number;
 }
@@ -129,16 +139,26 @@ export function nextTick(now: number): number {
   return Math.floor((now + 60_000) / SLOT_MS) * SLOT_MS + SLOT_MS;
 }
 
+/** Задержка из ответа агента: число мс в разумных пределах, до 0,1; иначе нет. */
+export function readRtt(v: unknown): number | undefined {
+  const n = Number(v);
+  return Number.isFinite(n) && n > 0 && n < 60_000 ? Math.round(n * 10) / 10 : undefined;
+}
+
 /** Зонды из ответа агента или снимка: только известные поля, не больше 50. */
 export function readProbes(raw: unknown): ReachProbe[] {
   if (!Array.isArray(raw)) return [];
-  return raw.slice(0, 50).map((p: Record<string, unknown>) => ({
-    city: String(p?.city ?? '').slice(0, 60),
-    asn: Number(p?.asn) || 0,
-    network: String(p?.network ?? '').slice(0, 60),
-    ok: p?.ok === true,
-    ...(p?.ok !== true && p?.error ? { error: String(p.error).slice(0, 160) } : {}),
-  }));
+  return raw.slice(0, 50).map((p: Record<string, unknown>) => {
+    const rtt = p?.ok === true ? readRtt(p?.rtt) : undefined;
+    return {
+      city: String(p?.city ?? '').slice(0, 60),
+      asn: Number(p?.asn) || 0,
+      network: String(p?.network ?? '').slice(0, 60),
+      ok: p?.ok === true,
+      ...(p?.ok !== true && p?.error ? { error: String(p.error).slice(0, 160) } : {}),
+      ...(rtt !== undefined ? { rtt } : {}),
+    };
+  });
 }
 
 export function level(percent: number | null): ReachLevel | null {
@@ -198,7 +218,7 @@ export function reachError(raw: string): string {
 
 export function apply(
   t: ReachTarget,
-  r: { percent: number; total: number; ok: number; errors: string[]; at: string },
+  r: { percent: number; total: number; ok: number; errors: string[]; at: string; rtt?: unknown },
 ): { text: string; back: boolean } | null {
   t.percent = r.percent;
   t.total = r.total;
@@ -206,10 +226,12 @@ export function apply(
   t.errors = r.errors;
   t.checkedAt = r.at;
   t.error = undefined;
+  const rtt = readRtt(r.rtt);
+  t.rtt = rtt;
   const since = Date.parse(r.at) - HISTORY_MS;
-  t.history = [...t.history, { at: r.at, percent: r.percent, total: r.total }]
-    .filter((p) => Date.parse(p.at) >= since)
-    .slice(-HISTORY);
+  const point: ReachPoint = { at: r.at, percent: r.percent, total: r.total };
+  if (rtt !== undefined) point.rtt = rtt;
+  t.history = [...t.history, point].filter((p) => Date.parse(p.at) >= since).slice(-HISTORY);
   const lv = level(r.percent);
   if (lv === 'bad') {
     t.badStreak += 1;
@@ -534,6 +556,7 @@ export class RuReach {
         errors: o.errors,
         ...(o.error ? { error: o.error } : {}),
         checkedAt: o.checkedAt,
+        ...(o.rtt !== undefined ? { rtt: o.rtt } : {}),
         history: o.history,
         badStreak: o.badStreak,
         notified: o.notified,

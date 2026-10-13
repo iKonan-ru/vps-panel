@@ -12,7 +12,7 @@ import (
 )
 
 const measured = `{"status":"finished","results":[
- {"probe":{"city":"Tomsk","asn":31357,"network":"Info"},"result":{"status":"finished","tls":{"protocol":"TLSv1.3"},"stats":{"rcv":3}}},
+ {"probe":{"city":"Tomsk","asn":31357,"network":"Info"},"result":{"status":"finished","tls":{"protocol":"TLSv1.3"},"stats":{"rcv":3,"avg":46.38},"timings":{"total":245,"tcp":47,"tls":81}}},
  {"probe":{"city":"Samara","asn":3216,"network":"Vimpelcom"},"result":{"status":"finished","tls":null,"rawOutput":"HEAD / HTTP/1.1\nconnect ETIMEDOUT 1.2.3.4:443"}},
  {"result":{"status":"failed","rawOutput":"connect ETIMEDOUT 1.2.3.4:443"}},
  {"result":{"status":"finished","tls":{"protocol":"TLSv1.3"},"stats":{"rcv":0}}},
@@ -33,9 +33,15 @@ func TestParse(t *testing.T) {
 	if p := r.Probes[1]; p.OK || p.Network != "Vimpelcom" || p.Error != "connect ETIMEDOUT 1.2.3.4:443" {
 		t.Fatalf("не дошедший зонд: %+v", p)
 	}
+	if r.Probes[0].RTT != 47 || r.Probes[3].RTT != 0 || r.RTT != 47 {
+		t.Fatalf("tls: задержка - timings.tcp дошедших, медиана по ним: %+v", r)
+	}
 	r = Parse("tcp", []byte(measured))
 	if r.Total != 4 || r.OK != 1 {
 		t.Fatalf("tcp: %+v", r)
+	}
+	if r.Probes[0].RTT != 46.4 || r.RTT != 46.4 {
+		t.Fatalf("tcp: задержка - stats.avg: %+v", r)
 	}
 	if r := Parse("tcp", []byte(`{"results":[]}`)); r.Error == "" {
 		t.Fatal("без зондов - ошибка проверки")
@@ -111,6 +117,18 @@ func TestValidate(t *testing.T) {
 	for _, x := range bad {
 		if _, err := Check(context.Background(), Params{Targets: []Target{x}}); err == nil {
 			t.Fatalf("должна быть ошибка: %+v", x)
+		}
+	}
+}
+
+func TestMedian(t *testing.T) {
+	cases := []struct {
+		in   []float64
+		want float64
+	}{{nil, 0}, {[]float64{30}, 30}, {[]float64{95, 46, 50}, 50}, {[]float64{40, 10, 20, 30}, 25}, {[]float64{1.04, 1.06}, 1.1}}
+	for _, c := range cases {
+		if got := Median(c.in); got != c.want {
+			t.Errorf("Median(%v) = %v, нужно %v", c.in, got, c.want)
 		}
 	}
 }
