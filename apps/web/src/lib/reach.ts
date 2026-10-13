@@ -14,7 +14,9 @@ export interface ReachTarget {
   errors: string[];
   error?: string;
   checkedAt: string | null;
-  history: { at: string; percent: number; total: number }[];
+  /** Медиана задержки последней проверки, мс (нет у MTProxyL и у старых агентов). */
+  rtt?: number;
+  history: { at: string; percent: number; total: number; rtt?: number }[];
   source: 'agent' | 'mtproxyl';
 }
 
@@ -32,6 +34,8 @@ export interface ReachProbe {
   network: string;
   ok: boolean;
   error?: string;
+  /** Задержка дошедшего зонда, мс. */
+  rtt?: number;
 }
 
 export type ReachPoint = ReachTarget['history'][number];
@@ -53,6 +57,8 @@ export interface ReachSlot {
   points: ReachPoint[];
   /** Худшая проверка интервала; null - проверок не было. */
   percent: number | null;
+  /** Медиана задержки проверок интервала, мс; null - не мерили. */
+  rtt: number | null;
   /** Интервал ещё идёт. */
   current: boolean;
 }
@@ -73,10 +79,35 @@ export function reachSlots(history: ReachPoint[], now: number, current = false):
       end: k * SLOT_MS,
       points,
       percent: points.length ? Math.min(...points.map((p) => p.percent)) : null,
+      rtt: median(points.flatMap((p) => (p.rtt ? [p.rtt] : []))),
       current: k > last,
     });
   }
   return out;
+}
+
+/** Медиана; null - значений нет. */
+export function median(v: number[]): number | null {
+  if (!v.length) return null;
+  const s = [...v].sort((a, b) => a - b);
+  const h = Math.floor(s.length / 2);
+  return s.length % 2 ? (s[h] ?? null) : ((s[h - 1] ?? 0) + (s[h] ?? 0)) / 2;
+}
+
+/** Задержка: 46 мс. */
+export function ms(v: number): string {
+  return `${Math.round(v)}\u00a0мс`;
+}
+
+/**
+ * Задержка до сервера из России: у адреса сервера (TCP до SSH), иначе медиана по целям с
+ * задержкой; null - не мерили.
+ */
+export function serverRtt(r: ServerReach | undefined | null): number | null {
+  if (!r) return null;
+  const ip = r.targets.find((t) => t.key === 'ip')?.rtt;
+  if (ip) return ip;
+  return median(r.targets.flatMap((t) => (t.rtt ? [t.rtt] : [])));
 }
 
 /** Время по местным часам: 09:30. */

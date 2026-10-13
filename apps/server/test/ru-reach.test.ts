@@ -103,6 +103,19 @@ describe('доступность из России', () => {
     });
     expect(apply(t, r(10))).toBeNull();
     expect(t.history).toHaveLength(6);
+    expect(t.rtt).toBeUndefined();
+    apply(t, { ...r(10), at: '2026-10-12T00:30:00Z', rtt: 46.38 });
+    expect(t.rtt).toBe(46.4);
+    expect(t.history.at(-1)).toEqual({
+      at: '2026-10-12T00:30:00Z',
+      percent: 100,
+      total: 10,
+      rtt: 46.4,
+    });
+    // старый агент без задержки: у цели её больше нет, точка без rtt
+    apply(t, { ...r(10), at: '2026-10-12T01:00:00Z' });
+    expect(t.rtt).toBeUndefined();
+    expect(t.history.at(-1)).not.toHaveProperty('rtt');
     expect([level(null), level(49.9), level(50), level(80)]).toEqual([
       null,
       'bad',
@@ -175,6 +188,18 @@ describe('общее время графиков и MTProxyL', () => {
         ],
       },
     });
+    const { readProbes } = await import('../src/lib/ru-reach.js');
+    expect(
+      readProbes([
+        { city: 'Moscow', asn: 1, network: 'N', ok: true, rtt: 18.04 },
+        { city: 'Kursk', asn: 2, network: 'M', ok: false, error: 'timeout', rtt: 5 },
+        { city: 'Omsk', asn: 3, network: 'K', ok: true, rtt: -1 },
+      ]),
+    ).toEqual([
+      { city: 'Moscow', asn: 1, network: 'N', ok: true, rtt: 18 },
+      { city: 'Kursk', asn: 2, network: 'M', ok: false, error: 'timeout' },
+      { city: 'Omsk', asn: 3, network: 'K', ok: true },
+    ]);
     const r = mergeMt(entry, details('2026-10-12T09:03:00Z'), true);
     expect(r.probes?.probes).toEqual([
       { city: 'Tomsk', asn: 1, network: 'N', ok: true },

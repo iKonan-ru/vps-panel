@@ -11,9 +11,11 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"math"
 	"net"
 	"net/http"
 	"regexp"
+	"sort"
 	"strconv"
 	"strings"
 	"sync"
@@ -40,13 +42,15 @@ type Params struct {
 	Targets []Target `json:"targets"`
 }
 
-// Probe - откуда проверял зонд и дошёл ли: город, сеть и её AS, ошибка - если не дошёл.
+// Probe - откуда проверял зонд и дошёл ли: город, сеть и её AS, ошибка - если не дошёл; RTT -
+// задержка в мс (время установки TCP-соединения), только у дошедших.
 type Probe struct {
-	City    string `json:"city"`
-	ASN     int    `json:"asn"`
-	Network string `json:"network"`
-	OK      bool   `json:"ok"`
-	Error   string `json:"error,omitempty"`
+	City    string  `json:"city"`
+	ASN     int     `json:"asn"`
+	Network string  `json:"network"`
+	OK      bool    `json:"ok"`
+	Error   string  `json:"error,omitempty"`
+	RTT     float64 `json:"rtt,omitempty"`
 }
 
 // Result - итог по цели: сколько зондов ответило (без не успевших) и сколько дошло.
@@ -58,6 +62,8 @@ type Result struct {
 	Errors  []string `json:"errors"`
 	// Probes - ответившие зонды по отдельности (откуда видно, откуда нет).
 	Probes []Probe `json:"probes"`
+	// RTT - медиана задержки дошедших зондов, мс (0 - замера нет).
+	RTT float64 `json:"rtt,omitempty"`
 	// Error - проверка не состоялась (квота, сеть, Globalping); тогда Total = 0.
 	Error string `json:"error,omitempty"`
 }
@@ -281,6 +287,8 @@ func wait(ctx context.Context, token, id string) ([]byte, error) {
 
 // Parse - итог измерения: дошёл ли каждый зонд. tcp - ответ хотя бы на один TCP-пакет, tls -
 // получен сертификат (TLS-рукопожатие прошло). Зонды, не успевшие ответить, не считаются.
+// Задержка - время установки TCP-соединения: у tcp - среднее по пакетам (stats.avg), у tls -
+// timings.tcp; так оба вида меряют одно и то же.
 func Parse(kind string, body []byte) Result {
 	var m struct {
 		Results []struct {
@@ -294,8 +302,11 @@ func Parse(kind string, body []byte) Result {
 				RawOutput string          `json:"rawOutput"`
 				TLS       json.RawMessage `json:"tls"`
 				Stats     *struct {
-					Rcv int `json:"rcv"`
+					Rcv int      `json:"rcv"`
+					Avg *float64 `json:"avg"`
 				} `json:"stats"`
+				// у ping это список пакетов, у http - объект; нужен только объект http
+				Timings json.RawMessage `json:"timings"`
 			} `json:"result"`
 		} `json:"results"`
 	}
@@ -305,6 +316,7 @@ func Parse(kind string, body []byte) Result {
 		return r
 	}
 	seen := map[string]bool{}
+	var rtts []float64
 	for _, x := range m.Results {
 		if x.Result.Status == "in-progress" || x.Result.Status == "" {
 			continue
@@ -318,6 +330,19 @@ func Parse(kind string, body []byte) Result {
 		}
 		pr := Probe{City: Clip(x.Probe.City, 60), ASN: x.Probe.ASN, Network: Clip(x.Probe.Network, 60), OK: ok}
 		if ok {
+			if kind == "tcp" && x.Result.Stats.Avg != nil {
+				pr.RTT = round1(*x.Result.Stats.Avg)
+			} else if kind != "tcp" {
+				var tm struct {
+					TCP *float64 `json:"tcp"`
+				}
+				if json.Unmarshal(x.Result.Timings, &tm) == nil && tm.TCP != nil {
+					pr.RTT = round1(*tm.TCP)
+				}
+			}
+			if pr.RTT > 0 {
+				rtts = append(rtts, pr.RTT)
+			}
 			r.OK++
 			r.Probes = append(r.Probes, pr)
 			continue
@@ -333,6 +358,7 @@ func Parse(kind string, body []byte) Result {
 			r.Errors = append(r.Errors, e)
 		}
 	}
+	r.RTT = Median(rtts)
 	if r.Total > 0 {
 		r.Percent = float64(r.OK*1000/r.Total) / 10
 	} else {
@@ -340,6 +366,22 @@ func Parse(kind string, body []byte) Result {
 	}
 	return r
 }
+
+// Median - медиана, округлённая до 0,1; 0 - значений нет.
+func Median(v []float64) float64 {
+	if len(v) == 0 {
+		return 0
+	}
+	s := append([]float64(nil), v...)
+	sort.Float64s(s)
+	m := s[len(s)/2]
+	if len(s)%2 == 0 {
+		m = (s[len(s)/2-1] + s[len(s)/2]) / 2
+	}
+	return round1(m)
+}
+
+func round1(f float64) float64 { return math.Round(f*10) / 10 }
 
 // lastLine - последняя непустая строка вывода зонда: у ping там итог ("100% packet loss"), у
 // http - текст ошибки; первая строка у ping - только заголовок "PING ... on port N".

@@ -13,6 +13,7 @@ import {
   SLOT_MS,
   type ServerReach,
   hm,
+  ms,
   reachLevel,
   reachSlots,
   reachTone,
@@ -39,7 +40,52 @@ function slotTitle(s: ReachSlot): string {
   const range = `${hm(s.end - SLOT_MS)}-${hm(s.end)}`;
   if (s.percent === null) return `${range}: проверок не было`;
   const n = s.points.length;
-  return `${range}: ${s.percent}%${n > 1 ? ` (худшая из ${n} проверок)` : ''}`;
+  return `${range}: ${s.percent}%${n > 1 ? ` (худшая из ${n} проверок)` : ''}${
+    s.rtt !== null ? `, задержка ${ms(s.rtt)}` : ''
+  }`;
+}
+
+function rttTitle(s: ReachSlot): string {
+  const range = `${hm(s.end - SLOT_MS)}-${hm(s.end)}`;
+  return `${range}: ${s.rtt !== null ? ms(s.rtt) : 'не мерили'}`;
+}
+
+/**
+ * Задержка по интервалам: столбик - медиана за полчаса, высота - от самого долгого интервала
+ * на графике. Нужна, чтобы видеть, когда путь из России стал длиннее.
+ */
+function RttBars({ slots, picked }: { slots: ReachSlot[]; picked: number | null }) {
+  const top = Math.max(...slots.map((s) => s.rtt ?? 0));
+  if (top <= 0) return null;
+  return (
+    <div>
+      <div className="mb-1 flex items-baseline justify-between text-[11px] text-muted">
+        <span>Задержка, медиана за полчаса</span>
+        <span>до {ms(top)}</span>
+      </div>
+      <div className="flex h-10 items-end gap-0.5">
+        {slots.map((s) => (
+          <span
+            key={s.end}
+            title={rttTitle(s)}
+            className={cn(
+              'flex h-full min-w-0 flex-1 items-end rounded-sm p-px',
+              picked === s.end && 'bg-surface-2',
+              s.current && 'opacity-70',
+            )}
+          >
+            <span
+              className={cn(
+                'block w-full rounded-sm',
+                s.rtt !== null ? 'bg-accent/60' : 'bg-border',
+              )}
+              style={{ height: s.rtt !== null ? `${Math.max(8, (s.rtt / top) * 100)}%` : '8%' }}
+            />
+          </span>
+        ))}
+      </div>
+    </div>
+  );
 }
 
 function Bar({ s, className }: { s: ReachSlot; className?: string }) {
@@ -98,6 +144,14 @@ function Row({ t, now, onOpen }: { t: ReachTarget; now: number; onOpen: () => vo
         {t.error && <span className="block text-xs text-warn">{t.error}</span>}
         <History t={t} now={now} onOpen={onOpen} />
       </span>
+      {t.rtt !== undefined && (
+        <span
+          className="mt-0.5 shrink-0 whitespace-nowrap text-xs tabular-nums text-muted"
+          title="Задержка из России: медиана по дошедшим зондам последней проверки"
+        >
+          {ms(t.rtt)}
+        </span>
+      )}
       {lv ? (
         <Chip
           tone={reachTone[lv]}
@@ -141,7 +195,10 @@ function Check({
   loading: boolean;
 }) {
   const bad = probes?.filter((x) => !x.ok) ?? [];
-  const good = probes?.filter((x) => x.ok) ?? [];
+  // дошедшие - от быстрых к медленным: сразу видно, откуда путь длинный
+  const good = (probes?.filter((x) => x.ok) ?? []).sort(
+    (a, b) => (a.rtt ?? Number.POSITIVE_INFINITY) - (b.rtt ?? Number.POSITIVE_INFINITY),
+  );
   const lv = reachLevel(p.percent) ?? 'bad';
   return (
     <div className="border-t border-border pt-3 first:border-t-0 first:pt-0">
@@ -150,6 +207,9 @@ function Check({
         <Chip tone={reachTone[lv]}>
           {p.percent}% из {p.total}
         </Chip>
+        {p.rtt !== undefined && (
+          <span className="text-xs tabular-nums text-muted">задержка {ms(p.rtt)}</span>
+        )}
       </div>
       {probes ? (
         <div className="mt-2 grid gap-y-2 text-[13px]">
@@ -180,6 +240,9 @@ function Check({
                   >
                     {x.city || '?'}
                     <span className="text-muted">, {x.network}</span>
+                    {x.rtt !== undefined && (
+                      <span className="tabular-nums text-muted">, {ms(x.rtt)}</span>
+                    )}
                   </span>
                 ))}
               </div>
@@ -247,6 +310,7 @@ function Details({
             <span>сейчас</span>
           </div>
         </div>
+        <RttBars slots={slots} picked={sel?.end ?? null} />
         {sel ? (
           <div className="space-y-3">
             <div className="text-xs font-medium text-muted">
@@ -300,7 +364,7 @@ export function ReachCard({ serverId, online }: { serverId: string; online: bool
     <Section
       title="Доступность из России"
       info={
-        'Каждые полчаса 10 зондов Globalping из домашних сетей России проверяют адрес и inbound 3X-UI. Виден\u00a0\u2014 от 80%, частично\u00a0\u2014 от 50%.'
+        'Каждые полчаса 10 зондов Globalping из домашних сетей России проверяют адрес и inbound 3X-UI. Виден\u00a0\u2014 от 80%, частично\u00a0\u2014 от 50%. Задержка\u00a0\u2014 время установки TCP-соединения, медиана по дошедшим зондам.'
       }
       extra={
         data?.remaining !== undefined && (

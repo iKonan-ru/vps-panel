@@ -92,7 +92,7 @@ curl --proto '=https' -fsSL https://<панель>/agent/install.sh | sh -s -- \
 | прокси для браузера | `naive.status`, `naive.exec` |
 | терминал и туннель | `term.open`, `term.input`, `term.resize`, `term.close`, `tunnel.open`, `tunnel.write`, `tunnel.close` |
 | Telegram | `telegram.send`, `telegram.updates` (запасной путь в Telegram через сервер) |
-| Доступность из России | `reach.check` (измерения Globalping с адреса сервера: TCP до порта или TLS с SNI из домашних сетей РФ) |
+| Доступность из России | `reach.check` (измерения Globalping с адреса сервера: TCP до порта или TLS с SNI из домашних сетей РФ; у дошедших зондов - задержка, время TCP-соединения, и медиана по цели) |
 | агент | `agent.update`, `agent.update.cancel` |
 
 Список в коде - `cmd/vps-agent/ops*.go`; тест сверяет его с `AgentMethodSchema` в
