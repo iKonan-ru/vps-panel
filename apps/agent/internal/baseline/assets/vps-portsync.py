@@ -28,7 +28,9 @@ DOCKER-USER: ufw их не видит, но docker-трафик проходит
 Запуск от vps-portsync-xui.path (3x-ui пишет в базу каждые несколько секунд, пока идёт
 трафик) сначала сверяет отпечаток inbound-ов и настроек панели 3x-ui с прошлым полным
 запуском и без изменений сразу выходит; systemd сообщает, кто запустил службу, в
-TRIGGER_UNIT. Таймер, docker-watch и агент всегда делают полный проход.
+TRIGGER_UNIT. Таймер, docker-watch и агент всегда делают полный проход. Таймер считает
+2 минуты от последнего запуска службы, а path-юнит запускает её каждые несколько секунд -
+поэтому и запуск от path-юнита делает полный проход, если прошлый был больше FULL_EVERY с назад.
 
 Запуск:  vps-portsync            применить
          vps-portsync --plan     показать, что было бы сделано
@@ -46,6 +48,7 @@ import shutil
 import sqlite3
 import subprocess
 import sys
+import time
 
 CONF = "/etc/vps-portsync.conf"
 # Один запуск за раз (таймер, path-юнит, docker-watch, агент): иначе правки ufw и state.json
@@ -226,6 +229,8 @@ def xui_pg_query(dsn, query):
 
 
 XUI_DB_NATIVE = "/etc/x-ui/x-ui.db"
+# полный проход не реже, чем раз в столько секунд (как таймер)
+FULL_EVERY = 120
 # настройки панели 3x-ui, от которых зависят порты и замечания
 XUI_FP_KEYS = ("webPort", "webListen", "webCertFile", "webKeyFile", "webBasePath",
                "twoFactorEnable", "subEnable", "subPort", "subListen")
@@ -266,8 +271,10 @@ def xui_unchanged():
         settings, rows = read_xui_sqlite(XUI_DB_NATIVE)
     except sqlite3.Error:
         return False
-    prev = load_state().get("xui_fp")
-    return bool(prev) and prev == xui_fingerprint(settings, rows)
+    state = load_state()
+    prev = state.get("xui_fp")
+    fresh = 0 <= time.time() - float(state.get("full_at") or 0) < FULL_EVERY
+    return fresh and bool(prev) and prev == xui_fingerprint(settings, rows)
 
 
 def xui_ports(findings):
@@ -850,6 +857,7 @@ def main():
     if not args.plan:
         state = load_state()
         state["xui_fp"] = xui_fp
+        state["full_at"] = time.time()
         save_state(state)
         os.makedirs("/var/lib/vps-portsync", exist_ok=True)
         # 0600: в отчёте путь панели 3X-UI (webBasePath)
