@@ -18,9 +18,17 @@
   * всё остальное - политика ufw по умолчанию (deny)
 
 Правила для хоста ставятся через ufw с комментарием "vps-portsync: <сервис>" и
-запоминаются в state-файле, чтобы убрать те, что больше не нужны.
+запоминаются в state-файле, чтобы убрать те, что больше не нужны. ufw вызывается только
+для правил, которых нет в /etc/ufw/user.rules (user6.rules): каждый вызов ufw - отдельный
+процесс Python, десятки вызовов на запуск заметно грузили слабые серверы.
 Правила для контейнеров живут в цепочке VPS-PORTSYNC, на которую прыгает
-DOCKER-USER: ufw их не видит, но docker-трафик проходит именно через них.
+DOCKER-USER: ufw их не видит, но docker-трафик проходит именно через них. Цепочка
+пересобирается, только когда её состав поменялся.
+
+Запуск от vps-portsync-xui.path (3x-ui пишет в базу каждые несколько секунд, пока идёт
+трафик) сначала сверяет отпечаток inbound-ов и настроек панели 3x-ui с прошлым полным
+запуском и без изменений сразу выходит; systemd сообщает, кто запустил службу, в
+TRIGGER_UNIT. Таймер, docker-watch и агент всегда делают полный проход.
 
 Запуск:  vps-portsync            применить
          vps-portsync --plan     показать, что было бы сделано
@@ -30,6 +38,7 @@ import argparse
 import fcntl
 import fnmatch
 import glob
+import hashlib
 import json
 import os
 import re
@@ -77,6 +86,30 @@ def run(cmd, check=False, quiet=True):
     if check and p.returncode != 0:
         raise RuntimeError("%s -> %s %s" % (" ".join(cmd), p.stdout, p.stderr))
     return p.returncode, p.stdout
+
+
+_containers = None
+
+
+def docker_containers():
+    """docker inspect всех запущенных контейнеров одним вызовом (на запуск - один раз):
+    каждый вызов docker CLI стоит заметного CPU на слабом сервере."""
+    global _containers
+    if _containers is not None:
+        return _containers
+    _containers = []
+    if not shutil.which("docker"):
+        return _containers
+    rc, out = run(["docker", "ps", "-q"])
+    ids = out.split()
+    if rc != 0 or not ids:
+        return _containers
+    rc, js = run(["docker", "inspect"] + ids)
+    try:
+        _containers = json.loads(js) if js.strip() else []
+    except ValueError:
+        _containers = []
+    return _containers
 
 
 def load_conf():
@@ -134,19 +167,13 @@ def find_xui_db():
         return os.environ["XUI_DB"]
     if os.path.exists("/etc/x-ui/x-ui.db"):
         return "/etc/x-ui/x-ui.db"
-    if shutil.which("docker"):
-        rc, out = run(["docker", "ps", "-q"])
-        for cid in out.split():
-            rc, mounts = run(["docker", "inspect", "-f",
-                              "{{range .Mounts}}{{.Source}}|{{.Destination}}\n{{end}}", cid])
-            for line in mounts.splitlines():
-                if "|" not in line:
-                    continue
-                src, dst = line.split("|", 1)
-                if dst.rstrip("/") == "/etc/x-ui":
-                    cand = os.path.join(src, "x-ui.db")
-                    if os.path.exists(cand):
-                        return cand
+    for c in docker_containers():
+        for m in c.get("Mounts") or []:
+            src, dst = m.get("Source") or "", m.get("Destination") or ""
+            if src and dst.rstrip("/") == "/etc/x-ui":
+                cand = os.path.join(src, "x-ui.db")
+                if os.path.exists(cand):
+                    return cand
     return None
 
 
@@ -198,8 +225,54 @@ def xui_pg_query(dsn, query):
     return rows
 
 
+XUI_DB_NATIVE = "/etc/x-ui/x-ui.db"
+# настройки панели 3x-ui, от которых зависят порты и замечания
+XUI_FP_KEYS = ("webPort", "webListen", "webCertFile", "webKeyFile", "webBasePath",
+               "twoFactorEnable", "subEnable", "subPort", "subListen")
+# отпечаток прочитанного в этом запуске (None - 3x-ui не прочитан)
+xui_fp = None
+
+
+def xui_fingerprint(settings, rows):
+    data = [[k, str(settings.get(k, ""))] for k in XUI_FP_KEYS]
+    data += sorted([str(c) for c in r] for r in rows)
+    return hashlib.sha256(json.dumps(data, ensure_ascii=False).encode("utf-8")).hexdigest()
+
+
+def read_xui_sqlite(db):
+    """(settings, rows) из базы 3x-ui; rows - port, protocol, listen, enable, stream_settings,
+    remark, node_id. Столбцы трафика не читаются: 3x-ui меняет их постоянно."""
+    con = sqlite3.connect("file:%s?mode=ro" % db, uri=True)
+    try:
+        cur = con.cursor()
+        settings = dict(cur.execute("select key, value from settings").fetchall())
+        # node_id есть в 3x-ui с групповым управлением: inbound чужого узла здесь не слушает
+        has_node = cur.execute("select count(*) from pragma_table_info('inbounds') where name='node_id'").fetchone()[0]
+        node_col = "coalesce(node_id,0)" if has_node else "0"
+        rows = cur.execute(
+            "select port, protocol, listen, enable, stream_settings, remark, %s from inbounds" % node_col
+        ).fetchall()
+    finally:
+        con.close()
+    return settings, rows
+
+
+def xui_unchanged():
+    """База 3x-ui поменялась, но не в том, что читает port-sync (обычно - счётчики трафика):
+    отпечаток тот же, что у прошлого полного запуска."""
+    if xui_pg_dsn() or not os.path.exists(XUI_DB_NATIVE):
+        return False
+    try:
+        settings, rows = read_xui_sqlite(XUI_DB_NATIVE)
+    except sqlite3.Error:
+        return False
+    prev = load_state().get("xui_fp")
+    return bool(prev) and prev == xui_fingerprint(settings, rows)
+
+
 def xui_ports(findings):
     """Возвращает (public: set[(proto,port)], panel: set[(proto,port)], info)."""
+    global xui_fp
     public, panel, info = set(), set(), {}
     dsn = xui_pg_dsn()
     if dsn:
@@ -227,20 +300,12 @@ def xui_ports(findings):
             return public, panel, info
         info["db"] = db
         try:
-            con = sqlite3.connect("file:%s?mode=ro" % db, uri=True)
-            cur = con.cursor()
-            settings = dict(cur.execute("select key, value from settings").fetchall())
-            # node_id есть в 3x-ui с групповым управлением: inbound чужого узла здесь не слушает
-            has_node = cur.execute("select count(*) from pragma_table_info('inbounds') where name='node_id'").fetchone()[0]
-            node_col = "coalesce(node_id,0)" if has_node else "0"
-            rows = cur.execute(
-                "select port, protocol, listen, enable, stream_settings, remark, %s from inbounds" % node_col
-            ).fetchall()
-            con.close()
+            settings, rows = read_xui_sqlite(db)
         except sqlite3.Error as e:
             findings.append(("high", "3x-ui: не удалось прочитать %s: %s" % (db, e)))
             return public, panel, info
 
+    xui_fp = xui_fingerprint(settings, rows)
     web_port = int(settings.get("webPort") or 2053)
     web_listen = settings.get("webListen") or ""
     info["panel_port"] = web_port
@@ -448,17 +513,7 @@ def process_ports(known, listeners, labels):
 def docker_published():
     """Опубликованные порты контейнеров с bridge-сетью: список dict."""
     result = []
-    if not shutil.which("docker"):
-        return result
-    rc, out = run(["docker", "ps", "-q"])
-    if rc != 0:
-        return result
-    for cid in out.split():
-        rc, js = run(["docker", "inspect", cid])
-        try:
-            data = json.loads(js)[0]
-        except (ValueError, IndexError):
-            continue
+    for data in docker_containers():
         name = data.get("Name", "").lstrip("/")
         netmode = data.get("HostConfig", {}).get("NetworkMode", "")
         bindings = data.get("HostConfig", {}).get("PortBindings") or {}
@@ -478,15 +533,9 @@ def docker_published():
 
 def host_network_containers():
     names = []
-    if not shutil.which("docker"):
-        return names
-    rc, out = run(["docker", "ps", "--format", "{{.Names}}|{{.Image}}"])
-    for line in out.splitlines():
-        if "|" in line:
-            name, image = line.split("|", 1)
-            rc, mode = run(["docker", "inspect", "-f", "{{.HostConfig.NetworkMode}}", name])
-            if mode.strip() == "host":
-                names.append(name)
+    for c in docker_containers():
+        if (c.get("HostConfig") or {}).get("NetworkMode") == "host":
+            names.append(c.get("Name", "").lstrip("/"))
     return names
 
 
@@ -602,6 +651,57 @@ def save_state(state):
     os.replace(tmp, STATE)
 
 
+UFW_RULES = (("/etc/ufw/user.rules", False), ("/etc/ufw/user6.rules", True))
+
+
+def ufw_present():
+    """Правила, которые уже стоят в ufw: строки "### tuple ###" из user.rules и user6.rules -
+    {(v6, (действие, протокол, порт, куда, порт источника, откуда, направление, comment=hex))}."""
+    present = set()
+    for path, v6 in UFW_RULES:
+        try:
+            with open(path) as f:
+                lines = f.read().splitlines()
+        except OSError:
+            continue
+        for line in lines:
+            if line.startswith("### tuple ### "):
+                present.add((v6, tuple(line[len("### tuple ### "):].split())))
+    return present
+
+
+def ufw_ipv6():
+    try:
+        with open("/etc/default/ufw") as f:
+            return re.search(r'^IPV6=\s*"?yes', f.read(), re.M) is not None
+    except OSError:
+        return False
+
+
+def ufw_tuples(rule, ipv6):
+    """Как ufw запишет правило ufw_rule_args в user.rules (user6.rules); [] - не знаем
+    (тогда ufw вызывается, как раньше)."""
+    try:
+        src = rule[rule.index("from") + 1]
+        port = rule[rule.index("port") + 1]
+        proto = rule[rule.index("proto") + 1]
+    except (ValueError, IndexError):
+        return []
+    tail = ("in",)
+    if "comment" in rule:
+        tail += ("comment=" + rule[rule.index("comment") + 1].encode("utf-8").hex(),)
+    v4 = (rule[0], proto, port, "0.0.0.0/0", "any")
+    v6 = (rule[0], proto, port, "::/0", "any")
+    if src == "any":
+        res = [(False, v4 + ("0.0.0.0/0",) + tail)]
+        if ipv6:
+            res.append((True, v6 + ("::/0",) + tail))
+        return res
+    if ":" in src:
+        return [(True, v6 + (src,) + tail)] if ipv6 else []
+    return [(False, v4 + (src,) + tail)]
+
+
 def apply_ufw(desired, plan, log):
     labels = desired.get("labels", {})
     wanted = []
@@ -630,9 +730,16 @@ def apply_ufw(desired, plan, log):
             log("ufw %s" % " ".join(rule))
     if not plan:
         # allow идемпотентен: существующее правило ufw пропускает, с другим комментарием -
-        # обновляет комментарий
+        # обновляет комментарий; правило, что уже стоит с тем же комментарием, не трогаем
+        present, ipv6 = ufw_present(), ufw_ipv6()
+        same = 0
         for rule in wanted:
+            tuples = ufw_tuples(rule, ipv6)
+            if tuples and all(t in present for t in tuples):
+                same += 1
+                continue
             run(["ufw"] + rule)
+        log("ufw: уже стоят %d из %d правил" % (same, len(wanted)))
         state["ufw_rules"] = [list(r) for r in wanted]
         save_state(state)
 
@@ -653,10 +760,6 @@ def apply_docker_chain(desired, wan, plan, log):
     if rc != 0:
         log("DOCKER-USER отсутствует (docker не запущен?) - пропускаю цепочку контейнеров")
         return
-    rc, _ = run(["iptables", "-w", "5", "-nL", CHAIN])
-    if rc != 0:
-        ipt(["-N", CHAIN], plan, log)
-    ipt(["-F", CHAIN], plan, log)
     rules = [
         ["!", "-i", wan, "-j", "RETURN"],
         ["-m", "conntrack", "--ctstate", "RELATED,ESTABLISHED", "-j", "RETURN"],
@@ -673,12 +776,27 @@ def apply_docker_chain(desired, wan, plan, log):
     rules.append(["-m", "limit", "--limit", "3/min", "--limit-burst", "10",
                   "-j", "LOG", "--log-prefix", "[VPS-PORTSYNC DROP] "])
     rules.append(["-j", "DROP"])
-    for r in rules:
-        rc, _ = ipt(["-A", CHAIN] + r, plan, log)
-        if rc != 0 and "comment" in r:
-            # нет модуля xt_comment - правило без подписи, порт контейнера важнее подписи
-            i = r.index("-m", r.index("--ctorigdstport"))
-            ipt(["-A", CHAIN] + r[:i] + r[i + 4:], plan, log)
+    # тот же состав, что при прошлой сборке, и в цепочке столько же правил - не пересобирать
+    # (сброс и сборка - по вызову iptables на правило, и пока цепочка пуста, она пропускает всё)
+    rc, cur = run(["iptables", "-w", "5", "-S", CHAIN])
+    state = load_state()
+    built = [wan] + [list(r) for r in rules]
+    count = sum(1 for line in cur.splitlines() if line.startswith("-A "))
+    if rc == 0 and state.get("docker_chain") == built and count == len(rules):
+        log("%s: без изменений" % CHAIN)
+    else:
+        if rc != 0:
+            ipt(["-N", CHAIN], plan, log)
+        ipt(["-F", CHAIN], plan, log)
+        for r in rules:
+            rc, _ = ipt(["-A", CHAIN] + r, plan, log)
+            if rc != 0 and "comment" in r:
+                # нет модуля xt_comment - правило без подписи, порт контейнера важнее подписи
+                i = r.index("-m", r.index("--ctorigdstport"))
+                ipt(["-A", CHAIN] + r[:i] + r[i + 4:], plan, log)
+        if not plan:
+            state["docker_chain"] = built
+            save_state(state)
     rc, _ = run(["iptables", "-w", "5", "-C", "DOCKER-USER", "-j", CHAIN])
     if rc != 0:
         ipt(["-I", "DOCKER-USER", "1", "-j", CHAIN], plan, log)
@@ -696,6 +814,9 @@ def main():
     if os.geteuid() != 0 and not args.json:
         print("нужен root", file=sys.stderr)
         return 2
+    if (os.environ.get("TRIGGER_UNIT") == "vps-portsync-xui.path" and not args.plan
+            and not args.json and xui_unchanged()):
+        return 0
 
     conf = load_conf()
     desired = desired_state(conf)
@@ -727,6 +848,9 @@ def main():
     apply_ufw(desired, args.plan, log)
     apply_docker_chain(desired, wan, args.plan, log)
     if not args.plan:
+        state = load_state()
+        state["xui_fp"] = xui_fp
+        save_state(state)
         os.makedirs("/var/lib/vps-portsync", exist_ok=True)
         # 0600: в отчёте путь панели 3X-UI (webBasePath)
         fd = os.open("/var/lib/vps-portsync/last.json", os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
