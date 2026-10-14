@@ -31,7 +31,10 @@ if [ -z "$ver" ]; then
       while read -r t; do v="${t#v}"; case "$v" in *-*) k="$v" ;; *) k="$v-zz" ;; esac; echo "$k $t"; done |
       sort -V -k1,1 | tail -1 | cut -d' ' -f2)"
   else
-    tag="$(curl -fsSL -m 30 "https://api.github.com/repos/$REPO/releases/latest" | grep -m1 '"tag_name"' | cut -d'"' -f4 || true)"
+    # ответ сначала целиком в переменную: grep -m1 в конвейере закрывает его на первом совпадении,
+    # и curl, которому ещё есть что писать, печатает "curl: (23) Failure writing output"
+    rel="$(curl -fsSL -m 30 "https://api.github.com/repos/$REPO/releases/latest" || true)"
+    tag="$(grep -m1 '"tag_name"' <<<"$rel" | cut -d'"' -f4 || true)"
   fi
   [ -n "${tag:-}" ] || { echo "не удалось узнать последний релиз на GitHub (api.github.com)" >&2; exit 1; }
   ver="${tag#v}"
