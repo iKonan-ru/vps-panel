@@ -109,8 +109,11 @@ func Upgrade(ctx context.Context, stream func(channel, chunk string)) error {
 	cmd := aptWait + "dpkg --configure -a && apt-get update -qq && DEBIAN_FRONTEND=noninteractive apt-get " + aptLock +
 		"upgrade -y -qq -o Dpkg::Options::=--force-confdef -o Dpkg::Options::=--force-confold && apt-get " + aptLock +
 		"autoremove -y -qq"
+	before := wanState(ctx)
 	log("== apt-get upgrade")
 	res, err := shell.Run(ctx, cmd, 30*time.Minute, stream)
+	// и после сбоя apt: сеть могла пропасть на любом пакете, а без сети агент не вернётся в панель
+	ensureNetwork(before, log)
 	if err != nil {
 		return err
 	}
