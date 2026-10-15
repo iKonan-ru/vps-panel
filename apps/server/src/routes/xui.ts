@@ -6,14 +6,15 @@ import { access, gclientBindings, servers } from '../db/schema.js';
 import { upsertAccess } from '../lib/access.js';
 import { actionJournal } from '../lib/action-journal.js';
 import { type ServerRouteOpts, actionRunners } from '../lib/action-runners.js';
+import { type InboundExitHooks, telegramExitOf } from '../lib/xray-exits.js';
 import { parseJson, unwrap, xuiApi } from '../lib/xui-api.js';
 import { saveXuiToken, savedXuiToken } from '../lib/xui-token.js';
 
 const Id = z.object({ id: z.string() });
 
 /** Адаптер 3X-UI: информация, настройки панели, служба, обновление, токен API, статус. */
-export async function xuiRoutes(app: FastifyInstance, opts: ServerRouteOpts) {
-  const { db, registry, hub, box } = opts;
+export async function xuiRoutes(app: FastifyInstance, opts: ServerRouteOpts & InboundExitHooks) {
+  const { db, registry, hub, box, xray, exitsAfter, syncSpares } = opts;
   const journal = actionJournal(db, hub, registry);
   const { runStreamed, quickAction } = actionRunners(registry, journal);
 
@@ -148,6 +149,7 @@ export async function xuiRoutes(app: FastifyInstance, opts: ServerRouteOpts) {
         .all()
         .map((b) => b.ref),
     );
+    const exits = xray.exits();
     return list.map((i) => {
       const st = parseJson(i.streamSettings);
       const reality = parseJson(st.realitySettings);
@@ -177,6 +179,7 @@ export async function xuiRoutes(app: FastifyInstance, opts: ServerRouteOpts) {
         clientsOff: clients.filter((c) => !c.enable).length,
         online: clients.filter((c) => online.has(c.email)).length,
         panelClients: clients.filter((c) => panelEmails.has(c.email)).length,
+        telegramExit: telegramExitOf(exits, id, Number(i.id)),
       };
     });
   });
@@ -246,6 +249,12 @@ export async function xuiRoutes(app: FastifyInstance, opts: ServerRouteOpts) {
         );
         done.push(body.enable ? 'включён' : 'выключен');
       }
+      // выходы в Telegram за inbound-ом: выключен - как удалён, порт сменился - снимок заново,
+      // включён - мог стать запасным
+      const moved = body.port !== undefined && body.port !== Number(got.port);
+      const off = body.enable === false && got.enable !== false;
+      if (off || moved) done.push(...(await exitsAfter(id, iid, off)));
+      else if (body.enable === true && got.enable === false) syncSpares();
       await journal.finish(actionId, id, 0, done.length ? done.join(', ') : 'без изменений');
       return { ok: true };
     } catch (e) {

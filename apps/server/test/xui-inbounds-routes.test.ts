@@ -103,7 +103,9 @@ async function setup(
     },
   };
   let kicks = 0;
+  let spareSyncs = 0;
   const dropped: number[] = [];
+  const exitCalls: [string, number, boolean][] = [];
   const app = Fastify();
   await app.register(xuiInboundRoutes, {
     db,
@@ -114,6 +116,12 @@ async function setup(
     engines: {} as never,
     gc: { kick: () => void kicks++ },
     xrayChecksMs: [10, 10],
+    xray: { exits: () => [] },
+    exitsAfter: async (sid: string, iid: number, gone: boolean) => {
+      exitCalls.push([sid, iid, gone]);
+      return ['Основной выход в Telegram перенесён на запасной: NetCore'];
+    },
+    syncSpares: () => void spareSyncs++,
     reach: { dropInbound: (_s: string, i: number) => void dropped.push(i) },
   });
   const finished = async () => {
@@ -128,7 +136,17 @@ async function setup(
     }
     throw new Error('действие не закончилось');
   };
-  return { app, db, inbounds, calls, kicks: () => kicks, dropped, finished };
+  return {
+    app,
+    db,
+    inbounds,
+    calls,
+    kicks: () => kicks,
+    spareSyncs: () => spareSyncs,
+    dropped,
+    exitCalls,
+    finished,
+  };
 }
 
 const body = {
@@ -195,6 +213,8 @@ describe('inbound-ы VLESS из панели', () => {
       expect(a.output).not.toContain(rs.privateKey);
       expect(t.kicks()).toBe(1);
       expect(t.db.select().from(gclientBindings).get()?.state).toBe('pending');
+      // новый RAW может стать запасным выходом в Telegram - запасные пересобираются сразу
+      expect(t.spareSyncs()).toBe(1);
     },
   );
 
@@ -235,5 +255,12 @@ describe('inbound-ы VLESS из панели', () => {
     expect(t.db.select().from(servers).get()?.xuiExcluded).toEqual([]);
     expect(t.dropped).toEqual([7]);
     expect(t.kicks()).toBe(1);
+    expect(t.exitCalls).toEqual([['s1', 7, true]]);
+    const a = t.db
+      .select()
+      .from(actionLog)
+      .all()
+      .find((x) => x.kind === 'xui:inbound.remove');
+    expect(a?.output).toMatch(/перенесён на запасной/);
   });
 });

@@ -228,3 +228,80 @@ export class XraySpares {
     }
   }
 }
+
+/**
+ * Inbound сервера удалили, выключили или поменяли (порт) из панели. Основной выход хранит
+ * снимок параметров inbound-а, поэтому сам за ним не следует: если изменился его inbound -
+ * снимок собирается заново; если inbound-а больше нет (удалён, выключен) - основной выход
+ * переходит на другой подходящий inbound этого сервера, иначе на запасной выход (лучше тот, чья
+ * проверка прошла), иначе снимается. Запасные пересобираются сразу, не через 6 часов.
+ * Возвращает строки для журнала действия.
+ */
+export async function exitsAfterInboundChange(
+  deps: ExitDeps,
+  spares: Pick<XraySpares, 'sync'>,
+  serverId: string,
+  inboundId: number,
+  gone: boolean,
+): Promise<string[]> {
+  const { xray, log } = deps;
+  const notes: string[] = [];
+  const [primary, ...rest] = xray.exits();
+  if (primary && primary.serverId === serverId && primary.inboundId === inboundId) {
+    try {
+      let next: XrayOutbound | null = null;
+      if (!gone) {
+        next = await prepareExit(deps, serverId, inboundId);
+        notes.push('Основной выход в Telegram обновлён под новые настройки inbound');
+      } else {
+        const api = xuiApi(
+          deps.registry,
+          serverId,
+          await xuiToken(deps.db, deps.box, deps.registry, serverId),
+        );
+        const cand = (await realityInbounds(api)).find(
+          (i) => i.id !== inboundId && i.enable && i.tcp && !i.nodeId,
+        );
+        if (cand) {
+          next = await prepareExit(deps, serverId, cand.id);
+          notes.push(
+            `Основной выход в Telegram перенесён на inbound \u00ab${cand.remark || `#${cand.id}`}\u00bb этого сервера`,
+          );
+        } else {
+          const views = xray.status().exits.slice(1);
+          const ok = views.findIndex((v) => v.lastCheck?.ok);
+          next = rest[ok >= 0 ? ok : 0] ?? null;
+          notes.push(
+            next
+              ? `Основной выход в Telegram перенесён на запасной: ${next.serverName}`
+              : 'Основной выход в Telegram снят: подходящего inbound нет, его нужно выбрать в \u00abНастройках\u00bb',
+          );
+        }
+      }
+      await xray.save(next);
+      if (next) await xray.start();
+      else await xray.stop();
+    } catch (e) {
+      notes.push(`Основной выход в Telegram не обновлён: ${(e as Error).message}`);
+    }
+  }
+  void spares.sync().catch((e: Error) => log.warn({ err: e.message }, 'xray: запасные'));
+  return notes;
+}
+
+/** Выходы в Telegram для маршрутов inbound-ов 3X-UI (routes/xui.ts, routes/xui-inbounds.ts). */
+export interface InboundExitHooks {
+  xray: Pick<XrayManager, 'exits'>;
+  exitsAfter: (serverId: string, inboundId: number, gone: boolean) => Promise<string[]>;
+  syncSpares: () => void;
+}
+
+/** Через этот inbound идёт выход в Telegram: основной, запасной или нет. */
+export function telegramExitOf(
+  exits: readonly XrayOutbound[],
+  serverId: string,
+  inboundId: number,
+): 'primary' | 'spare' | null {
+  const i = exits.findIndex((x) => x.serverId === serverId && x.inboundId === inboundId);
+  return i < 0 ? null : i === 0 ? 'primary' : 'spare';
+}
