@@ -10,13 +10,18 @@ import type { RuReach } from '../lib/ru-reach.js';
 import type { InboundExitHooks } from '../lib/xray-exits.js';
 import { type XuiCall, unwrap, xuiApi } from '../lib/xui-api.js';
 import {
+  type NewItem,
+  XRAY_CHECKS_MS,
+  addInbounds,
+  inboundList,
+  watchXray,
+  xrayState,
+} from '../lib/xui-inbound-ops.js';
+import {
   FINGERPRINTS,
   KIND_REMARK,
-  KIND_TITLE,
   MAX_SERVER_NAMES,
-  type NewInboundKind,
   XHTTP_PORT,
-  buildInbound,
   freeRemark,
   inboundKind,
   pickTargets,
@@ -70,13 +75,6 @@ const AddBody = z.object({
   fingerprint: z.enum(FINGERPRINTS),
 });
 
-/**
- * Проверки Xray после добавления. 3X-UI отвечает успехом сразу и ещё ~10 с показывает Xray
- * работающим, а на занятом порту он падает при перезапуске, который 3X-UI делает позже (на
- * 3.10.2 - около 15 с), поэтому смотрим ~28 с.
- */
-const XRAY_CHECKS_MS = [4_000, 6_000, 6_000, 6_000, 6_000];
-
 interface Deps extends ServerRouteOpts, InboundExitHooks {
   gc: Pick<GClients, 'kick'>;
   reach: Pick<RuReach, 'dropInbound'>;
@@ -111,8 +109,6 @@ export async function xuiInboundRoutes(app: FastifyInstance, opts: Deps) {
     if (!row) throw Object.assign(new Error('сервер не найден'), { statusCode: 404 });
     return (row.statusCache as StatusCache | null)?.inventory?.firewall.listeners ?? [];
   };
-  const inboundList = async (api: XuiCall) =>
-    (unwrap(await api('GET', 'inbounds/list'), 'inbounds/list') as Record<string, unknown>[]) ?? [];
   /**
    * Клиенты панели - в inbound-ы сервера сейчас, не через 5 минут. Вызывается после окончания
    * действия: пока оно идёт, сервер занят и синхронизация его пропустила бы.
@@ -182,41 +178,17 @@ export async function xuiInboundRoutes(app: FastifyInstance, opts: Deps) {
       fingerprint: body.fingerprint,
     });
     const say = (line: string) => action.stream('log', `${line}\n`);
-    const created: string[] = [];
     void (async () => {
       try {
-        const st = await xrayState(api);
-        if (st.state !== 'running')
-          throw new Error(
-            `Xray не работает (${st.state}${st.error ? `: ${st.error}` : ''}): сначала нужно его запустить`,
-          );
-        for (const item of body.items) {
-          const title = `${KIND_TITLE[item.kind]} \u00ab${item.remark}\u00bb, порт ${item.port}`;
-          say(`${title}: проверка порта`);
-          const list = await inboundList(api);
-          const busy = portBusy(item.port, list, listeners(id));
-          if (busy) throw new Error(busy);
-          const inbound = buildInbound({
-            kind: item.kind as NewInboundKind,
-            port: item.port,
-            remark: item.remark,
-            target: body.target,
-            serverNames: names,
-            fingerprint: body.fingerprint,
-          });
-          const obj = unwrap(await api('POST', 'inbounds/add', inbound), 'inbounds/add') as {
-            id?: number;
-          } | null;
-          const iid = Number(obj?.id ?? 0);
-          say(`${title}: добавлен, проверка Xray`);
-          const bad = await watchXray(api, checks);
-          if (bad) {
-            if (iid) await api('POST', `inbounds/del/${iid}`).catch(() => undefined);
-            throw new Error(`Xray остановился после добавления, inbound удалён: ${bad}`);
-          }
-          say(`${title}: Xray работает`);
-          created.push(title);
-        }
+        await addInbounds(api, {
+          items: body.items as NewItem[],
+          target: body.target,
+          serverNames: names,
+          fingerprint: body.fingerprint,
+          listeners: () => listeners(id),
+          say,
+          checks,
+        });
         // новый RAW может стать запасным выходом в Telegram этого сервера
         syncSpares();
         say('Клиенты панели добавятся синхронизацией, подписки обновятся сами');
@@ -225,7 +197,7 @@ export async function xuiInboundRoutes(app: FastifyInstance, opts: Deps) {
       } catch (e) {
         say(`ОШИБКА: ${(e as Error).message}`);
         await action.finish(1);
-        if (created.length) resync(id);
+        if (((e as { created?: string[] }).created ?? []).length) resync(id);
       }
     })();
     return { actionId: action.id };
@@ -396,26 +368,4 @@ export async function xuiInboundRoutes(app: FastifyInstance, opts: Deps) {
       });
     }
   });
-}
-
-/** Состояние Xray по server/status 3X-UI. */
-async function xrayState(api: XuiCall): Promise<{ state: string; error: string }> {
-  const obj = unwrap(await api('GET', 'server/status'), 'server/status') as {
-    xray?: { state?: string; errorMsg?: string };
-  } | null;
-  return { state: String(obj?.xray?.state ?? 'unknown'), error: String(obj?.xray?.errorMsg ?? '') };
-}
-
-/** Xray после добавления: несколько проверок подряд; не работает - причина, иначе null. */
-async function watchXray(api: XuiCall, waits = XRAY_CHECKS_MS): Promise<string | null> {
-  for (const ms of waits) {
-    await new Promise((r) => setTimeout(r, ms));
-    try {
-      const st = await xrayState(api);
-      if (st.state !== 'running') return st.error || st.state;
-    } catch (e) {
-      return (e as Error).message;
-    }
-  }
-  return null;
 }

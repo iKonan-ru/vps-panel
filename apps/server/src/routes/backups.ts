@@ -19,6 +19,7 @@ import type { Env } from '../config.js';
 import type { Db } from '../db/index.js';
 import { backups, servers } from '../db/schema.js';
 import { actionJournal } from '../lib/action-journal.js';
+import type { BackupRestorer } from '../lib/backup-restore.js';
 import { newId } from '../lib/ids.js';
 import type { UiHub } from '../lib/ui-hub.js';
 
@@ -32,9 +33,9 @@ export const MAX_BACKUP_BYTES = 2 * 1024 * 1024 * 1024;
 
 export async function backupRoutes(
   app: FastifyInstance,
-  opts: { db: Db; env: Env; registry: AgentRegistry; hub: UiHub },
+  opts: { db: Db; env: Env; registry: AgentRegistry; hub: UiHub; restorer: BackupRestorer },
 ) {
-  const { db, env, registry, hub } = opts;
+  const { db, env, registry, hub, restorer } = opts;
   const journal = actionJournal(db, hub, registry);
   const dir = join(env.DATA_DIR, 'backups');
   // 700: без x каталог не открыть (с 600 загрузка бэкапа падает с EACCES), без
@@ -57,12 +58,9 @@ export async function backupRoutes(
       sha256?: string;
     }
   >();
-  // used - ссылку уже скачали: агент скачивает архив один раз
-  const downloads = new Map<string, { backupId: string; expires: number; used?: boolean }>();
   const sweep = () => {
     const now = Date.now();
     for (const [k, v] of uploads) if (v.expires < now) uploads.delete(k);
-    for (const [k, v] of downloads) if (v.expires < now) downloads.delete(k);
   };
 
   app.addContentTypeParser('application/gzip', (_req, payload, done) => done(null, payload));
@@ -217,59 +215,38 @@ export async function backupRoutes(
   });
 
   /** Восстановить на сервер: агент скачивает архив по одноразовой ссылке. */
-  app.post('/api/backups/:bid/restore', async (req, reply) => {
+  app.post('/api/backups/:bid/restore', async (req) => {
     const { bid } = z.object({ bid: z.string() }).parse(req.params);
     const { serverId, components } = z
       .object({ serverId: z.string(), components: z.array(z.string().max(32)).default([]) })
       .parse(req.body);
-    const row = (await db.select().from(backups).where(eq(backups.id, bid)).limit(1))[0];
-    if (!row || !existsSync(file(bid)))
-      return reply.code(404).send({ error: 'резервная копия не найдена' });
-    if (!registry.isOnline(serverId)) return reply.code(409).send({ error: 'сервер не в сети' });
-    sweep();
-    const token = randomBytes(24).toString('base64url');
-    downloads.set(token, { backupId: bid, expires: Date.now() + 30 * 60_000 });
+    const row = restorer.get(bid);
+    if (!row) throw Object.assign(new Error('резервная копия не найдена'), { statusCode: 404 });
+    if (!registry.isOnline(serverId))
+      throw Object.assign(new Error('сервер не в сети'), { statusCode: 409 });
     const action = journal.open(serverId, 'backup.restore', {
       backupId: bid,
       from: row.serverName,
       components,
     });
-    const actionId = action.id;
-    const onStream = action.stream;
-    const finish = (exitCode: number) => {
-      downloads.delete(token);
-      return action.finish(exitCode);
-    };
-    registry
-      .request(
-        serverId,
-        'backup.restore',
-        {
-          downloadUrl: `${env.PANEL_PUBLIC_URL}/api/agent/backups/download/${token}`,
-          sha256: row.sha256,
-          components,
-        },
-        { timeoutMs: 20 * 60_000, onStream },
-      )
-      .then(() => finish(0))
+    restorer
+      .restore(serverId, bid, components, action.stream)
+      .then(() => action.finish(0))
       .catch((e: Error) => {
-        onStream('stderr', `\nОШИБКА: ${e.message}\n`);
-        void finish(1);
+        action.stream('stderr', `\nОШИБКА: ${e.message}\n`);
+        void action.finish(1);
       });
-    return { actionId };
+    return { actionId: action.id };
   });
 
   // токен в адресе: в журнал контейнера запрос не пишется, в журнале Caddy он
   // замаскирован; ссылка одноразовая
   app.get('/api/agent/backups/download/:token', { logLevel: 'warn' }, async (req, reply) => {
-    sweep();
     const { token } = z.object({ token: z.string() }).parse(req.params);
-    const d = downloads.get(token);
-    if (!d || d.used || !existsSync(file(d.backupId)))
-      return reply.code(403).send({ error: 'ссылка недействительна' });
-    d.used = true;
-    reply.header('content-length', String(statSync(file(d.backupId)).size));
+    const f = restorer.take(token);
+    if (!f) return reply.code(403).send({ error: 'ссылка недействительна' });
+    reply.header('content-length', String(statSync(f).size));
     reply.type('application/gzip');
-    return reply.send(createReadStream(file(d.backupId)));
+    return reply.send(createReadStream(f));
   });
 }

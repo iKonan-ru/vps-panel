@@ -7,3 +7,4 @@ export * from './server.js';
 export * from './standard.js';
 export * from './version.js';
 export * from './notify.js';
+export * from './setup.js';
