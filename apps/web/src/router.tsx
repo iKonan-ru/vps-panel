@@ -52,7 +52,11 @@ function Gate() {
         </Button>
       </div>
     );
-  if (!me.data || (setup.data && !setup.data.setupDone)) return <Navigate to="/login" />;
+  if (!me.data || (setup.data && !setup.data.setupDone)) {
+    // пришли по ссылке (уведомление в Telegram) без сессии: после входа - на ту же страницу
+    const back = location.pathname + location.search;
+    return <Navigate to="/login" search={back === '/' ? {} : { next: back }} />;
+  }
   return <AppLayout login={me.data.login} />;
 }
 
@@ -71,6 +75,9 @@ function Entry() {
 const loginRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: '/login',
+  // next - куда вернуться после входа (страница панели или панель сервиса на поддомене)
+  validateSearch: (s: Record<string, unknown>): { next?: string } =>
+    typeof s.next === 'string' ? { next: s.next } : {},
   component: Entry,
 });
 /**

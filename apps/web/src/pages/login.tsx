@@ -95,10 +95,15 @@ export function LoginPage() {
     // Кладём свежий ответ в кэш до перехода, иначе Gate увидит старое "не авторизован" и вернёт на вход.
     const me = await api<Me>('/api/auth/me');
     qc.setQueryData(['me'], me);
-    // ?next=/api/proxy/open/... - пришли с поддомена панели сервиса: вернуться туда
+    // ?next=/api/proxy/open/... - пришли с поддомена панели сервиса: вернуться туда;
+    // ?next=/servers/... - страница панели, открытая без сессии (ссылка из уведомления)
     const next = new URLSearchParams(location.search).get('next') ?? '';
     if (next.startsWith('/api/proxy/open/')) {
       location.href = next;
+      return;
+    }
+    if (/^\/(?![/\\]|api\/|login)/.test(next)) {
+      await navigate({ href: next });
       return;
     }
     await navigate({ to: '/' });
