@@ -76,6 +76,7 @@ import { uiWsRoutes } from './routes/ui-ws.js';
 import { updateRoutes } from './routes/updates.js';
 import { wdttRoutes } from './routes/wdtt.js';
 import { xrayRoutes } from './routes/xray.js';
+import { xuiInboundRoutes } from './routes/xui-inbounds.js';
 import { xuiRoutes } from './routes/xui.js';
 
 export interface AppOptions {
@@ -328,6 +329,8 @@ export async function buildApp(opts: AppOptions) {
   // метрики агентов раз в 2 с, пока открыта вкладка панели, иначе раз в 30 с
   stops.push(startMetricsPace(registry, hub, app.log));
   await app.register(gclientRoutes, { db, registry, box, gc, env, hub });
+  // добавление и удаление inbound-ов VLESS: после изменений - синхронизация клиентов сразу
+  await app.register(xuiInboundRoutes, { ...serverRouteOpts, gc, reach: ruReach });
   await app.register(clientHostRoutes, {
     db,
     gc,
