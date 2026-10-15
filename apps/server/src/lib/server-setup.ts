@@ -217,7 +217,7 @@ export function serverSetup(deps: SetupDeps) {
         steps.push({
           ...s,
           enabled: inSnap && s.enabled,
-          ...(main ? { locked: true } : {}),
+          ...(main ? { locked: true, note: 'контейнер из копии, с её портом и подсетью' } : {}),
           answers: {
             ...(s.answers ?? {}),
             ...(snap.answers.awg ?? {}),
@@ -238,6 +238,7 @@ export function serverSetup(deps: SetupDeps) {
             title: `AmneziaWG ${x.version || ''}: дополнительный контейнер`.replace('  ', ' '),
             enabled: true,
             locked: true,
+            note: 'контейнер из копии',
             answers: {
               AWG_VERSION: x.version || '2.0',
               AWG_SERVER_PORT: String(x.port),
@@ -265,6 +266,7 @@ export function serverSetup(deps: SetupDeps) {
           title: 'Данные из резервной копии',
           enabled: true,
           locked: true,
+          note: 'ключи, пользователи и inbound-ы старого сервера',
           answers: { BACKUP: bid },
         });
       steps.push(s);

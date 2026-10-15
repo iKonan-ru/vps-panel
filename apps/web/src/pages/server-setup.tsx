@@ -200,6 +200,7 @@ export function ServerSetupPage() {
   const [checks, setChecks] = useState<SetupCheck[] | null>(null);
   // шаги с развёрнутыми параметрами (по умолчанию видны только пароли)
   const [open, setOpen] = useState<Set<string>>(new Set());
+  const [showOutput, setShowOutput] = useState(false);
   const act = useAction();
   const progress = prog.data?.progress ?? null;
   const running = Boolean(progress && !progress.finishedAt);
@@ -287,8 +288,8 @@ export function ServerSetupPage() {
               <Button
                 size="sm"
                 variant="primary"
-                disabled={busy}
-                title={lock.reason}
+                disabled={busy || missingPasswords}
+                title={missingPasswords ? 'Не заполнены пароли' : lock.reason}
                 onClick={() => start(failed.id)}
               >
                 <RotateCcw className="size-3.5" />
@@ -319,10 +320,21 @@ export function ServerSetupPage() {
               </div>
             ))}
           </div>
-          <ActionOutput
-            actionId={progress.actionId}
-            onFinished={() => void qc.invalidateQueries({ queryKey: ['servers', id] })}
-          />
+          {running || showOutput ? (
+            <ActionOutput
+              actionId={progress.actionId}
+              onFinished={() => void qc.invalidateQueries({ queryKey: ['servers', id] })}
+            />
+          ) : (
+            <button
+              type="button"
+              className="inline-flex w-fit items-center gap-1 text-xs text-accent"
+              onClick={() => setShowOutput(true)}
+            >
+              <ChevronDown className="size-3.5" />
+              Показать вывод
+            </button>
+          )}
         </Card>
       )}
 
@@ -339,7 +351,7 @@ export function ServerSetupPage() {
                 disabled={busy || st.locked}
                 onChange={(e) => set(st.id, { enabled: e.target.checked })}
               />
-              {st.enabled && (
+              {st.enabled && ['service', 'inbounds', 'client-host'].includes(st.kind) && (
                 <div className="pl-6.5">
                   <StepFields
                     step={st}
