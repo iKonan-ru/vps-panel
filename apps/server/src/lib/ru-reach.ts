@@ -505,6 +505,16 @@ export class RuReach {
     }
   }
 
+  /** Inbound удалили из панели: его цель уходит сразу, не дожидаясь проверки в :00/:30. */
+  dropInbound(serverId: string, inboundId: number) {
+    const store = this.load();
+    const entry = store[serverId];
+    if (!entry) return;
+    const n = entry.targets.length;
+    entry.targets = entry.targets.filter((t) => t.key !== `xui:${inboundId}`);
+    if (entry.targets.length !== n) this.save(store);
+  }
+
   /** Проверка кнопкой: не чаще раза в 2 минуты на сервер. */
   async manual(serverId: string): Promise<ServerReach> {
     const last = this.manualAt.get(serverId) ?? 0;

@@ -137,7 +137,7 @@ Amnezia AWG, WDTT, OpenFlux, прокси для браузера, перево�
 
 | Сервис | Проект | Что делает панель |
 | --- | --- | --- |
-| 3X-UI (Xray, VLESS Reality и XHTTP) | [MHSanaei/3x-ui](https://github.com/MHSanaei/3x-ui) | установка, клиенты во всех inbound, ссылки для подписки, обновление 3X-UI и Xray, вход в её панель через поддомен |
+| 3X-UI (Xray, VLESS Reality и XHTTP) | [MHSanaei/3x-ui](https://github.com/MHSanaei/3x-ui) | установка, добавление и удаление соединений VLESS (RAW и XHTTP с Reality, цель подбирается с сервера), клиенты во всех inbound, ссылки для подписки, обновление 3X-UI и Xray, вход в её панель через поддомен |
 | MTProxyL (движок telemt) | [Liafanx/MTProxyL](https://github.com/Liafanx/MTProxyL), [telemt/telemt](https://github.com/telemt/telemt) | установка, секрет на клиента, ссылки, перезапуск, обновление, смена версии движка, веб-панель через поддомен |
 | AmneziaWG 2.0 и 3.x | [amnezia-vpn](https://github.com/amnezia-vpn) | экземпляры и параметры протокола, пиры на устройство, конфиги и QR |
 | WDTT (qWDTT) | [SpaceNeuroX/proxy-turn-vk-android](https://github.com/SpaceNeuroX/proxy-turn-vk-android) | установка, пароли и устройства клиентов, хеши звонков VK |
