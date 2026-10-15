@@ -20,6 +20,7 @@ import type { Db } from '../db/index.js';
 import { backups, servers } from '../db/schema.js';
 import { actionJournal } from '../lib/action-journal.js';
 import type { BackupRestorer } from '../lib/backup-restore.js';
+import { backupSnapshot } from '../lib/backup-setup.js';
 import { newId } from '../lib/ids.js';
 import type { UiHub } from '../lib/ui-hub.js';
 
@@ -124,7 +125,8 @@ export async function backupRoutes(
           hostname: man.hostname,
           size: statSync(file(backupId)).size,
           sha256: man.sha256,
-          manifest: { components: man.components },
+          // что стояло на сервере: по нему настройка поставит те же сервисы на чистый сервер
+          manifest: { components: man.components, setup: await backupSnapshot(db, registry, id) },
         });
         hub.broadcast({ type: 'server.changed', serverId: id });
         await finish(0);

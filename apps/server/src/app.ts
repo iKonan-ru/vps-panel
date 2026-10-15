@@ -361,6 +361,7 @@ export async function buildApp(opts: AppOptions) {
     hub,
     journal: actionJournal(db, hub, registry),
     runner: catalogRunner({ db, env, registry, box, certs: panelCerts, log: app.log }),
+    restorer,
     gc,
     reach: ruReach,
     syncSpares: () => void xraySpares.sync().catch(() => undefined),

@@ -1,4 +1,4 @@
-import { mkdtempSync, rmSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { eq } from 'drizzle-orm';
@@ -7,8 +7,10 @@ import type { AgentRegistry } from '../src/agents/registry.js';
 import { CATALOG } from '../src/commands/index.js';
 import type { Env } from '../src/config.js';
 import { type Db, createDb } from '../src/db/index.js';
-import { servers } from '../src/db/schema.js';
+import { access, backups, servers } from '../src/db/schema.js';
+import { upsertAccess } from '../src/lib/access.js';
 import { actionJournal } from '../src/lib/action-journal.js';
+import { BackupRestorer } from '../src/lib/backup-restore.js';
 import { catalogRunner } from '../src/lib/catalog-runner.js';
 import { SecretBox } from '../src/lib/secret-box.js';
 import { serverSetup } from '../src/lib/server-setup.js';
@@ -67,6 +69,11 @@ const registry = {
       return { exitCode: 0, killed: false };
     }
     calls.push(method);
+    // раскладка копии: в 3X-UI появляются inbound-ы старого сервера
+    if (method === 'backup.restore') {
+      inbounds.push({ id: 50, remark: 'old', port: 28512, protocol: 'vless' });
+      return {};
+    }
     if (method === 'awg.status') return { instances: [], docker: true };
     if (method === 'xui.token') return { token: 'tok' };
     if (method === 'xui.api') {
@@ -111,6 +118,7 @@ function make() {
     hub: hub as never,
     journal,
     runner: catalogRunner({ db, env, registry, box, log: { warn: () => {} } }),
+    restorer: new BackupRestorer(db, env, registry),
     gc: { kick: () => void kicks++ },
     reach: { check: async () => ({}) },
     timing: { rebootDownMs: 10, rebootUpMs: 10, pollMs: 1, xrayChecks: [1] },
@@ -269,5 +277,102 @@ describe('настройка сервера', () => {
       },
     }));
     await expect(s.run('s1', { steps })).rejects.toThrow(/порт 8443/);
+  });
+
+  it('восстановление из копии: сервисы как на старом сервере, AWG из копии, данные, доступы', async () => {
+    db.insert(servers)
+      .values({ id: 's0', name: 'Old', host: '198.51.100.7', agentTokenHash: 'x' } as never)
+      .run();
+    await upsertAccess(db, box, 's0', {
+      kind: 'xui',
+      title: '3X-UI',
+      fields: [{ label: 'Пароль', value: 'old-pass', secret: true }],
+    });
+    mkdirSync(join(dir, 'backups'), { recursive: true });
+    writeFileSync(join(dir, 'backups', 'b1.tar.gz'), 'x');
+    db.insert(backups)
+      .values({
+        id: 'b1',
+        serverId: 's0',
+        serverName: 'Old',
+        sha256: 'a'.repeat(64),
+        manifest: {
+          components: [
+            { id: 'xui' },
+            { id: 'wdtt' },
+            { id: 'amnezia', containers: ['amnezia-awg2', 'amnezia-awg2-51820'] },
+          ],
+          setup: {
+            services: ['xui', 'wdtt', 'amnezia', 'naive'],
+            answers: { xui: { XUI_PANEL_PORT: '20530' } },
+            awg: [
+              { container: 'amnezia-awg2', version: '3.1', port: 55424, subnet: '10.8.3.0' },
+              { container: 'amnezia-awg2-51820', version: '2.0', port: 51820, subnet: '10.8.4.0' },
+            ],
+            clientHost: null,
+          },
+        },
+      } as never)
+      .run();
+    const s = make();
+    const plan = await s.plan('s1', 'b1');
+    const on = plan.steps.filter((x) => x.enabled).map((x) => x.id);
+    expect(on).toEqual([
+      'key',
+      'baseline',
+      'upgrade',
+      'client-host',
+      'xui',
+      'awg',
+      'wdtt',
+      'naive',
+      'awg-extra:51820',
+      'restore',
+      'inbounds',
+      'gclients',
+      'reboot',
+      'reach',
+    ]);
+    const xui = plan.steps.find((x) => x.id === 'xui');
+    expect(xui?.fromBackup).toBe(true);
+    expect(xui?.answers?.XUI_PANEL_PORT).toBe('20530');
+    expect(plan.steps.find((x) => x.id === 'awg')?.answers).toMatchObject({
+      AWG_VERSION: '3.1',
+      AWG_SERVER_PORT: '55424',
+      AWG_SUBNET_IP: '10.8.3.0',
+    });
+    expect(plan.steps.find((x) => x.id === 'awg-extra:51820')?.locked).toBe(true);
+    // пароли не вводятся, второй AWG нельзя выключить
+    const steps = plan.steps.map((x) => ({
+      id: x.id,
+      enabled: x.id === 'awg-extra:51820' ? false : x.enabled,
+      answers: x.answers ?? {},
+    }));
+    const r = await s.run('s1', { backupId: 'b1', steps });
+    for (let i = 0; i < 200 && !s.progress('s1')?.finishedAt; i++)
+      await new Promise((res) => setTimeout(res, 10));
+    const p = s.progress('s1');
+    expect(p?.actionId).toBe(r.actionId);
+    expect(p?.backupId).toBe('b1');
+    expect(p?.steps.find((x) => x.state === 'failed')).toBeUndefined();
+    expect(calls.filter((c) => c.startsWith('cmd:'))).toEqual([
+      'cmd:xui',
+      'cmd:awg',
+      'cmd:wdtt',
+      'cmd:naive',
+      'cmd:awg:extra',
+    ]);
+    expect(calls.indexOf('backup.restore')).toBeGreaterThan(-1);
+    // токен 3X-UI выпущен после раскладки (база заменена)
+    expect(calls.lastIndexOf('xui.token')).toBeGreaterThan(calls.indexOf('backup.restore'));
+    // inbound-ы пришли из копии - свои не добавляются
+    expect(inbounds.map((i) => i.remark)).toEqual(['old']);
+    expect(p?.steps.find((x) => x.id === 'inbounds')?.state).toBe('skipped');
+    const acc = db
+      .select()
+      .from(access)
+      .all()
+      .find((a) => a.serverId === 's1' && a.kind === 'xui');
+    expect(acc && box.open(acc.fields[0]?.value ?? '')).toBe('old-pass');
   });
 });

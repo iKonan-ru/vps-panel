@@ -28,11 +28,17 @@ export interface SetupStep {
   note?: string;
   /** Ответы команды (без паролей - их вводят на экране) или поля шага. */
   answers?: Record<string, string>;
+  /** Шаг нельзя выключить (контейнер AWG из копии). */
+  locked?: boolean;
+  /** Данные сервиса придут из копии: паролей не спрашивают, их заменит архив. */
+  fromBackup?: boolean;
 }
 
 /** Ход последнего запуска настройки сервера. */
 export interface SetupProgress {
   actionId: string;
+  /** Запуск с восстановлением из этой копии. */
+  backupId?: string | undefined;
   startedAt: string;
   finishedAt: string | null;
   /** Шаги запуска с состоянием; note - итог или причина ошибки. */
@@ -42,10 +48,14 @@ export interface SetupProgress {
 export interface SetupPlan {
   steps: SetupStep[];
   progress: SetupProgress | null;
+  /** План восстановления: копия, с какого сервера и когда. */
+  backup?: { id: string; serverName: string; createdAt: string };
 }
 
 /** Запуск: отмеченные шаги с ответами; from - продолжить с этого шага (сделанное пропускается). */
 export interface SetupRunRequest {
+  /** Восстановить из копии: сервисы - как были на старом сервере, затем данные архива. */
+  backupId?: string | undefined;
   steps: { id: string; enabled: boolean; answers?: Record<string, string> | undefined }[];
   from?: string | undefined;
 }

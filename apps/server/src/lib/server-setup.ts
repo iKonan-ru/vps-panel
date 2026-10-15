@@ -1,3 +1,4 @@
+import { randomBytes } from 'node:crypto';
 import type {
   SetupCheck,
   SetupPlan,
@@ -6,17 +7,21 @@ import type {
   SetupStep,
   SetupStepState,
 } from '@vps/protocol';
-import { eq } from 'drizzle-orm';
+import { and, eq, inArray } from 'drizzle-orm';
 import type { AgentRegistry } from '../agents/registry.js';
 import type { StatusCache } from '../agents/state.js';
 import { findCommand, validateAnswers } from '../commands/index.js';
 import type { Env } from '../config.js';
 import type { Db } from '../db/index.js';
-import { gclientBindings, servers } from '../db/schema.js';
+import { access, gclientBindings, servers } from '../db/schema.js';
+import { upsertAccess } from './access.js';
 import { type actionJournal, liveOutput } from './action-journal.js';
+import type { BackupRestorer } from './backup-restore.js';
+import { AWG_MAIN, type BackupSetup, legacySnapshot } from './backup-setup.js';
 import type { CatalogRunner } from './catalog-runner.js';
 import { checkClientHost } from './client-host.js';
 import { type GClients, queued } from './gclients.js';
+import { MT_HOST_SCRIPT } from './mtproxyl-host.js';
 import { redactOutput } from './redact.js';
 import type { SecretBox } from './secret-box.js';
 import { getJsonSetting, putSetting } from './settings.js';
@@ -31,7 +36,7 @@ import {
   portBusy,
   randomFreePort,
 } from './xui-new-inbound.js';
-import { xuiToken } from './xui-token.js';
+import { saveXuiToken, xuiToken } from './xui-token.js';
 
 /** Сервисы каталога по порядку установки: команда и вид сервиса в отчёте агента. */
 const SERVICES: { command: string; kind: string; title: string }[] = [
@@ -56,6 +61,7 @@ export interface SetupDeps {
   hub: UiHub;
   journal: ReturnType<typeof actionJournal>;
   runner: CatalogRunner;
+  restorer: BackupRestorer;
   gc: Pick<GClients, 'kick'>;
   reach: { check: (serverId: string) => Promise<unknown> };
   /** Новый RAW может стать запасным выходом в Telegram. */
@@ -71,7 +77,7 @@ export interface SetupDeps {
  * шаг можно продолжить, сделанное не повторяется.
  */
 export function serverSetup(deps: SetupDeps) {
-  const { db, env, registry, box, hub, journal, runner, gc, reach } = deps;
+  const { db, env, registry, box, hub, journal, runner, restorer, gc, reach } = deps;
   const timing = deps.timing ?? { rebootDownMs: 120_000, rebootUpMs: 600_000, pollMs: 3_000 };
 
   const row = (id: string) => {
@@ -108,7 +114,21 @@ export function serverSetup(deps: SetupDeps) {
     return p;
   }
 
-  async function plan(id: string): Promise<SetupPlan> {
+  /** Копия для восстановления и снимок набора старого сервера. */
+  function backupSource(bid: string) {
+    const bk = restorer.get(bid);
+    if (!bk) throw err('резервная копия не найдена', 404);
+    const m = bk.manifest as Record<string, unknown>;
+    const snap = (m.setup as BackupSetup | undefined) ?? legacySnapshot(db, m, bk.serverId);
+    // что лежит в архиве: без компонента - сервис ставится, но данных для него нет
+    const comps = new Set(
+      ((Array.isArray(m.components) ? m.components : []) as { id?: string }[]).map((c) => c.id),
+    );
+    return { bk, snap, comps };
+  }
+
+  async function plan(id: string, backupId?: string): Promise<SetupPlan> {
+    if (backupId) return backupPlan(id, backupId);
     const r = row(id);
     const steps: SetupStep[] = [
       { id: 'key', kind: 'key', title: 'Ключ панели в root', enabled: true },
@@ -170,14 +190,118 @@ export function serverSetup(deps: SetupDeps) {
     return { steps, progress: progress(id) };
   }
 
+  /**
+   * План восстановления на чистый сервер: сервисы - как на старом сервере, с его портами;
+   * контейнеры AWG из копии - обязательно; затем раскладка данных архива. Пароли сервисов,
+   * чьи данные в архиве, не спрашиваются: их заменит копия.
+   */
+  async function backupPlan(id: string, bid: string): Promise<SetupPlan> {
+    const { bk, snap, comps } = backupSource(bid);
+    const base = (await plan(id)).steps;
+    const steps: SetupStep[] = [];
+    for (const s of base) {
+      if (s.id === 'client-host') {
+        const name = snap.clientHost ?? s.answers?.NAME ?? '';
+        steps.push({
+          ...s,
+          answers: { NAME: name },
+          ...(snap.clientHost
+            ? { note: 'имя старого сервера: его A-запись нужно перевести на новый IP' }
+            : {}),
+        });
+        continue;
+      }
+      if (s.kind === 'service' && s.id === 'awg') {
+        const main = snap.awg.find((a) => a.container === AWG_MAIN);
+        const inSnap = snap.services.includes('amnezia');
+        steps.push({
+          ...s,
+          enabled: inSnap && s.enabled,
+          ...(main ? { locked: true } : {}),
+          answers: {
+            ...(s.answers ?? {}),
+            ...(snap.answers.awg ?? {}),
+            AWG_INSTANCE: 'main',
+            ...(main?.version ? { AWG_VERSION: main.version } : {}),
+            ...(main?.port ? { AWG_SERVER_PORT: String(main.port) } : {}),
+            ...(main?.subnet ? { AWG_SUBNET_IP: main.subnet } : {}),
+          },
+        });
+        continue;
+      }
+      if (s.id === 'awg-extra') {
+        const extras = snap.awg.filter((a) => a.container !== AWG_MAIN);
+        for (const x of extras)
+          steps.push({
+            ...s,
+            id: `awg-extra:${x.port}`,
+            title: `AmneziaWG ${x.version || ''}: дополнительный контейнер`.replace('  ', ' '),
+            enabled: true,
+            locked: true,
+            answers: {
+              AWG_VERSION: x.version || '2.0',
+              AWG_SERVER_PORT: String(x.port),
+              ...(x.subnet ? { AWG_SUBNET_IP: x.subnet } : {}),
+            },
+          });
+        if (!extras.length) steps.push(s);
+        continue;
+      }
+      if (s.kind === 'service' && s.command) {
+        const kind = SERVICES.find((x) => x.command === s.command)?.kind ?? '';
+        const inSnap = snap.services.includes(kind);
+        steps.push({
+          ...s,
+          enabled: inSnap && s.enabled,
+          ...(comps.has(s.command) ? { fromBackup: true } : {}),
+          answers: { ...(s.answers ?? {}), ...(snap.answers[s.command] ?? {}) },
+        });
+        continue;
+      }
+      if (s.id === 'inbounds')
+        steps.push({
+          id: 'restore',
+          kind: 'restore',
+          title: 'Данные из резервной копии',
+          enabled: true,
+          locked: true,
+          answers: { BACKUP: bid },
+        });
+      steps.push(s);
+    }
+    return {
+      steps,
+      progress: progress(id),
+      backup: { id: bk.id, serverName: bk.serverName, createdAt: bk.createdAt },
+    };
+  }
+
   /** Шаги запуска: план, поверх - выбор и ответы из запроса (неизвестные id не берутся). */
   async function resolve(id: string, req: SetupRunRequest): Promise<SetupStep[]> {
-    const base = (await plan(id)).steps;
+    const base = (await plan(id, req.backupId)).steps;
     return base.map((s) => {
       const q = req.steps.find((x) => x.id === s.id);
-      if (!q) return { ...s, enabled: false };
-      return { ...s, enabled: q.enabled, answers: { ...(s.answers ?? {}), ...(q.answers ?? {}) } };
+      // шаг из копии, который нельзя выключить, идёт и без явного выбора
+      if (!q) return { ...s, enabled: Boolean(s.locked) };
+      return {
+        ...s,
+        enabled: s.locked ? true : q.enabled,
+        answers: { ...(s.answers ?? {}), ...(q.answers ?? {}) },
+      };
     });
+  }
+
+  /**
+   * Ответы шага; у сервиса из копии пустые пароли - случайные: установщику пароль нужен, но
+   * после раскладки архива действует пароль старого сервера.
+   */
+  function withPasswords(s: SetupStep): Record<string, string> {
+    const a = { ...(s.answers ?? {}) };
+    if (!s.fromBackup || !s.command) return a;
+    for (const p of findCommand(s.command)?.params ?? [])
+      if (p.type === 'password' && p.required && !a[p.name])
+        a[p.name] = randomBytes(12).toString('hex');
+    return a;
   }
 
   /** Ошибки полей и пересечения портов - до запуска, без сервера. */
@@ -194,8 +318,8 @@ export function serverSetup(deps: SetupDeps) {
       if (s.kind === 'service' && s.command) {
         const c = findCommand(s.command);
         if (!c) continue;
-        if (s.id !== 'awg-extra')
-          for (const e of validateAnswers(c, s.answers ?? {}))
+        if (!s.id.startsWith('awg-extra'))
+          for (const e of validateAnswers(c, withPasswords(s)))
             out.push({ step: s.id, level: 'fail', text: e });
         for (const p of c.params)
           if (p.type === 'port') port(s, p.label, s.answers?.[p.name]?.trim());
@@ -214,9 +338,9 @@ export function serverSetup(deps: SetupDeps) {
     const steps = await resolve(id, req);
     const checks = localChecks(steps);
     for (const s of steps.filter((x) => x.enabled && x.kind === 'service' && x.command)) {
-      if (s.id === 'awg-extra') continue;
+      if (s.id.startsWith('awg-extra')) continue;
       try {
-        const r = await runner.preflight(id, s.command as string, s.answers ?? {});
+        const r = await runner.preflight(id, s.command as string, withPasswords(s));
         for (const ch of r.checks)
           if (ch.level !== 'ok' && !checks.some((x) => x.step === s.id && x.text === ch.text))
             checks.push({ step: s.id, ...ch });
@@ -243,9 +367,12 @@ export function serverSetup(deps: SetupDeps) {
   }
 
   /** Запуск: id действия сразу, шаги - в фоне. */
-  async function run(id: string, req: SetupRunRequest): Promise<{ actionId: string }> {
+  async function run(id: string, request: SetupRunRequest): Promise<{ actionId: string }> {
     if (!registry.isOnline(id)) throw err('сервер не в сети', 409);
+    let req = request;
     const prev = progress(id);
+    // продолжение восстановления - с той же копией
+    if (req.from && prev?.backupId) req = { ...req, backupId: prev.backupId };
     if (req.from && !prev?.steps.some((s) => s.id === req.from))
       throw err('нечего продолжать: шага нет в прошлом запуске', 400);
     // продолжение - те же шаги, что в прошлом запуске (план мог измениться: сервис уже стоит)
@@ -267,10 +394,14 @@ export function serverSetup(deps: SetupDeps) {
         if (s.id === req.from) break;
         if (s.state === 'done' || s.state === 'skipped') done.add(s.id);
       }
-    const action = journal.open(id, 'server.setup', { steps: steps.map((s) => s.id) });
+    const action = journal.open(id, 'server.setup', {
+      steps: steps.map((s) => s.id),
+      ...(req.backupId ? { backupId: req.backupId } : {}),
+    });
     const say = (line: string) => action.stream('log', `${line}\n`);
     const state: SetupProgress = {
       actionId: action.id,
+      ...(req.backupId ? { backupId: req.backupId } : {}),
       startedAt: new Date().toISOString(),
       finishedAt: null,
       steps: steps.map((s) => ({
@@ -324,6 +455,65 @@ export function serverSetup(deps: SetupDeps) {
     secrets: string[];
   };
 
+  /**
+   * Раскладка архива на поставленные сервисы, затем то, что после неё стало другим: токен API
+   * 3X-UI (база заменена - прежний токен в ней не действует), "Доступы" к панелям старого
+   * сервера (логины и пароли теперь его), адрес в ссылках MTProxyL - этого сервера.
+   */
+  async function restoreStep(id: string, bid: string, ctx: Ctx): Promise<string> {
+    const { bk, comps } = backupSource(bid);
+    ctx.say(`Копия ${bk.serverName} от ${bk.createdAt.slice(0, 16).replace('T', ' ')}`);
+    await restorer.restore(id, bid, [], ctx.action.stream);
+    await registry.refreshInventory(id);
+    const notes: string[] = ['данные разложены'];
+    if (comps.has('xui') && has(id, 'xui')) {
+      const r = await registry.request<{ token: string }>(
+        id,
+        'xui.token',
+        {},
+        { timeoutMs: 60_000 },
+      );
+      await saveXuiToken(db, box, id, r.token);
+      ctx.secrets.push(r.token);
+      notes.push('токен API 3X-UI выпущен заново');
+    }
+    if (bk.serverId && bk.serverId !== id) {
+      const kinds = ['xui', 'mtproxyl', 'wdtt'].filter((k) => comps.has(k));
+      const rows = kinds.length
+        ? db
+            .select()
+            .from(access)
+            .where(and(eq(access.serverId, bk.serverId), inArray(access.kind, kinds)))
+            .all()
+        : [];
+      for (const r of rows)
+        await upsertAccess(db, box, id, {
+          kind: r.kind,
+          title: r.title,
+          fields: r.fields.map((f) => ({ ...f, value: box.open(f.value) })),
+          note: r.note,
+        });
+      if (rows.length) notes.push('доступы к панелям - как у старого сервера');
+    }
+    if (comps.has('mtproxyl') && has(id, 'mtproxyl')) {
+      const res = await registry.request<{ exitCode: number }>(
+        id,
+        'command.run',
+        {
+          runId: ctx.action.id,
+          script: MT_HOST_SCRIPT,
+          env: { MT_HOST: row(id).clientHost ?? '' },
+          files: {},
+          cleanup: [],
+          timeoutSec: 120,
+        },
+        { timeoutMs: 180_000, onStream: ctx.action.stream },
+      );
+      if (res.exitCode !== 0) throw new Error('MTProxyL: не удалось сменить адрес в ссылках');
+    }
+    return notes.join(', ');
+  }
+
   /** Один шаг; итог для журнала, null - шаг пропущен (делать было нечего). */
   async function exec(id: string, s: SetupStep, ctx: Ctx): Promise<string | null> {
     const { action, say } = ctx;
@@ -364,17 +554,19 @@ export function serverSetup(deps: SetupDeps) {
       case 'service': {
         const cmd = s.command as string;
         const svc = SERVICES.find((x) => x.command === cmd);
-        if (s.id !== 'awg-extra' && svc && has(id, svc.kind)) return null;
-        // дополнительный AWG: порт и подсеть - свободные сейчас, когда основной уже стоит
-        const answers =
-          s.id === 'awg-extra'
-            ? {
-                ...(await runner.defaults(id, 'awg')),
-                AWG_VERSION: a.AWG_VERSION || '2.0',
-                ...(a.AWG_SERVER_PORT ? { AWG_SERVER_PORT: a.AWG_SERVER_PORT } : {}),
-                AWG_INSTANCE: 'extra',
-              }
-            : a;
+        const extra = s.id.startsWith('awg-extra');
+        if (!extra && svc && has(id, svc.kind)) return null;
+        // дополнительный AWG: порт и подсеть - из копии или свободные сейчас, когда основной
+        // уже стоит
+        const answers = extra
+          ? {
+              ...(await runner.defaults(id, 'awg')),
+              AWG_VERSION: a.AWG_VERSION || '2.0',
+              ...(a.AWG_SERVER_PORT ? { AWG_SERVER_PORT: a.AWG_SERVER_PORT } : {}),
+              ...(a.AWG_SUBNET_IP ? { AWG_SUBNET_IP: a.AWG_SUBNET_IP } : {}),
+              AWG_INSTANCE: 'extra',
+            }
+          : withPasswords(s);
         const p = await runner.prepare(id, cmd, answers);
         const from = action.output.length;
         const r = await runner.execute(id, p, {
@@ -446,7 +638,7 @@ export function serverSetup(deps: SetupDeps) {
         void reach.check(id).catch(() => undefined);
         return 'запущена, итог - в блоке \u00abДоступность из России\u00bb';
       case 'restore':
-        return null;
+        return restoreStep(id, a.BACKUP ?? '', ctx);
     }
   }
 
