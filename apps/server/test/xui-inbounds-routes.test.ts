@@ -55,6 +55,7 @@ async function setup(
     },
   ];
   let xray = 'running';
+  const updates: Record<string, unknown>[] = [];
   const calls: string[] = [];
   const ok = (obj: unknown) => ({ status: 200, data: { success: true, obj } });
   const registry = {
@@ -87,6 +88,18 @@ async function setup(
         inbounds.push({ ...b, id: 9 });
         xray = opts.xrayAfterAdd ?? 'running';
         return ok({ id: 9 });
+      }
+      if (p.path.startsWith('inbounds/update/')) {
+        const id = Number(p.path.split('/')[2]);
+        const b = p.body as Record<string, unknown>;
+        const i = inbounds.findIndex((x) => x.id === id);
+        const restoring = JSON.stringify(b) === JSON.stringify(inbounds[i]);
+        inbounds[i] = { ...b };
+        updates.push(b);
+        xray = restoring ? 'running' : (opts.xrayAfterAdd ?? 'running');
+        // возврат как было: Xray снова работает
+        if (updates.length > 1) xray = 'running';
+        return ok(b);
       }
       if (p.path.startsWith('inbounds/get/'))
         return ok(inbounds.find((i) => i.id === Number(p.path.split('/')[2])) ?? null);
@@ -124,13 +137,13 @@ async function setup(
     syncSpares: () => void spareSyncs++,
     reach: { dropInbound: (_s: string, i: number) => void dropped.push(i) },
   });
-  const finished = async () => {
+  const finished = async (kind = 'xui:inbound.add') => {
     for (let i = 0; i < 400; i++) {
       const a = db
         .select()
         .from(actionLog)
         .all()
-        .find((x) => x.kind === 'xui:inbound.add');
+        .find((x) => x.kind === kind);
       if (a?.finishedAt) return a;
       await new Promise((r) => setTimeout(r, 25));
     }
@@ -145,6 +158,7 @@ async function setup(
     spareSyncs: () => spareSyncs,
     dropped,
     exitCalls,
+    updates,
     finished,
   };
 }
@@ -262,5 +276,99 @@ describe('inbound-ы VLESS из панели', () => {
       .all()
       .find((x) => x.kind === 'xui:inbound.remove');
     expect(a?.output).toMatch(/перенесён на запасной/);
+  });
+
+  it(
+    'правка: цель Reality без YouTube, ключи и shortIds как были, синхронизация и выходы',
+    { timeout: 60_000 },
+    async () => {
+      const t = await setup();
+      t.inbounds[0] = {
+        ...t.inbounds[0],
+        streamSettings: JSON.stringify({
+          network: 'tcp',
+          security: 'reality',
+          realitySettings: {
+            target: 'dl.google.com:443',
+            serverNames: ['google.com'],
+            privateKey: 'PRIV',
+            shortIds: ['ab'],
+            settings: { publicKey: 'PUB', fingerprint: 'firefox' },
+          },
+        }),
+      };
+      const ed = (
+        await t.app.inject({ method: 'GET', url: '/api/servers/s1/xui/inbounds/7/edit' })
+      ).json();
+      expect(ed).toMatchObject({
+        kind: 'raw',
+        port: 28512,
+        reality: { target: 'dl.google.com:443', fingerprint: 'firefox' },
+      });
+      const r = await t.app.inject({
+        method: 'POST',
+        url: '/api/servers/s1/xui/inbounds/7/edit',
+        payload: {
+          port: 30001,
+          target: 'www.microsoft.com:443',
+          serverNames: ['www.microsoft.com', 'youtube.com'],
+          fingerprint: 'chrome',
+        },
+      });
+      expect(r.statusCode).toBe(200);
+      const a = await t.finished('xui:inbound');
+      expect(a.exitCode).toBe(0);
+      const st = JSON.parse(String(t.inbounds[0]?.streamSettings));
+      expect(t.inbounds[0]?.port).toBe(30001);
+      expect(st.realitySettings).toMatchObject({
+        target: 'www.microsoft.com:443',
+        serverNames: ['www.microsoft.com'],
+        privateKey: 'PRIV',
+        shortIds: ['ab'],
+        settings: { publicKey: 'PUB', fingerprint: 'chrome' },
+      });
+      expect(t.kicks()).toBe(1);
+      expect(t.exitCalls).toEqual([['s1', 7, false]]);
+    },
+  );
+
+  it('правка: Xray остановился - inbound возвращается как был', { timeout: 60_000 }, async () => {
+    const t = await setup({ xrayAfterAdd: 'error' });
+    await t.app.inject({
+      method: 'POST',
+      url: '/api/servers/s1/xui/inbounds/7/edit',
+      payload: { port: 30002 },
+    });
+    const a = await t.finished('xui:inbound');
+    expect(a.exitCode).toBe(1);
+    expect(a.output).toMatch(/возвращён как был/);
+    expect(t.inbounds[0]?.port).toBe(28512);
+    expect(t.kicks()).toBe(0);
+  });
+
+  it(
+    'правка: занятый порт - отказ до изменения; только подпись - без проверки Xray',
+    { timeout: 60_000 },
+    async () => {
+      const t = await setup({ listeners: [{ port: 443, process: 'caddy' }] });
+      await t.app.inject({
+        method: 'POST',
+        url: '/api/servers/s1/xui/inbounds/7/edit',
+        payload: { port: 443 },
+      });
+      const a = await t.finished('xui:inbound');
+      expect(a.exitCode).toBe(1);
+      expect(a.output).toMatch(/занят: caddy/);
+      expect(t.updates).toHaveLength(0);
+    },
+  );
+
+  it('случайный свободный порт: не занятый и не из уже выбранных', async () => {
+    const t = await setup({ listeners: [{ port: 443, process: 'caddy' }] });
+    const j = (
+      await t.app.inject({ method: 'GET', url: '/api/servers/s1/xui/free-port?not=8443' })
+    ).json();
+    expect(j.port).toBeGreaterThanOrEqual(10000);
+    expect([8443, 28512, 443]).not.toContain(j.port);
   });
 });

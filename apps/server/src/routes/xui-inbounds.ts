@@ -18,11 +18,14 @@ import {
   XHTTP_PORT,
   buildInbound,
   freeRemark,
+  inboundKind,
   pickTargets,
   portBusy,
   randomFreePort,
   realityNames,
+  realityOf,
   realityOfInbounds,
+  withReality,
 } from '../lib/xui-new-inbound.js';
 import { savedXuiToken } from '../lib/xui-token.js';
 
@@ -32,6 +35,23 @@ const Host = z
   .trim()
   .toLowerCase()
   .regex(/^[a-z0-9.-]+\.[a-z]{2,}$/, 'неверное имя');
+const Target = z
+  .string()
+  .trim()
+  .toLowerCase()
+  .regex(/^[a-z0-9.-]+\.[a-z]{2,}:\d{1,5}$/, 'цель - имя:порт');
+const EditBody = z
+  .object({
+    remark: z.string().trim().min(1).max(100).optional(),
+    port: z.number().int().min(1).max(65535).optional(),
+    target: Target.optional(),
+    serverNames: z.array(Host).min(1).max(MAX_SERVER_NAMES).optional(),
+    fingerprint: z.enum(FINGERPRINTS).optional(),
+  })
+  .refine(
+    (b) => (b.target === undefined) === (b.serverNames === undefined),
+    'цель - вместе с именами',
+  );
 const AddBody = z.object({
   items: z
     .array(
@@ -45,11 +65,7 @@ const AddBody = z.object({
     .max(2)
     .refine((a) => new Set(a.map((x) => x.kind)).size === a.length, 'тип повторяется')
     .refine((a) => new Set(a.map((x) => x.port)).size === a.length, 'одинаковые порты'),
-  target: z
-    .string()
-    .trim()
-    .toLowerCase()
-    .regex(/^[a-z0-9.-]+\.[a-z]{2,}:\d{1,5}$/, 'цель - имя:порт'),
+  target: Target,
   serverNames: z.array(Host).min(1).max(MAX_SERVER_NAMES),
   fingerprint: z.enum(FINGERPRINTS),
 });
@@ -127,6 +143,19 @@ export async function xuiInboundRoutes(app: FastifyInstance, opts: Deps) {
   });
 
   /**
+   * Случайный свободный порт (кнопка у поля порта): не занят inbound-ом и процессом сервера;
+   * not - порты, которые уже выбраны в окне.
+   */
+  app.get('/api/servers/:id/xui/free-port', async (req) => {
+    const { id } = Id.parse(req.params);
+    const { not } = z.object({ not: z.string().max(200).optional() }).parse(req.query);
+    const skip = new Set((not ?? '').split(',').map(Number).filter(Number.isInteger));
+    const list = await inboundList(apiFor(id));
+    const ls = listeners(id);
+    return { port: randomFreePort((p) => skip.has(p) || portBusy(p, list, ls) !== null) };
+  });
+
+  /**
    * Подбор цели Reality с самого сервера: scanRealityTargets 3X-UI по её списку кандидатов
    * (TLS 1.3, h2, X25519, сертификат, задержка); имена YouTube отбрасываются.
    */
@@ -199,6 +228,126 @@ export async function xuiInboundRoutes(app: FastifyInstance, opts: Deps) {
       } catch (e) {
         say(`ОШИБКА: ${(e as Error).message}`);
         if (created.length) resync(id);
+        await action.finish(1);
+      }
+    })();
+    return { actionId: action.id };
+  });
+
+  /** Окно правки: текущие подпись, порт, тип и Reality (без ключей), цели других inbound-ов. */
+  app.get('/api/servers/:id/xui/inbounds/:iid/edit', async (req) => {
+    const { id, iid } = z
+      .object({ id: z.string(), iid: z.coerce.number().int().positive() })
+      .parse(req.params);
+    const list = await inboundList(apiFor(id));
+    const got = list.find((i) => Number(i.id) === iid);
+    if (!got) throw Object.assign(new Error('inbound не найден'), { statusCode: 404 });
+    const kind = inboundKind(got);
+    return {
+      id: iid,
+      remark: String(got.remark ?? ''),
+      port: Number(got.port ?? 0),
+      kind,
+      reality: kind ? realityOf(got) : null,
+      same: realityOfInbounds(list).filter((x) => x.id !== iid),
+    };
+  });
+
+  /**
+   * Правка inbound-а (действие со стримом): подпись, порт, цель Reality и fingerprint; ключи и
+   * остальное - как было. Смена порта или Reality может остановить Xray: если до правки он
+   * работал, панель ~28 с следит за ним и при остановке возвращает inbound как был. Затем -
+   * синхронизация клиентов (ссылки) и выходы в Telegram.
+   */
+  app.post('/api/servers/:id/xui/inbounds/:iid/edit', async (req) => {
+    const { id, iid } = z
+      .object({ id: z.string(), iid: z.coerce.number().int().positive() })
+      .parse(req.params);
+    const body = EditBody.parse(req.body ?? {});
+    const names = body.serverNames ? realityNames(body.serverNames) : undefined;
+    if (names && !names.length)
+      throw Object.assign(new Error('нет подходящих имён Reality (имена YouTube не берутся)'), {
+        statusCode: 400,
+      });
+    const api = apiFor(id);
+    const action = journal.open(id, 'xui:inbound', {
+      inbound: iid,
+      ...(body.remark !== undefined ? { remark: body.remark } : {}),
+      ...(body.port !== undefined ? { port: body.port } : {}),
+      ...(body.target ? { target: body.target, serverNames: names?.length } : {}),
+      ...(body.fingerprint ? { fingerprint: body.fingerprint } : {}),
+    });
+    const say = (line: string) => action.stream('log', `${line}\n`);
+    void (async () => {
+      try {
+        const got = unwrap(await api('GET', `inbounds/get/${iid}`), 'inbounds/get') as Record<
+          string,
+          unknown
+        > | null;
+        if (!got) throw new Error('inbound не найден');
+        if (Number(got.nodeId ?? got.node_id ?? 0))
+          throw new Error('inbound другого узла правится на нём');
+        const kind = inboundKind(got);
+        const cur = kind ? realityOf(got) : null;
+        const next: Record<string, unknown> = { ...got };
+        const done: string[] = [];
+        if (body.remark !== undefined && body.remark !== String(got.remark ?? '')) {
+          next.remark = body.remark;
+          done.push('подпись');
+        }
+        const portChanged = body.port !== undefined && body.port !== Number(got.port);
+        if (portChanged && body.port !== undefined) {
+          const others = (await inboundList(api)).filter((x) => Number(x.id) !== iid);
+          const busy = portBusy(body.port, others, listeners(id));
+          if (busy) throw new Error(busy);
+          next.port = body.port;
+          done.push(`порт ${String(got.port)} -> ${body.port}`);
+        }
+        const reality: { target?: string; serverNames?: string[]; fingerprint?: string } = {};
+        if (body.target !== undefined || body.fingerprint !== undefined) {
+          if (!cur) throw new Error('цель Reality и fingerprint меняются только у VLESS Reality');
+          if (
+            body.target !== undefined &&
+            names &&
+            (body.target !== cur.target || names.join(',') !== cur.serverNames.join(','))
+          ) {
+            reality.target = body.target;
+            reality.serverNames = names;
+            done.push(`цель Reality ${body.target}`);
+          }
+          if (body.fingerprint !== undefined && body.fingerprint !== cur.fingerprint) {
+            reality.fingerprint = body.fingerprint;
+            done.push(`fingerprint ${body.fingerprint}`);
+          }
+          if (Object.keys(reality).length)
+            next.streamSettings = withReality(got.streamSettings, reality);
+        }
+        if (!done.length) {
+          say('Без изменений');
+          await action.finish(0);
+          return;
+        }
+        const risky = portChanged || Object.keys(reality).length > 0;
+        const before = risky ? await xrayState(api).catch(() => null) : null;
+        say(`Сохраняю: ${done.join(', ')}`);
+        unwrap(await api('POST', `inbounds/update/${iid}`, next), 'inbounds/update');
+        if (risky && before?.state === 'running') {
+          say('Проверка Xray');
+          const bad = await watchXray(api, checks);
+          if (bad) {
+            await api('POST', `inbounds/update/${iid}`, got).catch(() => undefined);
+            throw new Error(`Xray остановился после правки, inbound возвращён как был: ${bad}`);
+          }
+          say('Xray работает');
+        }
+        if (risky) {
+          resync(id);
+          for (const n of await exitsAfter(id, iid, false)) say(n);
+          say('Ссылки клиентов панели обновятся синхронизацией, подписки - сами');
+        }
+        await action.finish(0);
+      } catch (e) {
+        say(`ОШИБКА: ${(e as Error).message}`);
         await action.finish(1);
       }
     })();

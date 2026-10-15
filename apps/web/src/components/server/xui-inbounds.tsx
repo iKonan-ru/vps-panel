@@ -1,19 +1,18 @@
 import { ActionPanel } from '@/components/action-output';
+import { EditInboundForm } from '@/components/server/xui-edit-inbound';
 import { NewInboundsForm } from '@/components/server/xui-new-inbounds';
 import { Alert } from '@/components/ui/alert';
 import { Button } from '@/components/ui/button';
 import { Chip } from '@/components/ui/chip';
 import { useConfirm } from '@/components/ui/confirm';
 import { Dialog } from '@/components/ui/dialog';
-import { Field } from '@/components/ui/field';
-import { Input } from '@/components/ui/input';
 import { Section } from '@/components/ui/section';
 import { Switch } from '@/components/ui/switch';
 import { ApiError, api } from '@/lib/api';
 import { bytes } from '@/lib/format';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { Pencil, Plus, Trash2 } from 'lucide-react';
-import { type FormEvent, useState } from 'react';
+import { useState } from 'react';
 
 /** Inbound 3X-UI для вкладки (GET /xui/inbound-list): без настроек клиентов. */
 export interface Inbound {
@@ -77,21 +76,16 @@ export function XuiInbounds({
   const [err, setErr] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [adding, setAdding] = useState(false);
-  const [run, setRun] = useState<string | null>(null);
+  const [run, setRun] = useState<{ id: string; title: string } | null>(null);
   const noToken = error instanceof ApiError && error.code === 'no-token';
 
-  async function save(i: Inbound, body: { enable?: boolean; remark?: string; port?: number }) {
-    if (body.enable === false || (body.port !== undefined && body.port !== i.port)) {
+  /** Включение и выключение (переключатель в строке); остальное - окно правки. */
+  async function save(i: Inbound, body: { enable: boolean }) {
+    if (!body.enable) {
       const ok = await ask({
-        title:
-          body.enable === false
-            ? `Выключить inbound \u00ab${i.remark}\u00bb?`
-            : `Сменить порт на ${body.port}?`,
-        text:
-          body.enable === false
-            ? `Его клиенты (${i.clients}) не смогут подключиться.${exitNote(i)}`
-            : `Подписки панели получат новый порт сами, остальным клиентам нужна новая ссылка.${i.telegramExit ? ' Выход в Telegram через него обновится сам.' : ''}`,
-        okLabel: body.enable === false ? 'Выключить' : 'Сменить',
+        title: `Выключить inbound \u00ab${i.remark}\u00bb?`,
+        text: `Его клиенты (${i.clients}) не смогут подключиться.${exitNote(i)}`,
+        okLabel: 'Выключить',
         danger: true,
       });
       if (!ok) return false;
@@ -139,8 +133,8 @@ export function XuiInbounds({
     <>
       {run && (
         <ActionPanel
-          title="Новые соединения VLESS"
-          actionId={run}
+          title={run.title}
+          actionId={run.id}
           onHide={() => setRun(null)}
           onFinished={() => {
             void qc.invalidateQueries({ queryKey: ['xui-inbounds', serverId] });
@@ -286,15 +280,15 @@ export function XuiInbounds({
           title={edit ? `Inbound ${edit.remark || `#${edit.id}`}` : ''}
         >
           {edit && (
-            <EditForm
+            <EditInboundForm
               key={edit.id}
+              serverId={serverId}
               inbound={edit}
-              taken={list.filter((x) => x.id !== edit.id).map((x) => x.port)}
-              busy={busy}
-              error={err}
+              disabled={locked}
               onCancel={() => setEdit(null)}
-              onSave={async (body) => {
-                if (await save(edit, body)) setEdit(null);
+              onStarted={(id) => {
+                setEdit(null);
+                setRun({ id, title: `Inbound ${edit.remark || `#${edit.id}`}` });
               }}
             />
           )}
@@ -307,77 +301,12 @@ export function XuiInbounds({
               onCancel={() => setAdding(false)}
               onStarted={(id) => {
                 setAdding(false);
-                setRun(id);
+                setRun({ id, title: 'Новые соединения VLESS' });
               }}
             />
           )}
         </Dialog>
       </Section>
     </>
-  );
-}
-
-function EditForm({
-  inbound,
-  taken,
-  busy,
-  error,
-  onCancel,
-  onSave,
-}: {
-  inbound: Inbound;
-  taken: number[];
-  busy: boolean;
-  error: string | null;
-  onCancel: () => void;
-  onSave: (body: { remark?: string; port?: number }) => Promise<void>;
-}) {
-  const [remark, setRemark] = useState(inbound.remark);
-  const [port, setPort] = useState(String(inbound.port));
-  const n = Number(port);
-  const portBad = !Number.isInteger(n) || n < 1 || n > 65535;
-  const portTaken = !portBad && n !== inbound.port && taken.includes(n);
-  const body: { remark?: string; port?: number } = {};
-  if (remark.trim() !== inbound.remark) body.remark = remark.trim();
-  if (!portBad && n !== inbound.port) body.port = n;
-  const changed = Object.keys(body).length > 0;
-  const submit = (e: FormEvent) => {
-    e.preventDefault();
-    if (changed && !portBad && !portTaken) void onSave(body);
-  };
-  return (
-    <form className="flex flex-col gap-3" onSubmit={submit}>
-      <Field label="Подпись" htmlFor="xui-in-remark">
-        <Input
-          id="xui-in-remark"
-          value={remark}
-          maxLength={100}
-          onChange={(e) => setRemark(e.target.value)}
-        />
-      </Field>
-      <Field
-        label="Порт"
-        htmlFor="xui-in-port"
-        hint="порт проверяется на занятость: inbound на занятом порту останавливает весь Xray"
-      >
-        <Input
-          id="xui-in-port"
-          type="number"
-          min={1}
-          max={65535}
-          value={port}
-          onChange={(e) => setPort(e.target.value)}
-          className="font-mono"
-        />
-      </Field>
-      {portTaken && <Alert tone="bad">Порт {n} занят другим inbound</Alert>}
-      {error && <Alert tone="bad">{error}</Alert>}
-      <div className="flex justify-end gap-2">
-        <Button onClick={onCancel}>Отмена</Button>
-        <Button type="submit" variant="primary" disabled={busy || !changed || portBad || portTaken}>
-          Сохранить
-        </Button>
-      </div>
-    </form>
   );
 }
