@@ -24,7 +24,7 @@ import type {
   SetupStep,
   SetupStepState,
 } from '@vps/protocol';
-import { Play, RotateCcw } from 'lucide-react';
+import { ChevronDown, Play, RotateCcw } from 'lucide-react';
 import { useState } from 'react';
 
 /** Поля команд, которые настройка задаёт сама: экземпляр AWG и поведение при уже стоящем. */
@@ -47,11 +47,16 @@ function StepFields({
   cmd,
   disabled,
   set,
+  expanded,
+  toggle,
 }: {
   step: SetupStep;
   cmd: CommandInfo | undefined;
   disabled: boolean;
   set: (name: string, value: string) => void;
+  /** Все параметры команды; свёрнуто - только пароли (их нужно ввести). */
+  expanded: boolean;
+  toggle: () => void;
 }) {
   const a = step.answers ?? {};
   if (step.kind === 'client-host')
@@ -121,26 +126,43 @@ function StepFields({
       </div>
     ) : null;
   }
-  const params = cmd.params.filter(
+  const all = cmd.params.filter(
     (p) =>
       !HIDDEN.has(p.name) &&
       paramVisible(p, a) &&
       // данные из копии заменят пароли установщика
       !(step.fromBackup && (p.type === 'password' || p.secret)),
   );
+  const isPassword = (p: (typeof all)[number]) => p.required && (p.type === 'password' || p.secret);
+  const params = expanded ? all : all.filter(isPassword);
+  const more = all.length - all.filter(isPassword).length;
   return (
-    <fieldset disabled={disabled} className="grid gap-3 sm:grid-cols-2">
-      {params.map((p) => (
-        <ParamField
-          key={p.name}
-          p={p}
-          idPrefix={step.id}
-          value={a[p.name] ?? ''}
-          onChange={(v) => set(p.name, v)}
-          awgContainers={[]}
-        />
-      ))}
-    </fieldset>
+    <div className="flex flex-col gap-2">
+      {params.length > 0 && (
+        <fieldset disabled={disabled} className="grid gap-3 sm:grid-cols-2">
+          {params.map((p) => (
+            <ParamField
+              key={p.name}
+              p={p}
+              idPrefix={step.id}
+              value={a[p.name] ?? ''}
+              onChange={(v) => set(p.name, v)}
+              awgContainers={[]}
+            />
+          ))}
+        </fieldset>
+      )}
+      {more > 0 && (
+        <button
+          type="button"
+          className="inline-flex w-fit items-center gap-1 text-xs text-accent"
+          onClick={toggle}
+        >
+          <ChevronDown className={expanded ? 'size-3.5 rotate-180' : 'size-3.5'} />
+          {expanded ? 'Свернуть параметры' : `Параметры: ${more}`}
+        </button>
+      )}
+    </div>
   );
 }
 
@@ -176,6 +198,8 @@ export function ServerSetupPage() {
     setSteps(plan.data.steps);
   }
   const [checks, setChecks] = useState<SetupCheck[] | null>(null);
+  // шаги с развёрнутыми параметрами (по умолчанию видны только пароли)
+  const [open, setOpen] = useState<Set<string>>(new Set());
   const act = useAction();
   const progress = prog.data?.progress ?? null;
   const running = Boolean(progress && !progress.finishedAt);
@@ -321,6 +345,15 @@ export function ServerSetupPage() {
                     step={st}
                     cmd={cmds.data?.find((c) => c.id === st.command)}
                     disabled={busy}
+                    expanded={open.has(st.id)}
+                    toggle={() =>
+                      setOpen((o) => {
+                        const n = new Set(o);
+                        if (n.has(st.id)) n.delete(st.id);
+                        else n.add(st.id);
+                        return n;
+                      })
+                    }
                     set={(name, value) =>
                       set(st.id, (x) => ({
                         ...x,
