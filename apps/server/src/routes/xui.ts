@@ -8,6 +8,7 @@ import { actionJournal } from '../lib/action-journal.js';
 import { type ServerRouteOpts, actionRunners } from '../lib/action-runners.js';
 import { type InboundExitHooks, telegramExitOf } from '../lib/xray-exits.js';
 import { parseJson, unwrap, xuiApi } from '../lib/xui-api.js';
+import { portBusy } from '../lib/xui-new-inbound.js';
 import { saveXuiToken, savedXuiToken } from '../lib/xui-token.js';
 
 const Id = z.object({ id: z.string() });
@@ -241,6 +242,23 @@ export async function xuiRoutes(app: FastifyInstance, opts: ServerRouteOpts & In
         unwrap(await api('POST', `inbounds/update/${iid}`, next), 'inbounds/update');
         if (body.remark !== undefined) done.push('подпись');
         if (body.port !== undefined) done.push(`порт ${got.port} -> ${body.port}`);
+      }
+      if (body.enable === true && got.enable === false) {
+        // пока inbound был выключен, его порт мог занять другой процесс: включение на занятом
+        // порту останавливает весь Xray
+        const others = (
+          (unwrap(await api('GET', 'inbounds/list'), 'inbounds/list') as Record<
+            string,
+            unknown
+          >[]) ?? []
+        ).filter((x) => Number(x.id) !== iid && x.enable !== false);
+        const row = db.select().from(servers).where(eq(servers.id, id)).get();
+        // xray в снимке не считаем: только что выключенный inbound он ещё может слушать
+        const ls = (
+          (row?.statusCache as StatusCache | null)?.inventory?.firewall.listeners ?? []
+        ).filter((l) => !/xray/i.test(l.process));
+        const busy = portBusy(Number(got.port), others, ls);
+        if (busy) throw Object.assign(new Error(busy), { statusCode: 409 });
       }
       if (body.enable !== undefined && body.enable !== (got.enable !== false)) {
         unwrap(

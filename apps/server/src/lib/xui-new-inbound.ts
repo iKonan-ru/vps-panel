@@ -255,3 +255,51 @@ export function buildInbound(
     sniffing: JSON.stringify(sniffing),
   };
 }
+
+/**
+ * Тип inbound-а для окна правки: VLESS Reality RAW или XHTTP (свой, не узла группы); у прочих
+ * правятся только подпись и порт.
+ */
+export function inboundKind(i: Record<string, unknown>): NewInboundKind | null {
+  if (i.protocol !== 'vless' || Number(i.nodeId ?? i.node_id ?? 0)) return null;
+  const st = parseJson(i.streamSettings);
+  if (st.security !== 'reality') return null;
+  if (st.network === 'xhttp') return 'xhttp';
+  if (st.network === 'tcp' || st.network === 'raw' || st.network === undefined) return 'raw';
+  return null;
+}
+
+/** Текущие настройки Reality inbound-а для окна правки (без ключей). */
+export function realityOf(i: Record<string, unknown>): {
+  target: string;
+  serverNames: string[];
+  fingerprint: string;
+} {
+  const rs = parseJson(parseJson(i.streamSettings).realitySettings);
+  return {
+    target: String(rs.target ?? rs.dest ?? ''),
+    serverNames: ((rs.serverNames as string[] | undefined) ?? []).map(String),
+    fingerprint: String(parseJson(rs.settings).fingerprint ?? ''),
+  };
+}
+
+/**
+ * streamSettings с новой целью Reality и/или fingerprint; ключи, shortIds и остальное - как
+ * было. Возвращает строку JSON (так 3X-UI хранит streamSettings).
+ */
+export function withReality(
+  streamSettings: unknown,
+  p: { target?: string; serverNames?: string[]; fingerprint?: string },
+): string {
+  const st = parseJson(streamSettings);
+  const rs = parseJson(st.realitySettings);
+  const settings = parseJson(rs.settings);
+  if (p.target !== undefined) {
+    rs.target = p.target;
+    // старое имя поля у inbound-ов, заведённых давно: остаётся только одно
+    if ('dest' in rs) rs.dest = undefined;
+  }
+  if (p.serverNames !== undefined) rs.serverNames = p.serverNames;
+  if (p.fingerprint !== undefined) settings.fingerprint = p.fingerprint;
+  return JSON.stringify({ ...st, realitySettings: { ...rs, settings } });
+}
