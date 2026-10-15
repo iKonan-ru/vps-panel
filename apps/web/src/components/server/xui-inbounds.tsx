@@ -37,6 +37,17 @@ export interface Inbound {
   clientsOff: number;
   online: number;
   panelClients: number;
+  /** Через inbound идёт выход панели в Telegram: основной или запасной. */
+  telegramExit: 'primary' | 'spare' | null;
+}
+
+/** Что станет с выходом в Telegram, если inbound удалить или выключить. */
+function exitNote(i: Inbound): string {
+  if (i.telegramExit === 'primary')
+    return ' Через него панель отправляет уведомления в Telegram: основной выход перейдёт на другой RAW этого сервера или на запасной выход.';
+  if (i.telegramExit === 'spare')
+    return ' Запасной выход в Telegram перейдёт на другой RAW этого сервера.';
+  return '';
 }
 
 const securityTitle: Record<string, string> = { reality: 'Reality', tls: 'TLS', none: '' };
@@ -78,8 +89,8 @@ export function XuiInbounds({
             : `Сменить порт на ${body.port}?`,
         text:
           body.enable === false
-            ? `Его клиенты (${i.clients}) не смогут подключиться`
-            : 'Подписки панели получат новый порт сами, остальным клиентам нужна новая ссылка',
+            ? `Его клиенты (${i.clients}) не смогут подключиться.${exitNote(i)}`
+            : `Подписки панели получат новый порт сами, остальным клиентам нужна новая ссылка.${i.telegramExit ? ' Выход в Telegram через него обновится сам.' : ''}`,
         okLabel: body.enable === false ? 'Выключить' : 'Сменить',
         danger: true,
       });
@@ -103,7 +114,7 @@ export function XuiInbounds({
   async function remove(i: Inbound) {
     const ok = await ask({
       title: `Удалить inbound \u00ab${i.remark || `#${i.id}`}\u00bb?`,
-      text: `Клиентов: ${i.clients}${i.enable ? `, сейчас онлайн: ${i.online}` : ''}. Ссылки на него пропадут из подписок, клиентам без подписки он перестанет работать.`,
+      text: `Клиентов: ${i.clients}${i.enable ? `, сейчас онлайн: ${i.online}` : ''}. Ссылки на него пропадут из подписок, клиентам без подписки он перестанет работать.${exitNote(i)}`,
       okLabel: 'Удалить',
       danger: true,
     });
@@ -211,6 +222,20 @@ export function XuiInbounds({
                     }
                   >
                     без клиентов панели
+                  </Chip>
+                )}
+                {i.telegramExit && (
+                  <Chip
+                    tone={i.telegramExit === 'primary' ? 'accent' : 'muted'}
+                    title={
+                      i.telegramExit === 'primary'
+                        ? 'Через этот inbound панель отправляет уведомления в Telegram'
+                        : 'Запасной выход панели в Telegram'
+                    }
+                  >
+                    {i.telegramExit === 'primary'
+                      ? 'выход в Telegram'
+                      : 'запасной выход в Telegram'}
                   </Chip>
                 )}
                 {i.excludeFromSub && <Chip tone="muted">не в подписке</Chip>}

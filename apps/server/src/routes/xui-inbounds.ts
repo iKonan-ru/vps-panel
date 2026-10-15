@@ -7,6 +7,7 @@ import { actionJournal } from '../lib/action-journal.js';
 import type { ServerRouteOpts } from '../lib/action-runners.js';
 import { type GClients, queued } from '../lib/gclients.js';
 import type { RuReach } from '../lib/ru-reach.js';
+import type { InboundExitHooks } from '../lib/xray-exits.js';
 import { type XuiCall, unwrap, xuiApi } from '../lib/xui-api.js';
 import {
   FINGERPRINTS,
@@ -60,7 +61,7 @@ const AddBody = z.object({
  */
 const XRAY_CHECKS_MS = [4_000, 6_000, 6_000, 6_000, 6_000];
 
-interface Deps extends ServerRouteOpts {
+interface Deps extends ServerRouteOpts, InboundExitHooks {
   gc: Pick<GClients, 'kick'>;
   reach: Pick<RuReach, 'dropInbound'>;
   /** Паузы проверки Xray после добавления (тесты - короче). */
@@ -74,7 +75,7 @@ interface Deps extends ServerRouteOpts {
  * агента, а после добавления Xray проверяется ~20 с: остановился - inbound удаляется.
  */
 export async function xuiInboundRoutes(app: FastifyInstance, opts: Deps) {
-  const { db, registry, hub, box, gc, reach } = opts;
+  const { db, registry, hub, box, gc, reach, exitsAfter, syncSpares } = opts;
   const checks = opts.xrayChecksMs ?? XRAY_CHECKS_MS;
   const journal = actionJournal(db, hub, registry);
 
@@ -191,6 +192,8 @@ export async function xuiInboundRoutes(app: FastifyInstance, opts: Deps) {
           created.push(title);
         }
         resync(id);
+        // новый RAW может стать запасным выходом в Telegram этого сервера
+        syncSpares();
         say('Клиенты панели добавятся синхронизацией, подписки обновятся сами');
         await action.finish(0);
       } catch (e) {
@@ -229,11 +232,15 @@ export async function xuiInboundRoutes(app: FastifyInstance, opts: Deps) {
           .run();
       reach.dropInbound(id, iid);
       resync(id);
+      const notes = await exitsAfter(id, iid, true);
       await journal.finish(
         actionId,
         id,
         0,
-        `удалён inbound \u00ab${String(got.remark || `#${iid}`)}\u00bb, порт ${String(got.port)}`,
+        [
+          `удалён inbound \u00ab${String(got.remark || `#${iid}`)}\u00bb, порт ${String(got.port)}`,
+          ...notes,
+        ].join('\n'),
       );
       return { ok: true };
     } catch (e) {

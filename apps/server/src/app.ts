@@ -35,7 +35,7 @@ import { ServiceUpdates } from './lib/service-updates.js';
 import { Telegram } from './lib/telegram.js';
 import { UiHub } from './lib/ui-hub.js';
 import { PANEL_VERSION } from './lib/version.js';
-import { XraySpares } from './lib/xray-exits.js';
+import { XraySpares, exitsAfterInboundChange } from './lib/xray-exits.js';
 import { XrayManager } from './lib/xray.js';
 import { accessRoutes } from './routes/access.js';
 import { accountRoutes } from './routes/account.js';
@@ -233,7 +233,6 @@ export async function buildApp(opts: AppOptions) {
   await app.register(mtproxylRoutes, serverRouteOpts);
   await app.register(openfluxRoutes, serverRouteOpts);
   await app.register(systemRoutes, serverRouteOpts);
-  await app.register(xuiRoutes, serverRouteOpts);
   await app.register(installRoutes, { db, env, registry, hub });
   await app.register(securityRoutes, { db });
   await app.register(accountRoutes, { db, secure });
@@ -257,6 +256,15 @@ export async function buildApp(opts: AppOptions) {
   const exitDeps = { db, registry, box, xray, log: app.log, panelUrl: env.PANEL_PUBLIC_URL };
   const xraySpares = new XraySpares(exitDeps);
   await app.register(xrayRoutes, { db, registry, box, xray, spares: xraySpares, deps: exitDeps });
+  // inbound-ы 3X-UI меняются из панели - выходы в Telegram за ними (основной хранит снимок)
+  const exitsAfter = (serverId: string, inboundId: number, gone: boolean) =>
+    exitsAfterInboundChange(exitDeps, xraySpares, serverId, inboundId, gone);
+  await app.register(xuiRoutes, {
+    ...serverRouteOpts,
+    xray,
+    exitsAfter,
+    syncSpares: () => void xraySpares.sync().catch(() => undefined),
+  });
   const telegram = new Telegram(
     db,
     box,
@@ -330,7 +338,14 @@ export async function buildApp(opts: AppOptions) {
   stops.push(startMetricsPace(registry, hub, app.log));
   await app.register(gclientRoutes, { db, registry, box, gc, env, hub });
   // добавление и удаление inbound-ов VLESS: после изменений - синхронизация клиентов сразу
-  await app.register(xuiInboundRoutes, { ...serverRouteOpts, gc, reach: ruReach });
+  await app.register(xuiInboundRoutes, {
+    ...serverRouteOpts,
+    gc,
+    reach: ruReach,
+    xray,
+    exitsAfter,
+    syncSpares: () => void xraySpares.sync().catch(() => undefined),
+  });
   await app.register(clientHostRoutes, {
     db,
     gc,
