@@ -18,6 +18,8 @@ export interface BackupAwg {
  * архиве (база 3X-UI, конфиги MTProxyL и WDTT).
  */
 export interface BackupSetup {
+  /** Имя сервера в панели на момент копии. */
+  serverName?: string;
   services: string[];
   /** Ответы команд каталога для сервера (без секретов): команда -> ответы. */
   answers: Record<string, Record<string, string>>;
@@ -63,65 +65,10 @@ export async function backupSnapshot(
     // нет AWG или старый агент: экземпляры восстановит форма по именам контейнеров
   }
   return {
+    serverName: row?.name ?? '',
     services: [...new Set((inv?.services ?? []).map((s) => s.kind))],
     answers,
     awg,
     clientHost: row?.clientHost ?? null,
-  };
-}
-
-/**
- * Снимок старой копии (без setup в manifest): компоненты архива, ответы и AWG старого сервера,
- * если он ещё в панели. Чего не узнать (порт основного AWG без сервера) - значения по умолчанию.
- */
-export function legacySnapshot(
-  db: Db,
-  manifest: Record<string, unknown>,
-  oldServerId: string | null,
-): BackupSetup {
-  const comps = (Array.isArray(manifest.components) ? manifest.components : []) as {
-    id?: string;
-    containers?: string[];
-  }[];
-  const services = comps
-    .map((c) => (c.id === 'amnezia' ? 'amnezia' : c.id))
-    .filter(
-      (k): k is string =>
-        typeof k === 'string' && ['xui', 'wdtt', 'mtproxyl', 'amnezia'].includes(k),
-    );
-  const old = oldServerId
-    ? db.select().from(servers).where(eq(servers.id, oldServerId)).get()
-    : undefined;
-  const answers: BackupSetup['answers'] = {};
-  if (old)
-    for (const d of db
-      .select()
-      .from(commandDefaults)
-      .where(eq(commandDefaults.serverId, old.id))
-      .all())
-      answers[d.commandId] = d.answers;
-  const containers = comps.find((c) => c.id === 'amnezia')?.containers ?? [];
-  const cache = (old?.statusCache as StatusCache | null) ?? null;
-  const awg = containers.map((name) => {
-    const extra = /^amnezia-awg2-(\d+)$/.exec(name);
-    const published = cache?.inventory?.containers
-      .find((c) => c.name === name)
-      ?.published.map((p) => /:(\d+)->/.exec(p)?.[1])
-      .find(Boolean);
-    const version = cache?.awgInstances?.find((i) => i.container === name)?.version ?? '';
-    return {
-      container: name,
-      version,
-      port: Number(extra?.[1] ?? published ?? 0),
-      subnet: '',
-    };
-  });
-  // старый сервер ещё в панели: его сервисы целиком (OpenFlux и прокси в архив не входят)
-  const oldKinds = cache?.inventory?.services.map((s) => s.kind) ?? [];
-  return {
-    services: [...new Set([...services, ...oldKinds])],
-    answers,
-    awg,
-    clientHost: old?.clientHost ?? null,
   };
 }

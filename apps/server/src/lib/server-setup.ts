@@ -17,7 +17,7 @@ import { access, gclientBindings, servers } from '../db/schema.js';
 import { upsertAccess } from './access.js';
 import { type actionJournal, liveOutput } from './action-journal.js';
 import type { BackupRestorer } from './backup-restore.js';
-import { AWG_MAIN, type BackupSetup, legacySnapshot } from './backup-setup.js';
+import { AWG_MAIN, type BackupSetup } from './backup-setup.js';
 import type { CatalogRunner } from './catalog-runner.js';
 import { checkClientHost } from './client-host.js';
 import { type GClients, queued } from './gclients.js';
@@ -119,7 +119,9 @@ export function serverSetup(deps: SetupDeps) {
     const bk = restorer.get(bid);
     if (!bk) throw err('резервная копия не найдена', 404);
     const m = bk.manifest as Record<string, unknown>;
-    const snap = (m.setup as BackupSetup | undefined) ?? legacySnapshot(db, m, bk.serverId);
+    const snap = m.setup as BackupSetup | undefined;
+    if (!snap || !Array.isArray(snap.services))
+      throw err('в копии нет состава сервисов: она сделана до версии 1.6, нужна новая копия', 400);
     // что лежит в архиве: без компонента - сервис ставится, но данных для него нет
     const comps = new Set(
       ((Array.isArray(m.components) ? m.components : []) as { id?: string }[]).map((c) => c.id),

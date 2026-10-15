@@ -11,7 +11,7 @@ import {
 import { join } from 'node:path';
 import { Transform } from 'node:stream';
 import { pipeline } from 'node:stream/promises';
-import { desc, eq } from 'drizzle-orm';
+import { desc, eq, isNull } from 'drizzle-orm';
 import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
 import type { AgentRegistry } from '../agents/registry.js';
@@ -19,8 +19,9 @@ import type { Env } from '../config.js';
 import type { Db } from '../db/index.js';
 import { backups, servers } from '../db/schema.js';
 import { actionJournal } from '../lib/action-journal.js';
+import { readArchiveManifest } from '../lib/backup-archive.js';
 import type { BackupRestorer } from '../lib/backup-restore.js';
-import { backupSnapshot } from '../lib/backup-setup.js';
+import { type BackupSetup, backupSnapshot } from '../lib/backup-setup.js';
 import { newId } from '../lib/ids.js';
 import type { UiHub } from '../lib/ui-hub.js';
 
@@ -44,6 +45,15 @@ export async function backupRoutes(
   mkdirSync(dir, { recursive: true, mode: 0o700 });
   chmodSync(dir, 0o700);
   const file = (id: string) => join(dir, `${id}.tar.gz`);
+  // копии удалённых серверов (до того, как их стали удалять вместе с сервером) - убрать
+  for (const b of db
+    .select({ id: backups.id })
+    .from(backups)
+    .where(isNull(backups.serverId))
+    .all()) {
+    if (existsSync(file(b.id))) unlinkSync(file(b.id));
+    db.delete(backups).where(eq(backups.id, b.id)).run();
+  }
 
   // Одноразовые токены: загрузка (агент -> панель) и скачивание (панель -> агент).
   const uploads = new Map<
@@ -91,6 +101,9 @@ export async function backupRoutes(
     const backupId = newId();
     const token = randomBytes(24).toString('base64url');
     const action = journal.open(id, 'backup.create', { components });
+    // что стоит на сервере: агент кладёт это в manifest.json архива - скачанный файл
+    // разворачивается на чистый сервер и без панели, в которой его делали
+    const setup = await backupSnapshot(db, registry, id).catch(() => null);
     const actionId = action.id;
     uploads.set(token, { backupId, serverId: id, actionId, expires: Date.now() + 30 * 60_000 });
     const onStream = action.stream;
@@ -103,6 +116,7 @@ export async function backupRoutes(
           components,
           uploadUrl: `${env.PANEL_PUBLIC_URL}/api/agent/backups/upload/${token}`,
           token,
+          ...(setup ? { setup } : {}),
         },
         { timeoutMs: 20 * 60_000, onStream },
       )
@@ -126,7 +140,7 @@ export async function backupRoutes(
           size: statSync(file(backupId)).size,
           sha256: man.sha256,
           // что стояло на сервере: по нему настройка поставит те же сервисы на чистый сервер
-          manifest: { components: man.components, setup: await backupSnapshot(db, registry, id) },
+          manifest: { components: man.components, ...(setup ? { setup } : {}) },
         });
         hub.broadcast({ type: 'server.changed', serverId: id });
         await finish(0);
@@ -188,6 +202,82 @@ export async function backupRoutes(
       }
       u.sha256 = hash.digest('hex');
       return { ok: true, sha256: u.sha256 };
+    },
+  );
+
+  /**
+   * Загрузить файл копии (скачанный раньше): он становится копией этого сервера, и настройка
+   * сервера разворачивает его. Нужен manifest.json с составом сервисов - он есть в копиях с
+   * версии 1.6.
+   */
+  app.post(
+    '/api/servers/:id/backups/upload',
+    {
+      bodyLimit: MAX_BACKUP_BYTES,
+      onRequest: async (req, reply) => {
+        if (!String(req.headers['content-type'] ?? '').startsWith('application/gzip'))
+          return reply.code(415).send({ error: 'нужен файл копии .tar.gz' });
+        if (Number(req.headers['content-length'] ?? 0) > MAX_BACKUP_BYTES)
+          return reply.code(413).send({ error: 'архив больше 2\u00a0ГБ' });
+      },
+    },
+    async (req) => {
+      const { id } = z.object({ id: z.string() }).parse(req.params);
+      const row = db.select({ id: servers.id }).from(servers).where(eq(servers.id, id)).get();
+      if (!row) throw Object.assign(new Error('сервер не найден'), { statusCode: 404 });
+      const backupId = newId();
+      const hash = createHash('sha256');
+      const out = createWriteStream(file(backupId), { mode: 0o600 });
+      let bytes = 0;
+      const count = new Transform({
+        transform(d: Buffer, _enc, cb) {
+          bytes += d.length;
+          if (bytes > MAX_BACKUP_BYTES)
+            return cb(Object.assign(new Error('архив больше 2\u00a0ГБ'), { statusCode: 413 }));
+          hash.update(d);
+          cb(null, d);
+        },
+      });
+      const drop = () => {
+        if (existsSync(file(backupId))) unlinkSync(file(backupId));
+      };
+      try {
+        await pipeline(req.body as NodeJS.ReadableStream, count, out);
+      } catch (e) {
+        drop();
+        throw e;
+      }
+      const man = await readArchiveManifest(file(backupId));
+      const comps = Array.isArray(man?.components) ? man.components : null;
+      const setup = man?.setup && typeof man.setup === 'object' ? (man.setup as BackupSetup) : null;
+      if (!man || !comps) {
+        drop();
+        throw Object.assign(
+          new Error('это не резервная копия сервера: в архиве нет manifest.json'),
+          {
+            statusCode: 400,
+          },
+        );
+      }
+      if (!setup || !Array.isArray(setup.services)) {
+        drop();
+        throw Object.assign(
+          new Error('в копии нет состава сервисов: она сделана до версии 1.6, нужна новая копия'),
+          { statusCode: 400 },
+        );
+      }
+      await db.insert(backups).values({
+        id: backupId,
+        serverId: id,
+        serverName: String(setup.serverName || man.hostname || ''),
+        hostname: String(man.hostname ?? ''),
+        createdAt: typeof man.createdAt === 'string' ? man.createdAt : new Date().toISOString(),
+        size: statSync(file(backupId)).size,
+        sha256: hash.digest('hex'),
+        manifest: { components: comps, setup },
+      });
+      hub.broadcast({ type: 'server.changed', serverId: id });
+      return { id: backupId };
     },
   );
 

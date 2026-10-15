@@ -47,6 +47,9 @@ type Manifest struct {
 	Components  []Component `json:"components"`
 	Sha256      string      `json:"sha256,omitempty"`
 	ArchiveSize int64       `json:"archiveSize,omitempty"`
+	// Setup - что стояло на сервере (сервисы, ответы команд, AWG), снимок панели: по нему
+	// панель разворачивает копию на чистый сервер, в том числе из скачанного файла.
+	Setup json.RawMessage `json:"setup,omitempty"`
 }
 
 // Detect возвращает компоненты, которые есть на этом сервере.
@@ -118,7 +121,12 @@ type CreateParams struct {
 	Token      string   `json:"token"` // Bearer для загрузки в панель
 	Hostname   string   `json:"hostname"`
 	Agent      string   `json:"agent"`
+	// Setup - снимок набора сервера от панели, кладётся в manifest.json как есть.
+	Setup json.RawMessage `json:"setup,omitempty"`
 }
+
+// maxSetup - предел снимка набора: это несколько строк JSON, не данные.
+const maxSetup = 256 << 10
 
 // Create собирает архив и загружает его в панель. Возвращает манифест с размером и sha256.
 func Create(ctx context.Context, p CreateParams, stream func(channel, chunk string)) (*Manifest, error) {
@@ -147,6 +155,9 @@ func Create(ctx context.Context, p CreateParams, stream func(channel, chunk stri
 	tw := tar.NewWriter(gz)
 
 	man := Manifest{Version: 1, Hostname: p.Hostname, CreatedAt: time.Now().UTC().Format(time.RFC3339), Agent: p.Agent}
+	if len(p.Setup) > 0 && len(p.Setup) <= maxSetup && json.Valid(p.Setup) {
+		man.Setup = p.Setup
+	}
 	for _, c := range chosen {
 		log("== %s", c.Title)
 		for _, path := range c.Paths {
