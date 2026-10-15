@@ -9,6 +9,7 @@ import { Chip } from '@/components/ui/chip';
 import { Field } from '@/components/ui/field';
 import { Input } from '@/components/ui/input';
 import { PageTitle } from '@/components/ui/page-title';
+import { Select } from '@/components/ui/select';
 import { api } from '@/lib/api';
 import { type CommandInfo, commandsApi, paramVisible } from '@/lib/commands';
 import { dateTime } from '@/lib/format';
@@ -16,7 +17,7 @@ import { clampInt } from '@/lib/masks';
 import { serverLock, useServer } from '@/lib/servers';
 import { useAction } from '@/lib/use-action';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { useParams, useSearch } from '@tanstack/react-router';
+import { useNavigate, useParams, useSearch } from '@tanstack/react-router';
 import type {
   SetupCheck,
   SetupPlan,
@@ -24,8 +25,8 @@ import type {
   SetupStep,
   SetupStepState,
 } from '@vps/protocol';
-import { ChevronDown, Play, RotateCcw } from 'lucide-react';
-import { useState } from 'react';
+import { ChevronDown, Play, RotateCcw, Upload } from 'lucide-react';
+import { useRef, useState } from 'react';
 
 /** Поля команд, которые настройка задаёт сама: экземпляр AWG и поведение при уже стоящем. */
 const HIDDEN = new Set(['AWG_INSTANCE', 'AWG_REPLACE']);
@@ -167,6 +168,123 @@ function StepFields({
   );
 }
 
+/** Копия в списке панели: с составом сервисов (с версии 1.6) её можно развернуть. */
+interface BackupRow {
+  id: string;
+  serverId: string | null;
+  serverName: string;
+  createdAt: string;
+  manifest: { setup?: unknown };
+}
+
+/**
+ * Откуда настройка: пустой сервер или резервная копия - любого сервера панели или файл,
+ * скачанный раньше (загружается и становится копией этого сервера).
+ */
+function SourceCard({
+  serverId,
+  backup,
+  disabled,
+}: {
+  serverId: string;
+  backup: string | undefined;
+  disabled: boolean;
+}) {
+  const navigate = useNavigate();
+  const qc = useQueryClient();
+  const [fromCopy, setFromCopy] = useState(Boolean(backup));
+  const upload = useAction();
+  const fileRef = useRef<HTMLInputElement>(null);
+  const list = useQuery({
+    queryKey: ['backups'],
+    queryFn: () => api<BackupRow[]>('/api/backups'),
+    enabled: fromCopy,
+  });
+  const copies = (list.data ?? []).filter((b) => b.serverId && b.manifest.setup);
+  const go = (b: string | undefined) =>
+    void navigate({ to: '/servers/$id/setup', params: { id: serverId }, search: { backup: b } });
+  const off = disabled || upload.busy;
+
+  function send(file: File) {
+    void upload.run(async () => {
+      const r = await api<{ id: string }>(`/api/servers/${serverId}/backups/upload`, {
+        method: 'POST',
+        body: file,
+        headers: { 'content-type': 'application/gzip' },
+      });
+      await qc.invalidateQueries({ queryKey: ['backups'] });
+      go(r.id);
+    });
+  }
+
+  return (
+    <Card className="flex flex-col gap-3 p-4">
+      <div className="flex flex-wrap gap-x-5 gap-y-2">
+        <label className="flex items-center gap-2 text-sm">
+          <input
+            type="radio"
+            name="setup-source"
+            checked={!fromCopy}
+            disabled={off}
+            onChange={() => {
+              setFromCopy(false);
+              go(undefined);
+            }}
+          />
+          Пустой сервер
+        </label>
+        <label className="flex items-center gap-2 text-sm">
+          <input
+            type="radio"
+            name="setup-source"
+            checked={fromCopy}
+            disabled={off}
+            onChange={() => setFromCopy(true)}
+          />
+          Из резервной копии
+        </label>
+      </div>
+      {fromCopy && (
+        <div className="flex flex-col gap-2 sm:flex-row sm:items-end">
+          <Field label="Копия" htmlFor="setup-backup" className="grow">
+            <Select
+              id="setup-backup"
+              value={backup ?? ''}
+              disabled={off || list.isFetching}
+              onChange={(e) => go(e.target.value || undefined)}
+            >
+              <option value="">
+                {copies.length ? 'не выбрана' : 'копий с составом сервисов нет'}
+              </option>
+              {copies.map((b) => (
+                <option key={b.id} value={b.id}>
+                  {b.serverName}, {dateTime(b.createdAt)}
+                </option>
+              ))}
+            </Select>
+          </Field>
+          <input
+            ref={fileRef}
+            type="file"
+            accept=".gz,.tgz,application/gzip"
+            className="hidden"
+            onChange={(e) => {
+              const f = e.target.files?.[0];
+              e.target.value = '';
+              if (f) send(f);
+            }}
+          />
+          <Button disabled={off} onClick={() => fileRef.current?.click()}>
+            <Upload className={upload.busy ? 'size-4 animate-pulse' : 'size-4'} />
+            {upload.busy ? 'Загрузка\u2026' : 'Загрузить файл'}
+          </Button>
+        </div>
+      )}
+      {upload.error && <Alert tone="bad">{upload.error}</Alert>}
+    </Card>
+  );
+}
+
 /**
  * Настройка сервера в один клик: шаги с ответами (по умолчанию отмечено всё, чего на сервере
  * нет), запуск одним действием, ход по шагам и продолжение с упавшего. С ?backup=<id> -
@@ -199,6 +317,14 @@ export function ServerSetupPage() {
     setSteps(plan.data.steps);
   }
   const [checks, setChecks] = useState<SetupCheck[] | null>(null);
+  // другой источник (копия или пустой сервер) - шаги прежнего плана не показываем
+  const [stepsKey, setStepsKey] = useState(backup ?? '');
+  if ((backup ?? '') !== stepsKey) {
+    setStepsKey(backup ?? '');
+    setSteps(null);
+    setPlanFor(null);
+    setChecks(null);
+  }
   // шаги с развёрнутыми параметрами (по умолчанию видны только пароли)
   const [open, setOpen] = useState<Set<string>>(new Set());
   const [showOutput, setShowOutput] = useState(false);
@@ -267,6 +393,11 @@ export function ServerSetupPage() {
         ]}
       />
       <PageTitle hero>Настройка сервера</PageTitle>
+      <SourceCard
+        serverId={id}
+        backup={backup}
+        disabled={!online || lock.busy || running || act.busy}
+      />
       {plan.data?.backup && (
         <Alert>
           Восстановление копии <b>{plan.data.backup.serverName}</b> от{' '}

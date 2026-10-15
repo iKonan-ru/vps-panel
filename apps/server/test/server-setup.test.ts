@@ -375,4 +375,18 @@ describe('настройка сервера', () => {
       .find((a) => a.serverId === 's1' && a.kind === 'xui');
     expect(acc && box.open(acc.fields[0]?.value ?? '')).toBe('old-pass');
   });
+
+  it('копия без состава сервисов (до 1.6) - восстановление с установкой недоступно', async () => {
+    mkdirSync(join(dir, 'backups'), { recursive: true });
+    writeFileSync(join(dir, 'backups', 'b2.tar.gz'), 'x');
+    db.insert(backups)
+      .values({
+        id: 'b2',
+        serverId: 's1',
+        serverName: 'Old',
+        manifest: { components: [{ id: 'xui' }] },
+      } as never)
+      .run();
+    await expect(make().plan('s1', 'b2')).rejects.toThrow(/до версии 1\.6/);
+  });
 });
