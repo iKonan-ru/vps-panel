@@ -12,6 +12,7 @@ export const actionTitles: Record<string, string> = {
   'docker.remove': 'Docker: удаление',
   'system.reboot': 'Перезагрузка',
   'system.upgrade': 'Обновление пакетов',
+  'fail2ban.unban': 'fail2ban: снятие бана',
   'ssh.keys.add': 'Добавление SSH-ключей root',
   'panel.backup': 'Резервная копия панели',
   'gclients.sync': 'Синхронизация клиентов',

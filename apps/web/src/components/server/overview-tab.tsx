@@ -17,7 +17,7 @@ import { Section } from '@/components/ui/section';
 import { TBody, Table } from '@/components/ui/table';
 import { actions } from '@/lib/actions';
 import { api } from '@/lib/api';
-import { gb } from '@/lib/format';
+import { gb, plural } from '@/lib/format';
 import { type ServerDetail, serverLock } from '@/lib/servers';
 import { type ServiceUpdateKind, startServiceUpdate } from '@/lib/service-update';
 import { uninstallCommand } from '@/lib/uninstall';
@@ -112,6 +112,7 @@ export function OverviewTab({ s, onTab }: { s: ServerDetail; onTab?: (tab: strin
     });
   }
   const m = s.metrics;
+  const cores = s.inventory?.host.cpuCores;
   const findings = s.audit?.findings ?? [];
   const high = findings.filter((f) => f.severity === 'high').length;
   const medium = findings.filter((f) => f.severity === 'medium').length;
@@ -232,10 +233,12 @@ export function OverviewTab({ s, onTab }: { s: ServerDetail; onTab?: (tab: strin
         <MetricCard
           label="CPU"
           value={m ? <Num value={m.cpuPercent} format={(v) => `${Math.round(v)}%`} /> : '-'}
+          unit={cores ? `/ ${cores}\u00a0${plural(cores, 'ядро', 'ядра', 'ядер')}` : undefined}
           note={
             m ? (
               <span title={'Load average за 1\u00a0мин'}>
                 нагрузка <Num value={m.load1} format={(v) => v.toFixed(2).replace('.', ',')} />
+                {cores ? ` из ${cores}` : ''}
               </span>
             ) : (
               'нет данных'
@@ -460,7 +463,14 @@ export function OverviewTab({ s, onTab }: { s: ServerDetail; onTab?: (tab: strin
                 </TBody>
               </Table>
             )}
-            {s.audit && <BannedIps audit={s.audit} />}
+            {s.audit && (
+              <BannedIps
+                audit={s.audit}
+                serverId={s.id}
+                disabled={!canAct}
+                reason={online ? lock.reason : 'Сервер не в сети'}
+              />
+            )}
           </Section>
         </div>
         <div className="flex flex-col gap-4">

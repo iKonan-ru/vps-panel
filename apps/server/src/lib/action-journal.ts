@@ -15,6 +15,22 @@ export const MAX_OUTPUT = 1_000_000;
  */
 const running = new Map<string, () => string>();
 
+/** Кто ждёт окончания действий на серверах (синхронизация клиентов, пропустившая занятый). */
+const finishedListeners = new Set<(serverId: string) => void>();
+
+/** Подписка на окончание любого действия; возвращает отписку. */
+export function onActionFinished(fn: (serverId: string) => void): () => void {
+  finishedListeners.add(fn);
+  return () => {
+    finishedListeners.delete(fn);
+  };
+}
+
+/** Действие на сервере закончилось: сказать подписчикам. */
+export function actionFinished(serverId: string) {
+  for (const fn of finishedListeners) fn(serverId);
+}
+
 /** Накопленный вывод идущего действия или null (не идёт или без стрима). */
 export function liveOutput(id: string): string | null {
   return running.get(id)?.() ?? null;
@@ -44,6 +60,7 @@ export function actionJournal(db: Db, hub: UiHub, registry: AgentRegistry) {
       .set({ finishedAt: new Date().toISOString(), exitCode, output: output.slice(-MAX_OUTPUT) })
       .where(eq(actionLog.id, id));
     hub.broadcast({ type: 'action.finished', serverId, actionId: id, exitCode });
+    actionFinished(serverId);
     // после любого действия просим агента прислать свежий inventory: интерфейс обновится сам
     void registry.refreshInventory(serverId);
   }

@@ -8,7 +8,7 @@ import { api } from '@/lib/api';
 import { cn } from '@/lib/cn';
 import { useQuery } from '@tanstack/react-query';
 import { Link } from '@tanstack/react-router';
-import type { StdCell, StdMatrix } from '@vps/protocol';
+import type { StdCell, StdKey, StdMatrix } from '@vps/protocol';
 import { Download, RefreshCw } from 'lucide-react';
 
 const tones: Record<StdCell['state'], 'ok' | 'warn' | 'muted' | 'bad'> = {
@@ -19,6 +19,21 @@ const tones: Record<StdCell['state'], 'ok' | 'warn' | 'muted' | 'bad'> = {
   na: 'muted',
 };
 
+/** Вкладка сервиса на странице сервера; у прокси для браузера своей вкладки нет. */
+const serviceTab: Partial<Record<StdKey, string>> = {
+  xui: 'xui',
+  mtproxyl: 'mtproxyl',
+  'awg-3.1': 'awg',
+  'awg-2.0': 'awg',
+  wdtt: 'wdtt',
+  openflux: 'openflux',
+};
+
+/** Вкладка, на которую ведёт сервис в строке сервера: только если сервис там стоит. */
+function tabFor(key: StdKey, cell: StdCell): string | undefined {
+  return cell.state === 'ok' || cell.state === 'warn' ? serviceTab[key] : undefined;
+}
+
 /** Клетка: состояние и текст; недостающее - кнопка установки командой каталога. */
 function Cell({
   cell,
@@ -26,12 +41,15 @@ function Cell({
   online,
   install,
   installHint,
+  tab,
 }: {
   cell: StdCell;
   serverId: string;
   online: boolean;
   install: string | undefined;
   installHint: string | undefined;
+  /** Вкладка сервиса: плашка ведёт на неё. */
+  tab?: string | undefined;
 }) {
   if (cell.state === 'missing' && install)
     return (
@@ -60,11 +78,24 @@ function Cell({
         {cell.text}
       </span>
     );
+  const chip = (
+    <Chip tone={tones[cell.state]} dot={cell.state === 'ok'}>
+      {cell.state === 'ok' ? 'есть' : cell.state === 'warn' ? 'отклонение' : 'нет данных'}
+    </Chip>
+  );
   return (
     <span className="inline-flex min-w-0 flex-col items-start gap-0.5" title={cell.hint}>
-      <Chip tone={tones[cell.state]} dot={cell.state === 'ok'}>
-        {cell.state === 'ok' ? 'есть' : cell.state === 'warn' ? 'отклонение' : 'нет данных'}
-      </Chip>
+      {tab ? (
+        <Link
+          to="/servers/$id/$tab"
+          params={{ id: serverId, tab }}
+          className="rounded-full hover:brightness-125 focus-visible:outline-2 focus-visible:outline-accent"
+        >
+          {chip}
+        </Link>
+      ) : (
+        chip
+      )}
       <span className="max-w-[180px] truncate text-xs text-muted">{cell.text}</span>
       {/* подробности отклонения видны и без наведения (на телефоне его нет) */}
       {cell.state === 'warn' && cell.hint && (
@@ -131,6 +162,7 @@ export function ServicesPage() {
                           online={r.status === 'online'}
                           install={s.install}
                           installHint={s.installHint}
+                          tab={tabFor(s.key, r.cells[s.key])}
                         />
                       </td>
                     ))}
@@ -152,20 +184,34 @@ export function ServicesPage() {
                     <span className="ml-2 text-xs font-normal text-muted">не в сети</span>
                   )}
                 </Link>
-                {data.standard.map((s) => (
-                  <div key={s.key} className="flex items-center gap-3">
-                    <div className="w-20 shrink-0 text-[13px]">{s.title}</div>
-                    <div className="min-w-0 grow">
-                      <Cell
-                        cell={r.cells[s.key]}
-                        serverId={r.serverId}
-                        online={r.status === 'online'}
-                        install={s.install}
-                        installHint={s.installHint}
-                      />
+                {data.standard.map((s) => {
+                  const tab = tabFor(s.key, r.cells[s.key]);
+                  return (
+                    <div key={s.key} className="flex items-center gap-3">
+                      {tab ? (
+                        <Link
+                          to="/servers/$id/$tab"
+                          params={{ id: r.serverId, tab }}
+                          className="w-20 shrink-0 text-[13px] text-accent"
+                        >
+                          {s.title}
+                        </Link>
+                      ) : (
+                        <div className="w-20 shrink-0 text-[13px]">{s.title}</div>
+                      )}
+                      <div className="min-w-0 grow">
+                        <Cell
+                          cell={r.cells[s.key]}
+                          serverId={r.serverId}
+                          online={r.status === 'online'}
+                          install={s.install}
+                          installHint={s.installHint}
+                          tab={tab}
+                        />
+                      </div>
                     </div>
-                  </div>
-                ))}
+                  );
+                })}
               </Card>
             ))}
           </div>

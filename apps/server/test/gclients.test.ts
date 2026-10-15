@@ -12,6 +12,7 @@ import {
   gclients,
   servers,
 } from '../src/db/schema.js';
+import { actionFinished } from '../src/lib/action-journal.js';
 import { clientSlug, newClientToken, newXuiSubId } from '../src/lib/gclient-names.js';
 import { awgRef } from '../src/lib/gclient-services.js';
 import { GClients, PANEL_HOST_KEY, queued } from '../src/lib/gclients.js';
@@ -357,6 +358,27 @@ describe('GClients.reconcile: 3X-UI', () => {
     db.update(gclientBindings).set(queued()).run();
     await g.reconcile();
     expect(xui.s1?.clients.get(c.slug)).toBeTruthy();
+  });
+
+  it('занятый сервер синхронизируется сразу после окончания мешавшего действия', async () => {
+    const c = mk('Гоша');
+    const g = new GClients(db, box, registry, journal, async () => [], { warn: () => {} });
+    const stop = g.start();
+    try {
+      busy.add('s1');
+      g.kick();
+      await vi.waitFor(() => expect(g.syncing).toBe(false));
+      expect(xui.s1?.clients.has(c.slug)).toBe(false);
+      expect(xui.s2?.clients.has(c.slug)).toBe(true);
+      busy.clear();
+      // другое действие на другом сервере не будит
+      actionFinished('s2');
+      expect(g.syncing).toBe(false);
+      actionFinished('s1');
+      await vi.waitFor(() => expect(xui.s1?.clients.has(c.slug)).toBe(true));
+    } finally {
+      stop();
+    }
   });
 
   it('выключение, исключение сервера, удаление клиента; занятый сервер ждёт', async () => {

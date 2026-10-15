@@ -259,8 +259,18 @@ export async function buildApp(opts: AppOptions) {
   // inbound-ы 3X-UI меняются из панели - выходы в Telegram за ними (основной хранит снимок)
   const exitsAfter = (serverId: string, inboundId: number, gone: boolean) =>
     exitsAfterInboundChange(exitDeps, xraySpares, serverId, inboundId, gone);
+  // глобальные клиенты: сверка с серверами в фоне (раньше маршрутов 3X-UI: правка inbound-а запускает её)
+  const gc = new GClients(
+    db,
+    box,
+    registry,
+    actionJournal(db, hub, registry),
+    () => panelAddresses(env.PANEL_PUBLIC_URL),
+    app.log,
+  );
   await app.register(xuiRoutes, {
     ...serverRouteOpts,
+    gc,
     xray,
     exitsAfter,
     syncSpares: () => void xraySpares.sync().catch(() => undefined),
@@ -322,15 +332,6 @@ export async function buildApp(opts: AppOptions) {
   stops.push(serviceUpdates.start());
   await app.register(standardRoutes, { db, registry, env, updates: serviceUpdates });
   await app.register(updateRoutes, { db, hub, registry, updates: serviceUpdates });
-  // глобальные клиенты: сверка с серверами в фоне
-  const gc = new GClients(
-    db,
-    box,
-    registry,
-    actionJournal(db, hub, registry),
-    () => panelAddresses(env.PANEL_PUBLIC_URL),
-    app.log,
-  );
   stops.push(gc.start(), startHousekeeping(db, app.log));
   // IP своих серверов - мимо fail2ban панели (lib/fail2ban-ignore.ts)
   stops.push(startFail2banIgnore(db, registry, env.DATA_DIR, app.log));

@@ -3,7 +3,7 @@ import type { AgentRegistry } from '../agents/registry.js';
 import { type StatusCache, toSummary } from '../agents/state.js';
 import type { Db } from '../db/index.js';
 import { gclientBindings, gclientDevices, gclients, servers } from '../db/schema.js';
-import type { actionJournal } from './action-journal.js';
+import { type actionJournal, onActionFinished } from './action-journal.js';
 import { awgForgetKey } from './awg-clients.js';
 import {
   type AwgStatus,
@@ -90,6 +90,18 @@ export function stamp(): string {
  */
 export const queued = () => ({ state: 'pending', updatedAt: stamp() });
 
+/**
+ * Привязки 3X-UI сервера - в очередь, и синхронизация сразу: inbound-ы сервера изменились
+ * (добавлен, удалён, правка подписи, порта, Reality, вкл/выкл) - ссылки клиентов тоже.
+ */
+export function resyncXui(db: Db, gc: Pick<GClients, 'kick'>, serverId: string) {
+  db.update(gclientBindings)
+    .set(queued())
+    .where(and(eq(gclientBindings.serverId, serverId), eq(gclientBindings.service, 'xui')))
+    .run();
+  gc.kick();
+}
+
 /** Клиенту разрешён сервис на сервере: доступ null - всё, иначе только отмеченное. */
 export function allowed(c: Pick<Client, 'access'>, serverId: string, service: string): boolean {
   return (
@@ -139,6 +151,11 @@ export class GClients {
   private absentSince = new Map<string, number>();
   private absentLoaded = false;
   private again = false;
+  /**
+   * Серверы, пропущенные потому, что были заняты другим действием: синхронизация начинается,
+   * как только оно закончится, а не через 5 минут (правка inbound-а сама её и запускает).
+   */
+  private waiting = new Set<string>();
   /** Ход сверки по серверам (имя сервера -> ход): для кнопок "Сверить" и панели хода. */
   readonly progress = new Map<string, SyncProgress>();
   /** Запрошена остановка: проход заканчивается после текущей операции на каждом сервере. */
@@ -174,7 +191,14 @@ export class GClients {
   }
 
   start() {
-    return schedule(() => this.kick(), 30_000, 5 * 60_000);
+    const stopTimer = schedule(() => this.kick(), 30_000, 5 * 60_000);
+    const stopWatch = onActionFinished((serverId) => {
+      if (this.waiting.delete(serverId)) this.kick();
+    });
+    return () => {
+      stopTimer();
+      stopWatch();
+    };
   }
 
   /**
@@ -518,7 +542,9 @@ export class GClients {
     try {
       action = this.journal.open(row.id, 'gclients.sync', { count: work.length });
     } catch {
-      return; // сервер занят другим действием - в следующий раз
+      // сервер занят другим действием - сразу после его окончания
+      this.waiting.add(row.id);
+      return;
     }
     const out: string[] = [];
     let failed = 0;

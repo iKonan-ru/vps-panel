@@ -1,11 +1,11 @@
-import { and, eq } from 'drizzle-orm';
+import { eq } from 'drizzle-orm';
 import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
 import type { StatusCache } from '../agents/state.js';
-import { gclientBindings, servers } from '../db/schema.js';
+import { servers } from '../db/schema.js';
 import { actionJournal } from '../lib/action-journal.js';
 import type { ServerRouteOpts } from '../lib/action-runners.js';
-import { type GClients, queued } from '../lib/gclients.js';
+import { type GClients, resyncXui } from '../lib/gclients.js';
 import type { RuReach } from '../lib/ru-reach.js';
 import type { InboundExitHooks } from '../lib/xray-exits.js';
 import { type XuiCall, unwrap, xuiApi } from '../lib/xui-api.js';
@@ -113,14 +113,11 @@ export async function xuiInboundRoutes(app: FastifyInstance, opts: Deps) {
   };
   const inboundList = async (api: XuiCall) =>
     (unwrap(await api('GET', 'inbounds/list'), 'inbounds/list') as Record<string, unknown>[]) ?? [];
-  /** Клиенты панели - в inbound-ы сервера сейчас, не через 5 минут и не через 6 часов. */
-  const resync = (id: string) => {
-    db.update(gclientBindings)
-      .set(queued())
-      .where(and(eq(gclientBindings.serverId, id), eq(gclientBindings.service, 'xui')))
-      .run();
-    gc.kick();
-  };
+  /**
+   * Клиенты панели - в inbound-ы сервера сейчас, не через 5 минут. Вызывается после окончания
+   * действия: пока оно идёт, сервер занят и синхронизация его пропустила бы.
+   */
+  const resync = (id: string) => resyncXui(db, gc, id);
 
   /** Значения окна: свободные порты, подписи, цели уже стоящих inbound-ов. */
   app.get('/api/servers/:id/xui/inbound-new', async (req) => {
@@ -220,15 +217,15 @@ export async function xuiInboundRoutes(app: FastifyInstance, opts: Deps) {
           say(`${title}: Xray работает`);
           created.push(title);
         }
-        resync(id);
         // новый RAW может стать запасным выходом в Telegram этого сервера
         syncSpares();
         say('Клиенты панели добавятся синхронизацией, подписки обновятся сами');
         await action.finish(0);
+        resync(id);
       } catch (e) {
         say(`ОШИБКА: ${(e as Error).message}`);
-        if (created.length) resync(id);
         await action.finish(1);
+        if (created.length) resync(id);
       }
     })();
     return { actionId: action.id };
@@ -340,12 +337,11 @@ export async function xuiInboundRoutes(app: FastifyInstance, opts: Deps) {
           }
           say('Xray работает');
         }
-        if (risky) {
-          resync(id);
-          for (const n of await exitsAfter(id, iid, false)) say(n);
-          say('Ссылки клиентов панели обновятся синхронизацией, подписки - сами');
-        }
+        if (risky) for (const n of await exitsAfter(id, iid, false)) say(n);
+        // подпись тоже в ссылках: синхронизация после любой правки
+        say('Ссылки клиентов панели обновятся синхронизацией, подписки - сами');
         await action.finish(0);
+        resync(id);
       } catch (e) {
         say(`ОШИБКА: ${(e as Error).message}`);
         await action.finish(1);
@@ -380,7 +376,6 @@ export async function xuiInboundRoutes(app: FastifyInstance, opts: Deps) {
           .where(eq(servers.id, id))
           .run();
       reach.dropInbound(id, iid);
-      resync(id);
       const notes = await exitsAfter(id, iid, true);
       await journal.finish(
         actionId,
@@ -391,6 +386,7 @@ export async function xuiInboundRoutes(app: FastifyInstance, opts: Deps) {
           ...notes,
         ].join('\n'),
       );
+      resync(id);
       return { ok: true };
     } catch (e) {
       await journal.finish(actionId, id, 1, (e as Error).message);
