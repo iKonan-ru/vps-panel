@@ -148,6 +148,7 @@ function StepFields({
               value={a[p.name] ?? ''}
               onChange={(v) => set(p.name, v)}
               awgContainers={[]}
+              generate
             />
           ))}
         </fieldset>
