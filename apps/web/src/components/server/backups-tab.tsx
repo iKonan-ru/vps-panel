@@ -1,7 +1,7 @@
 import { ActionPanel } from '@/components/action-output';
 import { ActionBar } from '@/components/ui/action-bar';
 import { Alert } from '@/components/ui/alert';
-import { Button, buttonClass } from '@/components/ui/button';
+import { Button, ButtonLink, buttonClass } from '@/components/ui/button';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Chip } from '@/components/ui/chip';
 import { useConfirm } from '@/components/ui/confirm';
@@ -381,11 +381,7 @@ function RestoreDialog({
           <div className="flex flex-col gap-2 text-sm">
             <Label>Состав</Label>
             {comps.map((c) => {
-              const missing =
-                t &&
-                ((c.id === 'xui' && !t.services.some((x) => x.kind === 'xui')) ||
-                  (c.id === 'wdtt' && !t.services.some((x) => x.kind === 'wdtt')) ||
-                  (c.id === 'mtproxyl' && !t.services.some((x) => x.kind === 'mtproxyl')));
+              const missing = t && serviceMissing(c.id, t);
               return (
                 <Checkbox
                   key={c.id}
@@ -405,6 +401,26 @@ function RestoreDialog({
               );
             })}
           </div>
+          {t && target !== backup.serverId && comps.some((c) => serviceMissing(c.id, t)) && (
+            <Alert>
+              <div className="flex flex-col gap-2">
+                <span>
+                  На сервере нет сервисов из копии: настройка сервера поставит их сама, с портами
+                  старого сервера, и разложит данные
+                </span>
+                <div>
+                  <ButtonLink
+                    size="sm"
+                    to="/servers/$id/setup"
+                    params={{ id: target }}
+                    search={{ backup: backup.id }}
+                  >
+                    Восстановить с установкой сервисов
+                  </ButtonLink>
+                </div>
+              </div>
+            </Alert>
+          )}
           {target === backup.serverId && (
             <Alert>Конфиги этого сервера вернутся к состоянию на момент создания копии</Alert>
           )}
@@ -434,4 +450,11 @@ function RestoreDialog({
       )}
     </Dialog>
   );
+}
+
+/** Сервиса компонента копии нет на сервере (AWG - нет ни одного контейнера). */
+function serviceMissing(component: string, s: { services: { kind: string }[] }): boolean {
+  const kind = component === 'amnezia' ? 'amnezia' : component;
+  if (!['xui', 'wdtt', 'mtproxyl', 'amnezia'].includes(kind)) return false;
+  return !s.services.some((x) => x.kind === kind);
 }
