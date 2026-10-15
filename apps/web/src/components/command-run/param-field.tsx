@@ -13,11 +13,14 @@ export function ParamField({
   value,
   onChange,
   awgContainers,
+  idPrefix,
 }: {
   p: CommandParam;
   value: string;
   onChange: (v: string) => void;
   awgContainers: { name: string; label: string }[];
+  /** Несколько форм команд на одной странице (настройка сервера): id полей не совпадают. */
+  idPrefix?: string;
 }) {
   // сохранённый ответ мог указывать на контейнер, которого уже нет: берём первый из стоящих
   const awgFirst = awgContainers[0]?.name;
@@ -25,7 +28,7 @@ export function ParamField({
   useEffect(() => {
     if (p.type === 'awg-container' && !awgValid && awgFirst) onChange(awgFirst);
   }, [p.type, awgValid, awgFirst, onChange]);
-  const id = `p-${p.name}`;
+  const id = idPrefix ? `p-${idPrefix}-${p.name}` : `p-${p.name}`;
   const wide =
     p.type === 'text' ||
     (p.type === 'select' && (p.options?.some((o) => o.label.length > 40) ?? false));

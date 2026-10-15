@@ -28,6 +28,7 @@ const OpenPanelPage = lazyRouteComponent(() => import('@/pages/open-panel'), 'Op
 const LogPage = lazyRouteComponent(() => import('@/pages/log'), 'LogPage');
 const ServerPage = lazyRouteComponent(() => import('@/pages/server'), 'ServerPage');
 const ServerNewPage = lazyRouteComponent(() => import('@/pages/server-new'), 'ServerNewPage');
+const ServerSetupPage = lazyRouteComponent(() => import('@/pages/server-setup'), 'ServerSetupPage');
 const ServicesPage = lazyRouteComponent(() => import('@/pages/services'), 'ServicesPage');
 const SettingsPage = lazyRouteComponent(() => import('@/pages/settings'), 'SettingsPage');
 const AccountPage = lazyRouteComponent(() => import('@/pages/account'), 'AccountPage');
@@ -105,6 +106,15 @@ const serverRoute = createRoute({
   getParentRoute: () => appRoute,
   path: '/servers/$id',
   component: ServerPage,
+});
+/** Настройка сервера в один клик; backup - восстановление из этой копии. */
+const serverSetupRoute = createRoute({
+  getParentRoute: () => appRoute,
+  path: '/servers/$id/setup',
+  validateSearch: (raw: Record<string, unknown>) => ({
+    backup: typeof raw.backup === 'string' ? raw.backup : undefined,
+  }),
+  component: ServerSetupPage,
 });
 /** Вкладка карточки в адресе: /servers/<id>/firewall, /servers/<id>/docker и т.д. */
 const serverTabRoute = createRoute({
@@ -197,6 +207,7 @@ const routeTree = rootRoute.addChildren([
     serversRoute,
     newServerRoute,
     serverRoute,
+    serverSetupRoute,
     serverTabRoute,
     commandsRoute,
     commandRunRoute,

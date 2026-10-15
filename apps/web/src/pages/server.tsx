@@ -45,6 +45,7 @@ import {
   Power,
   RefreshCw,
   Trash2,
+  Wand2,
   Wrench,
   X,
 } from 'lucide-react';
@@ -215,6 +216,19 @@ export function ServerPage() {
               title: lock.reason,
               // на узком экране кнопкой - только когда есть что обновлять
               mobile: Boolean(s.agentUpdateAvailable || s.agentUpdating || agentRunning),
+            },
+            {
+              key: 'setup',
+              label: 'Настроить сервер',
+              icon: <Wand2 className="size-4" />,
+              onClick: () =>
+                void navigate({
+                  to: '/servers/$id/setup',
+                  params: { id },
+                  search: { backup: undefined },
+                }),
+              disabled: !online || lock.busy || agentBusy || s.agentUpdating || agentRunning,
+              title: lock.reason ?? 'Ключ панели, безопасность, сервисы и клиенты одним действием',
             },
             {
               key: 'reinstall',

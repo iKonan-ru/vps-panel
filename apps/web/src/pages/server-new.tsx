@@ -15,10 +15,10 @@ import { PageTitle } from '@/components/ui/page-title';
 import { api } from '@/lib/api';
 import { countryName } from '@/lib/countries';
 import { clampInt } from '@/lib/masks';
-import { useServers } from '@/lib/servers';
+import { useServer, useServers } from '@/lib/servers';
 import { useQueryClient } from '@tanstack/react-query';
 import { useNavigate } from '@tanstack/react-router';
-import { Check, Radar, X as XIcon } from 'lucide-react';
+import { Check, Radar, Wand2, X as XIcon } from 'lucide-react';
 import { type FormEvent, useState } from 'react';
 
 interface Probe {
@@ -66,7 +66,6 @@ export function ServerNewPage() {
     }
   }
   const qc = useQueryClient();
-  const navigate = useNavigate();
 
   async function submit(e: FormEvent) {
     e.preventDefault();
@@ -105,11 +104,7 @@ export function ServerNewPage() {
             Сервер <b>{name}</b> добавлен
           </p>
           <InstallAgent serverId={created.id} host={host} />
-          <div className="flex justify-end">
-            <Button onClick={() => navigate({ to: '/servers/$id', params: { id: created.id } })}>
-              Открыть сервер
-            </Button>
-          </div>
+          <NextStep serverId={created.id} />
         </Card>
       </div>
     );
@@ -231,4 +226,38 @@ function autoName(h: HostingForm, taken: string[]): string {
   let name = base;
   for (let i = 2; taken.includes(name); i++) name = `${base} ${i}`;
   return name;
+}
+
+/**
+ * Что дальше: агент в сети - настройка сервера в один клик (ключ панели, безопасность,
+ * сервисы, клиенты); можно и просто открыть сервер.
+ */
+function NextStep({ serverId }: { serverId: string }) {
+  const navigate = useNavigate();
+  const { data: s } = useServer(serverId);
+  const online = s?.status === 'online';
+  return (
+    <div className="flex flex-wrap items-center justify-end gap-2">
+      {!online && (
+        <span className="text-xs text-muted">Настройка&nbsp;&mdash; после подключения агента</span>
+      )}
+      <Button onClick={() => navigate({ to: '/servers/$id', params: { id: serverId } })}>
+        Открыть сервер
+      </Button>
+      <Button
+        variant="primary"
+        disabled={!online}
+        onClick={() =>
+          navigate({
+            to: '/servers/$id/setup',
+            params: { id: serverId },
+            search: { backup: undefined },
+          })
+        }
+      >
+        <Wand2 className="size-4" />
+        Настроить сервер
+      </Button>
+    </div>
+  );
 }
