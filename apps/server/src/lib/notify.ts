@@ -1,4 +1,4 @@
-import type { Inventory, NotifyEvent } from '@vps/protocol';
+import type { Inventory, NotifyEvent, ServiceKind } from '@vps/protocol';
 import { eq } from 'drizzle-orm';
 import type { AgentRegistry } from '../agents/registry.js';
 import type { StatusCache } from '../agents/state.js';
@@ -27,6 +27,34 @@ function shortDate(iso: string, now = new Date()): string {
   if (Number.isNaN(d.getTime())) return iso.slice(0, 10);
   const dm = `${String(d.getUTCDate()).padStart(2, '0')}.${String(d.getUTCMonth() + 1).padStart(2, '0')}`;
   return d.getUTCFullYear() === now.getUTCFullYear() ? dm : `${dm}.${d.getUTCFullYear()}`;
+}
+
+/**
+ * Вкладка карточки сервера для сервиса (id вкладок - apps/web/src/pages/server.tsx); у сервисов
+ * без своей вкладки - обзор.
+ */
+const SERVICE_TAB: Partial<Record<ServiceKind, string>> = {
+  xui: 'xui',
+  mtproxyl: 'mtproxyl',
+  amnezia: 'awg',
+  wdtt: 'wdtt',
+  openflux: 'openflux',
+};
+
+/** Адрес карточки сервера в панели (с вкладкой) или пусто, если адрес панели не задан. */
+export function serverHref(panelUrl: string, id: string, tab?: string): string {
+  if (!panelUrl) return '';
+  try {
+    return new URL(`/servers/${encodeURIComponent(id)}${tab ? `/${tab}` : ''}`, panelUrl).href;
+  } catch {
+    return '';
+  }
+}
+
+/** Имя сервера для сообщения: жирным, ссылкой на карточку в панели, и адрес. */
+export function serverLabel(name: string, host: string, href: string): string {
+  const b = `<b>${esc(name)}</b>`;
+  return `${href ? `<a href="${esc(href).replace(/"/g, '&quot;')}">${b}</a>` : b} (${esc(host)})`;
 }
 
 /** Событие уведомления о доступности из России по ключу цели (lib/ru-reach.ts). */
@@ -59,9 +87,12 @@ export class Notifier {
     private db: Db,
     private registry: AgentRegistry,
     private tg: Telegram,
+    /** Адрес панели для ссылок на серверы (PANEL_PUBLIC_URL); пусто - без ссылок. */
+    private panelUrl = '',
   ) {}
 
-  private async serverName(id: string): Promise<string> {
+  /** Имя сервера ссылкой на его карточку; tab - вкладка, где разбираться с событием. */
+  private async serverName(id: string, tab?: string): Promise<string> {
     const row = (
       await this.db
         .select({ name: servers.name, host: servers.host })
@@ -69,7 +100,7 @@ export class Notifier {
         .where(eq(servers.id, id))
         .limit(1)
     )[0];
-    return row ? `<b>${esc(row.name)}</b> (${row.host})` : id;
+    return row ? serverLabel(row.name, row.host, serverHref(this.panelUrl, id, tab)) : esc(id);
   }
 
   /**
@@ -124,7 +155,7 @@ export class Notifier {
   }
 
   /** Сервисы из снимка: упал (down дольше SERVICE_DOWN_MS) и снова работает. */
-  private async services(id: string, inv: Inventory, name: string) {
+  private async services(id: string, inv: Inventory) {
     const prev = this.downs.get(id) ?? new Map<string, { since: number; notified: boolean }>();
     const next = new Map<string, { since: number; notified: boolean }>();
     const now = Date.now();
@@ -141,10 +172,12 @@ export class Notifier {
           d.notified = true;
           const why =
             typeof s.details.downReason === 'string' ? `: ${esc(s.details.downReason)}` : '';
+          const name = await this.serverName(id, SERVICE_TAB[s.kind]);
           await this.tg.send(`${name}: ${esc(s.title)} не работает${why}`);
         }
         next.set(key, d);
       } else if (was?.notified && (await this.tg.wants('serviceUp', id))) {
+        const name = await this.serverName(id, SERVICE_TAB[s.kind]);
         await this.tg.send(`${name}: ${esc(s.title)} снова работает`);
       }
     }
@@ -182,8 +215,8 @@ export class Notifier {
       this.remember(id, inv, true);
       return;
     }
+    await this.services(id, inv);
     const name = await this.serverName(id);
-    await this.services(id, inv, name);
 
     // критичные замечания: новые и ушедшие
     const prev = this.highFindings.get(id) ?? new Set<string>();
