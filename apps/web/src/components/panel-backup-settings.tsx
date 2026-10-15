@@ -61,7 +61,8 @@ export function PanelBackupSettings() {
       title="Резервная копия панели"
       info={
         <>
-          База панели, её ключи шифрования и SSH-ключ. Восстановление:{' '}
+          База панели, её ключи шифрования и SSH-ключ. Тем же паролем шифруются скачанные копии
+          серверов. Восстановление:{' '}
           <span className="font-mono">vps-panel restore &lt;файл&gt;</span>. Расшифровка вручную:{' '}
           <span className="break-all font-mono">{st.decryptHint}</span>
         </>

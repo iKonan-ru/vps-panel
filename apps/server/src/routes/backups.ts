@@ -8,8 +8,9 @@ import {
   statSync,
   unlinkSync,
 } from 'node:fs';
+import { open } from 'node:fs/promises';
 import { join } from 'node:path';
-import { Transform } from 'node:stream';
+import { PassThrough, Transform } from 'node:stream';
 import { pipeline } from 'node:stream/promises';
 import { desc, eq, isNull } from 'drizzle-orm';
 import type { FastifyInstance } from 'fastify';
@@ -23,6 +24,7 @@ import { readArchiveManifest } from '../lib/backup-archive.js';
 import type { BackupRestorer } from '../lib/backup-restore.js';
 import { type BackupSetup, backupSnapshot } from '../lib/backup-setup.js';
 import { newId } from '../lib/ids.js';
+import { encryptedSize, opensslDecryptStream, opensslEncryptStream } from '../lib/panel-backup.js';
 import type { UiHub } from '../lib/ui-hub.js';
 
 /**
@@ -35,9 +37,24 @@ export const MAX_BACKUP_BYTES = 2 * 1024 * 1024 * 1024;
 
 export async function backupRoutes(
   app: FastifyInstance,
-  opts: { db: Db; env: Env; registry: AgentRegistry; hub: UiHub; restorer: BackupRestorer },
+  opts: {
+    db: Db;
+    env: Env;
+    registry: AgentRegistry;
+    hub: UiHub;
+    restorer: BackupRestorer;
+    /** Пароль резервных копий ("Настройки" - "Резервная копия"): им шифруются скачанные копии. */
+    password: () => string | null;
+  },
 ) {
-  const { db, env, registry, hub, restorer } = opts;
+  const { db, env, registry, hub, restorer, password } = opts;
+  const noPassword = () =>
+    Object.assign(
+      new Error(
+        'не задан пароль резервных копий: его нужно задать в \u00abНастройки\u00bb \u2014 \u00abРезервная копия панели\u00bb',
+      ),
+      { statusCode: 409, code: 'no-password' },
+    );
   const journal = actionJournal(db, hub, registry);
   const dir = join(env.DATA_DIR, 'backups');
   // 700: без x каталог не открыть (с 600 загрузка бэкапа падает с EACCES), без
@@ -74,7 +91,10 @@ export async function backupRoutes(
     for (const [k, v] of uploads) if (v.expires < now) uploads.delete(k);
   };
 
-  app.addContentTypeParser('application/gzip', (_req, payload, done) => done(null, payload));
+  app.addContentTypeParser(
+    ['application/gzip', 'application/octet-stream'],
+    (_req, payload, done) => done(null, payload),
+  );
 
   app.get('/api/servers/:id/backups/components', async (req, reply) => {
     const { id } = z.object({ id: z.string() }).parse(req.params);
@@ -215,8 +235,9 @@ export async function backupRoutes(
     {
       bodyLimit: MAX_BACKUP_BYTES,
       onRequest: async (req, reply) => {
-        if (!String(req.headers['content-type'] ?? '').startsWith('application/gzip'))
-          return reply.code(415).send({ error: 'нужен файл копии .tar.gz' });
+        const type = String(req.headers['content-type'] ?? '');
+        if (!type.startsWith('application/gzip') && !type.startsWith('application/octet-stream'))
+          return reply.code(415).send({ error: 'нужен файл резервной копии' });
         if (Number(req.headers['content-length'] ?? 0) > MAX_BACKUP_BYTES)
           return reply.code(413).send({ error: 'архив больше 2\u00a0ГБ' });
       },
@@ -226,23 +247,61 @@ export async function backupRoutes(
       const row = db.select({ id: servers.id }).from(servers).where(eq(servers.id, id)).get();
       if (!row) throw Object.assign(new Error('сервер не найден'), { statusCode: 404 });
       const backupId = newId();
-      const hash = createHash('sha256');
-      const out = createWriteStream(file(backupId), { mode: 0o600 });
+      const raw = `${file(backupId)}.upload`;
       let bytes = 0;
       const count = new Transform({
         transform(d: Buffer, _enc, cb) {
           bytes += d.length;
           if (bytes > MAX_BACKUP_BYTES)
             return cb(Object.assign(new Error('архив больше 2\u00a0ГБ'), { statusCode: 413 }));
-          hash.update(d);
           cb(null, d);
         },
       });
       const drop = () => {
-        if (existsSync(file(backupId))) unlinkSync(file(backupId));
+        for (const f of [raw, file(backupId)]) if (existsSync(f)) unlinkSync(f);
       };
+      const hash = createHash('sha256');
+      const hashed = new Transform({
+        transform(d: Buffer, _enc, cb) {
+          hash.update(d);
+          cb(null, d);
+        },
+      });
       try {
-        await pipeline(req.body as NodeJS.ReadableStream, count, out);
+        await pipeline(
+          req.body as NodeJS.ReadableStream,
+          count,
+          createWriteStream(raw, { mode: 0o600 }),
+        );
+        // скачанная копия зашифрована паролем резервных копий; старый незашифрованный файл -
+        // как есть. В панели копия хранится расшифрованной (как созданная агентом).
+        const head = await readHead(raw, 16);
+        if (head.subarray(0, 8).toString() === 'Salted__') {
+          const pass = password();
+          if (!pass) throw noPassword();
+          try {
+            await pipeline(
+              createReadStream(raw, { start: 16 }),
+              opensslDecryptStream(head, pass),
+              hashed,
+              createWriteStream(file(backupId), { mode: 0o600 }),
+            );
+          } catch {
+            throw Object.assign(
+              new Error(
+                'не удалось расшифровать: копия зашифрована другим паролем или файл повреждён',
+              ),
+              { statusCode: 400 },
+            );
+          }
+        } else {
+          await pipeline(
+            createReadStream(raw),
+            hashed,
+            createWriteStream(file(backupId), { mode: 0o600 }),
+          );
+        }
+        unlinkSync(raw);
       } catch (e) {
         drop();
         throw e;
@@ -287,15 +346,24 @@ export async function backupRoutes(
     const row = (await db.select().from(backups).where(eq(backups.id, bid)).limit(1))[0];
     if (!row || !existsSync(file(bid)))
       return reply.code(404).send({ error: 'резервная копия не найдена' });
+    // файл уходит с панели на компьютер владельца - зашифрованным: в архиве ключи серверов и
+    // клиентов. Формат openssl: openssl enc -d -aes-256-cbc -pbkdf2 -iter 100000
+    const pass = password();
+    if (!pass) throw noPassword();
     const name =
-      `${row.serverName || row.hostname || 'server'}-${row.createdAt.slice(0, 10)}.tar.gz`.replace(
+      `${row.serverName || row.hostname || 'server'}-${row.createdAt.slice(0, 10)}.tar.gz.enc`.replace(
         /[^\w.-]+/g,
         '_',
       );
+    const enc = opensslEncryptStream(pass);
+    const out = new PassThrough();
+    out.write(enc.header);
+    void pipeline(createReadStream(file(bid)), enc.cipher, out).catch(() => out.destroy());
     reply.header('content-disposition', `attachment; filename="${name}"`);
-    reply.header('content-length', String(statSync(file(bid)).size));
-    reply.type('application/gzip');
-    return reply.send(createReadStream(file(bid)));
+    reply.header('content-length', String(encryptedSize(statSync(file(bid)).size)));
+    reply.header('cache-control', 'no-store');
+    reply.type('application/octet-stream');
+    return reply.send(out);
   });
 
   app.delete('/api/backups/:bid', async (req, reply) => {
@@ -341,4 +409,16 @@ export async function backupRoutes(
     reply.type('application/gzip');
     return reply.send(createReadStream(f));
   });
+}
+
+/** Первые n байт файла. */
+async function readHead(path: string, n: number): Promise<Buffer> {
+  const fh = await open(path, 'r');
+  try {
+    const buf = Buffer.alloc(n);
+    const { bytesRead } = await fh.read(buf, 0, n, 0);
+    return buf.subarray(0, bytesRead);
+  } finally {
+    await fh.close();
+  }
 }
