@@ -10,6 +10,7 @@ import { type Db, createDb } from '../src/db/index.js';
 import { backups, servers } from '../src/db/schema.js';
 import { readArchiveManifest } from '../src/lib/backup-archive.js';
 import { BackupRestorer } from '../src/lib/backup-restore.js';
+import { opensslDecrypt, opensslEncrypt } from '../src/lib/panel-backup.js';
 import { backupRoutes } from '../src/routes/backups.js';
 
 /** tar из файлов (имя -> содержимое), как пишет агент: обычные файлы, два нулевых блока в конце. */
@@ -67,6 +68,10 @@ describe('manifest.json из архива копии', () => {
 });
 
 describe('загрузка файла копии', () => {
+  let pass: string | null = 'backup-pass-1';
+  beforeEach(() => {
+    pass = 'backup-pass-1';
+  });
   async function app() {
     db.insert(servers)
       .values({ id: 's1', name: 'New', host: '203.0.113.1' } as never)
@@ -80,6 +85,7 @@ describe('загрузка файла копии', () => {
       registry,
       hub: { broadcast: () => {} } as never,
       restorer: new BackupRestorer(db, env, registry),
+      password: () => pass,
     });
     return a;
   }
@@ -132,4 +138,63 @@ describe('загрузка файла копии', () => {
     expect(junk.statusCode).toBe(400);
     expect(db.select().from(backups).all()).toHaveLength(0);
   });
+
+  const archive = () =>
+    gzipSync(
+      tar([
+        ['etc/x-ui/x-ui.db', Buffer.alloc(70_000, 3)],
+        [
+          'manifest.json',
+          JSON.stringify({ hostname: 'old', components: [{ id: 'xui' }], setup: SETUP }),
+        ],
+      ]),
+    );
+
+  it('скачивание - зашифровано паролем копий, загрузка зашифрованного - обратно', async () => {
+    const a = await app();
+    const plain = archive();
+    const up = await upload(a, plain);
+    expect(up.statusCode).toBe(200);
+    const id = up.json().id as string;
+    const dl = await a.inject({ method: 'GET', url: `/api/backups/${id}/download` });
+    expect(dl.statusCode).toBe(200);
+    expect(dl.headers['content-disposition']).toMatch(/\.tar\.gz\.enc"/);
+    const enc = dl.rawPayload;
+    expect(Number(dl.headers['content-length'])).toBe(enc.length);
+    expect(enc.subarray(0, 8).toString()).toBe('Salted__');
+    // формат openssl: расшифровывается тем же паролем
+    expect(opensslDecrypt(enc, 'backup-pass-1').equals(plain)).toBe(true);
+    // загрузка зашифрованного файла
+    const again = await a.inject({
+      method: 'POST',
+      url: '/api/servers/s1/backups/upload',
+      headers: { 'content-type': 'application/octet-stream' },
+      payload: enc,
+    });
+    expect(again.statusCode).toBe(200);
+    expect(
+      db
+        .select()
+        .from(backups)
+        .all()
+        .map((b) => b.sha256),
+    ).toEqual([expect.any(String), db.select().from(backups).all()[0]?.sha256]);
+    // PBKDF2 100 000 итераций несколько раз: под нагрузкой проверок дольше 5 с
+  }, 30_000);
+
+  it('чужой пароль или пароль не задан - отказ', async () => {
+    const a = await app();
+    const enc = opensslEncrypt(archive(), 'other-pass');
+    const bad = await upload(a, enc);
+    expect(bad.statusCode).toBe(400);
+    expect(JSON.stringify(bad.json())).toMatch(/другим паролем/);
+    pass = null;
+    const none = await upload(a, opensslEncrypt(archive(), 'x'));
+    expect(none.statusCode).toBe(409);
+    const up = await upload(a, archive());
+    const dl = await a.inject({ method: 'GET', url: `/api/backups/${up.json().id}/download` });
+    expect(dl.statusCode).toBe(409);
+    expect(db.select().from(backups).all()).toHaveLength(1);
+    // PBKDF2 100 000 итераций несколько раз: под нагрузкой проверок дольше 5 с
+  }, 30_000);
 });

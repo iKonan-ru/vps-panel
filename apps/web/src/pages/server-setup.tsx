@@ -210,7 +210,8 @@ function SourceCard({
       const r = await api<{ id: string }>(`/api/servers/${serverId}/backups/upload`, {
         method: 'POST',
         body: file,
-        headers: { 'content-type': 'application/gzip' },
+        // скачанная копия зашифрована (.tar.gz.enc), старая - просто .tar.gz
+        headers: { 'content-type': 'application/octet-stream' },
       });
       await qc.invalidateQueries({ queryKey: ['backups'] });
       go(r.id);
@@ -266,7 +267,7 @@ function SourceCard({
           <input
             ref={fileRef}
             type="file"
-            accept=".gz,.tgz,application/gzip"
+            accept=".enc,.gz,.tgz,application/gzip,application/octet-stream"
             className="hidden"
             onChange={(e) => {
               const f = e.target.files?.[0];

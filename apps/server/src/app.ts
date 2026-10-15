@@ -243,7 +243,16 @@ export async function buildApp(opts: AppOptions) {
   await app.register(commandRoutes, { db, env, registry, hub, box, certs: panelCerts });
   await app.register(accessRoutes, { db, box });
   const restorer = new BackupRestorer(db, env, registry);
-  await app.register(backupRoutes, { db, env, registry, hub, restorer });
+  await app.register(backupRoutes, {
+    db,
+    env,
+    registry,
+    hub,
+    restorer,
+    // пароль резервных копий общий с копией панели; спрашивается при запросе, когда panelBackups
+    // уже создан
+    password: () => panelBackups.password(),
+  });
   await app.register(probeRoutes);
   await app.register(agentWsRoutes, { db, registry, dataDir: env.DATA_DIR });
   await app.register(proxyRoutes, {

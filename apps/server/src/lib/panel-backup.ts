@@ -35,6 +35,29 @@ export function opensslEncrypt(data: Buffer, pass: string): Buffer {
   return Buffer.concat([Buffer.from('Salted__'), salt, c.update(data), c.final()]);
 }
 
+/**
+ * Потоковое шифрование того же формата (копии серверов до 2 ГБ в память не читаются): заголовок
+ * "Salted__" + соль и шифр-поток. Длина результата известна заранее (encryptedSize).
+ */
+export function opensslEncryptStream(pass: string) {
+  const salt = randomBytes(8);
+  const kiv = pbkdf2Sync(pass, salt, PBKDF2_ITER, 48, 'sha256');
+  return {
+    header: Buffer.concat([Buffer.from('Salted__'), salt]),
+    cipher: createCipheriv('aes-256-cbc', kiv.subarray(0, 32), kiv.subarray(32)),
+  };
+}
+
+/** Размер зашифрованного: 16 байт заголовка и данные, дополненные до блока (всегда +1..16). */
+export const encryptedSize = (plain: number) => 16 + (Math.floor(plain / 16) + 1) * 16;
+
+/** Дешифр-поток по заголовку файла (16 байт: "Salted__" + соль). */
+export function opensslDecryptStream(header: Buffer, pass: string) {
+  if (header.subarray(0, 8).toString() !== 'Salted__') throw new Error('не зашифрованный файл');
+  const kiv = pbkdf2Sync(pass, header.subarray(8, 16), PBKDF2_ITER, 48, 'sha256');
+  return createDecipheriv('aes-256-cbc', kiv.subarray(0, 32), kiv.subarray(32));
+}
+
 /** Обратное к opensslEncrypt; неверный пароль - исключение. */
 export function opensslDecrypt(data: Buffer, pass: string): Buffer {
   if (data.subarray(0, 8).toString() !== 'Salted__') throw new Error('не зашифрованный файл');
@@ -191,6 +214,12 @@ export class PanelBackups {
       last,
       decryptHint: DECRYPT_HINT,
     };
+  }
+
+  /** Пароль резервных копий (общий: копия панели и скачанные копии серверов); нет - null. */
+  password(): string | null {
+    const sealed = this.get(K_PASS);
+    return sealed ? this.box.open(sealed) : null;
   }
 
   setPassword(password: string) {

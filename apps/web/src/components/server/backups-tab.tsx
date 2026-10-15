@@ -68,6 +68,12 @@ export function BackupsTab({ s }: { s: ServerDetail }) {
     refetchInterval: 60_000,
   });
   const mine = (all ?? []).filter((b) => b.serverId === s.id);
+  // пароль резервных копий общий с копией панели: им шифруются скачанные файлы
+  const { data: pb } = useQuery({
+    queryKey: ['panel-backup'],
+    queryFn: () => api<{ passwordSet: boolean }>('/api/panel-backup'),
+  });
+  const passwordSet = pb?.passwordSet ?? false;
   const [error, setError] = useState<string | null>(null);
   const [action, setAction] = useState<{ id: string; title: string } | null>(null);
   const [createOpen, setCreateOpen] = useState(false);
@@ -99,23 +105,32 @@ export function BackupsTab({ s }: { s: ServerDetail }) {
     <ActionBar
       dense
       actions={[
-        {
-          key: 'download',
-          label: 'Скачать',
-          icon: <Download className="size-3.5" />,
-          href: `/api/backups/${b.id}/download`,
-          node: (
-            <a
-              href={`/api/backups/${b.id}/download`}
-              download
-              className={buttonClass({ size: 'icon-sm', variant: 'ghost' })}
-              title="Скачать"
-              aria-label="Скачать"
-            >
-              <Download className="size-3.5" />
-            </a>
-          ),
-        },
+        // файл шифруется паролем резервных копий: без пароля скачать нечем
+        passwordSet
+          ? {
+              key: 'download',
+              label: 'Скачать',
+              icon: <Download className="size-3.5" />,
+              href: `/api/backups/${b.id}/download`,
+              node: (
+                <a
+                  href={`/api/backups/${b.id}/download`}
+                  download
+                  className={buttonClass({ size: 'icon-sm', variant: 'ghost' })}
+                  title="Скачать (зашифровано паролем резервных копий)"
+                  aria-label="Скачать"
+                >
+                  <Download className="size-3.5" />
+                </a>
+              ),
+            }
+          : {
+              key: 'download',
+              label: 'Скачать',
+              icon: <Download className="size-3.5" />,
+              disabled: true,
+              title: 'Нет пароля резервных копий: его задают в \u00abНастройках\u00bb',
+            },
         {
           key: 'restore',
           label: 'Восстановить',
