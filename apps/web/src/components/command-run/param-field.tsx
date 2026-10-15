@@ -8,12 +8,21 @@ import type { CommandParam } from '@/lib/commands';
 import { clampInt, digitsOnly } from '@/lib/masks';
 import { useEffect } from 'react';
 
+const ALPHABET = 'ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz23456789';
+
+/** Случайный пароль из 20 букв и цифр (без похожих: 0/O, 1/l/I) - криптостойкий генератор. */
+export function randomPassword(length = 20): string {
+  const bytes = crypto.getRandomValues(new Uint32Array(length));
+  return Array.from(bytes, (b) => ALPHABET[b % ALPHABET.length]).join('');
+}
+
 export function ParamField({
   p,
   value,
   onChange,
   awgContainers,
   idPrefix,
+  generate,
 }: {
   p: CommandParam;
   value: string;
@@ -21,6 +30,8 @@ export function ParamField({
   awgContainers: { name: string; label: string }[];
   /** Несколько форм команд на одной странице (настройка сервера): id полей не совпадают. */
   idPrefix?: string;
+  /** У обязательного пароля - кнопка случайного пароля. */
+  generate?: boolean;
 }) {
   // сохранённый ответ мог указывать на контейнер, которого уже нет: берём первый из стоящих
   const awgFirst = awgContainers[0]?.name;
@@ -88,6 +99,7 @@ export function ParamField({
         value={value}
         onChange={(e) => onChange(e.target.value)}
         required={p.required}
+        onGenerate={generate && p.required ? () => onChange(randomPassword()) : undefined}
       />
     );
   } else {
