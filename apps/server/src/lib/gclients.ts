@@ -628,12 +628,25 @@ export class GClients {
           const target = b.xuiInbounds
             ? b.xuiInbounds.filter((id) => x.own.includes(id))
             : x.target;
-          if (!target.length)
-            throw new Error(
-              b.xuiInbounds
-                ? 'inbound из набора клиента больше нет в 3X-UI: набор нужно задать заново на вкладке 3X-UI'
-                : x.reason,
+          if (!target.length) {
+            // своих inbound-ов VLESS на сервере нет (удалили все): VLESS здесь просто нет -
+            // не ошибка; ссылок нет, сервер уходит из подписки
+            if (!x.own.length && !b.xuiInbounds) {
+              this.setBinding(b, { state: 'ok', error: '', links: [] });
+              say(`${label}: своих inbound VLESS нет, ссылки убраны`);
+              continue;
+            }
+            // остальное - ошибка, но и тогда старые ссылки (на удалённые, выключенные или
+            // исключённые inbound-ы) из подписки уходят
+            throw Object.assign(
+              new Error(
+                b.xuiInbounds
+                  ? 'inbound из набора клиента больше нет в 3X-UI: набор нужно задать заново на вкладке 3X-UI'
+                  : x.reason,
+              ),
+              { clearLinks: true },
             );
+          }
           const links = await xuiEnsure(x.api, c, b.ref, target);
           this.setBinding(b, { state: 'ok', error: '', links });
           say(`${label}: ${c.enabled ? 'включён' : 'выключен'}, inbound: ${target.length}`);
@@ -690,7 +703,8 @@ export class GClients {
         failed++;
         prog.errors++;
         const error = (e as Error).message;
-        this.setBinding(b, { state: 'error', error });
+        const clear = (e as { clearLinks?: boolean }).clearLinks === true;
+        this.setBinding(b, { state: 'error', error, ...(clear ? { links: [] } : {}) });
         say(`${label}: ошибка: ${error}`);
         // агент завис или отключился: остальное по серверу - в следующий проход, а не каждая
         // привязка со своим таймаутом

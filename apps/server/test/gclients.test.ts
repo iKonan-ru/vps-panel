@@ -427,6 +427,36 @@ describe('GClients.reconcile: 3X-UI', () => {
   });
 });
 
+describe('GClients.reconcile: VLESS-inbound-ов на сервере не осталось', () => {
+  it('все удалены - ссылок нет, не ошибка; все исключены - ошибка, ссылок тоже нет', async () => {
+    mk('Ника');
+    const g = new GClients(db, box, registry, journal, async () => [], { warn: () => {} });
+    await g.reconcile();
+    const xb = (id: string) =>
+      db
+        .select()
+        .from(gclientBindings)
+        .all()
+        .find((x) => x.serverId === id && x.service === 'xui');
+    expect(xb('s1')?.links).toHaveLength(2);
+    // s1: все свои VLESS удалены (остались vmess и inbound узла)
+    const s1 = xui.s1;
+    if (!s1) throw new Error('нет s1');
+    s1.inbounds.splice(0, 2);
+    // s2: оба оставшихся исключены
+    db.update(servers)
+      .set({ xuiExcluded: [1, 2] })
+      .where(eq(servers.id, 's2'))
+      .run();
+    db.update(gclientBindings).set(queued()).run();
+    await g.reconcile();
+    expect(xb('s1')).toMatchObject({ state: 'ok', error: '', links: [] });
+    expect(xb('s2')?.state).toBe('error');
+    expect(xb('s2')?.error).toContain('исключены');
+    expect(xb('s2')?.links).toEqual([]);
+  });
+});
+
 describe('GClients.reconcile: AWG на устройство', () => {
   it('пиры на 3.1 и 2.0, имена и ключи; нет 2.0 - не заводится; галочка, выключение, удаление', async () => {
     const c = mk('Иван');
