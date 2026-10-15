@@ -36,6 +36,7 @@ import { serverLock, useServer } from '@/lib/servers';
 import { useCopy } from '@/lib/use-copy';
 import { useQueryClient } from '@tanstack/react-query';
 import { useNavigate, useParams } from '@tanstack/react-router';
+import { cpuModelLabel } from '@vps/protocol';
 import {
   ArrowLeftRight,
   Check,
@@ -171,6 +172,9 @@ export function ServerPage() {
               <>
                 <span>{inv.host.os}</span>
                 <span>ядро {inv.host.kernel}</span>
+                {cpuModelLabel(inv.host.cpuModel) && (
+                  <span title={inv.host.cpuModel}>{cpuModelLabel(inv.host.cpuModel)}</span>
+                )}
                 <span title={inv.host.agentVersion} className="gap-1.5">
                   агент {agentVersionShort(s.agentVersion ?? inv.host.agentVersion)}
                   {s.agentUpdating ? (

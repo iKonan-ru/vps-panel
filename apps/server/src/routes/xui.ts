@@ -6,6 +6,7 @@ import { access, gclientBindings, servers } from '../db/schema.js';
 import { upsertAccess } from '../lib/access.js';
 import { actionJournal } from '../lib/action-journal.js';
 import { type ServerRouteOpts, actionRunners } from '../lib/action-runners.js';
+import { type GClients, resyncXui } from '../lib/gclients.js';
 import { type InboundExitHooks, telegramExitOf } from '../lib/xray-exits.js';
 import { parseJson, unwrap, xuiApi } from '../lib/xui-api.js';
 import { portBusy } from '../lib/xui-new-inbound.js';
@@ -14,8 +15,11 @@ import { saveXuiToken, savedXuiToken } from '../lib/xui-token.js';
 const Id = z.object({ id: z.string() });
 
 /** Адаптер 3X-UI: информация, настройки панели, служба, обновление, токен API, статус. */
-export async function xuiRoutes(app: FastifyInstance, opts: ServerRouteOpts & InboundExitHooks) {
-  const { db, registry, hub, box, xray, exitsAfter, syncSpares } = opts;
+export async function xuiRoutes(
+  app: FastifyInstance,
+  opts: ServerRouteOpts & InboundExitHooks & { gc: Pick<GClients, 'kick'> },
+) {
+  const { db, registry, hub, box, xray, exitsAfter, syncSpares, gc } = opts;
   const journal = actionJournal(db, hub, registry);
   const { runStreamed, quickAction } = actionRunners(registry, journal);
 
@@ -274,6 +278,8 @@ export async function xuiRoutes(app: FastifyInstance, opts: ServerRouteOpts & In
       if (off || moved) done.push(...(await exitsAfter(id, iid, off)));
       else if (body.enable === true && got.enable === false) syncSpares();
       await journal.finish(actionId, id, 0, done.length ? done.join(', ') : 'без изменений');
+      // подпись, порт и вкл/выкл видны в ссылках клиентов панели - синхронизация сразу
+      if (done.length) resyncXui(db, gc, id);
       return { ok: true };
     } catch (e) {
       await journal.finish(actionId, id, 1, (e as Error).message);

@@ -37,6 +37,53 @@ export async function baselineFirewallRoutes(app: FastifyInstance, opts: ServerR
     return { actionId };
   });
 
+  /**
+   * Снять бан fail2ban с адреса (тот же fail2ban-client set <jail> unbanip, что в терминале).
+   * Jail и адрес проверяются здесь: в скрипт они идут переменными окружения.
+   */
+  app.post('/api/servers/:id/fail2ban/unban', async (req) => {
+    const { id } = Id.parse(req.params);
+    const { jail, ip } = z
+      .object({
+        jail: z.string().regex(/^[A-Za-z0-9][A-Za-z0-9_.-]{0,63}$/),
+        ip: z
+          .string()
+          .trim()
+          .max(45)
+          .refine((v) => isIP(v) !== 0, 'нужен адрес IPv4 или IPv6'),
+      })
+      .parse(req.body ?? {});
+    if (!registry.isOnline(id))
+      throw Object.assign(new Error('сервер не в сети'), { statusCode: 409 });
+    const action = journal.open(id, 'fail2ban.unban', { jail, ip });
+    try {
+      const r = await registry.request<{ exitCode: number }>(
+        id,
+        'command.run',
+        {
+          runId: action.id,
+          script: 'set -eu\nfail2ban-client set "$JAIL" unbanip "$IP"\n',
+          env: { JAIL: jail, IP: ip },
+          files: {},
+          cleanup: [],
+          timeoutSec: 60,
+        },
+        { timeoutMs: 90_000, onStream: action.stream },
+      );
+      if (r.exitCode !== 0) {
+        const tail = action.output.trim().split('\n').slice(-3).join(' ');
+        throw new Error(`fail2ban-client: ${tail || `код ${r.exitCode}`}`);
+      }
+      await action.finish(0, `${jail}: снят бан с ${ip}`);
+      return { ok: true };
+    } catch (e) {
+      const msg = (e as Error).message;
+      await action.finish(1, msg);
+      const code = (e as { statusCode?: unknown }).statusCode;
+      throw Object.assign(new Error(msg), { statusCode: typeof code === 'number' ? code : 502 });
+    }
+  });
+
   // ---- firewall
   app.post('/api/servers/:id/firewall/enable', async (req) => {
     const { id } = Id.parse(req.params);

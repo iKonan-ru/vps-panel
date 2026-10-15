@@ -36,6 +36,10 @@ type HostInfo struct {
 	Arch          string `json:"arch"`
 	AgentVersion  string `json:"agentVersion"`
 	DockerVersion string `json:"dockerVersion,omitempty"`
+	// CPUCores - логические процессоры, доступные системе (vCPU у VPS).
+	CPUCores int `json:"cpuCores,omitempty"`
+	// CPUModel - строка model name из /proc/cpuinfo как есть: чистит её панель.
+	CPUModel string `json:"cpuModel,omitempty"`
 }
 
 // Collector считает скорость сети по разнице между вызовами.
@@ -108,7 +112,10 @@ func (c *Collector) Collect(ctx context.Context) (Metrics, error) {
 }
 
 func Host(agentVersion string) HostInfo {
-	hi := HostInfo{Arch: runtime.GOARCH, AgentVersion: agentVersion}
+	hi := HostInfo{Arch: runtime.GOARCH, AgentVersion: agentVersion, CPUCores: runtime.NumCPU()}
+	if list, err := cpu.Info(); err == nil && len(list) > 0 {
+		hi.CPUModel = strings.TrimSpace(list[0].ModelName)
+	}
 	if info, err := host.Info(); err == nil {
 		hi.Hostname = info.Hostname
 		hi.OS = info.Platform + " " + info.PlatformVersion
