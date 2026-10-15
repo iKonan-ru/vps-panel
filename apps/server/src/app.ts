@@ -16,6 +16,8 @@ import { type Db, createDb } from './db/index.js';
 import { actionLog, servers } from './db/schema.js';
 import { actionJournal } from './lib/action-journal.js';
 import { AppReleases } from './lib/apps.js';
+import { BackupRestorer } from './lib/backup-restore.js';
+import { catalogRunner } from './lib/catalog-runner.js';
 import { startFail2banIgnore } from './lib/fail2ban-ignore.js';
 import { FirefoxSigner } from './lib/firefox.js';
 import { GClients } from './lib/gclients.js';
@@ -31,6 +33,7 @@ import { type PanelRelease, PanelUpdates } from './lib/panel-updates.js';
 import { RuReach } from './lib/ru-reach.js';
 import { schedule } from './lib/schedule.js';
 import { SecretBox } from './lib/secret-box.js';
+import { serverSetup } from './lib/server-setup.js';
 import { ServiceUpdates } from './lib/service-updates.js';
 import { Telegram } from './lib/telegram.js';
 import { UiHub } from './lib/ui-hub.js';
@@ -68,6 +71,7 @@ import { proxyRoutes } from './routes/proxy.js';
 import { reachRoutes } from './routes/reach.js';
 import { securityRoutes } from './routes/security.js';
 import { serverRoutes } from './routes/servers.js';
+import { setupRoutes } from './routes/setup.js';
 import { standardRoutes } from './routes/standard.js';
 import { subscriptionRoutes } from './routes/subscription.js';
 import { systemRoutes } from './routes/system.js';
@@ -238,7 +242,8 @@ export async function buildApp(opts: AppOptions) {
   await app.register(accountRoutes, { db, secure });
   await app.register(commandRoutes, { db, env, registry, hub, box, certs: panelCerts });
   await app.register(accessRoutes, { db, box });
-  await app.register(backupRoutes, { db, env, registry, hub });
+  const restorer = new BackupRestorer(db, env, registry);
+  await app.register(backupRoutes, { db, env, registry, hub, restorer });
   await app.register(probeRoutes);
   await app.register(agentWsRoutes, { db, registry, dataDir: env.DATA_DIR });
   await app.register(proxyRoutes, {
@@ -347,6 +352,20 @@ export async function buildApp(opts: AppOptions) {
     exitsAfter,
     syncSpares: () => void xraySpares.sync().catch(() => undefined),
   });
+  // настройка сервера в один клик: команды каталога, inbound-ы, синхронизация - одним действием
+  const setup = serverSetup({
+    db,
+    env,
+    registry,
+    box,
+    hub,
+    journal: actionJournal(db, hub, registry),
+    runner: catalogRunner({ db, env, registry, box, certs: panelCerts, log: app.log }),
+    gc,
+    reach: ruReach,
+    syncSpares: () => void xraySpares.sync().catch(() => undefined),
+  });
+  await app.register(setupRoutes, { setup });
   await app.register(clientHostRoutes, {
     db,
     gc,
