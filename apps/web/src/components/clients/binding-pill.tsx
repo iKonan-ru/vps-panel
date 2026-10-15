@@ -57,10 +57,17 @@ export function BindingPill({
   onOpen: (() => void) | undefined;
 }) {
   const label = pillLabel(b, device);
-  const state =
-    b.state === 'ok' ? 'работает' : b.state === 'pending' ? 'ждёт синхронизации' : 'ошибка';
+  // VLESS без ссылок: своих inbound-ов VLESS на сервере нет, в подписке этого сервера нет
+  const noVless = b.state === 'ok' && b.service === 'xui' && b.linkCount === 0;
+  const state = noVless
+    ? 'на сервере нет inbound VLESS, в подписке его нет'
+    : b.state === 'ok'
+      ? 'работает'
+      : b.state === 'pending'
+        ? 'ждёт синхронизации'
+        : 'ошибка';
   const detail =
-    b.state === 'ok' && b.service === 'xui'
+    b.state === 'ok' && b.service === 'xui' && !noVless
       ? `${b.ref}, ссылок ${b.linkCount}, синхронизировано ${ago(b.updatedAt)}`
       : '';
   const custom = b.xuiInbounds
@@ -68,7 +75,14 @@ export function BindingPill({
     : '';
   const title = [`${label}: ${state}`, liveText(live), detail, custom].filter(Boolean).join('; ');
   const opens = b.service === 'awg' ? 'конфиг' : b.service === 'xui' ? 'подписка' : 'ссылки';
-  const dot = <span className={cn('size-2 shrink-0 rounded-full', dotClass(b.state, live))} />;
+  const dot = (
+    <span
+      className={cn(
+        'size-2 shrink-0 rounded-full',
+        noVless ? 'border border-muted' : dotClass(b.state, live),
+      )}
+    />
+  );
   if (onOpen)
     return (
       <Button size="sm" onClick={onOpen} title={`${title}; ${opens} и QR`}>
