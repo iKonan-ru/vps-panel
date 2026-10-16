@@ -31,10 +31,10 @@ export function patchStatusCache(
     .run();
 }
 
-/** Подписывает реестр на события и складывает снимки в базу. */
 /** Как часто метрики сервера пишутся в базу. */
 const METRICS_WRITE_MS = 30_000;
 
+/** Подписывает реестр на события и складывает снимки в базу. */
 export function bindStateToDb(
   registry: AgentRegistry,
   db: Db,
@@ -107,7 +107,7 @@ export function toSummary(
       : null,
     dockerVersion: inv?.host.dockerVersion ?? null,
     panelHost: isPanelHost(row.host, inv, panelIps),
-    // заполняет маршрут серверов (lib/panel-proxy.ts, links)
+    // заполняет маршрут серверов
     panelLinks: {},
   };
 }

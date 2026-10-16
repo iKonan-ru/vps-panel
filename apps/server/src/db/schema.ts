@@ -239,13 +239,8 @@ export const gclientBindings = sqliteTable('gclient_binding', {
 });
 
 /**
- * Документы для каналов OpenFlux глобальных клиентов: Яндекс Документы
- * (vyandex) и публичные документы Mail.ru (mailru) с редактированием по ссылке. Документ - на
- * один канал: binding_id - привязка, которой он выдан (null - свободен).
- */
-/**
- * Расширение для браузера у клиента: последний отчёт установки (lib/browser-ext.ts). id -
- * "<клиент>:<установка>"; установка старой версии без отчётов - "legacy-<браузер>".
+ * Расширение для браузера у клиента: последний отчёт установки. id - "<клиент>:<установка>";
+ * установка версии без отчётов - "legacy-<браузер>".
  */
 export const gclientExts = sqliteTable('gclient_ext', {
   id: text('id').primaryKey(),
@@ -261,6 +256,11 @@ export const gclientExts = sqliteTable('gclient_ext', {
   createdAt: text('created_at').notNull().default(now),
 });
 
+/**
+ * Документы для каналов OpenFlux глобальных клиентов: Яндекс Документы (vyandex) и публичные
+ * документы Mail.ru (mailru) с редактированием по ссылке. Документ - на один канал: binding_id -
+ * привязка, которой он выдан (null - свободен).
+ */
 export const openfluxDocs = sqliteTable('openflux_doc', {
   id: text('id').primaryKey(),
   kind: text('kind').notNull(),
