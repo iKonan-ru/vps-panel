@@ -107,7 +107,7 @@ func parseRule(line string) (proto.FirewallRule, bool) {
 		r.Origin = "portsync"
 		r.Comment = ""
 	case strings.HasPrefix(comment, "vps-portsync: "):
-		// port-sync 0.3.2+: подпись - какой сервис открыл порт
+		// подпись - какой сервис открыл порт
 		r.Origin = "portsync"
 		r.Comment = strings.TrimPrefix(comment, "vps-portsync: ")
 	case comment == "ssh-permanent" || comment == "ssh-admin":

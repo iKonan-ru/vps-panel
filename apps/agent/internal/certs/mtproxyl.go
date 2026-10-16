@@ -6,13 +6,8 @@ import (
 	"strings"
 )
 
-// Веб-панель MTProxyL работает под своим пользователем и читает сертификат из
-// /var/lib/mtproxyl-panel/certs, конфиг - /etc/mtproxyl-panel/config.toml, секция [tls].
-// По умолчанию установщик поднимает её на самоподписанном (self_signed = true).
-// Делаем то же, что "mtproxyl panel cert": копия файлов панели и пути в [tls].
-const (
-	mtPanelConfig = "/etc/mtproxyl-panel/config.toml"
-)
+// mtPanelConfig - конфиг веб-панели MTProxyL: пути сертификата - в секции [tls].
+const mtPanelConfig = "/etc/mtproxyl-panel/config.toml"
 
 type mtPanelTLS struct {
 	CertFile   string

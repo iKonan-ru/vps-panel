@@ -20,8 +20,8 @@ func EnableFirewall(ctx context.Context, stream func(channel, chunk string)) err
 		return errors.New("port-sync не установлен: сначала нужно привести сервер к эталону")
 	}
 	plan := MakePlan(ctx)
-	// Блокер именно шагов ufw и port-sync ("закроется порт VPN"). Общий CanApply бывает true,
-	// когда заблокирован ufw, но нужен любой другой шаг (обновления) - и VPN закрывался.
+	// блокер именно шагов ufw и port-sync: общий CanApply бывает true, когда ufw заблокирован, а
+	// нужен другой шаг
 	for _, st := range plan.Steps {
 		if (st.ID == "ufw" || st.ID == "portsync") && st.Blocker != "" {
 			return errors.New(st.Blocker)

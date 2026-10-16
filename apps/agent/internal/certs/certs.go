@@ -89,7 +89,7 @@ func Scan(ctx context.Context, containers []proto.Container, xui *services.XuiIn
 			}
 		}
 	}
-	// то, на что указывает веб-панель MTProxyL (у неё по умолчанию самоподписанный)
+	// то, на что указывает веб-панель MTProxyL
 	mt := readMtproxylPanel()
 	if mt.CertFile != "" {
 		if c, ok := parse(mt.CertFile); ok {

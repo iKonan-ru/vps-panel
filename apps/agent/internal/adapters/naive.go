@@ -24,12 +24,9 @@ import (
 	"github.com/iKonan-ru/vps-panel/apps/agent/internal/shell"
 )
 
-// Прокси для браузера: Caddy с forwardproxy (naive), служба
-// vps-naive. Настройки пишет команда установки в /etc/vps-naive/config.json, пользователей
-// (клиентов панели) ведёт агент в users.json, Caddyfile агент собирает из них сам
-// (NaiveRender): и при установке (vps-agent -naive-render), и при каждой правке пользователей.
-// Без пользователей прокси в конфиге нет совсем - только сайт-заглушка: открытого прокси не
-// бывает ни на одном шаге.
+// Прокси для браузера: Caddy с forwardproxy (служба vps-naive). Настройки - config.json от команды
+// установки, пользователи - users.json агента, Caddyfile агент собирает из них сам. Без
+// пользователей прокси в конфиге нет совсем, только сайт-заглушка: открытым он не бывает.
 
 var (
 	naiveDir  = "/etc/vps-naive"

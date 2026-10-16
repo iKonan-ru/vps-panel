@@ -146,8 +146,7 @@ func collect(parent context.Context, agentVersion string) (Snapshot, error) {
 		pending = audit.PendingUpdates(ctx)
 	}()
 	wg.Wait()
-	// до сбора сервисов: упавшее, что поднимется во время сбора, проверка раз в 30 с заметит
-	// и пришлёт новый снимок (services.Reported)
+	// с этим проверка раз в 30 с сравнит своё, когда снимок уйдёт
 	health := services.Health(ctx, inv.Containers)
 	// 3x-ui читается один раз и со списком контейнеров (база может лежать в томе docker): её
 	// настройки нужны и сертификатам, и сервисам

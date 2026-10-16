@@ -90,8 +90,7 @@ func main() {
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
 
-	// port-sync - наш скрипт и юниты: при обновлении агента подтягиваем и их, чтобы правки
-	// (например, чтение 3x-ui из PostgreSQL) не ждали повторного "Привести к эталону"
+	// скрипт и юниты port-sync встроены в агента: новая версия агента обновляет и их
 	if updated, err := baseline.RefreshPortsync(ctx); err != nil {
 		log.Warn("port-sync: не удалось обновить", "err", err)
 	} else if updated {
@@ -141,7 +140,7 @@ func main() {
 			changed = true
 		}
 		if issued != "" {
-			// Регистрация прошла: сохраняем постоянный токен (его создал агент), забываем одноразовый.
+			// регистрация прошла: постоянный токен (его создал агент) вместо одноразового
 			cfg.Token, cfg.RegistrationToken = issued, ""
 			client.SetToken(issued)
 			changed = true
@@ -151,7 +150,6 @@ func main() {
 				log.Error("save config", "err", err)
 			}
 		}
-		// Первый снимок сразу после подключения.
 		go pushInventory()
 	}
 
@@ -159,12 +157,10 @@ func main() {
 		hb := time.NewTicker(10 * time.Second)
 		mt := time.NewTicker(slowMetrics)
 		inv := time.NewTicker(5 * time.Minute)
-		// сервисы (xray 3X-UI, MTProxyL, контейнеры AWG и wg-easy, WDTT, WireGuard): упал или
-		// поднялся - снимок сразу, не ждать 5 минут (аудит и уведомление)
+		// сервис упал или поднялся - снимок сразу, не через 5 минут. Проверка - в своей горутине
+		// (подвисшая команда не задерживает heartbeat), сравнение - с последним ушедшим снимком.
 		hw := time.NewTicker(30 * time.Second)
 		defer hw.Stop()
-		// проверка - в своей горутине: подвисшая команда не задерживает heartbeat; сравнение - с
-		// состоянием последнего отправленного снимка (services.Reported), кто бы его ни запросил
 		checking := false
 		healthCh := make(chan string, 1)
 		defer hb.Stop()

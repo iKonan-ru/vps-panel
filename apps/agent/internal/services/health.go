@@ -57,7 +57,7 @@ func mtproxyDown(ctx context.Context, port int) bool {
 	return port > 0 && !firewall.TCPListening(ctx, port)
 }
 
-// wgConfigured - интерфейсы WireGuard/AWG, которые должны подниматься при загрузке
+// wgDownIfaces - интерфейсы WireGuard/AWG, которые должны подниматься при загрузке
 // (wg-quick@<имя> или awg-quick@<имя> включён), а сейчас не подняты.
 func wgDownIfaces(ctx context.Context) []string {
 	var down []string
@@ -86,10 +86,10 @@ func wgDownIfaces(ctx context.Context) []string {
 // containerDown - контейнер сервиса не в состоянии running (exited, restarting, paused...).
 func containerDown(c proto.Container) bool { return c.State != "running" }
 
-// reported - Health на момент последнего снимка (снят перед сбором сервисов): проверка раз в
-// 30 с сравнивает с ним, а не со своей прошлой проверкой. Иначе снимок, снятый посреди
-// перезапуска (панель запрашивает его сразу после действия, а telemt ещё не занял порт),
-// показывал бы "упало" до следующего планового снимка через 5 минут.
+// reported - Health последнего ушедшего снимка: проверка раз в 30 с сравнивает с ним, а не со
+// своей прошлой проверкой. Иначе снимок, снятый посреди перезапуска (панель запрашивает его
+// сразу после действия, а telemt ещё не занял порт), показывал бы "упало" до следующего
+// планового снимка через 5 минут.
 var reported atomic.Value
 
 // MarkReported - запомнить состояние, с которым снимок ушёл панели.
