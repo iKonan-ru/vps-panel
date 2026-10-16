@@ -59,7 +59,7 @@ export async function awgLiveDefaults(
           subnets = (st.instances ?? []).map((i) => i.address).filter(Boolean);
           patchStatusCache(db, row.id, { awgSubnets: subnets });
         } catch {
-          // старый агент или нет связи - берём последнее известное
+          // агент не ответил - берём последнее известное
         }
       }
       for (const a of subnets) {

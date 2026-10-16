@@ -18,15 +18,9 @@ import { servers, sessions } from '../db/schema.js';
 import { TunnelSocket, tunnelConnection } from './agent-tunnel.js';
 
 /**
- * Панели сервисов через поддомены панели: `<слаг сервера>-xui.<домен>` и
- * `-mtproxyl`. Запрос идёт туннелем через агента к 127.0.0.1:<порт панели> на сервере
- * (lib/agent-tunnel.ts) - панели сервисов могут слушать только loopback. Вход - только через
- * панель: ссылка "Открыть" выдаёт одноразовый тикет, по нему на поддомен ставится своя cookie
- * (HMAC секрета панели, привязана к живой сессии панели). Сертификат поддомена Caddy выпускает
- * по требованию, спросив /api/proxy/ask.
- *
- * Свой прокси на node:http, а не http-proxy: тот ронял процесс ошибкой внутри
- * обработчика. Здесь любая ошибка - 502 (или обрыв, если ответ уже начат), не throw.
+ * Панели сервисов через поддомены панели (<слаг сервера>-xui.<домен>, -mtproxyl): туннелем агента
+ * к 127.0.0.1 сервера, вход - одноразовым тикетом с панели и cookie, привязанной к её сессии.
+ * Свой прокси на node:http, а не http-proxy: тот роняет процесс ошибкой внутри обработчика.
  */
 export const PROXIED_KINDS = ['xui', 'mtproxyl'] as const;
 type Kind = (typeof PROXIED_KINDS)[number];
@@ -159,8 +153,8 @@ export interface ProxyProbe {
  * Запрос браузера к панели сервиса через пул туннелей. GET и HEAD без тела на соединении из пула
  * повторяются один раз новым соединением, если оно оборвалось до ответа: панель сервиса закрывает
  * простаивающее соединение, а весть об этом идёт через агента с задержкой, и запрос успевает уйти
- * в уже закрытое (ответ "socket hang up", страница не открывалась до перезагрузки). Ошибка - 502
- * или обрыв, если ответ уже начат; onError - для журнала. Никогда не бросает.
+ * в уже закрытое ("socket hang up"). Ошибка - 502 или обрыв, если ответ уже начат; onError - для
+ * журнала. Никогда не бросает.
  */
 export function forwardHttp(
   req: IncomingMessage,
@@ -410,7 +404,7 @@ export class PanelProxy {
   }
 
   /**
-   * HTTP-запрос к поддомену (до Fastify, см. app.ts). false - хост не наш, запрос идёт дальше
+   * HTTP-запрос к поддомену (до Fastify). false - хост не наш, запрос идёт дальше
    * в Fastify. Никогда не бросает.
    */
   async handle(req: IncomingMessage, res: ServerResponse): Promise<boolean> {
@@ -620,7 +614,7 @@ export class PanelProxy {
     return true;
   }
 
-  /** Подмена слушателей upgrade: наши хосты - в прокси, остальное - как было (@fastify/websocket). */
+  /** Подмена слушателей upgrade: наши хосты - в прокси, остальное - в @fastify/websocket. */
   attachUpgrade(server: Server) {
     const orig = server.listeners('upgrade') as ((
       req: IncomingMessage,

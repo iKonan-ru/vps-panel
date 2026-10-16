@@ -15,8 +15,8 @@ import { type WdttPassword, wdttApi, wdttHashes, wdttLinks } from './wdtt.js';
 import { type XuiCall, ownVlessInbounds, readClient, unwrap } from './xui-api.js';
 
 /**
- * Сервисы глобальных клиентов на сервере (сверка, lib/gclients.ts): завести или привести к
- * клиенту и убрать - пир AWG, пользователь MTProxyL, пароль WDTT, клиент 3X-UI, канал OpenFlux.
+ * Сервисы глобальных клиентов на сервере для сверки: завести или привести к клиенту и убрать -
+ * пир AWG, пользователь MTProxyL, пароль WDTT, клиент 3X-UI, канал OpenFlux.
  */
 
 type Client = typeof gclients.$inferSelect;
@@ -30,7 +30,7 @@ export interface ServiceDeps {
   registry: AgentRegistry;
 }
 
-/** subId клиента в 3X-UI; пустым он не бывает (шаг базы 14), но токен туда не уйдёт никогда. */
+/** subId клиента в 3X-UI; пустым он не бывает, но токен туда не уйдёт никогда. */
 function xuiSubId(c: Client): string {
   if (!c.xuiSubId) throw new Error('у клиента нет subId 3X-UI');
   return c.xuiSubId;
@@ -90,8 +90,8 @@ export function awgRef(ref: string) {
 }
 
 /**
- * Куда в 3X-UI добавлять клиента: свои VLESS-inbound-ы сервера (не других узлов группы 3X-UI), включённые и
- * не исключённые в панели. Если таких нет - reason с причиной для карточки клиента.
+ * Куда в 3X-UI добавлять клиента: свои VLESS-inbound-ы сервера (не других узлов группы 3X-UI),
+ * включённые и не исключённые в панели. Если таких нет - reason с причиной для карточки клиента.
  */
 export function xuiTargets(
   inbounds: Record<string, unknown>[],

@@ -2,8 +2,7 @@ import { createCipheriv, createDecipheriv, createHash, randomBytes } from 'node:
 
 /**
  * Шифрование значений в базе (пароли панелей): AES-256-GCM, ключ из SESSION_SECRET.
- * Формат: "v1:" + base64(iv | tag | шифртекст). Значения без префикса считаются открытыми
- * (на случай старых записей).
+ * Формат: "v1:" + base64(iv | tag | шифртекст). Значения без префикса считаются открытыми.
  */
 export class SecretBox {
   private key: Buffer;

@@ -1,10 +1,11 @@
 import { createHash } from 'node:crypto';
 import type { AppLink, AppOs } from '@vps/protocol';
-/**
- * HTML личной страницы клиента (routes/personal.ts): стили, скрипт копирования, иконки и
- * помощники разметки. Страница без сборки фронтенда - строки шаблонов.
- */
 import QRCode from 'qrcode';
+
+/**
+ * HTML личной страницы клиента: стили, скрипт копирования, иконки и помощники разметки.
+ * Страница без сборки фронтенда - строки шаблонов.
+ */
 
 export const esc = (s: string) =>
   s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
@@ -12,7 +13,7 @@ export const esc = (s: string) =>
 export const qr = (text: string) =>
   QRCode.toString(text, { type: 'svg', errorCorrectionLevel: 'L', margin: 2 });
 
-/** Цвета - токены панели (apps/web/src/index.css), тема - как в системе. */
+/** Цвета - токены панели, тема - как в системе. */
 const STYLE = `
 :root{color-scheme:light;--bg:#f5f6f8;--surface:#fff;--surface-2:#eef0f3;--border:#d9dee6;--text:#1c1e21;--muted:#5f6975;--accent:#2f6fe4;--ok:#1f9d6a}
 @media(prefers-color-scheme:dark){:root{color-scheme:dark;--bg:#0f1115;--surface:#161a20;--surface-2:#1c2129;--border:#2a313c;--text:#e8eaed;--muted:#9aa4b2;--accent:#4f8cff;--ok:#3ecf8e}}
@@ -193,16 +194,16 @@ export const qrPart = async (sm: boolean, codes: string[]) => {
   };
 };
 
-/**
- * Ссылка стеком кнопок, как в панели: переход, копирование (copy - если копировать нужно
- * другое), по желанию QR. http(s) - в новой вкладке, happ:// и tg:// - в приложении.
- */
 /** Текст, который не открыть ссылкой (подписка qWDTT, qwdtt://): копирование и QR одним стеком. */
 export const copyStack = async (text: string, label: string, sm: boolean, wide = false) => {
   const q = await qrPart(sm, [text]);
   return `<span class="split${wide ? '' : ' inline'}">${copyBtn(text, label, `main${sm ? ' sm' : ''}`)}${q.btn}</span>${q.panel}`;
 };
 
+/**
+ * Ссылка стеком кнопок, как в панели: переход, копирование (copy - если копировать нужно
+ * другое), по желанию QR. http(s) - в новой вкладке, happ:// и tg:// - в приложении.
+ */
 export const linkBtn = async (o: {
   href: string;
   label: string;
@@ -251,6 +252,5 @@ export const deviceBlock = (o: { type: string; title: string; rows: string[] }) 
 export const fold = (o: { head: string; body: string; n?: number }) =>
   `<details class="devblk"><summary class="devh">${o.head}${o.n === undefined ? '' : `<span class="n">${o.n}</span>`}${icon('chevron').replace('<svg ', `<svg class="chev${o.n === undefined ? ' end' : ''}" `)}</summary>${o.body}</details>`;
 
-/** Шапка: имя клиента. */
 export const head = (name: string) =>
   `<div class="head">${icon('shield')}<h1>${esc(name)}</h1></div><p class="lead">Подключение к VPN. Сохраните эту страницу: здесь всегда актуальные настройки.</p>`;

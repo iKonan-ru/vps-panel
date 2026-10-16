@@ -59,7 +59,7 @@ export async function backupSnapshot(
       subnet: subnetOf(i.address),
     }));
   } catch {
-    // нет AWG или старый агент: экземпляры восстановит форма по именам контейнеров
+    // нет AWG или агент не ответил: экземпляры восстановит форма по именам контейнеров
   }
   return {
     serverName: row?.name ?? '',

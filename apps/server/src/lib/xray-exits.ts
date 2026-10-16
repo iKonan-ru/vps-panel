@@ -51,7 +51,7 @@ export async function realityInbounds(api: XuiCall) {
         remark: String(i.remark ?? ''),
         port: Number(i.port),
         enable: Boolean(i.enable),
-        // выход xray панели умеет только TCP (raw - то же под новым именем)
+        // выход xray панели умеет только TCP (raw - другое имя tcp)
         tcp: network === 'tcp' || network === 'raw' || network === undefined,
         nodeId: inboundNode(i),
       };
@@ -320,7 +320,7 @@ async function setPrimary(
   else await xray.stop();
 }
 
-/** Выходы в Telegram для маршрутов inbound-ов 3X-UI (routes/xui.ts, routes/xui-inbounds.ts). */
+/** Выходы в Telegram для маршрутов inbound-ов 3X-UI. */
 export interface InboundExitHooks {
   xray: Pick<XrayManager, 'exits'>;
   exitsAfter: (serverId: string, inboundId: number, gone: boolean) => Promise<string[]>;

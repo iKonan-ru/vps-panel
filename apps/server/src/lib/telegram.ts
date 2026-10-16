@@ -25,7 +25,7 @@ type TgMethod = 'sendMessage' | 'getUpdates' | 'getMe';
 export interface TgSettings extends NotifyParams {
   token: string;
   chatId: string;
-  /** События по одному (каталог - NOTIFY_GROUPS в protocol). */
+  /** Включённые события (каталог - NOTIFY_EVENTS). */
   events: NotifyEvents;
   /** Серверы, о которых не уведомлять совсем (тестовые, выводимые из работы). */
   mutedServers: string[];
@@ -83,9 +83,9 @@ export function tgTime(iso: string): string {
 }
 
 /**
- * Telegram Bot API: настройки бота (token, chat id, события) и доставка - выходы xray (основной
- * и запасные, lib/xray.ts), прокси из окружения, напрямую, через агентов на серверах. Правила
- * событий - lib/notify.ts. Недоставленное копится и уходит после восстановления со сводкой.
+ * Telegram Bot API: настройки бота (token, chat id, события) и доставка - выходы xray, прокси из
+ * окружения, напрямую, через агентов на серверах. Недоставленное копится и уходит после
+ * восстановления со сводкой.
  */
 export class Telegram {
   /** Сообщения уходят по одному, в порядке вызова: цепочка отправок. */

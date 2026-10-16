@@ -130,9 +130,8 @@ export function catalogRunner(deps: CatalogDeps) {
 
   /**
    * Порт MTProxyL: 443 лучше всего для маскировки, но если его (или сохранённый порт) уже слушает
-   * другой процесс (Xray 3X-UI, Caddy сервера панели), форма сразу предлагает свободный - раньше
-   * это ловила только проверка перед запуском. 443 прокси для браузера (caddy на хосте) занятым
-   * не считается: MTProxyL забирает его сам (catalog-mtproxyl.ts).
+   * другой процесс (Xray 3X-UI, Caddy сервера панели), форма сразу предлагает свободный. 443
+   * прокси для браузера (caddy на хосте) занятым не считается: MTProxyL забирает его сам.
    */
   async function mtproxylLiveDefaults(id: string, want: string): Promise<Record<string, string>> {
     const row = (

@@ -29,7 +29,7 @@ interface WdttResponse {
   wgPort: number;
 }
 
-/** Лимит паролей на сервер в сборке панели (tools/build-wdtt.sh, у исходного сервера - 10). */
+/** Лимит паролей на сервер в сборке панели (у исходного сервера - 10). */
 export const WDTT_PASSWORD_LIMIT = 200;
 
 /** Вызов admin API через агента; ответ не 200 - ошибка с текстом сервера. */
@@ -69,7 +69,7 @@ export function setWdttHashes(db: Db, hashes: string[]) {
 }
 
 /**
- * Ссылки на пароль: qwdtt://config (оба Android-клиента qWDTT и PWDTT) и старая wdtt://.
+ * Ссылки на пароль: qwdtt://config (оба Android-клиента qWDTT и PWDTT) и wdtt://.
  * Пробел - %20, а не "+": Android-клиент "+" не раскодирует.
  */
 export function wdttLinks(o: {

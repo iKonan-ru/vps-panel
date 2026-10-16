@@ -123,7 +123,7 @@ export class XrayManager {
     if (!ob) await this.setSpares([], []);
   }
 
-  /** Запасные выходы (routes/xray.ts готовит их сам); true - набор изменился (нужен перезапуск). */
+  /** Запасные выходы; true - набор изменился (нужен перезапуск). */
   async setSpares(list: XrayOutbound[], errors: { server: string; error: string }[]) {
     const key = (l: XrayOutbound[]) =>
       JSON.stringify(l.map(({ updatedAt: _, serverName: __, ...x }) => x));
@@ -357,7 +357,7 @@ export class XrayManager {
     return c;
   }
 
-  /** Проверить все выходы параллельно; итог основного - как раньше (кнопка "Проверить"). */
+  /** Проверить все выходы параллельно, основной - первым в списке. */
   async checkAll(): Promise<XrayCheck[]> {
     if (!this.running()) {
       const at = new Date().toISOString();
