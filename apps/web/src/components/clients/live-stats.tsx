@@ -5,8 +5,6 @@ import { useQuery } from '@tanstack/react-query';
 import type { GBinding, GClientLive, GLiveBinding, GLiveServer } from '@vps/protocol';
 import { useEffect, useRef, useState } from 'react';
 
-/** Живая статистика клиента: опрос, пока вкладка видна; история для графиков - только в памяти. */
-
 const POLL_MS = 3_000;
 /** Окно графиков: последние 5 минут. */
 export const HISTORY_MS = 5 * 60_000;
@@ -42,15 +40,17 @@ export interface ClientLive {
   data: GClientLive | undefined;
   binding: (id: string) => GLiveBinding | undefined;
   server: (id: string) => GLiveServer | undefined;
-  /** живая статистика привязок сервера */
   ofServer: (serverId: string) => GLiveBinding[];
-  /** скорость привязки по опросам */
+  /** Скорость привязки по опросам. */
   history: (bindingId: string) => RatePoint[];
-  /** скорость сервера (сумма привязок) по опросам */
+  /** Скорость сервера (сумма привязок) по опросам. */
   serverHistory: (serverId: string) => RatePoint[];
 }
 
-/** serverId - только этот сервер (страница сервера клиента), иначе - все серверы клиента. */
+/**
+ * Живая статистика клиента, пока вкладка видна; история графиков - только в памяти. serverId -
+ * только этот сервер, иначе все серверы клиента.
+ */
 export function useClientLive(
   clientId: string,
   bindings: GBinding[],
@@ -128,7 +128,6 @@ export function liveState(l: GLiveBinding | undefined): string {
   }
 }
 
-/** Тон плашки состояния подключения. */
 export function liveTone(l: GLiveBinding | undefined): 'ok' | 'warn' | 'muted' {
   if (l?.state === 'online') return 'ok';
   if (l?.state === 'down') return 'warn';
@@ -142,8 +141,8 @@ export function liveText(l: GLiveBinding | undefined): string {
 }
 
 /**
- * Точка плашки: сверка важнее (ошибка - красная, ждёт - серая); заведено - зелёная: залитая и
- * пульсирует - на связи, контур - не на связи; жёлтая - сервис не работает.
+ * Точка плашки: сверка важнее (ошибка - красная, ждёт - серая); на связи - зелёная с пульсом, не
+ * на связи - зелёный контур, сервис не работает - жёлтая, прочее - серый контур.
  */
 export function dotClass(sync: GBinding['state'], l: GLiveBinding | undefined): string {
   if (sync === 'error') return 'bg-bad';
@@ -173,10 +172,7 @@ export function ServerOnlineMark({ serverId, live }: { serverId: string; live: C
   );
 }
 
-/**
- * Сводка раздела "Серверы": на скольких серверах человек на связи. Скорость - на странице клиента
- * на сервере, по сервисам.
- */
+/** Сводка раздела "Серверы": на скольких серверах человек на связи. */
 export function LiveSummary({ live }: { live: ClientLive }) {
   const d = live.data;
   if (!d || d.servers.length === 0) return null;

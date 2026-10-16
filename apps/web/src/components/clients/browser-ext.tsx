@@ -9,18 +9,14 @@ const browserName: Record<GBrowserExt['browser'], string> = {
   other: 'Браузер',
 };
 
-/** Состояние установки одной плашкой: включено, выключено, нет связи. */
+/** Состояние установки одной плашкой. */
 function state(e: GBrowserExt): { tone: 'ok' | 'muted' | 'warn'; text: string } {
   if (e.version === null) return { tone: 'muted', text: 'статус неизвестен' };
   if (!e.online) return { tone: 'warn', text: 'нет связи' };
   return e.enabled ? { tone: 'ok', text: 'включено' } : { tone: 'muted', text: 'выключено' };
 }
 
-/**
- * Подключение расширения клиента через этот сервер (окно плашки "Браузер" сервера в карточке
- * клиента): установки, у которых выбран этот сервер или "Авто" идёт сейчас через него. Старые
- * версии сервер не сообщают - о них только подсказка обновиться.
- */
+/** Расширения клиента, идущие через этот сервер; старые версии сервер не сообщают. */
 export function BrowserExtList({ exts, serverId }: { exts: GBrowserExt[]; serverId: string }) {
   const here = exts.filter((e) => e.version !== null && e.viaServerId === serverId);
   const legacy = exts.filter((e) => e.version === null);

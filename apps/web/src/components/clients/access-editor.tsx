@@ -19,10 +19,10 @@ export const SERVICES: { id: GService; title: string }[] = CATALOG.map((s) => ({
 /** Сервис установлен на сервере (по последнему снимку). */
 const installed = (s: GServer, service: GService) => s[service];
 
-/** Серверы, на которых заводятся глобальные клиенты: включены и это не сервер панели. */
+/** Серверы, которые на деле участвуют в глобальных клиентах. */
 const accessServers = (servers: GServer[]) => servers.filter((s) => s.active);
 
-/** Разрешён ли клиенту сервис на сервере (как allowed() в сверке). */
+/** Разрешён ли клиенту сервис на сервере - так же решает сверка. */
 export function accessAllows(access: GClientAccess, serverId: string, service: GService) {
   return !access || access.some((a) => a.serverId === serverId && a.services.includes(service));
 }
@@ -32,12 +32,7 @@ export function accessRemoves(bindings: GBinding[], access: GClientAccess): GBin
   return bindings.filter((b) => !accessAllows(access, b.serverId, b.service));
 }
 
-/**
- * Доступ клиента: все серверы и сервисы (новые тоже) или выбор по серверам - тогда заводится
- * только отмеченное, новое само не добавляется. Сервер - карточка с переключателем "весь сервер"
- * и кнопками сервисов; сервис, которого на сервере нет, отмечается заранее и заведётся после
- * установки.
- */
+/** Доступ клиента: всё, включая новое, или выбор по серверам (и сервисов, которых ещё нет). */
 export function AccessEditor({
   value,
   onChange,
@@ -47,7 +42,7 @@ export function AccessEditor({
   value: GClientAccess;
   onChange: (v: GClientAccess) => void;
   servers: GServer[];
-  /** уже заведённое у клиента: при переходе на выборочный доступ остаётся отмеченным */
+  /** Уже заведённое у клиента: при переходе на выборочный доступ остаётся отмеченным. */
   bindings?: GBinding[];
 }) {
   const list = accessServers(servers);

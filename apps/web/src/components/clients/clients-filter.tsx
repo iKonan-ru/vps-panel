@@ -44,8 +44,8 @@ const DEFAULT: ClientsView = {
 };
 
 /**
- * Сортировка помнится в браузере надолго, фильтры - до закрытия вкладки: вернувшись из карточки
- * клиента, список тот же, а завтра он не прячет клиентов забытым фильтром.
+ * Сортировка помнится надолго, фильтры - до закрытия вкладки: из карточки клиента возвращаешься к
+ * тому же списку, а завтра забытый фильтр не прячет клиентов.
  */
 const SORT_KEY = 'vps-clients-sort';
 const FILTER_KEY = 'vps-clients-filter';
@@ -94,10 +94,7 @@ export function useClientsView() {
 /** Порядок "сначала с проблемами": ошибки синхронизации весомее ожидающих её записей. */
 const problems = (c: GClientRow) => c.states.error * 1000 + c.states.pending;
 
-/**
- * Клиент доступен на сервере и в сервисе: доступ разрешает, и сервис на сервере стоит (сервер
- * участвует в глобальных клиентах). Без сервера или сервиса в фильтре - любой.
- */
+/** Доступ разрешает сервис, и он стоит на участвующем сервере; пустой фильтр - любой. */
 function available(c: GClientRow, servers: GServer[], serverId: string, service: GService | '') {
   const list = servers.filter((s) => s.active && (!serverId || s.id === serverId));
   return list.some((s) =>
@@ -148,7 +145,7 @@ export function applyView(list: GClientRow[], servers: GServer[], v: ClientsView
 
 export const filtered = (v: ClientsView) => Boolean(v.q.trim() || v.server || v.service || v.state);
 
-/** Поиск, фильтры (сервер, сервис, состояние) и сортировка над списком клиентов. */
+/** Поиск, фильтры и сортировка над списком клиентов. */
 export function ClientsFilter({
   view,
   set,

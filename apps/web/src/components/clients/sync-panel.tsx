@@ -12,10 +12,7 @@ import type { GSyncState } from '@vps/protocol';
 import { Square } from 'lucide-react';
 import { useState } from 'react';
 
-/**
- * Состояние сверки: опрос раз в 2 с, пока идёт, иначе раз в минуту - начало и конец приходят
- * событием gclients.sync (общий кэш для кнопок и полосы сверху).
- */
+/** Состояние сверки: раз в 2 с, пока идёт, иначе раз в минуту (начало и конец - событием). */
 export function useSyncState() {
   return useQuery({
     queryKey: ['gclients-syncing'],
@@ -24,10 +21,7 @@ export function useSyncState() {
   });
 }
 
-/**
- * Ход сверки, пока она идёт: по серверам - сделано из скольких, что сейчас, ошибки и последние
- * итоги; "Прервать" - серверы заканчивают текущую операцию и останавливаются.
- */
+/** Ход сверки по серверам; "Прервать" - серверы доделывают текущую операцию и останавливаются. */
 export function SyncPanel() {
   const qc = useQueryClient();
   const { data } = useSyncState();
