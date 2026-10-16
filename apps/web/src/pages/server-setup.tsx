@@ -20,6 +20,7 @@ import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useNavigate, useParams, useSearch } from '@tanstack/react-router';
 import type {
   SetupCheck,
+  SetupMode,
   SetupPlan,
   SetupProgress,
   SetupStep,
@@ -164,6 +165,48 @@ function StepFields({
           {expanded ? 'Свернуть параметры' : `Параметры: ${more}`}
         </button>
       )}
+    </div>
+  );
+}
+
+/** Что делать с уже стоящим сервисом. */
+const MODE_LABEL: Record<SetupMode, string> = {
+  keep: 'Оставить, данные заменит копия',
+  reinstall: 'Переустановить',
+  skip: 'Не трогать',
+};
+
+/** Уже стоящий сервис (контейнер AWG): вместо галочки - выбор, что с ним делать. */
+function ModeChoice({
+  step,
+  disabled,
+  onChange,
+}: {
+  step: SetupStep;
+  disabled: boolean;
+  onChange: (mode: SetupMode) => void;
+}) {
+  const mode = (step.answers?.MODE ?? step.modes?.[0]) as SetupMode;
+  return (
+    <div className="flex flex-col gap-2">
+      <div>
+        <div className="text-sm font-medium">{step.title}</div>
+        {step.note && <div className="text-xs text-muted">{step.note}</div>}
+      </div>
+      <div className="flex flex-col gap-1.5 pl-0.5">
+        {(step.modes ?? []).map((m) => (
+          <label key={m} className="flex items-center gap-2 text-sm">
+            <input
+              type="radio"
+              name={`mode-${step.id}`}
+              checked={mode === m}
+              disabled={disabled}
+              onChange={() => onChange(m)}
+            />
+            {MODE_LABEL[m]}
+          </label>
+        ))}
+      </div>
     </div>
   );
 }
@@ -371,9 +414,14 @@ export function ServerSetupPage() {
     });
   }
 
+  // шаги с непройденными проверками - по порядку на странице, ссылками к ним
+  const failedSteps = (steps ?? []).filter((st) =>
+    checks?.some((c) => c.step === st.id && c.level === 'fail'),
+  );
   const missingPasswords = (steps ?? []).some((st) => {
     if (!st.enabled || st.kind !== 'service' || st.fromBackup || st.id.startsWith('awg-extra'))
       return false;
+    if (st.modes && st.answers?.MODE !== 'reinstall') return false;
     const c = cmds.data?.find((x) => x.id === st.command);
     return (c?.params ?? []).some(
       (p) =>
@@ -476,38 +524,59 @@ export function ServerSetupPage() {
       ) : (
         <Card className="flex flex-col divide-y divide-border">
           {steps.map((st) => (
-            <div key={st.id} className="flex flex-col gap-3 px-4 py-3">
-              <Checkbox
-                label={<span className="font-medium">{st.title}</span>}
-                hint={st.note}
-                checked={st.enabled}
-                disabled={busy || st.locked}
-                onChange={(e) => set(st.id, { enabled: e.target.checked })}
-              />
-              {st.enabled && ['service', 'inbounds', 'client-host'].includes(st.kind) && (
-                <div className="pl-6.5">
-                  <StepFields
-                    step={st}
-                    cmd={cmds.data?.find((c) => c.id === st.command)}
-                    disabled={busy}
-                    expanded={open.has(st.id)}
-                    toggle={() =>
-                      setOpen((o) => {
-                        const n = new Set(o);
-                        if (n.has(st.id)) n.delete(st.id);
-                        else n.add(st.id);
-                        return n;
-                      })
-                    }
-                    set={(name, value) =>
-                      set(st.id, (x) => ({
-                        ...x,
-                        answers: { ...(x.answers ?? {}), [name]: value },
-                      }))
-                    }
-                  />
-                </div>
+            <div
+              key={st.id}
+              id={`step-${st.id}`}
+              className="flex scroll-mt-20 flex-col gap-3 px-4 py-3"
+            >
+              {st.modes ? (
+                <ModeChoice
+                  step={st}
+                  disabled={busy}
+                  onChange={(mode) =>
+                    set(st.id, (x) => ({
+                      ...x,
+                      enabled: mode !== 'skip',
+                      answers: { ...(x.answers ?? {}), MODE: mode },
+                    }))
+                  }
+                />
+              ) : (
+                <Checkbox
+                  label={<span className="font-medium">{st.title}</span>}
+                  hint={st.note}
+                  checked={st.enabled}
+                  disabled={busy || st.locked}
+                  onChange={(e) => set(st.id, { enabled: e.target.checked })}
+                />
               )}
+              {st.enabled &&
+                ['service', 'inbounds', 'client-host'].includes(st.kind) &&
+                !st.id.startsWith('awg-remove:') &&
+                (!st.modes || st.answers?.MODE === 'reinstall') && (
+                  <div className="pl-6.5">
+                    <StepFields
+                      step={st}
+                      cmd={cmds.data?.find((c) => c.id === st.command)}
+                      disabled={busy}
+                      expanded={open.has(st.id)}
+                      toggle={() =>
+                        setOpen((o) => {
+                          const n = new Set(o);
+                          if (n.has(st.id)) n.delete(st.id);
+                          else n.add(st.id);
+                          return n;
+                        })
+                      }
+                      set={(name, value) =>
+                        set(st.id, (x) => ({
+                          ...x,
+                          answers: { ...(x.answers ?? {}), [name]: value },
+                        }))
+                      }
+                    />
+                  </div>
+                )}
               {checks
                 ?.filter((c) => c.step === st.id)
                 .map((c, i) => (
@@ -525,8 +594,26 @@ export function ServerSetupPage() {
         </Card>
       )}
 
-      {checks?.some((c) => c.level === 'fail') && (
-        <Alert tone="bad">Проверки не пройдены: причины&nbsp;&mdash; у шагов</Alert>
+      {failedSteps.length > 0 && (
+        <Alert tone="bad">
+          <span>Не пройдены проверки: </span>
+          {failedSteps.map((x, i) => (
+            <span key={x.id}>
+              {i > 0 && ', '}
+              <button
+                type="button"
+                className="underline underline-offset-2"
+                onClick={() =>
+                  document
+                    .getElementById(`step-${x.id}`)
+                    ?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+                }
+              >
+                {x.title}
+              </button>
+            </span>
+          ))}
+        </Alert>
       )}
       <div className="flex flex-wrap items-center justify-end gap-3">
         {missingPasswords && <span className="text-xs text-muted">Не заполнены пароли</span>}

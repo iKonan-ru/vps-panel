@@ -32,7 +32,15 @@ export interface SetupStep {
   locked?: boolean;
   /** Данные сервиса придут из копии: паролей не спрашивают, их заменит архив. */
   fromBackup?: boolean;
+  /**
+   * Сервис (контейнер AWG) уже стоит на сервере: вместо галочки - выбор answers.MODE из modes.
+   * keep - оставить, данные заменит копия; reinstall - удалить и поставить заново; skip - не
+   * трогать (данные этого сервиса из копии не раскладываются).
+   */
+  modes?: SetupMode[];
 }
+
+export type SetupMode = 'keep' | 'reinstall' | 'skip';
 
 /** Ход последнего запуска настройки сервера. */
 export interface SetupProgress {

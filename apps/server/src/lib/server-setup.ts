@@ -1,6 +1,7 @@
 import { randomBytes } from 'node:crypto';
 import type {
   SetupCheck,
+  SetupMode,
   SetupPlan,
   SetupProgress,
   SetupRunRequest,
@@ -47,6 +48,44 @@ const SERVICES: { command: string; kind: string; title: string }[] = [
   { command: 'openflux', kind: 'openflux', title: 'OpenFlux' },
   { command: 'naive', kind: 'naive', title: 'Прокси для браузера' },
 ];
+
+/** Команда удаления сервиса каталога (для "Переустановить"). */
+const UNINSTALL: Record<string, string> = {
+  xui: 'xui-uninstall',
+  mtproxyl: 'mtproxyl-uninstall',
+  wdtt: 'wdtt-uninstall',
+  openflux: 'openflux-uninstall',
+  naive: 'naive-uninstall',
+};
+
+/** Компонент архива копии по команде сервиса. */
+const COMPONENT: Record<string, string> = {
+  xui: 'xui',
+  mtproxyl: 'mtproxyl',
+  wdtt: 'wdtt',
+  awg: 'amnezia',
+};
+
+/** Контейнер AWG на сервере (awg.status): имя, порт UDP, подсеть 10.8.N.0. */
+interface AwgHere {
+  container: string;
+  port: number;
+  subnet: string;
+}
+
+const subnetOf = (address: string) => {
+  const m = /(\d+)\.(\d+)\.(\d+)\.\d+\/\d+/.exec(address);
+  return m ? `${m[1]}.${m[2]}.${m[3]}.0` : '';
+};
+
+/** Режим шага с уже стоящим сервисом; без выбора - обычная установка. */
+const modeOf = (s: SetupStep) => (s.modes ? (s.answers?.MODE ?? s.modes[0]) : 'install');
+
+/** Шаг поставит сервис (или контейнер): новый, переустановка или удаление мешающего. */
+const willInstall = (s: SetupStep) =>
+  s.enabled && s.kind === 'service' && (modeOf(s) === 'install' || modeOf(s) === 'reinstall');
+
+const isAwgStep = (s: SetupStep) => s.id === 'awg' || s.id.startsWith('awg-extra');
 
 const progressKey = (id: string) => `setup.progress.${id}`;
 const err = (message: string, statusCode: number) =>
@@ -150,15 +189,25 @@ export function serverSetup(deps: SetupDeps) {
       },
     ];
     for (const s of SERVICES) {
-      const installed = has(id, s.kind);
+      // AWG: "уже стоит" - основной контейнер; дополнительные основному не мешают
+      const installed =
+        s.command === 'awg'
+          ? (inventory(id)?.containers ?? []).some((c) => c.name === AWG_MAIN)
+          : has(id, s.kind);
+      const answers = await screenAnswers(id, s.command);
       steps.push({
         id: s.command,
         kind: 'service',
         title: s.title,
         command: s.command,
-        enabled: !installed,
-        ...(installed ? { note: 'уже установлен' } : {}),
-        answers: await screenAnswers(id, s.command),
+        ...(installed
+          ? {
+              enabled: false,
+              note: 'уже установлен',
+              modes: ['skip', 'reinstall'] as SetupMode[],
+              answers: { ...answers, MODE: 'skip' },
+            }
+          : { enabled: true, answers }),
       });
     }
     steps.push({
@@ -192,6 +241,86 @@ export function serverSetup(deps: SetupDeps) {
     return { steps, progress: progress(id) };
   }
 
+  /** Контейнеры AWG на сервере живым опросом; агент не ответил - null (проверят команды). */
+  async function awgHere(id: string): Promise<AwgHere[] | null> {
+    try {
+      const st = await registry.request<{
+        instances?: { container: string; port: number; address: string }[];
+      }>(id, 'awg.status', {}, { timeoutMs: 30_000 });
+      return (st.instances ?? []).map((i) => ({
+        container: i.container,
+        port: i.port,
+        subnet: subnetOf(i.address),
+      }));
+    } catch {
+      return null;
+    }
+  }
+
+  /**
+   * Шаги AWG из копии: по контейнеру на каждый в копии. Нет такого на сервере - ставится
+   * обязательно; есть - выбор (оставить и заменить данными, переустановить, не трогать).
+   * Контейнеры сервера, которых нет в копии, но которые заняли её порт или подсеть, - шаги
+   * удаления (выключены: их клиенты потеряют доступ, решает владелец).
+   */
+  function awgBackupSteps(base: SetupStep, snap: BackupSetup, here: AwgHere[] | null): SetupStep[] {
+    if (!snap.services.includes('amnezia') || !snap.awg.length) {
+      // в копии AWG нет: стоящий основной - не трогать, иначе выключен
+      return [base.modes ? base : { ...base, enabled: false }];
+    }
+    const out: SetupStep[] = [];
+    const names = new Set(snap.awg.map((a) => a.container));
+    for (const t of here ?? []) {
+      if (names.has(t.container)) continue;
+      const clash = snap.awg.find((a) => a.port === t.port || (a.subnet && a.subnet === t.subnet));
+      if (!clash) continue;
+      const what = clash.port === t.port ? `порт UDP ${t.port}` : `подсеть ${t.subnet}`;
+      out.push({
+        id: `awg-remove:${t.container}`,
+        kind: 'service',
+        title: `Удалить контейнер ${t.container}`,
+        command: 'awg-uninstall',
+        enabled: false,
+        note: `занял ${what}, нужную копии; его клиенты потеряют доступ`,
+        answers: { AWG_CONTAINER: t.container, CONFIRM: 'yes' },
+      });
+    }
+    const ordered = [...snap.awg].sort((a, b) =>
+      a.container === AWG_MAIN ? -1 : b.container === AWG_MAIN ? 1 : 0,
+    );
+    for (const x of ordered) {
+      const main = x.container === AWG_MAIN;
+      const exists = here?.some((t) => t.container === x.container) ?? false;
+      const answers = {
+        ...(main ? (base.answers ?? {}) : {}),
+        ...(main ? (snap.answers.awg ?? {}) : {}),
+        AWG_INSTANCE: main ? 'main' : 'extra',
+        AWG_VERSION: x.version || (main ? '3.1' : '2.0'),
+        ...(x.port ? { AWG_SERVER_PORT: String(x.port) } : {}),
+        ...(x.subnet ? { AWG_SUBNET_IP: x.subnet } : {}),
+      };
+      const step: SetupStep = {
+        id: main ? 'awg' : `awg-extra:${x.port}`,
+        kind: 'service',
+        title: main ? 'AmneziaWG' : `AmneziaWG ${x.version || '2.0'}: дополнительный контейнер`,
+        command: 'awg',
+        enabled: true,
+        answers,
+      };
+      out.push(
+        exists
+          ? {
+              ...step,
+              modes: ['keep', 'reinstall', 'skip'],
+              note: `контейнер ${x.container} уже есть`,
+              answers: { ...answers, MODE: 'keep' },
+            }
+          : { ...step, locked: true, note: 'контейнер из копии, с её портом и подсетью' },
+      );
+    }
+    return out;
+  }
+
   /**
    * План восстановления на чистый сервер: сервисы - как на старом сервере, с его портами;
    * контейнеры AWG из копии - обязательно; затем раскладка данных архива. Пароли сервисов,
@@ -200,6 +329,7 @@ export function serverSetup(deps: SetupDeps) {
   async function backupPlan(id: string, bid: string): Promise<SetupPlan> {
     const { bk, snap, comps } = backupSource(bid);
     const base = (await plan(id)).steps;
+    const here = await awgHere(id);
     const steps: SetupStep[] = [];
     for (const s of base) {
       if (s.id === 'client-host') {
@@ -214,51 +344,33 @@ export function serverSetup(deps: SetupDeps) {
         continue;
       }
       if (s.kind === 'service' && s.id === 'awg') {
-        const main = snap.awg.find((a) => a.container === AWG_MAIN);
-        const inSnap = snap.services.includes('amnezia');
-        steps.push({
-          ...s,
-          enabled: inSnap && s.enabled,
-          ...(main ? { locked: true, note: 'контейнер из копии, с её портом и подсетью' } : {}),
-          answers: {
-            ...(s.answers ?? {}),
-            ...(snap.answers.awg ?? {}),
-            AWG_INSTANCE: 'main',
-            ...(main?.version ? { AWG_VERSION: main.version } : {}),
-            ...(main?.port ? { AWG_SERVER_PORT: String(main.port) } : {}),
-            ...(main?.subnet ? { AWG_SUBNET_IP: main.subnet } : {}),
-          },
-        });
+        steps.push(...awgBackupSteps(s, snap, here));
         continue;
       }
       if (s.id === 'awg-extra') {
-        const extras = snap.awg.filter((a) => a.container !== AWG_MAIN);
-        for (const x of extras)
-          steps.push({
-            ...s,
-            id: `awg-extra:${x.port}`,
-            title: `AmneziaWG ${x.version || ''}: дополнительный контейнер`.replace('  ', ' '),
-            enabled: true,
-            locked: true,
-            note: 'контейнер из копии',
-            answers: {
-              AWG_VERSION: x.version || '2.0',
-              AWG_SERVER_PORT: String(x.port),
-              ...(x.subnet ? { AWG_SUBNET_IP: x.subnet } : {}),
-            },
-          });
-        if (!extras.length) steps.push(s);
+        // дополнительные контейнеры копии уже в awgBackupSteps; свой - только без них
+        if (!snap.awg.some((a) => a.container !== AWG_MAIN)) steps.push(s);
         continue;
       }
       if (s.kind === 'service' && s.command) {
         const kind = SERVICES.find((x) => x.command === s.command)?.kind ?? '';
         const inSnap = snap.services.includes(kind);
-        steps.push({
-          ...s,
-          enabled: inSnap && s.enabled,
-          ...(comps.has(s.command) ? { fromBackup: true } : {}),
-          answers: { ...(s.answers ?? {}), ...(snap.answers[s.command] ?? {}) },
-        });
+        const answers = { ...(s.answers ?? {}), ...(snap.answers[s.command] ?? {}) };
+        const fromBackup = comps.has(s.command) ? { fromBackup: true } : {};
+        if (s.modes) {
+          // уже стоит: из копии - оставить и заменить данными; в копии его нет - не трогать
+          const modes: SetupMode[] = inSnap ? ['keep', 'reinstall', 'skip'] : ['skip', 'reinstall'];
+          steps.push({
+            ...s,
+            ...fromBackup,
+            modes,
+            enabled: inSnap,
+            note: inSnap ? 'уже установлен' : 'уже установлен, в копии его нет',
+            answers: { ...answers, MODE: modes[0] as string },
+          });
+          continue;
+        }
+        steps.push({ ...s, ...fromBackup, enabled: inSnap, answers });
         continue;
       }
       if (s.id === 'inbounds')
@@ -287,11 +399,15 @@ export function serverSetup(deps: SetupDeps) {
       const q = req.steps.find((x) => x.id === s.id);
       // шаг из копии, который нельзя выключить, идёт и без явного выбора
       if (!q) return { ...s, enabled: Boolean(s.locked) };
-      return {
-        ...s,
-        enabled: s.locked ? true : q.enabled,
-        answers: { ...(s.answers ?? {}), ...(q.answers ?? {}) },
-      };
+      const answers = { ...(s.answers ?? {}), ...(q.answers ?? {}) };
+      // уже стоящий сервис: идёт, если выбрано не "не трогать"
+      if (s.modes) {
+        const mode = (s.modes as string[]).includes(answers.MODE ?? '')
+          ? (answers.MODE as string)
+          : (s.modes[0] as string);
+        return { ...s, enabled: mode !== 'skip', answers: { ...answers, MODE: mode } };
+      }
+      return { ...s, enabled: s.locked ? true : q.enabled, answers };
     });
   }
 
@@ -319,7 +435,7 @@ export function serverSetup(deps: SetupDeps) {
       else ports.set(v, `${step.title}, ${label}`);
     };
     for (const s of steps.filter((x) => x.enabled)) {
-      if (s.kind === 'service' && s.command) {
+      if (s.kind === 'service' && s.command && willInstall(s)) {
         const c = findCommand(s.command);
         if (!c) continue;
         if (!s.id.startsWith('awg-extra'))
@@ -333,6 +449,27 @@ export function serverSetup(deps: SetupDeps) {
         if (s.answers?.XHTTP) port(s, 'XHTTP', s.answers.XHTTP_PORT);
       }
     }
+    // AWG из копии раскладывается целиком: "не трогать" - для всех контейнеров копии сразу
+    const awgCopy = steps.filter((x) => isAwgStep(x) && x.modes?.includes('keep'));
+    const awgSkip = awgCopy.filter((x) => modeOf(x) === 'skip');
+    const awgGo = steps.filter(
+      (x) => isAwgStep(x) && x.enabled && (x.locked || x.modes?.includes('keep')),
+    );
+    if (awgSkip.length && awgGo.length)
+      for (const x of awgSkip)
+        out.push({
+          step: x.id,
+          level: 'fail',
+          text: '\u00abНе трогать\u00bb для AWG - только для всех контейнеров копии сразу',
+        });
+    // мешающий контейнер: либо удалить, либо не трогать AWG из копии
+    for (const r of steps.filter((x) => x.id.startsWith('awg-remove:') && !x.enabled))
+      if (awgGo.length)
+        out.push({
+          step: r.id,
+          level: 'fail',
+          text: `${r.note ?? ''}: нужно отметить удаление или выбрать \u00abНе трогать\u00bb для AWG`,
+        });
     return out;
   }
 
@@ -341,8 +478,13 @@ export function serverSetup(deps: SetupDeps) {
     if (!registry.isOnline(id)) throw err('сервер не в сети', 409);
     const steps = await resolve(id, req);
     const checks = localChecks(steps);
-    for (const s of steps.filter((x) => x.enabled && x.kind === 'service' && x.command)) {
-      if (s.id.startsWith('awg-extra')) continue;
+    // проверки команд - для того, что поставится на нынешнее состояние; переустановку и AWG
+    // из копии (порты и подсети уже сверены с контейнерами сервера) команды проверили бы против
+    // того, что сейчас удалится
+    const awgChecked = Boolean(req.backupId);
+    for (const s of steps.filter((x) => willInstall(x) && x.command)) {
+      if (s.id.startsWith('awg-extra') || modeOf(s) === 'reinstall') continue;
+      if (awgChecked && isAwgStep(s)) continue;
       try {
         const r = await runner.preflight(id, s.command as string, withPasswords(s));
         for (const ch of r.checks)
@@ -381,9 +523,10 @@ export function serverSetup(deps: SetupDeps) {
       throw err('нечего продолжать: шага нет в прошлом запуске', 400);
     // продолжение - те же шаги, что в прошлом запуске (план мог измениться: сервис уже стоит)
     const keep = req.from ? new Set(prev?.steps.map((s) => s.id)) : null;
-    const steps = (await resolve(id, req)).filter((s) => (keep ? keep.has(s.id) : s.enabled));
+    const all = await resolve(id, req);
+    const steps = all.filter((s) => (keep ? keep.has(s.id) : s.enabled));
     if (!steps.length) throw err('не выбрано ни одного шага', 400);
-    const bad = localChecks(steps).filter((c) => c.level === 'fail');
+    const bad = localChecks(all).filter((c) => c.level === 'fail');
     if (bad.length)
       throw err(
         bad
@@ -421,6 +564,11 @@ export function serverSetup(deps: SetupDeps) {
     };
     save();
     const secrets: string[] = [];
+    // компоненты копии, которые не раскладываются: "не трогать" у их сервиса
+    const exclude = new Set<string>();
+    for (const x of all)
+      if (x.modes && modeOf(x) === 'skip' && x.command && COMPONENT[x.command])
+        exclude.add(COMPONENT[x.command] as string);
     void (async () => {
       let exit = 0;
       for (const [i, s] of steps.entries()) {
@@ -430,7 +578,7 @@ export function serverSetup(deps: SetupDeps) {
         save();
         say(`\n== ${s.title}`);
         try {
-          const note = await exec(id, s, { action, say, secrets });
+          const note = await exec(id, s, { action, say, secrets, exclude });
           st.state = note === null ? 'skipped' : 'done';
           if (note) st.note = note;
           if (note) say(note);
@@ -457,6 +605,8 @@ export function serverSetup(deps: SetupDeps) {
     action: ReturnType<SetupDeps['journal']['open']>;
     say: (line: string) => void;
     secrets: string[];
+    /** Компоненты копии, которые не раскладывать. */
+    exclude: Set<string>;
   };
 
   /**
@@ -467,7 +617,12 @@ export function serverSetup(deps: SetupDeps) {
   async function restoreStep(id: string, bid: string, ctx: Ctx): Promise<string> {
     const { bk, comps } = backupSource(bid);
     ctx.say(`Копия ${bk.serverName} от ${bk.createdAt.slice(0, 16).replace('T', ' ')}`);
-    await restorer.restore(id, bid, [], ctx.action.stream);
+    // "не трогать" у сервиса - его данные из копии не раскладываются
+    const parts = [...comps].filter(
+      (c): c is string => Boolean(c) && !ctx.exclude.has(c as string),
+    );
+    if (ctx.exclude.size) ctx.say(`Не раскладываются: ${[...ctx.exclude].join(', ')}`);
+    await restorer.restore(id, bid, ctx.exclude.size ? parts : [], ctx.action.stream);
     await registry.refreshInventory(id);
     const notes: string[] = ['данные разложены'];
     if (comps.has('xui') && has(id, 'xui')) {
@@ -518,6 +673,45 @@ export function serverSetup(deps: SetupDeps) {
     return notes.join(', ');
   }
 
+  /** Команда каталога в выводе настройки; код не 0 - исключение. */
+  async function runCommand(id: string, cmd: string, answers: Record<string, string>, ctx: Ctx) {
+    const p = await runner.prepare(id, cmd, answers);
+    const from = ctx.action.output.length;
+    const r = await runner.execute(id, p, {
+      runId: ctx.action.id,
+      stream: ctx.action.stream,
+      output: () => ctx.action.output.slice(from),
+    });
+    ctx.secrets.push(...r.secrets);
+    if (r.exitCode !== 0) throw new Error(`${cmd}: команда завершилась с кодом ${r.exitCode}`);
+    await registry.refreshInventory(id);
+  }
+
+  /**
+   * "Оставить" для контейнера AWG из копии: порт и подсеть те же - ничего не делать (данные
+   * заменит копия), иначе пересоздать контейнер с параметрами копии: восстановленным
+   * пользователям нужны именно они.
+   */
+  async function awgKeep(id: string, s: SetupStep, ctx: Ctx): Promise<string> {
+    const a = s.answers ?? {};
+    const name = s.id === 'awg' ? AWG_MAIN : `${AWG_MAIN}-${a.AWG_SERVER_PORT ?? ''}`;
+    const t = (await awgHere(id))?.find((x) => x.container === name);
+    const same =
+      t &&
+      (!a.AWG_SERVER_PORT || String(t.port) === a.AWG_SERVER_PORT) &&
+      (!a.AWG_SUBNET_IP || t.subnet === a.AWG_SUBNET_IP);
+    if (same) return `контейнер ${name} оставлен, данные заменит копия`;
+    ctx.say(`Контейнер ${name}: порт или подсеть не как в копии - пересоздаю`);
+    const answers = {
+      ...(await runner.defaults(id, 'awg')),
+      ...a,
+      AWG_INSTANCE: s.id === 'awg' ? 'main' : 'extra',
+      AWG_REPLACE: 'replace',
+    };
+    await runCommand(id, 'awg', answers, ctx);
+    return `контейнер ${name} пересоздан с портом и подсетью копии`;
+  }
+
   /** Один шаг; итог для журнала, null - шаг пропущен (делать было нечего). */
   async function exec(id: string, s: SetupStep, ctx: Ctx): Promise<string | null> {
     const { action, say } = ctx;
@@ -559,7 +753,17 @@ export function serverSetup(deps: SetupDeps) {
         const cmd = s.command as string;
         const svc = SERVICES.find((x) => x.command === cmd);
         const extra = s.id.startsWith('awg-extra');
-        if (!extra && svc && has(id, svc.kind)) return null;
+        const mode = modeOf(s);
+        if (mode === 'skip') return null;
+        if (mode === 'keep') {
+          if (cmd !== 'awg') return 'оставлен, данные заменит копия';
+          return awgKeep(id, s, ctx);
+        }
+        if (mode === 'reinstall' && cmd !== 'awg' && UNINSTALL[cmd]) {
+          say(`Удаление: ${s.title}`);
+          await runCommand(id, UNINSTALL[cmd] as string, { CONFIRM: 'yes' }, ctx);
+        }
+        if (mode === 'install' && !extra && svc && cmd !== 'awg' && has(id, svc.kind)) return null;
         // дополнительный AWG: порт и подсеть - из копии или свободные сейчас, когда основной
         // уже стоит
         const answers = extra
@@ -569,8 +773,11 @@ export function serverSetup(deps: SetupDeps) {
               ...(a.AWG_SERVER_PORT ? { AWG_SERVER_PORT: a.AWG_SERVER_PORT } : {}),
               ...(a.AWG_SUBNET_IP ? { AWG_SUBNET_IP: a.AWG_SUBNET_IP } : {}),
               AWG_INSTANCE: 'extra',
+              ...(mode === 'reinstall' ? { AWG_REPLACE: 'replace' } : {}),
             }
-          : withPasswords(s);
+          : cmd === 'awg' && mode === 'reinstall'
+            ? { ...withPasswords(s), AWG_REPLACE: 'replace' }
+            : withPasswords(s);
         const p = await runner.prepare(id, cmd, answers);
         const from = action.output.length;
         const r = await runner.execute(id, p, {
