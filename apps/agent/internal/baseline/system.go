@@ -66,6 +66,32 @@ func truncate(s string, n int) string {
 	return s[:n] + "..."
 }
 
+// heldPackages - пакеты на удержании (apt-mark showhold).
+func heldPackages(ctx context.Context) map[string]bool {
+	held := map[string]bool{}
+	for _, p := range strings.Fields(shell.Out(ctx, "apt-mark", "showhold")) {
+		held[p] = true
+	}
+	return held
+}
+
+// installedPackages - установленные из names (dpkg-query; неизвестные имена пропускаются).
+func installedPackages(ctx context.Context, names []string) []string {
+	res, _ := shell.Exec(ctx, time.Minute, nil, "dpkg-query", append([]string{"-W", "-f=${Package}\t${Status}\n"}, names...)...)
+	return parseInstalled(res.Stdout)
+}
+
+func parseInstalled(out string) []string {
+	var pkgs []string
+	for _, line := range strings.Split(out, "\n") {
+		name, status, ok := strings.Cut(line, "\t")
+		if ok && strings.HasSuffix(strings.TrimSpace(status), " installed") {
+			pkgs = append(pkgs, name)
+		}
+	}
+	return pkgs
+}
+
 // aptWait - префикс команд apt: пока apt занят другим процессом, ждать до 10 минут. Сразу после
 // включения автообновлений systemd запускает их службу apt-daily, и dpkg/apt-get падали на
 // блокировке ("dpkg frontend lock was locked by another process"). Шаблоны pgrep - с [x]: иначе
@@ -90,21 +116,29 @@ func Upgrade(ctx context.Context, stream func(channel, chunk string)) error {
 	hold := "docker-ce docker-ce-cli docker-ce-rootless-extras docker-compose-plugin docker-buildx-plugin containerd.io docker.io containerd linux-image-generic linux-headers-generic linux-generic"
 	log("== Пакеты docker и ядро на удержании (обновляются отдельно): %s", hold)
 	// удержание, поставленное раньше (админом), после обновления не снимаем: только своё
-	held := map[string]bool{}
-	for _, p := range strings.Fields(shell.Out(ctx, "apt-mark", "showhold")) {
-		held[p] = true
-	}
+	held := heldPackages(ctx)
 	var ours []string
-	for _, p := range strings.Fields(hold) {
+	for _, p := range installedPackages(ctx, strings.Fields(hold)) {
 		if !held[p] {
 			ours = append(ours, p)
 		}
 	}
 	if len(ours) > 0 {
-		_, _ = shell.Exec(ctx, time.Minute, nil, "apt-mark", append([]string{"hold"}, ours...)...)
+		// Без удержания apt обновил бы docker, а это перезапуск демона и обрыв VPN в контейнерах.
+		// apt-mark ждёт ту же блокировку dpkg, что и apt; итог проверяется по apt-mark showhold.
+		res, _ := shell.Run(ctx, aptWait+"apt-mark hold "+strings.Join(ours, " "), 15*time.Minute, stream)
 		defer func() {
-			_, _ = shell.Exec(context.Background(), time.Minute, nil, "apt-mark", append([]string{"unhold"}, ours...)...)
+			res, err := shell.Exec(context.Background(), time.Minute, nil, "apt-mark", append([]string{"unhold"}, ours...)...)
+			if err != nil || res.ExitCode != 0 {
+				log("ВНИМАНИЕ: не удалось снять удержание пакетов (apt-mark unhold %s): %s", strings.Join(ours, " "), strings.TrimSpace(res.Stderr+res.Stdout))
+			}
 		}()
+		now := heldPackages(ctx)
+		for _, p := range ours {
+			if !now[p] {
+				return fmt.Errorf("не удалось удержать пакет %s (apt-mark hold), обновление не начато: %s", p, strings.TrimSpace(res.Stderr+res.Stdout))
+			}
+		}
 	}
 	cmd := aptWait + "dpkg --configure -a && apt-get update -qq && DEBIAN_FRONTEND=noninteractive apt-get " + aptLock +
 		"upgrade -y -qq -o Dpkg::Options::=--force-confdef -o Dpkg::Options::=--force-confold && apt-get " + aptLock +
