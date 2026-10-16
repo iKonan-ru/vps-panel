@@ -12,6 +12,7 @@ import (
 	"unicode/utf8"
 
 	"github.com/iKonan-ru/vps-panel/apps/agent/internal/fsutil"
+	"github.com/iKonan-ru/vps-panel/apps/agent/internal/lockout"
 	"github.com/iKonan-ru/vps-panel/apps/agent/internal/sshd"
 )
 
@@ -144,8 +145,8 @@ func removeKey(path, fp string, passwordLogin bool) error {
 	if !found {
 		return errors.New("ключ не найден")
 	}
-	if left == 0 && !passwordLogin {
-		return errors.New("это последний ключ root, а вход по паролю выключен: без него по SSH не войти")
+	if err := lockout.RemoveKey(left, passwordLogin); err != nil {
+		return err
 	}
 	return writeKeyLines(path, keep)
 }
