@@ -28,6 +28,11 @@ export interface RunSink {
   stream: (channel: string, chunk: string) => void;
   /** Вывод этого запуска: из него команда достаёт доступы (логин, пароль, ссылки). */
   output: () => string;
+  /**
+   * Удаление сервиса, который тут же вернётся с прежними записями (переустановка с данными
+   * копии): привязки клиентов и доступы к панели не снимаются.
+   */
+  keepBindings?: boolean;
 }
 
 export interface CatalogDeps {
@@ -302,7 +307,7 @@ export function catalogRunner(deps: CatalogDeps) {
         .set(queued())
         .where(and(eq(gclientBindings.serverId, id), inArray(gclientBindings.service, c.resync)))
         .run();
-    if (exitCode === 0 && c.dropsBindings?.length) {
+    if (exitCode === 0 && c.dropsBindings?.length && !sink.keepBindings) {
       const refPart = c.dropsBindingsRef?.(ctx.answers);
       db.delete(gclientBindings)
         .where(
@@ -314,7 +319,7 @@ export function catalogRunner(deps: CatalogDeps) {
         )
         .run();
     }
-    if (exitCode === 0 && c.forgetsAccess?.length)
+    if (exitCode === 0 && c.forgetsAccess?.length && !sink.keepBindings)
       db.delete(access)
         .where(and(eq(access.serverId, id), inArray(access.kind, c.forgetsAccess)))
         .run();

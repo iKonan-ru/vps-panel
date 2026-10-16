@@ -1,4 +1,4 @@
-import { createHash, randomBytes } from 'node:crypto';
+import { createHash } from 'node:crypto';
 import {
   chmodSync,
   createReadStream,
@@ -22,7 +22,7 @@ import { backups, servers } from '../db/schema.js';
 import { actionJournal } from '../lib/action-journal.js';
 import { readArchiveManifest } from '../lib/backup-archive.js';
 import type { BackupRestorer } from '../lib/backup-restore.js';
-import { type BackupSetup, backupSnapshot } from '../lib/backup-setup.js';
+import type { BackupSetup } from '../lib/backup-setup.js';
 import { newId } from '../lib/ids.js';
 import { encryptedSize, opensslDecryptStream, opensslEncryptStream } from '../lib/panel-backup.js';
 import type { UiHub } from '../lib/ui-hub.js';
@@ -72,25 +72,6 @@ export async function backupRoutes(
     db.delete(backups).where(eq(backups.id, b.id)).run();
   }
 
-  // Одноразовые токены: загрузка (агент -> панель) и скачивание (панель -> агент).
-  const uploads = new Map<
-    string,
-    // busy - загрузка началась: второй запрос с тем же токеном не принимается;
-    // sha256 - принятых байтов, ставится после загрузки
-    {
-      backupId: string;
-      serverId: string;
-      actionId: string;
-      expires: number;
-      busy?: boolean;
-      sha256?: string;
-    }
-  >();
-  const sweep = () => {
-    const now = Date.now();
-    for (const [k, v] of uploads) if (v.expires < now) uploads.delete(k);
-  };
-
   app.addContentTypeParser(
     ['application/gzip', 'application/octet-stream'],
     (_req, payload, done) => done(null, payload),
@@ -113,64 +94,21 @@ export async function backupRoutes(
       .object({ components: z.array(z.string().max(32)).default([]) })
       .parse(req.body ?? {});
     if (!registry.isOnline(id)) return reply.code(409).send({ error: 'сервер не в сети' });
-    const row = (
-      await db.select({ name: servers.name }).from(servers).where(eq(servers.id, id)).limit(1)
-    )[0];
+    const row = db.select({ id: servers.id }).from(servers).where(eq(servers.id, id)).get();
     if (!row) return reply.code(404).send({ error: 'сервер не найден' });
-    sweep();
-    const backupId = newId();
-    const token = randomBytes(24).toString('base64url');
     const action = journal.open(id, 'backup.create', { components });
-    // что стоит на сервере: агент кладёт это в manifest.json архива - скачанный файл
-    // разворачивается на чистый сервер и без панели, в которой его делали
-    const setup = await backupSnapshot(db, registry, id).catch(() => null);
-    const actionId = action.id;
-    uploads.set(token, { backupId, serverId: id, actionId, expires: Date.now() + 30 * 60_000 });
-    const onStream = action.stream;
-    const finish = (exitCode: number) => action.finish(exitCode);
-    registry
-      .request<{ sha256: string; archiveSize: number; hostname: string; components: unknown[] }>(
-        id,
-        'backup.create',
-        {
-          components,
-          uploadUrl: `${env.PANEL_PUBLIC_URL}/api/agent/backups/upload/${token}`,
-          token,
-          ...(setup ? { setup } : {}),
-        },
-        { timeoutMs: 20 * 60_000, onStream },
-      )
-      .then(async (man) => {
-        const got = uploads.get(token)?.sha256;
-        uploads.delete(token);
-        if (!got || !existsSync(file(backupId))) {
-          onStream('stderr', '\nАрхив не дошёл до панели\n');
-          return finish(1);
-        }
-        if (got !== man.sha256) {
-          unlinkSync(file(backupId));
-          onStream('stderr', '\nАрхив пришёл повреждённым: контрольная сумма не совпала\n');
-          return finish(1);
-        }
-        await db.insert(backups).values({
-          id: backupId,
-          serverId: id,
-          serverName: row.name,
-          hostname: man.hostname,
-          size: statSync(file(backupId)).size,
-          sha256: man.sha256,
-          // что стояло на сервере: по нему настройка поставит те же сервисы на чистый сервер
-          manifest: { components: man.components, ...(setup ? { setup } : {}) },
-        });
+    const backupId = newId();
+    const done = restorer.create(id, components, action.stream, backupId);
+    void done
+      .then(async () => {
         hub.broadcast({ type: 'server.changed', serverId: id });
-        await finish(0);
+        await action.finish(0);
       })
       .catch((e: Error) => {
-        uploads.delete(token);
-        onStream('stderr', `\nОШИБКА: ${e.message}\n`);
-        void finish(1);
+        action.stream('stderr', `\nОШИБКА: ${e.message}\n`);
+        void action.finish(1);
       });
-    return { actionId, backupId };
+    return { actionId: action.id, backupId };
   });
 
   /**
@@ -183,9 +121,8 @@ export async function backupRoutes(
       bodyLimit: MAX_BACKUP_BYTES,
       logLevel: 'warn',
       onRequest: async (req, reply) => {
-        sweep();
         const { token } = req.params as { token: string };
-        const u = uploads.get(token);
+        const u = restorer.upload(token);
         const bearer = (req.headers.authorization ?? '').replace(/^Bearer\s+/i, '');
         if (!u || u.busy || bearer !== token)
           return reply.code(403).send({ error: 'токен загрузки недействителен' });
@@ -198,7 +135,7 @@ export async function backupRoutes(
     },
     async (req) => {
       const { token } = z.object({ token: z.string() }).parse(req.params);
-      const u = uploads.get(token);
+      const u = restorer.upload(token);
       if (!u) throw Object.assign(new Error('токен загрузки недействителен'), { statusCode: 403 });
       const hash = createHash('sha256');
       const out = createWriteStream(file(u.backupId), { mode: 0o600 });

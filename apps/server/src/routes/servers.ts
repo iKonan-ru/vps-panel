@@ -1,5 +1,3 @@
-import { existsSync, unlinkSync } from 'node:fs';
-import { join } from 'node:path';
 import { HostingSchema, type ServerSummary, actionTitle } from '@vps/protocol';
 import { and, eq, isNull } from 'drizzle-orm';
 import type { FastifyInstance } from 'fastify';
@@ -8,12 +6,13 @@ import type { AgentRegistry } from '../agents/registry.js';
 import { type StatusCache, toSummary } from '../agents/state.js';
 import type { Env } from '../config.js';
 import type { Db } from '../db/index.js';
-import { actionLog, backups, servers } from '../db/schema.js';
+import { actionLog, servers } from '../db/schema.js';
 import { installCommand, issueRegistration, latestAgentVersion } from '../lib/agent-dist.js';
 import { rollPaymentDate } from '../lib/billing.js';
 import { newId } from '../lib/ids.js';
 import { panelAddresses } from '../lib/panel-host.js';
 import type { PanelProxy } from '../lib/panel-proxy.js';
+import { removeServer } from '../lib/server-remove.js';
 import type { UiHub } from '../lib/ui-hub.js';
 
 const CreateSchema = z.object({
@@ -139,21 +138,8 @@ export async function serverRoutes(
 
   app.delete('/api/servers/:id', async (req, reply) => {
     const { id } = z.object({ id: z.string() }).parse(req.params);
-    registry.get(id)?.ws.close(4005, 'server removed');
-    // резервные копии сервера - вместе с ним: файлы копий у владельца, панель их не хранит
-    // без сервера
-    for (const b of db
-      .select({ id: backups.id })
-      .from(backups)
-      .where(eq(backups.serverId, id))
-      .all()) {
-      const f = join(env.DATA_DIR, 'backups', `${b.id}.tar.gz`);
-      if (existsSync(f)) unlinkSync(f);
-    }
-    db.delete(backups).where(eq(backups.serverId, id)).run();
-    const res = await db.delete(servers).where(eq(servers.id, id)).returning({ id: servers.id });
-    if (res.length === 0) return reply.code(404).send({ error: 'сервер не найден' });
-    hub.broadcast({ type: 'server.changed', serverId: id });
+    if (!removeServer({ db, env, registry, hub }, id))
+      return reply.code(404).send({ error: 'сервер не найден' });
     return { ok: true };
   });
 

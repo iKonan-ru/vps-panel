@@ -251,7 +251,7 @@ function NextStep({ serverId }: { serverId: string }) {
           navigate({
             to: '/servers/$id/setup',
             params: { id: serverId },
-            search: { backup: undefined },
+            search: { backup: undefined, migrate: undefined, wipe: undefined },
           })
         }
       >
