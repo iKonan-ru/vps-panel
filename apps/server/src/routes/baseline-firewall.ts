@@ -120,19 +120,32 @@ export async function baselineFirewallRoutes(app: FastifyInstance, opts: ServerR
   app.put('/api/servers/:id/firewall/portsync', async (req) => {
     const { id } = Id.parse(req.params);
     const config = PortsyncConfig.parse(req.body);
-    // в базу - только принятое агентом: он отказывает, если настройки закроют работающий VPN
-    const r = await quickAction(
-      id,
-      'portsync.config',
-      'firewall.portsync.config',
-      { config },
-      120_000,
-    );
-    await db
-      .insert(portsyncConfigs)
-      .values({ serverId: id, config })
-      .onConflictDoUpdate({ target: portsyncConfigs.serverId, set: { config } });
-    return r;
+    const save = (c: typeof config) =>
+      db
+        .insert(portsyncConfigs)
+        .values({ serverId: id, config: c })
+        .onConflictDoUpdate({ target: portsyncConfigs.serverId, set: { config: c } });
+    try {
+      const r = await quickAction(
+        id,
+        'portsync.config',
+        'firewall.portsync.config',
+        { config },
+        120_000,
+      );
+      await save(config);
+      return r;
+    } catch (e) {
+      // агент мог отказать (настройки закрыли бы работающий VPN) или принять их, а упасть на
+      // запуске port-sync: в базе - то, что сейчас лежит на сервере
+      const cur = PortsyncConfig.safeParse(
+        await registry
+          .request(id, 'firewall.portsync.config', {}, { timeoutMs: 30_000 })
+          .catch(() => null),
+      );
+      if (cur.success) await save(cur.data);
+      throw e;
+    }
   });
 
   app.get('/api/servers/:id/firewall/rules', async (req) => {

@@ -28,7 +28,7 @@ function exitNote(i: XuiInboundRow): string {
 const securityTitle: Record<string, string> = { reality: 'Reality', tls: 'TLS', none: '' };
 
 /**
- * Блок "XuiInboundRow-ы" вкладки 3X-UI: что слушает xray, клиенты и трафик; правка - подпись, порт,
+ * Блок "Inbound-ы" вкладки 3X-UI: что слушает xray, клиенты и трафик; правка - подпись, порт,
  * вкл/выкл (остальное - в панели 3X-UI). Данные - по API-токену; нет токена - подсказка.
  */
 export function XuiInbounds({
@@ -95,7 +95,7 @@ export function XuiInbounds({
     <>
       {run && <ActionPanel title={run.title} actionId={run.id} onHide={() => setRun(null)} />}
       <Section
-        title="XuiInboundRow"
+        title="Inbound"
         info={
           'Здесь добавляются соединения VLESS (RAW и XHTTP с Reality), меняются подпись, порт и включение, inbound удаляется; остальное\u00a0\u2014 в панели 3X-UI'
         }
@@ -132,7 +132,7 @@ export function XuiInbounds({
           </div>
         )}
         {data && list.length === 0 && (
-          <div className="px-4 py-3 text-[13px] text-muted">XuiInboundRow нет</div>
+          <div className="px-4 py-3 text-[13px] text-muted">Inbound нет</div>
         )}
         {list.map((i) => (
           <div
@@ -142,7 +142,7 @@ export function XuiInbounds({
             <Switch
               checked={i.enable}
               disabled={locked || i.node}
-              label={`XuiInboundRow ${i.remark || `#${i.id}`}`}
+              label={`Inbound ${i.remark || `#${i.id}`}`}
               onChange={() => void save(i, { enable: !i.enable })}
             />
             <div className="min-w-0 grow">
@@ -201,7 +201,7 @@ export function XuiInbounds({
             <Button
               size="icon-sm"
               variant="ghost"
-              title={i.node ? 'XuiInboundRow другого узла: правится на нём' : reason}
+              title={i.node ? 'Inbound другого узла: правится на нём' : reason}
               aria-label="Изменить inbound"
               disabled={locked || i.node}
               onClick={() => {
@@ -215,9 +215,7 @@ export function XuiInbounds({
               size="icon-sm"
               variant="ghost"
               title={
-                i.node
-                  ? 'XuiInboundRow другого узла: удаляется на нём'
-                  : (reason ?? 'Удалить inbound')
+                i.node ? 'Inbound другого узла: удаляется на нём' : (reason ?? 'Удалить inbound')
               }
               aria-label="Удалить inbound"
               disabled={locked || i.node}
@@ -230,7 +228,7 @@ export function XuiInbounds({
         <Dialog
           open={edit !== null}
           onClose={() => setEdit(null)}
-          title={edit ? `XuiInboundRow ${edit.remark || `#${edit.id}`}` : ''}
+          title={edit ? `Inbound ${edit.remark || `#${edit.id}`}` : ''}
         >
           {edit && (
             <EditInboundForm
@@ -241,7 +239,7 @@ export function XuiInbounds({
               onCancel={() => setEdit(null)}
               onStarted={(id) => {
                 setEdit(null);
-                setRun({ id, title: `XuiInboundRow ${edit.remark || `#${edit.id}`}` });
+                setRun({ id, title: `Inbound ${edit.remark || `#${edit.id}`}` });
               }}
             />
           )}

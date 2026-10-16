@@ -108,3 +108,24 @@ func TestCollectCoalesces(t *testing.T) {
 		t.Fatalf("сборов %d, ждали 2", runs)
 	}
 }
+
+func TestCollectAfterPanic(t *testing.T) {
+	calls := 0
+	collectFn = func(context.Context, string) (Snapshot, error) {
+		calls++
+		if calls == 1 {
+			panic("разбор вывода")
+		}
+		return Snapshot{health: "ok"}, nil
+	}
+	defer func() { collectFn = collect }()
+	if _, err := Collect(context.Background(), ""); err == nil {
+		t.Fatal("паника сбора должна стать ошибкой")
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+	s, err := Collect(ctx, "")
+	if err != nil || s.Health() != "ok" {
+		t.Fatalf("после паники следующий сбор должен пройти: %v %q", err, s.Health())
+	}
+}

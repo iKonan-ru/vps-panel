@@ -67,9 +67,11 @@ func Collect(ctx context.Context, agentVersion string) (Snapshot, error) {
 		c = &call{start: make(chan struct{}), done: make(chan struct{})}
 		flight.queued = c
 		flight.Unlock()
+		// сбор общий для всех, кто ждёт: отмена контекста первого не должна срывать его другим
+		base := context.WithoutCancel(ctx)
 		go func() {
 			<-c.start
-			c.run(ctx, agentVersion)
+			c.run(base, agentVersion)
 		}()
 	default:
 		c = flight.queued
@@ -83,16 +85,23 @@ func Collect(ctx context.Context, agentVersion string) (Snapshot, error) {
 	}
 }
 
+// run - сбор и передача очереди следующему; паника сбора - ошибка этого снимка, а не вечно
+// занятая очередь.
 func (c *call) run(ctx context.Context, agentVersion string) {
+	defer func() {
+		if r := recover(); r != nil {
+			c.snap, c.err = Snapshot{}, fmt.Errorf("сбор снимка: %v", r)
+		}
+		flight.Lock()
+		next := flight.queued
+		flight.running, flight.queued = next, nil
+		flight.Unlock()
+		close(c.done)
+		if next != nil {
+			close(next.start)
+		}
+	}()
 	c.snap, c.err = collectFn(ctx, agentVersion)
-	flight.Lock()
-	next := flight.queued
-	flight.running, flight.queued = next, nil
-	flight.Unlock()
-	close(c.done)
-	if next != nil {
-		close(next.start)
-	}
 }
 
 // collect - один сбор. Независимые части идут параллельно: docker stats ждёт секунду на каждый
