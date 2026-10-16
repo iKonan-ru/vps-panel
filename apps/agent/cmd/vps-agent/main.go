@@ -3,8 +3,6 @@ package main
 
 import (
 	"context"
-	"crypto/ed25519"
-	"encoding/base64"
 	"encoding/json"
 	"flag"
 	"fmt"
@@ -97,20 +95,10 @@ func main() {
 
 	collector := metrics.NewCollector()
 	ops := withConfigOps(registry(cfg.PanelURL), cfg, *cfgPath)
-	panelKey, _ := cfg.Key() // формат проверен в config.Load
-	var client *transport.Client
-	client = transport.New(cfg.PanelURL, token, panelKey, metrics.Host(Version), handler(ops), log)
+	panelKey, _ := cfg.Key() // проверен в config.Load
+	client := transport.New(cfg.PanelURL, token, panelKey, metrics.Host(Version), handler(ops), log)
 	client.Methods = methods(ops)
 	client.Inline = inlineOps
-	client.OnPanelKey = func(key ed25519.PublicKey) {
-		// старый агент без ключа: панель доказала знание токена - запоминаем её ключ
-		cfg.PanelKey = base64.StdEncoding.EncodeToString(key)
-		if err := cfg.Save(*cfgPath); err != nil {
-			log.Error("save config", "err", err)
-		} else {
-			log.Info("ключ панели запомнен")
-		}
-	}
 	client.OnDisconnect = func() {
 		terminal.CloseAll()
 		tunnel.CloseAll()

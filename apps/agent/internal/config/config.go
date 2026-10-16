@@ -19,9 +19,9 @@ const DefaultPath = "/etc/vps-agent/agent.json"
 type Config struct {
 	// PanelURL - базовый адрес панели, например https://panel.example.com.
 	PanelURL string `json:"panelUrl"`
-	// PanelKey - ключ панели ed25519 (base64): агент верит ему, а не домену.
-	// Передаётся в команде установки; у старых агентов пуст - первый ключ запоминается сам.
-	PanelKey string `json:"panelKey,omitempty"`
+	// PanelKey - ключ панели ed25519 (base64): агент верит ему, а не домену. Передаётся в
+	// команде установки.
+	PanelKey string `json:"panelKey"`
 	// Token - постоянный токен агента (выдаётся при регистрации).
 	Token string `json:"token,omitempty"`
 	// RegistrationToken - одноразовый токен, используется только при первом подключении.
@@ -86,10 +86,10 @@ func CheckPanelURL(raw string) error {
 	return fmt.Errorf("config: panelUrl должен быть https:// (сейчас %q)", raw)
 }
 
-// Key - запомненный ключ панели; nil - ещё не запомнен.
+// Key - ключ панели из конфига.
 func (c *Config) Key() (ed25519.PublicKey, error) {
 	if c.PanelKey == "" {
-		return nil, nil
+		return nil, errors.New("config: нет panelKey - ключа панели из команды установки")
 	}
 	b, err := base64.StdEncoding.DecodeString(c.PanelKey)
 	if err != nil || len(b) != ed25519.PublicKeySize {
