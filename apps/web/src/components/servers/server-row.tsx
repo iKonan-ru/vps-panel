@@ -10,7 +10,7 @@ import { ms, serverRtt, useReachAll } from '@/lib/reach';
 import { Link, useNavigate } from '@tanstack/react-router';
 import type { ServerSummary } from '@vps/protocol';
 
-/** Задержка из России (медиана зондов Globalping последней проверки): "из РФ 46 мс". */
+/** Задержка из России: "из РФ 46 мс". */
 function RuRtt({ s, short = false }: { s: ServerSummary; short?: boolean }) {
   const { data: reach } = useReachAll();
   const rtt = serverRtt(reach?.[s.id]);
@@ -65,7 +65,7 @@ export function ServerRow({ s }: { s: ServerSummary }) {
     // biome-ignore lint/a11y/useKeyWithClickEvents: клавиатурный путь - ссылка на имени сервера внутри строки
     <tr
       onClick={(e) => {
-        // Клик по ссылке или кнопке внутри строки обрабатывают они сами.
+        // клик по ссылке или кнопке внутри строки обрабатывают они сами
         if ((e.target as HTMLElement).closest('a, button')) return;
         void open();
       }}
@@ -115,7 +115,7 @@ export function ServerRow({ s }: { s: ServerSummary }) {
   );
 }
 
-/** Сервер, на котором стоит сама панель: глобальные клиенты на нём - только если включить. */
+/** Плашка сервера, на котором стоит сама панель. */
 function PanelHostChip() {
   return (
     <Chip tone="accent" className="font-sans" title="Сервер панели">
@@ -128,8 +128,8 @@ function PanelHostChip() {
 export function ServerCard({ s }: { s: ServerSummary }) {
   const navigate = useNavigate();
   return (
-    // Не ссылка целиком: внутри ссылки на панели сервисов, а вложенная ссылка уводила бы на
-    // карточку сервера вместо панели. Клавиатурный путь - ссылка на имени.
+    // не ссылка целиком: внутри - ссылки на панели сервисов, вложенная ссылка уводила бы на
+    // карточку сервера; клавиатурный путь - ссылка на имени
     // biome-ignore lint/a11y/useKeyWithClickEvents: клавиатурный путь - ссылка на имени сервера
     <div
       className="cursor-pointer"
