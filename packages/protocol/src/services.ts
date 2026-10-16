@@ -96,7 +96,7 @@ export const SERVICES: readonly ServiceDef[] = [
     kind: 'naive',
     binding: 'naive',
     title: 'Прокси для браузера',
-    short: 'Браузер',
+    short: 'Браузер (naive)',
     clientTitle: 'Браузер',
     counters: false,
     install: 'naive',
