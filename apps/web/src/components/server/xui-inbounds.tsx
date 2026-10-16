@@ -118,18 +118,7 @@ export function XuiInbounds({
   const locked = disabled || op.busy || isFetching;
   return (
     <>
-      {run && (
-        <ActionPanel
-          title={run.title}
-          actionId={run.id}
-          onHide={() => setRun(null)}
-          onFinished={() => {
-            void qc.invalidateQueries({ queryKey: ['xui-inbounds', serverId] });
-            void qc.invalidateQueries({ queryKey: ['xui', serverId] });
-            void qc.invalidateQueries({ queryKey: ['xui-clients', serverId] });
-          }}
-        />
-      )}
+      {run && <ActionPanel title={run.title} actionId={run.id} onHide={() => setRun(null)} />}
       <Section
         title="Inbound"
         info={

@@ -25,6 +25,8 @@ import { cn } from '@/lib/cn';
 import { ago, bytes, uptime } from '@/lib/format';
 import { reachLevel, reachTone } from '@/lib/reach';
 import { type ServerDetail, serverLock } from '@/lib/servers';
+import { useUpdatesCheck } from '@/lib/service-update';
+import { useAction } from '@/lib/use-action';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import {
   ExternalLink,
@@ -58,20 +60,16 @@ export function MtproxylTab({ s }: { s: ServerDetail }) {
     enabled: online,
     staleTime: 20_000,
   });
-  // recheck - после действия перепроверить версии (это было обновление); inVersions - вывод
-  // внутри блока "Версии" (обновления и движок), иначе - сверху вкладки
+  // inVersions - вывод внутри блока "Версии" (обновления и движок), иначе - сверху вкладки
   const [action, setAction] = useState<{
     id: string;
     title: string;
-    recheck?: boolean;
     inVersions?: boolean;
   } | null>(null);
-  const [error, setError] = useState<string | null>(null);
-  const [busy, setBusy] = useState(false);
+  const op = useAction();
   // пользователь, чьё окно со ссылками и QR открыто
   const [user, setUser] = useState<string | null>(null);
   const [addOpen, setAddOpen] = useState(false);
-  const [checking, setChecking] = useState(false);
   const [engineOpen, setEngineOpen] = useState(false);
   // через поддомен панели, если агент умеет туннель; иначе прямой адрес
   const panelUrl =
@@ -84,47 +82,25 @@ export function MtproxylTab({ s }: { s: ServerDetail }) {
   });
 
   const refresh = () => qc.invalidateQueries({ queryKey: ['mtproxyl', s.id] });
+  // после обновления версии перепроверяются сами (lib/live.ts)
+  const updates = useUpdatesCheck(s.id);
   // проверка версий идёт - обновлять и менять версию нельзя (решение по старым данным)
-  const versionsBusy = checking || versions.isFetching;
-
-  /** Проверить обновления сервера сейчас; итог виден и здесь, и в "Обзоре", и в списке. */
-  async function recheck() {
-    setChecking(true);
-    setError(null);
-    try {
-      await api(`/api/servers/${s.id}/updates/check`, { method: 'POST' });
-    } catch (e) {
-      setError((e as Error).message);
-    } finally {
-      // кнопки версий - только после свежего списка: иначе "Обновить" по старым данным
-      await qc.invalidateQueries({ queryKey: ['mtproxyl-versions', s.id] });
-      await qc.invalidateQueries({ queryKey: ['service-updates'] });
-      await qc.invalidateQueries({ queryKey: ['service-updates-all'] });
-      setChecking(false);
-    }
-  }
+  const versionsBusy = updates.checking || versions.isFetching;
 
   /** Короткая операция: результат сразу; длинная: блок с выводом, обновление по завершении. */
   async function run(
     title: string,
-    op: string,
+    name: string,
     args: Record<string, string> = {},
-    recheckAfter = false,
     inVersions = false,
   ) {
-    setBusy(true);
-    setError(null);
-    try {
-      const r = await mtApi.exec(s.id, op, args);
-      if (r.actionId) setAction({ id: r.actionId, title, recheck: recheckAfter, inVersions });
+    let r = null as Awaited<ReturnType<typeof mtApi.exec>> | null;
+    const ok = await op.run(async () => {
+      r = await mtApi.exec(s.id, name, args);
+      if (r.actionId) setAction({ id: r.actionId, title, inVersions });
       else await refresh();
-      return r;
-    } catch (e) {
-      setError((e as Error).message);
-      return null;
-    } finally {
-      setBusy(false);
-    }
+    });
+    return ok ? r : null;
   }
 
   /** Сменить версию движка telemt: только готовый образ docker или бинарник (без сборки). */
@@ -136,15 +112,14 @@ export function MtproxylTab({ s }: { s: ServerDetail }) {
     });
     if (!ok) return;
     setEngineOpen(false);
-    await run(`Движок MTProxyL: версия ${tag}`, 'engine.update', { version: tag }, false, true);
+    await run(`Движок MTProxyL: версия ${tag}`, 'engine.update', { version: tag }, true);
   }
 
   function updateComponent(kind: MtVersionKind, latest: string) {
-    if (kind === 'mtproxyl')
-      return run(`Обновление MTProxyL до ${latest}`, 'update', {}, true, true);
+    if (kind === 'mtproxyl') return run(`Обновление MTProxyL до ${latest}`, 'update', {}, true);
     // веб-панель - до последнего релиза сразу, без подтверждения: установщик берёт настройки из
     // её конфига, прокси и пользователи не затрагиваются
-    return run('Обновление панели MTProxyL', 'panel.update', {}, true, true);
+    return run('Обновление панели MTProxyL', 'panel.update', {}, true);
   }
 
   /** Включить или выключить пользователя. */
@@ -189,22 +164,14 @@ export function MtproxylTab({ s }: { s: ServerDetail }) {
 
   return (
     <>
-      {error && <Alert tone="bad">{error}</Alert>}
+      {(op.error ?? updates.error) && <Alert tone="bad">{op.error ?? updates.error}</Alert>}
       {data.errors.map((e) => (
         <Alert key={e} tone="info">
           {e}
         </Alert>
       ))}
       {action && !action.inVersions && (
-        <ActionPanel
-          title={action.title}
-          actionId={action.id}
-          onHide={() => setAction(null)}
-          onFinished={() => {
-            void refresh();
-            if (action.recheck) void recheck();
-          }}
-        />
+        <ActionPanel title={action.title} actionId={action.id} onHide={() => setAction(null)} />
       )}
 
       {/* как в "Обзоре": на мобиле по две в ряд */}
@@ -292,7 +259,7 @@ export function MtproxylTab({ s }: { s: ServerDetail }) {
             label: 'Перезапустить прокси',
             icon: <RotateCcw className="size-3.5" />,
             onClick: () => void run('Перезапуск MTProxyL', 'restart'),
-            disabled: busy || lock.busy,
+            disabled: op.busy || lock.busy,
             title: lock.reason,
             group: 'service',
           },
@@ -302,7 +269,7 @@ export function MtproxylTab({ s }: { s: ServerDetail }) {
             icon: <MonitorCog className="size-3.5" />,
             hidden: !panelUrl || !panelInstalled,
             onClick: () => void run('Перезапуск панели', 'panel.restart'),
-            disabled: busy || lock.busy,
+            disabled: op.busy || lock.busy,
             title: lock.reason,
             group: 'service',
           },
@@ -329,7 +296,7 @@ export function MtproxylTab({ s }: { s: ServerDetail }) {
           <Button
             size="sm"
             variant="primary"
-            disabled={busy || lock.busy}
+            disabled={op.busy || lock.busy}
             title={lock.reason}
             onClick={() => setAddOpen(true)}
             label="Добавить"
@@ -381,16 +348,12 @@ export function MtproxylTab({ s }: { s: ServerDetail }) {
         ]}
         data={versions.data}
         checking={versionsBusy}
-        disabled={busy || lock.busy || versionsBusy}
+        disabled={op.busy || lock.busy || versionsBusy}
         reason={lock.reason}
-        onCheck={() => void recheck()}
+        onCheck={() => void updates.check()}
         onUpdate={(kind, latest) => void updateComponent(kind, latest)}
         action={action?.inVersions ? action : null}
         onHideAction={() => setAction(null)}
-        onActionFinished={() => {
-          void refresh();
-          if (action?.recheck) void recheck();
-        }}
       >
         {/* движок telemt - не обновление: версия меняется по желанию (EngineForm) */}
         <div className="flex items-center gap-3 px-4 py-3">
@@ -400,7 +363,7 @@ export function MtproxylTab({ s }: { s: ServerDetail }) {
           </div>
           <Button
             size="sm"
-            disabled={busy || lock.busy || versionsBusy}
+            disabled={op.busy || lock.busy || versionsBusy}
             title={lock.reason}
             onClick={() => setEngineOpen(true)}
           >
@@ -415,7 +378,7 @@ export function MtproxylTab({ s }: { s: ServerDetail }) {
         kind="mtproxyl"
         title="MTProxyL"
         loses="Прокси, его пользователи и веб-панель удалятся, ссылки tg://proxy перестанут работать"
-        disabled={busy || lock.busy}
+        disabled={op.busy || lock.busy}
         reason={lock.reason}
       />
 
@@ -423,7 +386,7 @@ export function MtproxylTab({ s }: { s: ServerDetail }) {
         {engineOpen && (
           <EngineForm
             serverId={s.id}
-            disabled={busy || lock.busy}
+            disabled={op.busy || lock.busy}
             reason={lock.reason}
             onInstall={(tag) => void changeEngine(tag)}
           />
@@ -440,21 +403,15 @@ export function MtproxylTab({ s }: { s: ServerDetail }) {
             u={openUser}
             owner={owner('mtproxyl', openUser.label)}
             traffic={trafficByUser.get(openUser.label)}
-            disabled={busy || lock.busy}
+            disabled={op.busy || lock.busy}
             reason={lock.reason}
             onToggle={() => void toggleUser(openUser)}
             onRemove={() => void removeUser(openUser).then((removed) => removed && setUser(null))}
             onRename={async (name) => {
-              // секрет тот же - ссылки пользователя не меняются; окно переходит на новое имя.
-              // Пока идёт - остальные действия вкладки заблокированы (busy)
-              setBusy(true);
-              try {
-                await mtApi.exec(s.id, 'secret.rename', { label: openUser.label, new: name });
-                setUser(name);
-                await refresh();
-              } finally {
-                setBusy(false);
-              }
+              // секрет тот же - ссылки пользователя не меняются; окно переходит на новое имя
+              await mtApi.exec(s.id, 'secret.rename', { label: openUser.label, new: name });
+              setUser(name);
+              await refresh();
             }}
           />
         )}
@@ -466,7 +423,7 @@ export function MtproxylTab({ s }: { s: ServerDetail }) {
 
       <Dialog open={addOpen} onClose={() => setAddOpen(false)} title="Новый пользователь">
         <AddForm
-          busy={busy || lock.busy}
+          busy={op.busy || lock.busy}
           onSubmit={async (label, secret) => {
             const r = await run('', 'secret.add', secret ? { label, secret } : { label });
             if (r) setAddOpen(false);

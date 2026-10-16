@@ -20,10 +20,10 @@ import { api } from '@/lib/api';
 import { useCommands } from '@/lib/commands';
 import { gb, plural } from '@/lib/format';
 import { type ServerDetail, serverLock } from '@/lib/servers';
-import { type ServiceUpdateKind, startServiceUpdate } from '@/lib/service-update';
+import { type ServiceUpdateKind, startServiceUpdate, useUpdatesCheck } from '@/lib/service-update';
 import { uninstallCommand } from '@/lib/uninstall';
 import { useAction } from '@/lib/use-action';
-import { useQuery, useQueryClient } from '@tanstack/react-query';
+import { useQuery } from '@tanstack/react-query';
 import type { Finding } from '@vps/protocol';
 import { ArrowRight, Box, ClipboardCheck, Download, Plus, Trash2, Wrench, X } from 'lucide-react';
 import { type ReactNode, useState } from 'react';
@@ -60,18 +60,15 @@ function mbps(bps: number): string {
 /** Вкладка "Обзор": метрики, сервисы, хостинг, обслуживание (обновления и проверки безопасности). */
 export function OverviewTab({ s, onTab }: { s: ServerDetail; onTab?: (tab: string) => void }) {
   // диалог исправления: null - закрыт, '' - все шаги, иначе - шаг из замечания
-  const qc = useQueryClient();
   const commands = useCommands();
   const [baseline, setBaseline] = useState<string | null>(null);
   const [cleanup, setCleanup] = useState(false);
   // запущенное из блока "Обслуживание" действие с выводом: обновление пакетов или сервиса
-  // recheck - это было обновление сервиса: по окончании перепроверить его версии
   // done - действие завершилось: вывод остаётся на экране, но кнопки снова доступны (повтор
   // после ошибки, например apt был занят автообновлениями)
   const [upgrade, setUpgrade] = useState<{
     id: string;
     title: string;
-    recheck?: boolean;
     done?: boolean;
   } | null>(null);
   const pending = s.audit?.pendingUpdates ?? 0;
@@ -92,14 +89,12 @@ export function OverviewTab({ s, onTab }: { s: ServerDetail; onTab?: (tab: strin
     queryFn: () => api<ServiceUpdate[]>(`/api/servers/${s.id}/updates`),
     refetchInterval: 10 * 60_000,
   });
+  // после обновления сервиса версии перепроверяются (lib/live.ts)
+  const updatesCheck = useUpdatesCheck(s.id);
   async function updateService(u: ServiceUpdate) {
     await starting.run(async () => {
       const r = await startServiceUpdate[u.kind](s.id);
-      setUpgrade({
-        id: r.actionId,
-        title: `Обновление ${u.title} до ${u.latest}`,
-        recheck: true,
-      });
+      setUpgrade({ id: r.actionId, title: `Обновление ${u.title} до ${u.latest}` });
     });
   }
   const m = s.metrics;
@@ -116,7 +111,12 @@ export function OverviewTab({ s, onTab }: { s: ServerDetail; onTab?: (tab: strin
 
   // Строки блока "Обслуживание": у каждой одна кнопка действия справа
   // идёт запуск, своё действие с выводом или перепроверка версий - кнопки блока недоступны
-  const busy = !canAct || (upgrade !== null && !upgrade.done) || starting.busy || svcFetching;
+  const busy =
+    !canAct ||
+    (upgrade !== null && !upgrade.done) ||
+    starting.busy ||
+    svcFetching ||
+    updatesCheck.checking;
   const rows: SecurityRow[] = [
     ...(svcUpdates ?? []).map((u) => ({
       key: `update-${u.kind}`,
@@ -429,13 +429,9 @@ export function OverviewTab({ s, onTab }: { s: ServerDetail; onTab?: (tab: strin
                 </div>
                 <ActionOutput
                   actionId={upgrade.id}
-                  onFinished={() => {
-                    setUpgrade((u) => (u && u.id === upgrade.id ? { ...u, done: true } : u));
-                    if (!upgrade.recheck) return;
-                    void api(`/api/servers/${s.id}/updates/check`, { method: 'POST' })
-                      .catch(() => {})
-                      .then(() => qc.invalidateQueries({ queryKey: ['service-updates'] }));
-                  }}
+                  onFinished={() =>
+                    setUpgrade((u) => (u && u.id === upgrade.id ? { ...u, done: true } : u))
+                  }
                 />
               </div>
             )}

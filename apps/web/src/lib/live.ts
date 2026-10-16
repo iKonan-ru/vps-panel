@@ -2,6 +2,7 @@ import { useQueryClient } from '@tanstack/react-query';
 import type { Metrics, ServerSummary } from '@vps/protocol';
 import { useEffect } from 'react';
 import type { ServerDetail } from './servers';
+import { SERVICE_UPDATE_ACTIONS, checkUpdates } from './service-update';
 
 export type LiveEvent = {
   type: string;
@@ -67,16 +68,69 @@ export function subscribe(l: Listener): () => void {
   };
 }
 
+/** Данные вкладок сервисов: их меняют команды, настройка сервера и синхронизация клиентов. */
+const SERVICE_KEYS = [
+  'xui',
+  'xui-api',
+  'xui-inbounds',
+  'xui-clients',
+  'mtproxyl',
+  'awg',
+  'wdtt',
+  'openflux',
+];
+
+/**
+ * Что перечитать после действия этого вида: ключи вида [имя, serverId] (и всё под ними) и
+ * общие ключи без сервера. Карточка и список серверов перечитываются после любого действия.
+ */
+function staleAfter(kind: string): { server: string[]; global?: string[] } {
+  const domain = /^[^:.]+/.exec(kind)?.[0] ?? kind;
+  switch (domain) {
+    case 'xui':
+      return {
+        server: ['xui', 'xui-api', 'xui-inbounds', 'xui-clients', 'xray-inbounds', 'access'],
+      };
+    case 'mtproxyl':
+      return { server: ['mtproxyl', 'mtproxyl-engine'] };
+    case 'awg':
+      return { server: ['awg', 'awg-config'] };
+    case 'wdtt':
+      return { server: ['wdtt'] };
+    case 'openflux':
+      return { server: ['openflux'] };
+    case 'firewall':
+    case 'portsync':
+      return { server: ['fw-rules'] };
+    case 'ssh':
+      return { server: ['ssh-keys'] };
+    case 'cleanup':
+      return { server: ['cleanup'] };
+    case 'backup':
+      return { server: [], global: ['backups'] };
+    case 'server':
+      return { server: kind === 'server:ip' ? ['client-host'] : [...SERVICE_KEYS, 'access'] };
+    case 'command':
+      return { server: [...SERVICE_KEYS, 'access'] };
+    case 'gclients':
+      return { server: [...SERVICE_KEYS, 'gclient-owners'] };
+    default:
+      return { server: [] };
+  }
+}
+
 /**
  * Обновление кэша по событиям панели; вызывается один раз в лейауте. Метрики (раз в 2 с, пока
  * открыта вкладка) приходят с цифрами - они кладутся в список и карточку сервера без запроса.
  * Снимки (раз в 5 минут) - точечно: список и карточка своего сервера, не чаще раза в 5 с. Связь,
- * изменения и действия - сразу.
+ * изменения и действия - сразу; по концу действия - ещё и данные вкладок, которые оно меняет
+ * (вид действия приходит только в action.started), а после обновления сервиса - проверка версий.
  */
 export function useLiveUpdates() {
   const qc = useQueryClient();
   useEffect(() => {
     const dirty = new Set<string>();
+    const kinds = new Map<string, string>();
     let flush: ReturnType<typeof setTimeout> | null = null;
     const refresh = () => {
       flush = null;
@@ -120,7 +174,28 @@ export function useLiveUpdates() {
         if (ev.serverId) void qc.invalidateQueries({ queryKey: ['servers', ev.serverId] });
         void qc.invalidateQueries({ queryKey: ['servers'], exact: true });
       }
-      if (ev.type === 'action.finished') void qc.invalidateQueries({ queryKey: ['actions'] });
+      if (ev.type === 'action.started' && ev.actionId && ev.kind) kinds.set(ev.actionId, ev.kind);
+      if (ev.type === 'action.finished') {
+        void qc.invalidateQueries({ queryKey: ['actions'] });
+        const { serverId, actionId } = ev;
+        // начало могло быть до открытия страницы - тогда вид есть в карточке сервера
+        const kind =
+          actionId &&
+          (kinds.get(actionId) ??
+            qc
+              .getQueryData<ServerDetail>(['servers', serverId])
+              ?.activeActions.find((a) => a.id === actionId)?.kind);
+        if (actionId) kinds.delete(actionId);
+        if (kind && serverId) {
+          const stale = staleAfter(kind);
+          // свой запрос вкладки после действия не прерываем: он держит её кнопки до ответа
+          const keep = { cancelRefetch: false };
+          for (const k of stale.server)
+            void qc.invalidateQueries({ queryKey: [k, serverId] }, keep);
+          for (const k of stale.global ?? []) void qc.invalidateQueries({ queryKey: [k] }, keep);
+          if (SERVICE_UPDATE_ACTIONS.has(kind)) void checkUpdates(qc, serverId);
+        }
+      }
     });
     return () => {
       un();
