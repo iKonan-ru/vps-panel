@@ -55,7 +55,7 @@ func systemOps(panelURL string) map[string]op {
 			if p.Config == nil {
 				return baseline.ReadPortsyncConfig(), nil
 			}
-			if err := baseline.WritePortsyncConfig(*p.Config); err != nil {
+			if err := baseline.ApplyPortsyncConfig(ctx, *p.Config); err != nil {
 				return nil, err
 			}
 			return portsync(ctx)
