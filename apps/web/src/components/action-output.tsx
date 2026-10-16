@@ -25,7 +25,7 @@ export function ActionOutput({
   // вывод не прочитан: действия нет в журнале (404) или ошибка запроса
   const [loadError, setLoadError] = useState<{ missing: boolean; text: string } | null>(null);
   const box = useRef<HTMLPreElement>(null);
-  // Колбэк в ref, чтобы новая функция при каждом рендере не переподписывала поток.
+  // колбэк в ref: новая функция при каждом рендере не должна переподписывать поток
   const finished = useRef(onFinished);
   finished.current = onFinished;
 
@@ -72,8 +72,8 @@ export function ActionOutput({
     };
   }, [actionId]);
 
-  // Следим за концом вывода только пока пользователь сам не прокрутил вверх:
-  // иначе каждый новый кусок сбрасывал бы прокрутку вниз и прочитать начало было бы нельзя.
+  // за концом вывода следим, только пока не прокрутили вверх: иначе каждый кусок сбрасывал бы
+  // прокрутку вниз и начало было бы не прочитать
   const follow = useRef(true);
   const onScroll = () => {
     const el = box.current;
@@ -112,10 +112,7 @@ export function ActionOutput({
   );
 }
 
-/**
- * Цвета ANSI: 30-37, 90-97 (жирный 1, сброс 0/39); прочие управляющие последовательности
- * убираются. Палитра своя, под тёмный фон .console, одинаковая в обеих темах.
- */
+/** Цвета ANSI 30-37 и 90-97 - своя палитра под тёмный фон .console, одна для обеих тем. */
 const ansiColors: Record<number, string> = {
   30: 'text-[#8b95a3]',
   31: 'text-[#ff6b68]',
@@ -135,10 +132,7 @@ const ansiColors: Record<number, string> = {
   97: 'text-[#f5f7fa]',
 };
 
-/**
- * Превращает текст с ANSI-кодами в span-ы с цветами. Возврат каретки без перевода строки
- * (прогресс-бары установщиков) оставляет на строке только последний вариант.
- */
+/** ANSI-коды - в цветные span-ы; \r без \n (прогресс-бары) оставляет последний вариант строки. */
 function renderAnsi(text: string) {
   const lines = text.split('\n').map((l) => {
     const parts = l.split('\r');
@@ -182,7 +176,7 @@ function renderAnsi(text: string) {
   return out;
 }
 
-/** Секция с выводом запущенного действия и кнопкой "Скрыть" (вкладки сервера). */
+/** Секция с выводом запущенного действия и кнопкой "Скрыть". */
 export function ActionPanel({
   title,
   actionId,

@@ -4,10 +4,7 @@ import { COUNTRIES, countryLabel, isCountryCode } from '@/lib/countries';
 import { ChevronDown, X } from 'lucide-react';
 import { useEffect, useId, useMemo, useRef, useState } from 'react';
 
-/**
- * Выбор страны с поиском по подстроке: поле ввода, под ним список с флагами.
- * Значение - код ISO ("FI"); старое текстовое значение показывается как есть.
- */
+/** Выбор страны с поиском; значение - код ISO, текст вместо кода показывается как есть. */
 export function CountrySelect({
   id,
   value,

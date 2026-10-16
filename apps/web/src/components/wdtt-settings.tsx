@@ -8,13 +8,10 @@ import { useAction } from '@/lib/use-action';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { type FormEvent, useEffect, useState } from 'react';
 
-/** Хеш из строки: голый хеш или ссылка https://vk.com/call/join/<хеш>. */
+/** Хеш из строки: голый хеш или ссылка на звонок (.../call/join/<хеш>). */
 const toHash = (s: string) => s.replace(/^.*\/call\/join\//, '').replace(/[?#].*$/, '');
 
-/**
- * Хеши звонков VK для WDTT: общие для всех клиентов - уходят в ссылки и
- * подписку qWDTT. Пусто - клиенты добавляют свои хеши в приложении.
- */
+/** Хеши звонков VK для WDTT, общие для всех клиентов; пусто - клиенты добавляют свои. */
 export function WdttSettings() {
   const qc = useQueryClient();
   const { data } = useQuery({

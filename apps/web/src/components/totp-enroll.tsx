@@ -14,7 +14,7 @@ export interface TotpSetup {
   backupCodes: string[];
 }
 
-/** Резервные коды: два столбца моноширинным, показываются один раз. */
+/** Резервные коды двумя столбцами; показываются один раз. */
 export function BackupCodes({ codes }: { codes: string[] }) {
   return (
     <div className="grid grid-cols-2 gap-x-4 gap-y-0.5 font-mono text-xs">
@@ -25,10 +25,7 @@ export function BackupCodes({ codes }: { codes: string[] }) {
   );
 }
 
-/**
- * Настройка 2FA: QR для приложения-аутентификатора, секрет вручную, резервные коды и первый код.
- * Первый вход после установки и перенастройка из раздела "Аккаунт".
- */
+/** Настройка 2FA: QR и секрет для аутентификатора, резервные коды и первый код. */
 export function TotpEnroll({
   setup,
   onConfirm,

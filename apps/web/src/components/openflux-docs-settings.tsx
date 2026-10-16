@@ -24,10 +24,7 @@ interface OfDoc {
 
 const kindTitle = { vyandex: 'Яндекс', mailru: 'Mail.ru' };
 
-/**
- * Пул документов OpenFlux: каждый канал клиента получает по свободному
- * документу Яндекса и Mail.ru. Документы создаются в своём аккаунте с редактированием по ссылке.
- */
+/** Пул документов OpenFlux: каждый канал клиента берёт свободный документ Яндекса и Mail.ru. */
 export function OpenfluxDocsSettings() {
   const qc = useQueryClient();
   const ask = useConfirm();
@@ -79,7 +76,7 @@ export function OpenfluxDocsSettings() {
   };
   const ya = count('vyandex');
   const mr = count('mailru');
-  // пустой пул - сразу форма; иначе форма и список по кнопкам, чтобы 100+ строк не занимали страницу
+  // пустой пул - сразу форма; иначе форма и список по кнопкам: 100+ строк не занимают страницу
   const formShown = showForm || (data !== undefined && docs.length === 0);
   const needle = q.trim().toLowerCase();
   const rows = docs.filter(

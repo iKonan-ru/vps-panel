@@ -33,7 +33,7 @@ import { type ReactNode, useState } from 'react';
 /** Блок, который прокручивается вместо окна. */
 export const APP_SCROLL_ID = 'app-scroll';
 
-/** more - на мобиле не в полосе вкладок (там тесно), а в панели "Ещё". */
+/** more - на узком экране в панели "Ещё", а не в полосе вкладок (там тесно). */
 const nav: { to: string; label: string; icon: ReactNode; more?: boolean }[] = [
   { to: '/', label: 'Серверы', icon: <Server className="size-4" /> },
   { to: '/services', label: 'Сервисы', icon: <LayoutGrid className="size-4" /> },
@@ -60,10 +60,7 @@ function readCollapsed(): boolean {
   }
 }
 
-/**
- * Каркас: на широком экране боковое меню, сворачиваемое до полосы с иконками (запоминается);
- * на узком - полоса вкладок внизу экрана, без выезжающего меню.
- */
+/** Каркас: на широком экране боковое меню (сворачивается), на узком - полоса вкладок внизу. */
 export function AppLayout({ login }: { login: string }) {
   const [collapsed, setCollapsed] = useState(readCollapsed);
   const [more, setMore] = useState(false);
@@ -101,7 +98,6 @@ export function AppLayout({ login }: { login: string }) {
         )}
       >
         {/* в свёрнутом меню знак - размером с пункт меню (h-9.5) и по центру полосы */}
-        {/* у логотипа - версия панели (подсвечена, если есть новая): клик - блок обновлений */}
         <div
           className={cn(
             'pt-1 pb-5',
@@ -150,7 +146,6 @@ export function AppLayout({ login }: { login: string }) {
           </Link>
         ))}
         <div className="grow" />
-        {/* учётка, тема, выход */}
         <div
           className={cn(
             'flex items-center gap-2 rounded-lg border-t border-border pt-2.5',
@@ -212,7 +207,7 @@ export function AppLayout({ login }: { login: string }) {
       </aside>
 
       <main className="flex min-w-0 grow flex-col">
-        {/* Верхняя плашка на мобиле: слева лого и хлебные крошки (портал Breadcrumbs), справа кнопки страницы (портал MobileActions) */}
+        {/* в верхнюю плашку на узком экране - порталы Breadcrumbs и MobileActions */}
         {/* высота - 56px плюс вырез сверху (PWA на iPhone): иначе отступ съедает высоту плашки */}
         <header className="fixed inset-x-0 top-0 z-20 flex h-[calc(56px+env(safe-area-inset-top))] items-center gap-2 border-b border-border bg-surface px-4 pt-[env(safe-area-inset-top)] md:hidden">
           <Link to="/" aria-label="На главную" className="inline-flex">
@@ -222,8 +217,8 @@ export function AppLayout({ login }: { login: string }) {
           <div id={MOBILE_CRUMBS_ID} className="flex min-w-0 grow items-center" />
           <div id={MOBILE_ACTIONS_ID} className="flex items-center gap-1.5" />
         </header>
-        {/* сверху и снизу запас под плашку и полосу вкладок на мобиле; прокручивается этот блок,
-            а не окно - его прокрутку сбрасывает и восстанавливает роутер (router.tsx) */}
+        {/* сверху и снизу запас под плашку и полосу вкладок; прокручивается этот блок, а не
+            окно - его прокрутку сбрасывает и восстанавливает роутер */}
         <div
           id={APP_SCROLL_ID}
           data-scroll-restoration-id={APP_SCROLL_ID}
@@ -236,7 +231,6 @@ export function AppLayout({ login }: { login: string }) {
         </div>
       </main>
 
-      {/* Полоса вкладок внизу экрана: только на узком экране */}
       <nav
         className="fixed inset-x-0 bottom-0 z-20 flex border-t border-border bg-surface pb-[env(safe-area-inset-bottom)] md:hidden"
         aria-label="Разделы"

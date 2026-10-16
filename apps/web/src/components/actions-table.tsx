@@ -27,10 +27,7 @@ export function ActionStatusChip({
   return <Chip tone="bad">{withCode ? `ошибка (код ${exitCode})` : 'ошибка'}</Chip>;
 }
 
-/**
- * Журнал действий с окном вывода: вкладка сервера и общий журнал. serverNames - колонка
- * "Сервер" (общий журнал по всем серверам).
- */
+/** Журнал действий с окном вывода; serverNames - колонка "Сервер" общего журнала. */
 export function ActionsTable({
   title,
   rows,

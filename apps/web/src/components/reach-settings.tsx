@@ -9,10 +9,7 @@ import { useAction } from '@/lib/use-action';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { type FormEvent, useState } from 'react';
 
-/**
- * Токен Globalping для проверок "Доступность из России" (необязательно): бесплатный токен с
- * dash.globalping.io поднимает квоту каждого сервера с 250 до 500 зондов в час.
- */
+/** Токен Globalping (необязательно): поднимает квоту сервера с 250 до 500 зондов в час. */
 export function ReachSettings() {
   const qc = useQueryClient();
   const { data } = useQuery({

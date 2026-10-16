@@ -7,11 +7,7 @@ import { ArrowUpCircle } from 'lucide-react';
 /** Якорь блока "Версия панели" в настройках: туда ведёт плашка. */
 export const PANEL_VERSION_ANCHOR = 'panel-version';
 
-/**
- * Плашка версии у логотипа в меню: текущая версия; есть новая в канале - цветом обновления и
- * со стрелкой. Клик - настройки, блок "Версия панели" (там список изменений и кнопка).
- * compact - свёрнутое меню и мобильная шапка: только стрелка и только при обновлении.
- */
+/** Плашка версии у логотипа (новая - цветом обновления); compact - только стрелка при новой. */
 export function PanelVersionBadge({ compact = false }: { compact?: boolean }) {
   const { data } = usePanelUpdate();
   const running = usePanelVersion();

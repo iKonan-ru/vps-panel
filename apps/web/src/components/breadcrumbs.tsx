@@ -10,10 +10,7 @@ interface Crumb {
   to?: string;
 }
 
-/**
- * Хлебные крошки: на широком экране - строкой над заголовком страницы, на мобиле - в верхней
- * плашке рядом со знаком лого (портал в MOBILE_CRUMBS_ID, как у MobileActions).
- */
+/** Хлебные крошки: на широком экране - над заголовком, на узком - порталом в верхнюю плашку. */
 export function Breadcrumbs({ items }: { items: Crumb[] }) {
   const [el, setEl] = useState<HTMLElement | null>(null);
   useEffect(() => {

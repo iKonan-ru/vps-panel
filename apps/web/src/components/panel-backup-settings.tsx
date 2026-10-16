@@ -25,10 +25,7 @@ interface PanelBackupStatus {
   decryptHint: string;
 }
 
-/**
- * Бэкап самой панели: база, SESSION_SECRET (ключ к зашифрованному в базе), SSH-ключ панели.
- * Шифруется паролем, раз в сутки уходит файлом в Telegram, по кнопке - сразу или скачиванием.
- */
+/** Копия самой панели под паролем: база, SESSION_SECRET и SSH-ключ; раз в сутки - в Telegram. */
 export function PanelBackupSettings() {
   const qc = useQueryClient();
   const { data: st } = useQuery({
