@@ -128,8 +128,8 @@ func run(ctx context.Context, stream func(channel, chunk string), name string, a
 	}
 }
 
-// keepImages - базовые образы для сборки панели: Docker Hub из РФ недоступен, поэтому
-// удалять их нельзя, хотя контейнеров на них нет.
+// keepImages - базовые образы для сборки панели: Docker Hub из РФ бывает недоступен, удалять их
+// нельзя, хотя контейнеров на них нет.
 var keepImages = regexp.MustCompile(`^(node|alpine)$`)
 
 // dockerUsage - кэш сборки, безымянные образы, неиспользуемые образы (и их id для удаления),

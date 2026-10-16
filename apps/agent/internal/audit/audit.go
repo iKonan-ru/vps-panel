@@ -1,4 +1,4 @@
-// Package audit - проверка безопасности сервера, порт vps-audit.py. Только чтение.
+// Package audit - проверка безопасности сервера. Только чтение.
 package audit
 
 import (
@@ -131,9 +131,8 @@ func Run(ctx context.Context, fw proto.FirewallState, containers []proto.Contain
 		}
 	}
 
-	// --- сервисы работают, а не только установлены (services/health.go). Текст замечания
-	// постоянный: по нему панель шлёт "критичные замечания" и "замечания закрыты"; причина -
-	// в fix.
+	// --- упавшие сервисы. Текст замечания постоянный: по нему панель шлёт "критичные
+	// замечания" и "замечания закрыты"; причина - в fix.
 	for _, s := range services {
 		if down, _ := s.Details["down"].(bool); down {
 			reason, _ := s.Details["downReason"].(string)
@@ -203,7 +202,6 @@ func Run(ctx context.Context, fw proto.FirewallState, containers []proto.Contain
 	return a
 }
 
-// statInt достаёт число из строки вида "|- Currently banned:\t3" в выводе fail2ban-client.
 // bannedList - адреса из строки "Banned IP list:" вывода fail2ban-client status <jail>.
 func bannedList(st string) []string {
 	out := []string{}
@@ -220,6 +218,7 @@ func bannedList(st string) []string {
 	return out
 }
 
+// statInt достаёт число из строки вида "|- Currently banned:\t3" в выводе fail2ban-client.
 func statInt(out, label string) int {
 	m := regexp.MustCompile(label + `:\s*(\d+)`).FindStringSubmatch(out)
 	if m == nil {

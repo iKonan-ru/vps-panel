@@ -25,8 +25,8 @@ const socketPath = "/var/run/docker.sock"
 
 type Client struct{ http *http.Client }
 
-// transport - один на процесс: свой транспорт на каждый New() держал keep-alive соединение
-// и две горутины навсегда (без IdleConnTimeout), а New() зовут на каждый снимок инвентаря.
+// transport - один на процесс: New() зовут на каждый снимок, а свой транспорт на каждый вызов
+// держал бы keep-alive соединение и горутины.
 var transport = &http.Transport{
 	DialContext: func(ctx context.Context, _, _ string) (net.Conn, error) {
 		var d net.Dialer
@@ -168,15 +168,15 @@ func shortID(id string) string {
 	return id
 }
 
-// Stats - CPU % и память контейнера одним замером (без stream).
 type cpuSample struct{ total, system uint64 }
 
-// Прошлые замеры CPU по id контейнера: среднее с прошлого снимка inventory.
+// Прошлые замеры CPU по id контейнера: CPU - среднее с прошлого снимка.
 var (
 	statsMu   sync.Mutex
 	lastStats = map[string]cpuSample{}
 )
 
+// Stats - CPU % и память контейнера одним замером (без stream).
 func (c *Client) Stats(ctx context.Context, id string) (cpu, memMb float64, err error) {
 	var s struct {
 		CPUStats struct {

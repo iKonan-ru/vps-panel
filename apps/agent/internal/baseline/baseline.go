@@ -1,8 +1,5 @@
-// Package baseline приводит сервер к эталону: sshd без паролей, fail2ban,
-// автообновления, ufw + port-sync. Порт ролей Ansible из vps-orchestrator.
-//
-// Правила безопасности: docker не перезапускается, ufw reload/disable
-// не вызываются, пароли SSH отключаются только если у root есть ключ.
+// Package baseline приводит сервер к эталону: sshd без паролей, fail2ban, автообновления,
+// ufw и port-sync. docker не перезапускается, ufw reload и disable не вызываются.
 package baseline
 
 import (
@@ -24,8 +21,7 @@ import (
 	"github.com/iKonan-ru/vps-panel/apps/agent/internal/sshd"
 )
 
-// Явный список: с assets/* в бинарник попадали README и локальный __pycache__ (не из git) -
-// сборка зависела от машины.
+// Явный список, а не assets/*: README и локальный __pycache__ не должны попадать в бинарник.
 //
 //go:embed assets/vps-portsync.py assets/*.service assets/*.path assets/*.timer
 //go:embed assets/*.conf assets/*.jail assets/jail.local assets/50unattended-upgrades
@@ -262,7 +258,6 @@ func Apply(ctx context.Context, steps []string, stream func(channel, chunk strin
 		return b
 	}
 
-	// 1. пакеты
 	if pk := missingPackages(ctx); sel["packages"] && len(pk) > 0 {
 		log("== Пакеты: %s", strings.Join(pk, ", "))
 		// dpkg --configure -a чинит полусобранные пакеты, если прошлую установку прервали.
@@ -271,25 +266,22 @@ func Apply(ctx context.Context, steps []string, stream func(channel, chunk strin
 		}
 	}
 
-	// 2. sshd
 	if sel["sshd"] {
 		if err := applySSH(ctx, plan, run, write, asset, log); err != nil {
 			return err
 		}
 	}
-	// 3. fail2ban
 	if sel["fail2ban"] {
 		if err := applyFail2ban(ctx, plan, run, write, asset, log); err != nil {
 			return err
 		}
 	}
-	// 4. обновления
 	if sel["updates"] {
 		if err := applyUpdates(write, asset, log); err != nil {
 			return err
 		}
 	}
-	// 5. port-sync + ufw (порядок важен: правила до включения)
+	// port-sync до ufw: правила - до включения
 	if sel["portsync"] {
 		log("== port-sync")
 		if err := InstallPortsync(ctx, stream); err != nil {

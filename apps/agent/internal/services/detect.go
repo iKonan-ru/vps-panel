@@ -58,7 +58,7 @@ func Detect(ctx context.Context, containers []proto.Container, publicIP string, 
 	return out
 }
 
-// markDown отмечает упавший сервис (health.go): Details["down"] и причина.
+// markDown отмечает упавший сервис: Details["down"] и причина.
 func markDown(s *proto.Service, down bool, reason string) {
 	if s.Details == nil {
 		s.Details = map[string]any{}
@@ -90,7 +90,7 @@ func findXuiDB(ctx context.Context, containers []proto.Container) string {
 	return ""
 }
 
-// XuiInfo - что нужно другим модулям (port-sync, аудит) про 3x-ui.
+// XuiInfo - настройки и inbound-ы 3x-ui для сервисов, сертификатов и туннеля.
 type XuiInfo struct {
 	Partial     string // что не удалось прочитать (нет psql для PostgreSQL)
 	RemoteNodes int    // узлов группового управления с их собственными inbound

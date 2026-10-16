@@ -142,6 +142,7 @@ systemctl daemon-reload
 | `internal/services` | поиск сервисов и проверка, работают ли они |
 | `internal/audit` | замечания аудита безопасности |
 | `internal/baseline` | эталон сервера: sshd, ufw, fail2ban, автообновления, port-sync (`assets/`) |
+| `internal/lockout` | защита от самоблокировки: ключи root, пароли SSH, порты VPN, которые закроет firewall |
 | `internal/firewall` | ufw, слушающие порты, DOCKER-USER |
 | `internal/adapters` | 3X-UI, MTProxyL, AmneziaWG, WDTT, OpenFlux, naive, Telegram |
 | `internal/command` | запуск команд каталога |
@@ -150,5 +151,5 @@ systemctl daemon-reload
 | `internal/cleanup` | чистка диска |
 | `internal/selfupdate` | самообновление |
 | `internal/terminal`, `internal/tunnel` | терминал и туннель к панелям сервисов |
-| `internal/dockerapi`, `internal/sshd`, `internal/shell` | docker API, настройки sshd, запуск процессов |
+| `internal/dockerapi`, `internal/sshd`, `internal/shell`, `internal/fsutil` | docker API, настройки sshd, запуск процессов, атомарная запись файлов |
 | `internal/proto` | Go-зеркало схем `packages/protocol`, правится руками |

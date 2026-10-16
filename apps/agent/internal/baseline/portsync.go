@@ -22,7 +22,7 @@ import (
 	"github.com/iKonan-ru/vps-panel/apps/agent/internal/sshd"
 )
 
-// PortsyncConfig - /etc/vps-portsync.conf, тот же формат, что у orchestrator.
+// PortsyncConfig - /etc/vps-portsync.conf, его читает vps-portsync.py.
 type PortsyncConfig struct {
 	AdminIPs        []string `json:"admin_ips"`
 	DenyPublicPorts []string `json:"deny_public_ports"`
@@ -154,10 +154,9 @@ var portsyncUnits = map[string]string{
 	"vps-portsync-docker-watch.service": "portsync-docker-watch.service",
 }
 
-// RefreshPortsync обновляет установленный port-sync до встроенного в агента: скрипт и юниты
-// (только уже лежащие на сервере), и поднимает vps-portsync-xui.path, если systemd его
-// выключил (лимит запусков службы в старых юнитах). Ничего не делает, если port-sync не
-// установлен. Возвращает true, если что-то заменено.
+// RefreshPortsync обновляет установленный port-sync до встроенного в агента: скрипт и уже лежащие
+// на сервере юниты, и поднимает vps-portsync-xui.path, если systemd выключил его по лимиту
+// запусков. port-sync не установлен - ничего не делает. true - что-то заменено.
 func RefreshPortsync(ctx context.Context) (bool, error) {
 	cur, err := os.ReadFile(portsyncBin)
 	if err != nil {

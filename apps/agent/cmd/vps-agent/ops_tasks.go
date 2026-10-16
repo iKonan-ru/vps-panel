@@ -29,7 +29,7 @@ func panelPort(ctx context.Context, port int) bool {
 	return false
 }
 
-// taskOps - работа по запросу: веб-терминал, бэкапы, сертификаты, команды каталога.
+// taskOps - работа по запросу: веб-терминал, туннель, бэкапы, команды каталога.
 func taskOps(panelURL string) map[string]op {
 	return map[string]op{
 		"term.open": typed(func(ctx context.Context, p terminal.OpenParams, out stream) (any, error) {
