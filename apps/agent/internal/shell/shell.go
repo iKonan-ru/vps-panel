@@ -11,16 +11,53 @@ import (
 	"os/exec"
 	"regexp"
 	"strings"
+	"sync"
 	"syscall"
 	"time"
 )
 
 // Out запускает команду и возвращает stdout (stderr отбрасывается), пустую строку при ошибке.
+// В контексте WithOutCache одинаковая команда выполняется один раз.
 func Out(ctx context.Context, name string, args ...string) string {
+	oc, ok := ctx.Value(outCacheKey{}).(*outCache)
+	if !ok {
+		return out(ctx, name, args...)
+	}
+	key := name + "\x00" + strings.Join(args, "\x00")
+	oc.mu.Lock()
+	e := oc.m[key]
+	if e == nil {
+		e = &outEntry{}
+		oc.m[key] = e
+	}
+	oc.mu.Unlock()
+	e.once.Do(func() { e.v = out(ctx, name, args...) })
+	return e.v
+}
+
+func out(ctx context.Context, name string, args ...string) string {
 	c, cancel := context.WithTimeout(ctx, 60*time.Second)
 	defer cancel()
 	b, _ := exec.CommandContext(c, name, args...).Output()
 	return strings.TrimSpace(string(b))
+}
+
+type outCacheKey struct{}
+
+type outCache struct {
+	mu sync.Mutex
+	m  map[string]*outEntry
+}
+
+type outEntry struct {
+	once sync.Once
+	v    string
+}
+
+// WithOutCache - контекст одного снимка: Out с теми же аргументами (ss, journalctl, systemctl)
+// из разных частей сбора выполняет команду один раз, параллельные вызовы ждут первый.
+func WithOutCache(ctx context.Context) context.Context {
+	return context.WithValue(ctx, outCacheKey{}, &outCache{m: map[string]*outEntry{}})
 }
 
 // OK возвращает true, если команда завершилась с кодом 0.

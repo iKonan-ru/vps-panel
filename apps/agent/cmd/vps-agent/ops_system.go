@@ -18,7 +18,7 @@ import (
 func systemOps(panelURL string) map[string]op {
 	return map[string]op{
 		"inventory.get": plain(func(ctx context.Context, _ stream) (any, error) {
-			return inventory.Collect(ctx, Version), nil
+			return inventory.Collect(ctx, Version)
 		}),
 		"disk.cleanup.scan": plain(func(ctx context.Context, _ stream) (any, error) {
 			items, err := cleanup.Scan(ctx)
