@@ -37,7 +37,7 @@ bash <(curl -fsSL https://raw.githubusercontent.com/iKonan-ru/vps-panel/main/ins
 
 ```
 ================================================================
- VPS Panel 1.6.0-beta.7 установлена
+ VPS Panel 1.6.0-beta.8 установлена
 ================================================================
  Адрес:      https://panel.example.com
  Логин:      admin-k7m2qa
