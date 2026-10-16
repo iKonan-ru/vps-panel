@@ -59,8 +59,8 @@ export interface CommandDef {
    */
   dropsBindingsRef?: (answers: Record<string, string>) => string;
   /**
-   * Параметр с именем, на которое на сервере панели сертификат выпускает Caddy панели
-   * (lib/panel-certs.ts): панель разрешает его на время проверок и запуска.
+   * Параметр с именем, на которое на сервере панели сертификат выпускает Caddy панели: панель
+   * разрешает его на время проверок и запуска.
    */
   panelCertParam?: string;
   /**

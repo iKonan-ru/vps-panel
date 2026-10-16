@@ -32,19 +32,9 @@ fetch() { curl -fsSL --retry 3 --retry-delay 2 "$@"; }
 `;
 
 /**
- * Прокси для браузера (naive) и порт 443 - общие функции команд naive и MTProxyL. У прокси 443 в
- * одном из режимов (config.json прокси): listen - Caddy слушает 443 сам (443 был свободен),
- * mask - 443 держит MTProxyL, его telemt по SNI имени прокси передаёт соединение на порт Caddy,
- * none - прокси только на своём порту. Порядок установки любой: установка MTProxyL на 443
- * забирает 443 у прокси (naive_443 none до установщика, маска и naive_443 mask после), удаление
- * MTProxyL возвращает 443 прокси (naive_443 listen).
- * - port_owner <порт> - процесс, который слушает TCP-порт (пусто - свободен);
- * - mt_port - порт прокси MTProxyL из его конфига;
- * - naive_installed, naive_unit_active, naive_get <ключ> (из config.json), naive_mode;
- * - naive_443 <режим> - режим в config.json, Caddyfile от агента, перезапуск службы, если
- *   Caddyfile изменился; listen, который Caddy не принял (агент старее этой правки), - none;
- * - naive_mask_on <имя> <порт> - маска telemt и перезапуск прокси Telegram (ошибка - код не 0,
- *   скрипт не падает).
+ * Общие функции команд naive и MTProxyL про порт 443. Режим 443 прокси (config.json): listen -
+ * Caddy слушает его сам, mask - 443 держит MTProxyL и его telemt по SNI передаёт соединение
+ * Caddy, none - прокси только на своём порту. Установка MTProxyL забирает 443, удаление - отдаёт.
  */
 export const NAIVE_FUNCS = `port_owner() { ss -Hltnp "sport = :$1" 2>/dev/null | head -1 | grep -o 'users:(("[^"]*"' | cut -d'"' -f2; }
 mt_port() { grep -E '^[[:space:]]*port[[:space:]]*=' /opt/mtproxyl/mtproxy/config.toml 2>/dev/null | head -1 | grep -oE '[0-9]+' || true; }
@@ -109,22 +99,18 @@ docker --version
 `;
 
 /**
- * Адрес входа в панель сервиса через VPS Panel (поддомен, lib/panel-proxy.ts): ссылка открывает
- * её вход и ведёт на <слаг сервера>-<вид>.<домен>.
+ * Адрес входа в панель сервиса через VPS Panel: ссылка открывает её вход и ведёт на
+ * <слаг сервера>-<вид>.<домен>.
  */
 export function openPanelUrl(panelUrl: string, serverName: string, kind: 'xui' | 'mtproxyl') {
   return `${panelUrl.replace(/\/+$/, '')}/api/proxy/open/${slugify(serverName)}-${kind}`;
 }
 
 /**
- * Функции для команд 3X-UI:
- * - xui_sub_off - выключить свой сервер подписок 3X-UI (subEnable = false): подписку клиентам
- *   отдаёт VPS Panel, а наружу он открывал порт 2096 с токенами клиентов в адресе. База -
- *   PostgreSQL (XUI_DB_TYPE в /etc/default/x-ui, установщик 3.9 ставит её по умолчанию) или
- *   /etc/x-ui/x-ui.db; пароль PostgreSQL - в окружении psql, не в аргументах;
- * - xui_panel_ufw_close <порт> - убрать ручное правило ufw для порта (установщик 3X-UI
- *   открывает порт панели; 2096 - сервер подписок): панель на 127.0.0.1, подписки выключены.
- * Обе не роняют скрипт: 3X-UI остановлена на время правки и должна запуститься в любом случае.
+ * Функции для команд 3X-UI. xui_sub_off выключает свой сервер подписок 3X-UI: подписку отдаёт
+ * VPS Panel, а он открывает наружу порт 2096 с токенами клиентов в адресе; пароль PostgreSQL -
+ * в окружении psql, не в аргументах. xui_panel_ufw_close убирает правило ufw, которое открыл
+ * установщик. Обе не роняют скрипт: 3X-UI остановлена на время правки и должна запуститься.
  */
 export const XUI_FUNCS = `xui_sub_off() {
 need python3 || apt_install python3
@@ -188,10 +174,9 @@ xui_panel_ufw_close() {
 }`;
 
 /**
- * Зеркальные правила WDTT: deploy.sh копирует в iptables INPUT (ACCEPT, комментарий
- * WDTT_MIRRORED) все порты, открытые на момент установки, и вставляет их выше ufw - порт,
- * закрытый port-sync (сервис удалили), оставался открыт. Где порты ведут ufw и port-sync, эти
- * правила не нужны: port-sync сам открывает порты WDTT (wdtt-server и его WireGuard).
+ * Зеркальные правила WDTT: deploy.sh копирует в iptables INPUT (комментарий WDTT_MIRRORED) все
+ * открытые на момент установки порты выше ufw, и порт, закрытый port-sync, остаётся открыт. Где
+ * порты ведут ufw и port-sync, эти правила не нужны.
  */
 export const WDTT_FW_FUNCS = `portsync_governs() { ufw status 2>/dev/null | grep -q '^Status: active' && [ -x /usr/local/sbin/vps-portsync ]; }
 wdtt_mirrors_drop() { # [порт...] - только эти; без аргументов - все

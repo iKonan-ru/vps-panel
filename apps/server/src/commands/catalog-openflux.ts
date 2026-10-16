@@ -2,11 +2,9 @@ import type { CommandDef } from './types.js';
 import { PROLOGUE } from './util.js';
 
 /**
- * OpenFlux: установщик node-install.sh из репозитория
- * p1neappleXpress/OpenFlux по закреплённому коммиту со сверкой sha256 - тот же, что качает агент
- * (apps/agent/internal/adapters/openflux.go: ofInstallerURL, ofInstallerSHA256). Установщик ставит
- * ядро только вместе с каналом, поэтому установка - это первый канал; остальные каналы и каналы
- * клиентов панели заводятся во вкладке OpenFlux и сверкой.
+ * OpenFlux: установщик node-install.sh по закреплённому коммиту со сверкой sha256 - тот же, что
+ * у агента (ofInstallerURL, ofInstallerSHA256), меняются вместе. Установщик ставит ядро только
+ * вместе с каналом, поэтому установка - это первый канал.
  */
 const INSTALLER_URL =
   'https://raw.githubusercontent.com/p1neappleXpress/OpenFlux/ba31d0fc38b9b227231056a5ef845f7eae08f42c/deploy/node-install.sh';

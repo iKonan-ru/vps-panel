@@ -3,7 +3,7 @@ import type { CommandDef } from './types.js';
 import { ENSURE_DOCKER, PROLOGUE } from './util.js';
 
 /**
- * Сервер AmneziaWG в контейнере, как у приложения Amnezia (client/server_scripts/awg):
+ * Сервер AmneziaWG в контейнере, как у приложения Amnezia:
  * основной экземпляр amnezia-awg2 (его видит приложение) или дополнительный
  * amnezia-awg2-<порт> со своей версией, портом и подсетью.
  */
@@ -150,7 +150,7 @@ export const awgCmd: CommandDef = {
     },
   ],
   timeoutSec: 25 * 60,
-  // порт - свободный на сервере, подсеть - свободная на всех серверах (lib/awg-alloc.ts)
+  // порт - свободный на сервере, подсеть - свободная на всех серверах
   liveDefaults: 'awg',
   env: ({ answers }) => genEnv(answers),
   files: ({ answers }) => {
