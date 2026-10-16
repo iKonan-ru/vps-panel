@@ -18,7 +18,6 @@ type mtPanelTLS struct {
 	CertFile   string
 	KeyFile    string
 	AcmeDomain string
-	SelfSigned bool
 }
 
 var mtKeyRe = regexp.MustCompile(`^\s*([a-z_]+)\s*=\s*(.*?)\s*$`)
@@ -52,8 +51,6 @@ func readMtproxylPanel() mtPanelTLS {
 			out.KeyFile = val
 		case "acme_domain":
 			out.AcmeDomain = val
-		case "self_signed":
-			out.SelfSigned = val == "true"
 		}
 	}
 	return out
