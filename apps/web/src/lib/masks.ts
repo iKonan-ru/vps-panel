@@ -1,6 +1,3 @@
-/** Фильтры ввода: оставляют в строке только допустимые символы. */
-
-/** Целое число без знака (порты, количества). */
 export function digitsOnly(v: string): string {
   return v.replace(/\D+/g, '');
 }
@@ -13,7 +10,7 @@ export function moneyMask(v: string): string {
   return rest.length > 0 ? `${int}.${frac}` : int;
 }
 
-/** Целое в границах, пустая строка допустима. */
+/** Целое в границах; пустая строка остаётся пустой. */
 export function clampInt(v: string, min: number, max: number): string {
   const d = digitsOnly(v);
   if (!d) return '';

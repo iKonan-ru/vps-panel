@@ -59,7 +59,6 @@ export function isSecretParam(p: CommandParamInfo): boolean {
   return Boolean(p.required) && (p.type === 'password' || Boolean(p.secret));
 }
 
-/** Параметры, которые видны при этих ответах (showIf). */
 export function visibleParams(params: CommandParamInfo[], answers: Record<string, string>) {
   return params.filter((p) => paramVisible(p, answers));
 }

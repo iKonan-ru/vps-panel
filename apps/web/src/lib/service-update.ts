@@ -9,7 +9,7 @@ const mtExec = (id: string, op: string) =>
     json: { op, args: {} },
   });
 
-/** Запуск обновления сервиса: одно и то же из Обзора и со вкладок 3X-UI и MTProxyL. Xray - ядро внутри 3X-UI. */
+/** Запуск обновления сервиса, общий для Обзора и вкладок 3X-UI и MTProxyL; xray - ядро 3X-UI. */
 export const startServiceUpdate: Record<
   ServiceUpdateKind,
   (serverId: string) => Promise<{ actionId: string }>
@@ -20,7 +20,7 @@ export const startServiceUpdate: Record<
   'mtproxyl-panel': (id) => mtExec(id, 'panel.update'),
 };
 
-/** Действия-обновления сервиса: по их окончании версии перепроверяются (lib/live.ts). */
+/** Действия-обновления сервиса: по их окончании версии перепроверяются. */
 export const SERVICE_UPDATE_ACTIONS = new Set([
   'xui:update',
   'xui:xray',
@@ -33,7 +33,7 @@ interface CheckState {
   error: string | null;
 }
 const IDLE: CheckState = { checking: false, error: null };
-// по серверу: проверку видят все блоки с версиями, и запущенную кнопкой, и после обновления
+// по серверу: проверку видят все блоки с версиями - и запущенную кнопкой, и после обновления
 const checks = new Map<string, CheckState>();
 const listeners = new Set<() => void>();
 function setCheck(serverId: string, st: CheckState) {
@@ -48,8 +48,8 @@ function subscribe(l: () => void) {
 }
 
 /**
- * Проверка обновлений сервера: панель сверяет версии сервисов с релизами, затем свежие версии -
- * во вкладках сервисов, в "Обзоре" и в списке серверов. Повтор во время проверки не запускается.
+ * Проверка обновлений сервера: панель сверяет версии сервисов с релизами, затем версии
+ * перечитываются во всех блоках. Повтор во время проверки не запускается.
  */
 export async function checkUpdates(qc: QueryClient, serverId: string): Promise<void> {
   if (checks.get(serverId)?.checking) return;
@@ -60,7 +60,7 @@ export async function checkUpdates(qc: QueryClient, serverId: string): Promise<v
   } catch (e) {
     error = e instanceof Error ? e.message : String(e);
   }
-  // проверка закончена - только со свежими версиями: иначе "Обновить" по старым данным
+  // конец проверки - только после перечитывания версий: иначе "Обновить" оживёт на старых данных
   await Promise.all([
     qc.invalidateQueries({ queryKey: ['xui-versions', serverId] }),
     qc.invalidateQueries({ queryKey: ['mtproxyl-versions', serverId] }),

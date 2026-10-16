@@ -6,30 +6,28 @@ import { SERVICE_UPDATE_ACTIONS, checkUpdates } from './service-update';
 type LiveEvent = {
   type: string;
   serverId?: string;
-  /** server.metrics: сами цифры - раз в 2 с, пока открыта вкладка */
+  /** В server.metrics: раз в 2 с, пока открыта вкладка. */
   metrics?: Metrics;
   actionId?: string;
   channel?: string;
   chunk?: string;
   exitCode?: number;
   kind?: string;
-  /** gclients.sync: началась (true) или закончилась синхронизация клиентов */
+  /** В gclients.sync: синхронизация клиентов началась (true) или закончилась. */
   syncing?: boolean;
 };
 
 type Listener = (ev: LiveEvent) => void;
 
 /**
- * Одно websocket-соединение на вкладку браузера. Открывается при первом
- * подписчике и живёт до закрытия вкладки; при обрыве переподключается.
- * Без подписчиков соединение не закрывается: иначе при переходах между
- * страницами их накапливалось бы несколько, и каждая строка вывода
- * приходила бы по нескольку раз.
+ * Одно websocket-соединение на вкладку браузера: открывается при первом подписчике, при обрыве
+ * переподключается. Без подписчиков не закрывается - иначе при переходах между страницами
+ * соединения копились бы и каждая строка вывода приходила бы по нескольку раз.
  */
 const listeners = new Set<Listener>();
 let ws: WebSocket | null = null;
 let timer: ReturnType<typeof setTimeout> | null = null;
-/** Пауза перед переподключением: растёт до 30 с, после удачного подключения - снова 3 с. */
+/** Пауза перед переподключением, мс: удваивается до 30 с, после подключения - снова 3 с. */
 let retryMs = 3000;
 
 function connect() {
@@ -47,12 +45,12 @@ function connect() {
     } catch {}
   };
   sock.onclose = (e) => {
-    // Реагируем только на закрытие текущего соединения, а не старого.
+    // закрылось старое соединение - не наше
     if (ws !== sock) return;
     ws = null;
     if (timer) clearTimeout(timer);
-    // Без входа (4001) и без подписчиков - не переподключаемся: после входа подписка подключит
-    // снова (иначе на странице входа сокет переподключался бы каждые 3 с без конца).
+    // без входа (4001) и без подписчиков не переподключаемся - иначе на странице входа сокет
+    // переподключался бы без конца; после входа подключит подписка
     if (e.code === 4001 || listeners.size === 0) return;
     timer = setTimeout(connect, retryMs);
     retryMs = Math.min(retryMs * 2, 30_000);
@@ -119,11 +117,9 @@ function staleAfter(kind: string): { server: string[]; global?: string[] } {
 }
 
 /**
- * Обновление кэша по событиям панели; вызывается один раз в лейауте. Метрики (раз в 2 с, пока
- * открыта вкладка) приходят с цифрами - они кладутся в список и карточку сервера без запроса.
- * Снимки (раз в 5 минут) - точечно: список и карточка своего сервера, не чаще раза в 5 с. Связь,
- * изменения и действия - сразу; по концу действия - ещё и данные вкладок, которые оно меняет
- * (вид действия приходит только в action.started), а после обновления сервиса - проверка версий.
+ * Обновление кэша по событиям панели, вызывается один раз в лейауте. Метрики с цифрами кладутся в
+ * кэш без запроса; снимки - точечно и не чаще раза в 5 с; связь, изменения и действия - сразу, по
+ * концу действия - и данные вкладок, которые оно меняет, а после обновления сервиса - версии.
  */
 export function useLiveUpdates() {
   const qc = useQueryClient();
@@ -145,7 +141,7 @@ export function useLiveUpdates() {
         void qc.invalidateQueries({ queryKey: ['gclients-syncing'] });
         return;
       }
-      // синхронизация клиентов началась или закончилась: полоса сверху и списки клиентов
+      // полоса синхронизации сверху и, по концу, списки клиентов
       if (ev.type === 'gclients.sync') {
         void qc.invalidateQueries({ queryKey: ['gclients-syncing'] });
         if (!ev.syncing) void qc.invalidateQueries({ queryKey: ['gclients'] });
@@ -187,7 +183,7 @@ export function useLiveUpdates() {
         if (actionId) kinds.delete(actionId);
         if (kind && serverId) {
           const stale = staleAfter(kind);
-          // свой запрос вкладки после действия не прерываем: он держит её кнопки до ответа
+          // свой запрос вкладки не прерываем: он держит её кнопки до ответа
           const keep = { cancelRefetch: false };
           for (const k of stale.server)
             void qc.invalidateQueries({ queryKey: [k, serverId] }, keep);

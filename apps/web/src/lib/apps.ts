@@ -7,7 +7,7 @@ export interface AppsList {
   apps: AppView[];
 }
 
-/** Клиентские приложения со ссылками по ОС (релизы GitHub проверяются раз в 6 часов). */
+/** Клиентские приложения со ссылками на загрузку по ОС. */
 export function useApps() {
   return useQuery({
     queryKey: ['apps'],

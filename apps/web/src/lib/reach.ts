@@ -3,10 +3,9 @@ import { useQuery } from '@tanstack/react-query';
 import type { ReachLevel, ReachPoint, ReachProbe, ServerReach } from '@vps/protocol';
 
 /**
- * Общая шкала графиков: получасовые интервалы по часам. Проверки агента - в :00 и :30 и
- * относятся к интервалу, который ими заканчивается (3 минуты запаса на саму проверку); MTProxyL
- * проверяет себя чаще и в своё время - его проверки попадают в те же интервалы. Поэтому графики
- * всех целей заканчиваются одним и тем же интервалом и совпадают по времени.
+ * Шкала графиков - получасовые интервалы по часам. Проверка агента в :00 и :30 относится к
+ * интервалу, который ею заканчивается (GRACE_MS - запас на саму проверку); более частые проверки
+ * MTProxyL попадают в те же интервалы, поэтому графики всех целей совпадают по времени.
  */
 export const SLOT_MS = 30 * 60_000;
 const GRACE_MS = 3 * 60_000;
@@ -17,7 +16,7 @@ export interface ReachSlot {
   end: number;
   /** Проверки интервала, новые первыми. */
   points: ReachPoint[];
-  /** Худшая проверка интервала; null - проверок не было. */
+  /** Худший процент интервала; null - проверок не было. */
   percent: number | null;
   /** Медиана задержки проверок интервала, мс; null - не мерили. */
   rtt: number | null;
@@ -48,7 +47,7 @@ export function reachSlots(history: ReachPoint[], now: number, current = false):
   return out;
 }
 
-/** Медиана; null - значений нет. */
+/** null - значений нет. */
 function median(v: number[]): number | null {
   if (!v.length) return null;
   const s = [...v].sort((a, b) => a - b);
