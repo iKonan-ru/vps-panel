@@ -15,6 +15,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/iKonan-ru/vps-panel/apps/agent/internal/fsutil"
 	"github.com/iKonan-ru/vps-panel/apps/agent/internal/services"
 	"github.com/iKonan-ru/vps-panel/apps/agent/internal/shell"
 )
@@ -64,7 +65,7 @@ func Restore(ctx context.Context, p RestoreParams, stream func(channel, chunk st
 	if err := download(ctx, p.DownloadURL, archive); err != nil {
 		return err
 	}
-	if sum, _ := fileSum(archive); sum != p.Sha256 {
+	if sum, _ := fsutil.FileSum(archive); sum != p.Sha256 {
 		return errors.New("контрольная сумма архива не совпала")
 	}
 	ex := filepath.Join(tmpDir, "x")

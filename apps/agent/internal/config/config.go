@@ -11,6 +11,8 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+
+	"github.com/iKonan-ru/vps-panel/apps/agent/internal/fsutil"
 )
 
 const DefaultPath = "/etc/vps-agent/agent.json"
@@ -63,11 +65,7 @@ func (c *Config) Save(path string) error {
 	if err != nil {
 		return err
 	}
-	tmp := path + ".tmp"
-	if err := os.WriteFile(tmp, b, 0o600); err != nil {
-		return err
-	}
-	return os.Rename(tmp, path)
+	return fsutil.WriteAtomic(path, b, 0o600)
 }
 
 // CheckPanelURL - адрес панели только https:// (http:// - лишь на этой же машине, для стенда).

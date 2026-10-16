@@ -18,6 +18,7 @@ import (
 	"time"
 
 	"github.com/iKonan-ru/vps-panel/apps/agent/internal/firewall"
+	"github.com/iKonan-ru/vps-panel/apps/agent/internal/fsutil"
 	"github.com/iKonan-ru/vps-panel/apps/agent/internal/proto"
 	"github.com/iKonan-ru/vps-panel/apps/agent/internal/shell"
 	"github.com/iKonan-ru/vps-panel/apps/agent/internal/sshd"
@@ -284,7 +285,7 @@ func Apply(ctx context.Context, steps []string, stream func(channel, chunk strin
 		if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
 			return err
 		}
-		return os.WriteFile(path, content, mode)
+		return fsutil.WriteAtomic(path, content, mode)
 	}
 	asset := func(name string) []byte {
 		b, _ := assets.ReadFile("assets/" + name)
@@ -363,9 +364,13 @@ func applySSH(ctx context.Context, plan Plan, run runFn, write writeFn, asset as
 			if e.Name() == "10-vps-panel.conf" {
 				continue
 			}
+			st, err := os.Stat(p)
+			if err != nil || !st.Mode().IsRegular() {
+				continue
+			}
 			if b, err := os.ReadFile(p); err == nil && strings.Contains(string(b), "PasswordAuthentication yes") {
 				nb := strings.ReplaceAll(string(b), "PasswordAuthentication yes", "# PasswordAuthentication yes (отключено VPS Panel)")
-				_ = os.WriteFile(p, []byte(nb), 0o600)
+				_ = fsutil.WriteAtomic(p, []byte(nb), st.Mode().Perm())
 				log("   отключён PasswordAuthentication yes в %s", p)
 			}
 		}

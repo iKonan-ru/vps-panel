@@ -11,8 +11,6 @@ import (
 	"archive/tar"
 	"compress/gzip"
 	"context"
-	"crypto/sha256"
-	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -25,6 +23,7 @@ import (
 	"time"
 
 	"github.com/iKonan-ru/vps-panel/apps/agent/internal/dockerapi"
+	"github.com/iKonan-ru/vps-panel/apps/agent/internal/fsutil"
 	"github.com/iKonan-ru/vps-panel/apps/agent/internal/services"
 	"github.com/iKonan-ru/vps-panel/apps/agent/internal/shell"
 )
@@ -225,7 +224,7 @@ func Create(ctx context.Context, p CreateParams, stream func(channel, chunk stri
 	}
 	st, _ := os.Stat(archive)
 	man.ArchiveSize = st.Size()
-	man.Sha256, _ = fileSum(archive)
+	man.Sha256, _ = fsutil.FileSum(archive)
 	log("== архив %s, %d КБ, sha256 %s", filepath.Base(archive), st.Size()/1024, man.Sha256[:12])
 
 	if p.UploadURL != "" {
@@ -302,17 +301,4 @@ func upload(ctx context.Context, url, token, archive string) error {
 		return fmt.Errorf("панель ответила %d: %s", resp.StatusCode, string(body))
 	}
 	return nil
-}
-
-func fileSum(path string) (string, error) {
-	f, err := os.Open(path)
-	if err != nil {
-		return "", err
-	}
-	defer f.Close()
-	h := sha256.New()
-	if _, err := io.Copy(h, f); err != nil {
-		return "", err
-	}
-	return hex.EncodeToString(h.Sum(nil)), nil
 }

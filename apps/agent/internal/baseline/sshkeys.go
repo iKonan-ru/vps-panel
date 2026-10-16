@@ -6,12 +6,12 @@ import (
 	"encoding/base64"
 	"errors"
 	"os"
-	"path/filepath"
 	"regexp"
 	"strings"
 	"unicode"
 	"unicode/utf8"
 
+	"github.com/iKonan-ru/vps-panel/apps/agent/internal/fsutil"
 	"github.com/iKonan-ru/vps-panel/apps/agent/internal/sshd"
 )
 
@@ -107,34 +107,18 @@ func listKeys(path string) ([]SSHKey, error) {
 	return out, nil
 }
 
-// writeKeyLines пишет файл атомарно (временный файл и rename), прежний - в .vps-panel.bak.
+// writeKeyLines пишет файл атомарно, прежний - в .vps-panel.bak.
 func writeKeyLines(path string, lines []string) error {
 	if old, err := os.ReadFile(path); err == nil {
-		if err := os.WriteFile(path+".vps-panel.bak", old, 0o600); err != nil {
+		if err := fsutil.WriteAtomic(path+".vps-panel.bak", old, 0o600); err != nil {
 			return err
 		}
 	}
-	tmp, err := os.CreateTemp(filepath.Dir(path), ".authorized_keys.*")
-	if err != nil {
-		return err
-	}
-	defer os.Remove(tmp.Name())
 	text := strings.Join(lines, "\n")
 	if text != "" {
 		text += "\n"
 	}
-	if _, err := tmp.WriteString(text); err != nil {
-		tmp.Close()
-		return err
-	}
-	if err := tmp.Chmod(0o600); err != nil {
-		tmp.Close()
-		return err
-	}
-	if err := tmp.Close(); err != nil {
-		return err
-	}
-	return os.Rename(tmp.Name(), path)
+	return fsutil.WriteAtomic(path, []byte(text), 0o600)
 }
 
 // removeKey убирает все строки с этим отпечатком. Последний ключ без входа по паролю не

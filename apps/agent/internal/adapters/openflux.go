@@ -22,6 +22,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/iKonan-ru/vps-panel/apps/agent/internal/fsutil"
 	"github.com/iKonan-ru/vps-panel/apps/agent/internal/shell"
 )
 
@@ -517,11 +518,7 @@ func ofEnsureInstaller(ctx context.Context, log func(string)) error {
 	if err := os.MkdirAll(filepath.Dir(ofInstaller), 0o755); err != nil {
 		return err
 	}
-	tmp := ofInstaller + ".new"
-	if err := os.WriteFile(tmp, b, 0o755); err != nil {
-		return err
-	}
-	return os.Rename(tmp, ofInstaller)
+	return fsutil.WriteAtomic(ofInstaller, b, 0o755)
 }
 
 // ofInstallerPath - установленный node-install.sh или скачанный той же версии с проверкой
@@ -742,15 +739,11 @@ func ofConfigure(ctx context.Context, req OfRequest, log func(string)) (map[stri
 	if err != nil {
 		return nil, err
 	}
-	tmp := path + ".vps-new"
-	if err := os.WriteFile(tmp, []byte(ofNodeConf(req.Channel, port, req.Vyandex, req.Mailru, cups)), st.Mode().Perm()); err != nil {
-		return nil, err
-	}
+	owner := fsutil.Keep
 	if sys, ok := st.Sys().(*syscall.Stat_t); ok {
-		_ = os.Chown(tmp, int(sys.Uid), int(sys.Gid))
+		owner = fsutil.Owner{UID: int(sys.Uid), GID: int(sys.Gid)}
 	}
-	if err := os.Rename(tmp, path); err != nil {
-		os.Remove(tmp)
+	if err := fsutil.WriteAtomicOwned(path, []byte(ofNodeConf(req.Channel, port, req.Vyandex, req.Mailru, cups)), st.Mode().Perm(), owner); err != nil {
 		return nil, err
 	}
 	unit := "openflux-node@" + req.Channel
