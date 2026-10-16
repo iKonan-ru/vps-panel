@@ -5,7 +5,6 @@ package baseline
 import (
 	"context"
 	"embed"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"os"
@@ -17,6 +16,7 @@ import (
 	"github.com/iKonan-ru/vps-panel/apps/agent/internal/firewall"
 	"github.com/iKonan-ru/vps-panel/apps/agent/internal/fsutil"
 	"github.com/iKonan-ru/vps-panel/apps/agent/internal/lockout"
+	"github.com/iKonan-ru/vps-panel/apps/agent/internal/portsync"
 	"github.com/iKonan-ru/vps-panel/apps/agent/internal/shell"
 	"github.com/iKonan-ru/vps-panel/apps/agent/internal/sshd"
 )
@@ -161,47 +161,13 @@ func deniedPorts(cfg PortsyncConfig) map[string]bool {
 	return denied
 }
 
-// plannedAllow - порты, которые port-sync откроет по конфигу. Считаем через
-// сам скрипт (--json с конфигом в env), чтобы логика была одна.
+// plannedAllow - порты, которые port-sync откроет по конфигу.
 func plannedAllow(ctx context.Context, cfg PortsyncConfig) (map[string]bool, error) {
-	out := map[string]bool{}
-	script, err := assets.ReadFile("assets/vps-portsync.py")
+	st, err := portsync.Compute(ctx, cfg)
 	if err != nil {
-		return out, err
+		return map[string]bool{}, err
 	}
-	tmp, err := os.CreateTemp("", "portsync-*.py")
-	if err != nil {
-		return out, err
-	}
-	defer os.Remove(tmp.Name())
-	_, _ = tmp.Write(script)
-	tmp.Close()
-	cfgJSON, _ := json.Marshal(cfg)
-	c, cancel := context.WithTimeout(ctx, 60*time.Second)
-	defer cancel()
-	// конфиг - через окружение, а не строкой в bash (апострофы и спецсимволы портили бы значения)
-	res, err := shell.ExecEnv(c, 60*time.Second, nil, []string{"PORTSYNC_CONF=" + string(cfgJSON)}, "python3", tmp.Name(), "--json")
-	if err != nil {
-		return out, err
-	}
-	if res.ExitCode != 0 {
-		return out, fmt.Errorf("port-sync --json завершился с кодом %d: %s", res.ExitCode, strings.TrimSpace(res.Stderr))
-	}
-	var d struct {
-		HostAllow   [][]any `json:"host_allow"`
-		DockerAllow [][]any `json:"docker_allow"`
-	}
-	if err := json.Unmarshal([]byte(res.Stdout), &d); err != nil {
-		return out, fmt.Errorf("port-sync --json: %w", err)
-	}
-	for _, pair := range append(d.HostAllow, d.DockerAllow...) {
-		if len(pair) == 2 {
-			pr, _ := pair[0].(string)
-			port, _ := pair[1].(float64)
-			out[fmt.Sprintf("%d/%s", int(port), pr)] = true
-		}
-	}
-	return out, nil
+	return st.Allowed(), nil
 }
 
 func fileHas(path, needle string) bool {

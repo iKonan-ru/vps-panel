@@ -16,48 +16,26 @@ import (
 
 	"github.com/iKonan-ru/vps-panel/apps/agent/internal/firewall"
 	"github.com/iKonan-ru/vps-panel/apps/agent/internal/fsutil"
+	"github.com/iKonan-ru/vps-panel/apps/agent/internal/hostfs"
 	"github.com/iKonan-ru/vps-panel/apps/agent/internal/lockout"
+	"github.com/iKonan-ru/vps-panel/apps/agent/internal/portsync"
 	"github.com/iKonan-ru/vps-panel/apps/agent/internal/proto"
 	"github.com/iKonan-ru/vps-panel/apps/agent/internal/shell"
 	"github.com/iKonan-ru/vps-panel/apps/agent/internal/sshd"
 )
 
-// PortsyncConfig - /etc/vps-portsync.conf, его читает vps-portsync.py.
-type PortsyncConfig struct {
-	AdminIPs        []string `json:"admin_ips"`
-	DenyPublicPorts []string `json:"deny_public_ports"`
-	ExtraAllow      []string `json:"extra_allow"`
-	KnownProcesses  []string `json:"known_processes"`
-	DockerPolicy    string   `json:"docker_policy"`
-	AllowPing       bool     `json:"allow_ping"`
-	WanInterface    string   `json:"wan_interface"`
-	SSHPort         int      `json:"ssh_port"`
-}
+// PortsyncConfig - /etc/vps-portsync.conf.
+type PortsyncConfig = portsync.Config
 
-func DefaultPortsyncConfig() PortsyncConfig {
-	return PortsyncConfig{
-		AdminIPs:        []string{},
-		DenyPublicPorts: []string{"9090/tcp", "9091/tcp", "62789/tcp"},
-		ExtraAllow:      []string{},
-		KnownProcesses:  lockout.KnownProcesses(),
-		DockerPolicy:    "published",
-		AllowPing:       true,
-	}
-}
+func DefaultPortsyncConfig() PortsyncConfig { return portsync.DefaultConfig() }
 
 const (
-	portsyncConf = "/etc/vps-portsync.conf"
+	portsyncConf = portsync.ConfPath
 	portsyncBin  = "/usr/local/sbin/vps-portsync"
 )
 
 // ReadPortsyncConfig читает конфиг с диска или отдаёт дефолт.
-func ReadPortsyncConfig() PortsyncConfig {
-	cfg := DefaultPortsyncConfig()
-	if b, err := os.ReadFile(portsyncConf); err == nil {
-		_ = json.Unmarshal(b, &cfg)
-	}
-	return cfg
-}
+func ReadPortsyncConfig() PortsyncConfig { return portsync.ReadConfig() }
 
 var (
 	rePortSpec = regexp.MustCompile(`^[0-9]{1,5}(/(tcp|udp))?$`)
@@ -143,7 +121,7 @@ func WritePortsyncConfig(cfg PortsyncConfig) error {
 	if err != nil {
 		return err
 	}
-	return fsutil.WriteAtomic(portsyncConf, b, 0o644)
+	return fsutil.WriteAtomic(hostfs.Path(portsyncConf), b, 0o644)
 }
 
 // portsyncUnits - юниты port-sync: имя в systemd -> файл в assets.
@@ -151,59 +129,75 @@ var portsyncUnits = map[string]string{
 	"vps-portsync.service":              "portsync.service",
 	"vps-portsync.timer":                "portsync.timer",
 	"vps-portsync-xui.path":             "portsync-xui.path",
+	"vps-portsync-xui.service":          "portsync-xui.service",
 	"vps-portsync-docker-watch.service": "portsync-docker-watch.service",
 }
 
-// RefreshPortsync обновляет установленный port-sync до встроенного в агента: скрипт и уже лежащие
-// на сервере юниты, и поднимает vps-portsync-xui.path, если systemd выключил его по лимиту
-// запусков. port-sync не установлен - ничего не делает. true - что-то заменено.
+// portsyncCompanion - юнит, без которого не работает vps-portsync-xui.path: ставится и туда, где
+// port-sync уже установлен без него (остальные юниты только обновляются - удалённый руками юнит
+// не возвращается).
+const portsyncCompanion = "vps-portsync-xui.service"
+
+// RefreshPortsync обновляет установленный port-sync до встроенного в агента: скрипт и юниты, и
+// поднимает vps-portsync-xui.path, если systemd выключил его по лимиту запусков или если он
+// поменялся. port-sync не установлен - ничего не делает. true - что-то заменено.
 func RefreshPortsync(ctx context.Context) (bool, error) {
-	cur, err := os.ReadFile(portsyncBin)
+	cur, err := os.ReadFile(hostfs.Path(portsyncBin))
 	if err != nil {
 		return false, nil
 	}
 	changed := false
 	script, _ := assets.ReadFile("assets/vps-portsync.py")
 	if !bytes.Equal(cur, script) {
-		if err := fsutil.WriteAtomic(portsyncBin, script, 0o755); err != nil {
+		if err := fsutil.WriteAtomic(hostfs.Path(portsyncBin), script, 0o755); err != nil {
 			return false, err
 		}
 		changed = true
 	}
-	units := false
+	units, pathUnit := false, false
 	for unit, a := range portsyncUnits {
-		path := "/etc/systemd/system/" + unit
+		path := hostfs.Path("/etc/systemd/system/" + unit)
 		old, err := os.ReadFile(path)
-		if err != nil {
+		if err != nil && unit != portsyncCompanion {
 			continue
 		}
 		b, _ := assets.ReadFile("assets/" + a)
-		if bytes.Equal(old, b) {
+		if err == nil && bytes.Equal(old, b) {
 			continue
 		}
 		if err := fsutil.WriteAtomic(path, b, 0o644); err != nil {
 			return changed, err
 		}
 		units = true
+		pathUnit = pathUnit || unit == "vps-portsync-xui.path" || unit == portsyncCompanion
 	}
 	if units {
 		changed = true
-		_, _ = shell.Run(ctx, "systemctl daemon-reload", time.Minute, nil)
+		systemctl(ctx, "systemctl daemon-reload")
 	}
-	_, _ = shell.Run(ctx, "if systemctl is-enabled --quiet vps-portsync-xui.path 2>/dev/null && "+
-		"! systemctl is-active --quiet vps-portsync-xui.path; then systemctl reset-failed "+
-		"vps-portsync.service vps-portsync-xui.path; systemctl restart vps-portsync-xui.path; fi",
-		time.Minute, nil)
+	restart := "! systemctl is-active --quiet vps-portsync-xui.path"
+	if pathUnit {
+		// новый Unit= путь подхватывает при перезапуске
+		restart = "true"
+	}
+	systemctl(ctx, "if systemctl is-enabled --quiet vps-portsync-xui.path 2>/dev/null && "+restart+
+		"; then systemctl reset-failed vps-portsync.service vps-portsync-xui.service vps-portsync-xui.path; "+
+		"systemctl restart vps-portsync-xui.path; fi")
 	return changed, nil
+}
+
+// systemctl - вызов systemctl для RefreshPortsync (тесты подменяют).
+var systemctl = func(ctx context.Context, script string) {
+	_, _ = shell.Run(ctx, script, time.Minute, nil)
 }
 
 // InstallPortsync кладёт скрипт, конфиг (если нет) и юниты.
 func InstallPortsync(ctx context.Context, stream func(channel, chunk string)) error {
 	script, _ := assets.ReadFile("assets/vps-portsync.py")
-	if err := fsutil.WriteAtomic(portsyncBin, script, 0o755); err != nil {
+	if err := fsutil.WriteAtomic(hostfs.Path(portsyncBin), script, 0o755); err != nil {
 		return err
 	}
-	if _, err := os.Stat(portsyncConf); err != nil {
+	if _, err := os.Stat(hostfs.Path(portsyncConf)); err != nil {
 		cfg := DefaultPortsyncConfig()
 		cfg.SSHPort = sshd.Port(sshd.Config(ctx))
 		if err := WritePortsyncConfig(cfg); err != nil {
@@ -212,7 +206,7 @@ func InstallPortsync(ctx context.Context, stream func(channel, chunk string)) er
 	}
 	for unit, a := range portsyncUnits {
 		b, _ := assets.ReadFile("assets/" + a)
-		if err := fsutil.WriteAtomic("/etc/systemd/system/"+unit, b, 0o644); err != nil {
+		if err := fsutil.WriteAtomic(hostfs.Path("/etc/systemd/system/"+unit), b, 0o644); err != nil {
 			return err
 		}
 	}

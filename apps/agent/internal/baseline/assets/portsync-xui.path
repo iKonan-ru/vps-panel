@@ -4,7 +4,7 @@ Description=vps-portsync: react to 3x-ui config changes
 [Path]
 PathModified=/etc/x-ui/x-ui.db
 PathModified=/etc/x-ui/x-ui.db-wal
-Unit=vps-portsync.service
+Unit=vps-portsync-xui.service
 
 [Install]
 WantedBy=multi-user.target
