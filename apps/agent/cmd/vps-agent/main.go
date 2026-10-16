@@ -66,7 +66,11 @@ func main() {
 	log := slog.New(slog.NewTextHandler(os.Stdout, &slog.HandlerOptions{Level: slog.LevelInfo}))
 
 	if *dumpInventory {
-		inv := inventory.Collect(context.Background(), Version)
+		inv, err := inventory.Collect(context.Background(), Version)
+		if err != nil {
+			fmt.Fprintln(os.Stderr, "vps-agent:", err)
+			os.Exit(1)
+		}
 		enc := json.NewEncoder(os.Stdout)
 		enc.SetIndent("", "  ")
 		_ = enc.Encode(inv)
@@ -112,7 +116,13 @@ func main() {
 			return
 		}
 		defer pushing.Store(false)
-		snap := inventory.Collect(ctx, Version)
+		snap, err := inventory.Collect(ctx, Version)
+		if err != nil {
+			if ctx.Err() == nil {
+				log.Warn("снимок не отправлен", "err", err)
+			}
+			return
+		}
 		if client.Send(map[string]any{"type": "inventory", "inventory": snap}) == nil {
 			services.MarkReported(snap.Health())
 		}

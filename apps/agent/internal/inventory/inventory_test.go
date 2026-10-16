@@ -1,10 +1,14 @@
 package inventory
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"slices"
+	"sync"
 	"testing"
+	"time"
 
 	"github.com/iKonan-ru/vps-panel/apps/agent/internal/proto"
 )
@@ -36,5 +40,71 @@ func TestSnapshotJSONIsInventory(t *testing.T) {
 	b, _ := json.Marshal(Snapshot{Inventory: inv, health: "xui"})
 	if string(a) != string(b) {
 		t.Fatalf("снимок в JSON отличается от Inventory:\n%s\n%s", a, b)
+	}
+}
+
+// Вызовы во время сбора ждут один следующий сбор, начатый после них.
+func TestCollectCoalesces(t *testing.T) {
+	var mu sync.Mutex
+	runs := 0
+	release := make(chan struct{})
+	collectFn = func(context.Context, string) (Snapshot, error) {
+		mu.Lock()
+		runs++
+		n := runs
+		mu.Unlock()
+		if n == 1 {
+			<-release
+		}
+		return Snapshot{health: fmt.Sprint(n)}, nil
+	}
+	defer func() { collectFn = collect }()
+
+	first := make(chan Snapshot)
+	go func() {
+		s, _ := Collect(context.Background(), "")
+		first <- s
+	}()
+	for {
+		flight.Lock()
+		started := flight.running != nil
+		flight.Unlock()
+		if started {
+			break
+		}
+		time.Sleep(time.Millisecond)
+	}
+	var wg sync.WaitGroup
+	got := make([]string, 5)
+	for i := range got {
+		wg.Add(1)
+		go func(i int) {
+			defer wg.Done()
+			s, _ := Collect(context.Background(), "")
+			got[i] = s.Health()
+		}(i)
+	}
+	for {
+		flight.Lock()
+		queued := flight.queued != nil
+		flight.Unlock()
+		if queued {
+			break
+		}
+		time.Sleep(time.Millisecond)
+	}
+	time.Sleep(20 * time.Millisecond)
+	close(release)
+	if s := <-first; s.Health() != "1" {
+		t.Fatalf("первый вызов получил сбор %s", s.Health())
+	}
+	wg.Wait()
+	for _, h := range got {
+		if h != "2" {
+			t.Fatalf("ждавшие вызовы должны получить один общий второй сбор: %v", got)
+		}
+	}
+	if runs != 2 {
+		t.Fatalf("сборов %d, ждали 2", runs)
 	}
 }
