@@ -19,7 +19,7 @@ import (
 
 	"github.com/iKonan-ru/vps-panel/apps/agent/internal/firewall"
 	"github.com/iKonan-ru/vps-panel/apps/agent/internal/fsutil"
-	"github.com/iKonan-ru/vps-panel/apps/agent/internal/proto"
+	"github.com/iKonan-ru/vps-panel/apps/agent/internal/lockout"
 	"github.com/iKonan-ru/vps-panel/apps/agent/internal/shell"
 	"github.com/iKonan-ru/vps-panel/apps/agent/internal/sshd"
 )
@@ -78,8 +78,8 @@ func MakePlan(ctx context.Context) Plan {
 	add("packages", "Установить пакеты: ufw, fail2ban, unattended-upgrades, python3, sqlite3, iptables, conntrack", len(pkgs) > 0, strings.Join(pkgs, ", "))
 	needSSH := ssh["passwordauthentication"] != "no" || ssh["permitrootlogin"] == "yes"
 	add("sshd", "SSH: отключить вход по паролю, root только по ключу, лимит попыток", needSSH, "")
-	if needSSH && p.RootKeys == 0 {
-		block("sshd", "у root нет ключей: после отключения паролей доступ к серверу пропадёт")
+	if err := lockout.DisablePasswords(p.RootKeys); needSSH && err != nil {
+		block("sshd", err.Error())
 	}
 	add("fail2ban", "fail2ban: jail sshd (и панели 3X-UI, если она нативная)", !shell.Has("fail2ban-client") || shell.Out(ctx, "systemctl", "is-active", "fail2ban") != "active" || !fileHas("/etc/fail2ban/jail.local", "VPS Panel"), "")
 	add("updates", "Включить автообновления безопасности (кроме docker и ядра)", !fileHas("/etc/apt/apt.conf.d/50unattended-upgrades", "VPS Panel"), "")
@@ -93,8 +93,7 @@ func MakePlan(ctx context.Context) Plan {
 		if l.Process == "docker-proxy" {
 			continue
 		}
-		key := listenerKey(l)
-		if allowed[key] {
+		if allowed[lockout.PortKey(l)] {
 			if !fw.UfwActive {
 				p.Ports = append(p.Ports, PortChange{Port: l.Port, Proto: l.Proto, Process: l.Process, Action: "open"})
 			}
@@ -103,7 +102,7 @@ func MakePlan(ctx context.Context) Plan {
 		p.Ports = append(p.Ports, PortChange{Port: l.Port, Proto: l.Proto, Process: l.Process, Action: "close"})
 	}
 	if !fw.UfwActive {
-		for _, why := range closingVPN(fw.Listeners, allowed, deniedPorts(cfg), nil) {
+		for _, why := range lockout.ClosingVPN(fw.Listeners, allowed, deniedPorts(cfg), nil) {
 			block("ufw", why)
 		}
 	}
@@ -154,20 +153,6 @@ func selectSteps(plan Plan, want []string) (map[string]bool, error) {
 	return sel, nil
 }
 
-var vpnHints = []string{"xray", "x-ui", "telemt", "mtproxy", "wdtt", "amnezia", "awg", "wg", "sing-box", "hysteria", "tuic", "openvpn", "cloak"}
-
-func isVPNProcess(name string) bool {
-	low := strings.ToLower(name)
-	for _, h := range vpnHints {
-		if strings.Contains(low, h) {
-			return true
-		}
-	}
-	return false
-}
-
-func listenerKey(l proto.Listener) string { return fmt.Sprintf("%d/%s", l.Port, l.Proto) }
-
 // deniedPorts - deny_public_ports конфига вида "443/tcp" (без протокола - tcp).
 func deniedPorts(cfg PortsyncConfig) map[string]bool {
 	denied := map[string]bool{}
@@ -178,21 +163,6 @@ func deniedPorts(cfg PortsyncConfig) map[string]bool {
 		denied[d] = true
 	}
 	return denied
-}
-
-// closingVPN - порты VPN из listeners, которые port-sync с такими настройками не откроет: по
-// замечанию на каждый. Порт из deny-списка закрывается намеренно (9090/9091 - метрики telemt и
-// прочих), порт из keep останется открытым другим правилом ufw.
-func closingVPN(listeners []proto.Listener, allowed, denied, keep map[string]bool) []string {
-	var out []string
-	for _, l := range listeners {
-		key := listenerKey(l)
-		if l.Process == "docker-proxy" || allowed[key] || denied[key] || keep[key] || !isVPNProcess(l.Process) {
-			continue
-		}
-		out = append(out, fmt.Sprintf("порт %s процесса %s закроется, а это похоже на VPN: процесс нужно добавить в известные или порт в разрешённые", key, l.Process))
-	}
-	return out
 }
 
 // plannedAllow - порты, которые port-sync откроет по конфигу. Считаем через
@@ -354,8 +324,8 @@ type logFn = func(f string, a ...any)
 
 func applySSH(ctx context.Context, plan Plan, run runFn, write writeFn, asset assetFn, log logFn) error {
 	log("== SSH: drop-in без паролей (ключей у root: %d)", plan.RootKeys)
-	if plan.RootKeys == 0 {
-		return errors.New("у root нет ключей, отключать пароли нельзя")
+	if err := lockout.DisablePasswords(plan.RootKeys); err != nil {
+		return err
 	}
 	// чужие drop-in с PasswordAuthentication yes (cloud-init) - гасим
 	if entries, err := os.ReadDir("/etc/ssh/sshd_config.d"); err == nil {

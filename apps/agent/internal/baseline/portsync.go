@@ -16,6 +16,7 @@ import (
 
 	"github.com/iKonan-ru/vps-panel/apps/agent/internal/firewall"
 	"github.com/iKonan-ru/vps-panel/apps/agent/internal/fsutil"
+	"github.com/iKonan-ru/vps-panel/apps/agent/internal/lockout"
 	"github.com/iKonan-ru/vps-panel/apps/agent/internal/proto"
 	"github.com/iKonan-ru/vps-panel/apps/agent/internal/shell"
 	"github.com/iKonan-ru/vps-panel/apps/agent/internal/sshd"
@@ -38,7 +39,7 @@ func DefaultPortsyncConfig() PortsyncConfig {
 		AdminIPs:        []string{},
 		DenyPublicPorts: []string{"9090/tcp", "9091/tcp", "62789/tcp"},
 		ExtraAllow:      []string{},
-		KnownProcesses:  []string{"sshd", "xray*", "x-ui", "telemt", "mtproxyl*", "wdtt*", "amnezia*", "awg*", "wg*", "sing-box", "hysteria*", "tuic*", "vps-agent", "caddy", "docker-proxy"},
+		KnownProcesses:  lockout.KnownProcesses(),
 		DockerPolicy:    "published",
 		AllowPing:       true,
 	}
@@ -122,7 +123,7 @@ func ApplyPortsyncConfig(ctx context.Context, cfg PortsyncConfig) error {
 				open = append(open, l)
 			}
 		}
-		if closing := closingVPN(open, allowed, deniedPorts(cfg), keepRules(fw.Rules)); len(closing) > 0 {
+		if closing := lockout.ClosingVPN(open, allowed, deniedPorts(cfg), keepRules(fw.Rules)); len(closing) > 0 {
 			return errors.New("настройки port-sync не применены: " + strings.Join(closing, "; "))
 		}
 	}
