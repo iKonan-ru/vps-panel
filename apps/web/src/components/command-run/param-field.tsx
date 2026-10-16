@@ -132,3 +132,32 @@ export function ParamField({
     </div>
   );
 }
+
+/** Поля параметров команды по порядку: страница запуска команды и шаги настройки сервера. */
+export function ParamFields({
+  params,
+  answers,
+  onChange,
+  awgContainers,
+  idPrefix,
+  generate,
+}: {
+  params: CommandParam[];
+  answers: Record<string, string>;
+  onChange: (name: string, value: string) => void;
+  awgContainers: { name: string; label: string }[];
+  idPrefix?: string;
+  generate?: boolean;
+}) {
+  return params.map((p) => (
+    <ParamField
+      key={p.name}
+      p={p}
+      value={answers[p.name] ?? ''}
+      onChange={(v) => onChange(p.name, v)}
+      awgContainers={awgContainers}
+      {...(idPrefix ? { idPrefix } : {})}
+      {...(generate ? { generate } : {})}
+    />
+  ));
+}

@@ -61,7 +61,7 @@ export function sameOptions(
 
 /**
  * Порт с кнопкой "Случайный свободный порт": панель подбирает его по inbound-ам и процессам
- * сервера; avoid - порты, уже выбранные в окне.
+ * сервера; avoid - порты, уже выбранные в окне; pick={false} - без кнопки (подбирать нечем).
  */
 export function PortField({
   id,
@@ -70,6 +70,7 @@ export function PortField({
   onChange,
   disabled,
   avoid,
+  pick: canPick = true,
 }: {
   id: string;
   serverId: string;
@@ -77,6 +78,7 @@ export function PortField({
   onChange: (v: string) => void;
   disabled: boolean;
   avoid: number[];
+  pick?: boolean;
 }) {
   const op = useAction();
   async function pick() {
@@ -101,15 +103,17 @@ export function PortField({
           onChange={(e) => onChange(e.target.value)}
           className="min-w-0 grow font-mono"
         />
-        <Button
-          size="icon"
-          title="Случайный свободный порт"
-          aria-label="Случайный свободный порт"
-          disabled={disabled || op.busy}
-          onClick={() => void pick()}
-        >
-          <Shuffle className="size-4" />
-        </Button>
+        {canPick && (
+          <Button
+            size="icon"
+            title="Случайный свободный порт"
+            aria-label="Случайный свободный порт"
+            disabled={disabled || op.busy}
+            onClick={() => void pick()}
+          >
+            <Shuffle className="size-4" />
+          </Button>
+        )}
       </div>
       {op.error && <div className="mt-1 text-xs text-bad">{op.error}</div>}
     </Field>
