@@ -40,10 +40,10 @@
 		Referrer-Policy strict-origin-when-cross-origin
 		# панель и всё на её именах поисковикам не показывается (и robots.txt ниже)
 		X-Robots-Tag "noindex, nofollow, noarchive"
-		# CSP панели: нарушения приходят в
-		# /api/csp-report и пишутся в журнал панели. Скрипты - только свои. Элементы <style> -
-		# inline тоже: xterm (DOM-рендер) пишет в них размеры ячеек и цвета темы; атрибуты style -
-		# только 'self' (React ставит стили через CSSOM, CSP их не касается).
+		# CSP панели: нарушения приходят в /api/csp-report и пишутся в журнал панели. Скрипты -
+		# только свои. Элементы <style> - inline тоже: xterm (DOM-рендер) пишет в них размеры ячеек
+		# и цвета темы; атрибуты style - только 'self' (React ставит стили через CSSOM, CSP их не
+		# касается).
 		Content-Security-Policy "default-src 'self'; script-src 'self'; style-src 'self'; style-src-elem 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self'; connect-src 'self' wss://{$PANEL_DOMAIN}; worker-src 'self'; manifest-src 'self'; frame-ancestors 'none'; base-uri 'none'; object-src 'none'; form-action 'self'; report-uri /api/csp-report"
 	}
 	# Подписки и личные страницы живут на SUB_DOMAIN; на имени панели их нет: личная страница -
@@ -125,12 +125,10 @@ Disallow: /
 	}
 }
 
-# Панели сервисов на серверах через панель (lib/panel-proxy.ts): <слаг>-xui и
-# <слаг>-mtproxyl. Блок без имени - всё, чего нет в блоках выше; сертификат выпускается по
-# требованию и только для поддомена, который знает панель (ask). Не "*.{$PANEL_DOMAIN}": Caddy
-# 2.11 не держит отдельный сертификат для имени под wildcard-блоком, и SUB_DOMAIN остался бы без
-# сертификата. Вход - только через панель, трафик - туннелем через
-# агента к 127.0.0.1 сервера.
+# Панели сервисов на серверах через панель: <слаг>-xui и <слаг>-mtproxyl. Блок без имени - всё,
+# чего нет в блоках выше; сертификат выпускается по требованию и только для поддомена, который
+# знает панель (ask). Не "*.{$PANEL_DOMAIN}": Caddy 2.11 не держит отдельный сертификат для имени
+# под wildcard-блоком, и SUB_DOMAIN остался бы без сертификата.
 https:// {
 	tls {
 		on_demand
