@@ -1,11 +1,7 @@
 import { HISTORY_MS, type RatePoint, rate } from '@/components/clients/live-stats';
 import { useEffect, useRef, useState } from 'react';
 
-/**
- * График скорости за последние минуты: к клиенту и от клиента. Пара цветов --series-1/2
- * различима при нарушениях цветовосприятия; пропуск (скорость неизвестна) - разрыв линии.
- */
-
+// пара цветов --series-1/2 различима при нарушениях цветовосприятия
 const SERIES = [
   { key: 'out', label: 'к клиенту', color: 'var(--series-1)' },
   { key: 'in', label: 'от клиента', color: 'var(--series-2)' },
@@ -33,6 +29,7 @@ function agoShort(ms: number): string {
   return s % 60 ? `${m}\u00a0мин ${s % 60}\u00a0с назад` : `${m}\u00a0мин назад`;
 }
 
+/** График скорости к клиенту и от клиента; неизвестная скорость - разрыв линии. */
 export function RateChart({ points, height = 140 }: { points: RatePoint[]; height?: number }) {
   const box = useRef<HTMLDivElement>(null);
   const [width, setWidth] = useState(0);

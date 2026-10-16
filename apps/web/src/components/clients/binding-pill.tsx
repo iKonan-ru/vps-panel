@@ -6,8 +6,6 @@ import { ago } from '@/lib/format';
 import type { GBinding, GDevice, GLiveBinding } from '@vps/protocol';
 import { QrCode as QrCodeIcon } from 'lucide-react';
 
-/** Привязки клиента к серверам: порядок сервисов, группировка по серверу, плашка привязки. */
-
 const serviceOrder: Record<GBinding['service'], number> = {
   xui: 0,
   mtproxyl: 1,
@@ -17,7 +15,7 @@ const serviceOrder: Record<GBinding['service'], number> = {
   naive: 5,
 };
 
-/** Привязки по серверам (по имени), внутри - VLESS, MTProxy, WDTT, AWG. */
+/** Привязки по серверам (по имени сервера), внутри - в порядке serviceOrder. */
 export function byServer(bindings: GBinding[]): [string, GBinding[]][] {
   const m = new Map<string, GBinding[]>();
   for (const b of bindings) m.set(b.serverId, [...(m.get(b.serverId) ?? []), b]);
@@ -39,10 +37,7 @@ export function pillLabel(b: GBinding, device: GDevice | undefined) {
   return `AWG ${b.awg?.major ?? '3'}.x${device ? `\u00a0\u2014 ${deviceTitle(device)}` : ''}`;
 }
 
-/**
- * Услуга на сервере: точка состояния и подпись, подробности - в подсказке. Кнопка открывает
- * подписку (VLESS), ссылки (MTProxy) или конфиг (AWG) с QR.
- */
+/** Плашка услуги на сервере; кнопка открывает подписку, ссылки или конфиг с QR. */
 export function BindingPill({
   b,
   device,
