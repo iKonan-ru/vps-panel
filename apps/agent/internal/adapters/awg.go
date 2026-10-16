@@ -87,10 +87,11 @@ func AwgStatusAll(ctx context.Context) AwgStatus {
 		return out
 	}
 	list, err := dockerapi.New().List(ctx)
-	if err != nil {
+	if list == nil {
 		return out
 	}
-	out.Docker = true
+	// часть контейнеров не прочиталась: показываем остальные, но список не полный
+	out.Docker = err == nil
 	var mu sync.Mutex
 	var wg sync.WaitGroup
 	for _, c := range list {

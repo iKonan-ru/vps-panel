@@ -24,6 +24,7 @@ func Collect(ctx context.Context, agentVersion string) proto.Inventory {
 	inv := proto.Inventory{Host: metrics.Host(agentVersion), Containers: []proto.Container{}}
 	var wg sync.WaitGroup
 	var pending int
+	dockerFailed := false
 	wg.Add(3)
 	go func() {
 		defer wg.Done()
@@ -34,6 +35,9 @@ func Collect(ctx context.Context, agentVersion string) proto.Inventory {
 		inv.Host.DockerVersion = d.Version(ctx)
 		cs, err := d.List(ctx)
 		if err != nil {
+			dockerFailed = true
+		}
+		if cs == nil {
 			return
 		}
 		var sw sync.WaitGroup
@@ -67,10 +71,11 @@ func Collect(ctx context.Context, agentVersion string) proto.Inventory {
 	services.MarkReported(services.Health(ctx, inv.Containers))
 	// 3x-ui читается один раз и со списком контейнеров (база может лежать в томе docker): её
 	// настройки нужны и сертификатам, и сервисам
-	xui, err := services.ReadXui(ctx, inv.Containers)
-	if err != nil {
+	xui, xuiErr := services.ReadXui(ctx, inv.Containers)
+	if xuiErr != nil {
 		xui = nil
 	}
+	inv.Unchecked = uncheckedKinds(dockerFailed, xuiErr, xui != nil)
 	var cw sync.WaitGroup
 	cw.Add(1)
 	go func() {
@@ -82,6 +87,20 @@ func Collect(ctx context.Context, agentVersion string) proto.Inventory {
 	inv.Audit = audit.Run(ctx, inv.Firewall, inv.Containers, inv.Services, inv.Certs, pending)
 	inv.CollectedAt = time.Now().UTC().Format(time.RFC3339)
 	return inv
+}
+
+// uncheckedKinds - виды сервисов, которых может не быть в снимке из-за сбоя чтения, а не потому,
+// что их удалили: база 3X-UI не прочиталась, docker не отдал список контейнеров (по ним
+// находятся Amnezia и wg-easy, а база 3X-UI бывает в томе контейнера).
+func uncheckedKinds(dockerFailed bool, xuiErr error, xuiFound bool) []string {
+	out := []string{}
+	if xuiErr != nil || (dockerFailed && !xuiFound) {
+		out = append(out, "xui")
+	}
+	if dockerFailed {
+		out = append(out, services.ContainerKinds...)
+	}
+	return out
 }
 
 // PublicIP - адрес интерфейса с маршрутом по умолчанию.

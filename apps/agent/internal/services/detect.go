@@ -19,6 +19,9 @@ import (
 	_ "modernc.org/sqlite"
 )
 
+// ContainerKinds - виды сервисов, которые Detect находит по контейнерам docker.
+var ContainerKinds = []string{"amnezia", "wg-easy"}
+
 // Detect собирает список сервисов. publicIP нужен для ссылок на панели, xuiInfo - настройки
 // 3x-ui (ReadXui, nil - её нет).
 func Detect(ctx context.Context, containers []proto.Container, publicIP string, xuiInfo *XuiInfo) []proto.Service {

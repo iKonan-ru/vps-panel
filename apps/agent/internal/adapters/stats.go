@@ -294,13 +294,16 @@ func awgStatsAll(ctx context.Context) (map[string]map[string]AwgPeerStat, error)
 		return nil, errNotInstalled
 	}
 	list, err := dockerapi.New().List(ctx)
-	if err != nil {
+	if list == nil {
 		return nil, err
 	}
 	out := map[string]map[string]AwgPeerStat{}
 	var mu sync.Mutex
 	var wg sync.WaitGroup
 	var errs []string
+	if err != nil {
+		errs = append(errs, err.Error())
+	}
 	for _, c := range list {
 		if !reAwgContainer.MatchString(c.Name) || c.State != "running" {
 			continue

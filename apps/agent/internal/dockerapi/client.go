@@ -46,6 +46,14 @@ func Available() bool {
 	return err == nil
 }
 
+// apiError - ответ Docker Engine с кодом ошибки.
+type apiError struct {
+	status int
+	msg    string
+}
+
+func (e *apiError) Error() string { return "docker: " + e.msg }
+
 func (c *Client) do(ctx context.Context, method, path string, out any) error {
 	req, err := http.NewRequestWithContext(ctx, method, "http://docker"+path, nil)
 	if err != nil {
@@ -65,7 +73,7 @@ func (c *Client) do(ctx context.Context, method, path string, out any) error {
 		if e.Message == "" {
 			e.Message = resp.Status
 		}
-		return errors.New("docker: " + e.Message)
+		return &apiError{status: resp.StatusCode, msg: e.Message}
 	}
 	if out == nil {
 		return nil
@@ -100,6 +108,8 @@ type inspect struct {
 }
 
 // List - контейнеры (включая остановленные) с опубликованными портами и compose-проектом.
+// Не прочитался хотя бы один контейнер - вместе со списком прочитанных возвращается ошибка:
+// пропавший из списка контейнер иначе выглядел бы удалённым.
 func (c *Client) List(ctx context.Context) ([]proto.Container, error) {
 	var items []struct {
 		ID     string `json:"Id"`
@@ -109,13 +119,18 @@ func (c *Client) List(ctx context.Context) ([]proto.Container, error) {
 		return nil, err
 	}
 	var out []proto.Container
+	var failed []string
 	for _, it := range items {
 		var in inspect
 		if err := c.do(ctx, "GET", "/containers/"+it.ID+"/json", &in); err != nil {
+			var ae *apiError
+			if !errors.As(err, &ae) || ae.status != http.StatusNotFound {
+				failed = append(failed, shortID(it.ID))
+			}
 			continue
 		}
 		ct := proto.Container{
-			ID:             in.ID[:12],
+			ID:             shortID(in.ID),
 			Name:           strings.TrimPrefix(in.Name, "/"),
 			Image:          in.Config.Image,
 			State:          in.State.Status,
@@ -140,7 +155,17 @@ func (c *Client) List(ctx context.Context) ([]proto.Container, error) {
 	if out == nil {
 		out = []proto.Container{}
 	}
+	if len(failed) > 0 {
+		return out, fmt.Errorf("docker: не прочитаны контейнеры %s", strings.Join(failed, ", "))
+	}
 	return out, nil
+}
+
+func shortID(id string) string {
+	if len(id) > 12 {
+		return id[:12]
+	}
+	return id
 }
 
 // Stats - CPU % и память контейнера одним замером (без stream).
