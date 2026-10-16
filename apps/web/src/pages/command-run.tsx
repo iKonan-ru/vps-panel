@@ -2,7 +2,7 @@ import { ActionOutput } from '@/components/action-output';
 import { ActionStatusChip } from '@/components/actions-table';
 import { Breadcrumbs } from '@/components/breadcrumbs';
 import { History } from '@/components/command-run/history';
-import { ParamField } from '@/components/command-run/param-field';
+import { ParamFields } from '@/components/command-run/param-field';
 import { ServerOptions } from '@/components/server-options';
 import { Alert } from '@/components/ui/alert';
 import { Button, ButtonLink } from '@/components/ui/button';
@@ -13,7 +13,13 @@ import { InfoTip } from '@/components/ui/info-tip';
 import { PageTitle } from '@/components/ui/page-title';
 import { Select } from '@/components/ui/select';
 import { Tabs } from '@/components/ui/tabs';
-import { type Check, commandsApi, paramVisible, useCommands } from '@/lib/commands';
+import {
+  type Check,
+  commandsApi,
+  secretsMissing,
+  useCommands,
+  visibleParams,
+} from '@/lib/commands';
 import { cap } from '@/lib/format';
 import { serverLock, useServer, useServers } from '@/lib/servers';
 import { useAction } from '@/lib/use-action';
@@ -197,13 +203,7 @@ export function CommandRunPage() {
     Boolean(detail.data) &&
     loadedFor === `${cmd.id}:${serverId}` &&
     (!checks || !checks.some((c) => c.level === 'fail'));
-  const secretsMissing = cmd.params.some(
-    (p) =>
-      p.required &&
-      (p.secret || p.type === 'password') &&
-      !answers[p.name] &&
-      paramVisible(p, answers),
-  );
+  const missingSecrets = secretsMissing(cmd.params, answers);
 
   return (
     <>
@@ -243,17 +243,12 @@ export function CommandRunPage() {
               )}
               {serverId && loadedFor === `${cmd.id}:${serverId}` && (
                 <div className="grid gap-3 sm:grid-cols-2">
-                  {cmd.params
-                    .filter((p) => paramVisible(p, answers))
-                    .map((p) => (
-                      <ParamField
-                        key={p.name}
-                        p={p}
-                        value={answers[p.name] ?? ''}
-                        onChange={(v) => set(p.name, v)}
-                        awgContainers={awgContainers}
-                      />
-                    ))}
+                  <ParamFields
+                    params={visibleParams(cmd.params, answers)}
+                    answers={answers}
+                    onChange={set}
+                    awgContainers={awgContainers}
+                  />
                   {cmd.params.length === 0 && (
                     <div className="text-sm text-muted sm:col-span-2">Параметров нет</div>
                   )}
@@ -338,9 +333,9 @@ export function CommandRunPage() {
             </ButtonLink>
             <Button
               variant="primary"
-              disabled={!canRun || secretsMissing || lock.busy}
+              disabled={!canRun || missingSecrets || lock.busy}
               onClick={run}
-              title={lock.reason ?? (secretsMissing ? 'Не заполнены пароли' : '')}
+              title={lock.reason ?? (missingSecrets ? 'Не заполнены пароли' : '')}
               label={server ? `Запустить на ${server.name}` : 'Запустить'}
             >
               <Play className="size-4" />

@@ -90,3 +90,18 @@ export function paramVisible(p: CommandParam, answers: Record<string, string>): 
   if (!p.showIf) return true;
   return Object.entries(p.showIf).every(([k, v]) => answers[k] === v);
 }
+
+/** Обязательный пароль или секрет: в ссылках и значениях по умолчанию его нет, вводят руками. */
+export function isSecretParam(p: CommandParam): boolean {
+  return Boolean(p.required) && (p.type === 'password' || Boolean(p.secret));
+}
+
+/** Параметры, которые видны при этих ответах (showIf). */
+export function visibleParams(params: CommandParam[], answers: Record<string, string>) {
+  return params.filter((p) => paramVisible(p, answers));
+}
+
+/** Среди видимых параметров есть незаполненный обязательный пароль или секрет. */
+export function secretsMissing(params: CommandParam[], answers: Record<string, string>): boolean {
+  return params.some((p) => isSecretParam(p) && !answers[p.name] && paramVisible(p, answers));
+}

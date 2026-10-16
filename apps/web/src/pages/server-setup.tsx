@@ -1,52 +1,40 @@
-import { ActionOutput } from '@/components/action-output';
 import { Breadcrumbs } from '@/components/breadcrumbs';
-import { ParamField } from '@/components/command-run/param-field';
-import { ServerOptions } from '@/components/server-options';
+import { ParamField, ParamFields } from '@/components/command-run/param-field';
+import { ProgressCard } from '@/components/server/setup/progress-card';
+import { type SetupSearch, SourceCard, wipeOf } from '@/components/server/setup/source-card';
+import { PortField } from '@/components/server/xui-inbound-fields';
 import { Alert } from '@/components/ui/alert';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { Checkbox } from '@/components/ui/checkbox';
-import { Chip } from '@/components/ui/chip';
 import { Field } from '@/components/ui/field';
 import { Input } from '@/components/ui/input';
 import { PageTitle } from '@/components/ui/page-title';
-import { Select } from '@/components/ui/select';
 import { api } from '@/lib/api';
-import { type CommandInfo, paramVisible, useCommands } from '@/lib/commands';
+import {
+  type CommandInfo,
+  isSecretParam,
+  secretsMissing,
+  useCommands,
+  visibleParams,
+} from '@/lib/commands';
 import { dateTime } from '@/lib/format';
 import { subscribe } from '@/lib/live';
-import { clampInt } from '@/lib/masks';
-import { serverLock, useServer, useServers } from '@/lib/servers';
+import { serverLock, useServer } from '@/lib/servers';
 import { useAction } from '@/lib/use-action';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { useNavigate, useParams, useSearch } from '@tanstack/react-router';
-import type {
-  SetupCheck,
-  SetupMode,
-  SetupPlan,
-  SetupProgress,
-  SetupStep,
-  SetupStepState,
-} from '@vps/protocol';
-import { ChevronDown, Play, RotateCcw, Upload } from 'lucide-react';
+import { useParams, useSearch } from '@tanstack/react-router';
+import type { SetupCheck, SetupMode, SetupPlan, SetupProgress, SetupStep } from '@vps/protocol';
+import { ChevronDown, Play } from 'lucide-react';
 import { useEffect, useRef, useState } from 'react';
 
 /** Поля команд, которые настройка задаёт сама: экземпляр AWG и поведение при уже стоящем. */
 const HIDDEN = new Set(['AWG_INSTANCE', 'AWG_REPLACE']);
 
-const STATE: Record<
-  SetupStepState,
-  { text: string; tone: 'ok' | 'warn' | 'bad' | 'muted' | 'accent' }
-> = {
-  pending: { text: 'ждёт', tone: 'muted' },
-  running: { text: 'идёт', tone: 'accent' },
-  done: { text: 'готово', tone: 'ok' },
-  skipped: { text: 'пропущен', tone: 'muted' },
-  failed: { text: 'ошибка', tone: 'bad' },
-};
-
 /** Поля шага: ответы команды каталога или свои (inbound-ы, адрес для клиентов). */
 function StepFields({
+  serverId,
+  canPickPort,
   step,
   cmd,
   disabled,
@@ -54,6 +42,9 @@ function StepFields({
   expanded,
   toggle,
 }: {
+  serverId: string;
+  /** Свободный порт подбирает 3X-UI сервера: кнопка - только если она уже стоит. */
+  canPickPort: boolean;
   step: SetupStep;
   cmd: CommandInfo | undefined;
   disabled: boolean;
@@ -87,7 +78,7 @@ function StepFields({
             ['RAW', 'RAW_PORT', 'VLESS RAW'],
             ['XHTTP', 'XHTTP_PORT', 'XHTTP'],
           ] as const
-        ).map(([flag, port, label]) => (
+        ).map(([flag, port, label], i, all) => (
           <div key={flag} className="flex flex-col gap-1.5">
             <Checkbox
               label={label}
@@ -95,13 +86,15 @@ function StepFields({
               disabled={disabled}
               onChange={(e) => set(flag, e.target.checked ? '1' : '')}
             />
-            <Input
-              aria-label={`Порт ${label}`}
+            <PortField
+              id={`setup-${port}`}
+              serverId={serverId}
               value={a[port] ?? ''}
-              inputMode="numeric"
-              className="font-mono"
+              onChange={(v) => set(port, v)}
               disabled={disabled || !a[flag]}
-              onChange={(e) => set(port, clampInt(e.target.value, 1, 65535))}
+              pick={canPickPort}
+              // соседний порт шага занят им самим
+              avoid={all.filter((_, j) => j !== i).map(([, other]) => Number(a[other]) || 0)}
             />
           </div>
         ))}
@@ -130,31 +123,26 @@ function StepFields({
       </div>
     ) : null;
   }
-  const all = cmd.params.filter(
+  const all = visibleParams(cmd.params, a).filter(
     (p) =>
       !HIDDEN.has(p.name) &&
-      paramVisible(p, a) &&
       // данные из копии заменят пароли установщика
       !(step.fromBackup && (p.type === 'password' || p.secret)),
   );
-  const isPassword = (p: (typeof all)[number]) => p.required && (p.type === 'password' || p.secret);
-  const params = expanded ? all : all.filter(isPassword);
-  const more = all.length - all.filter(isPassword).length;
+  const params = expanded ? all : all.filter(isSecretParam);
+  const more = all.length - all.filter(isSecretParam).length;
   return (
     <div className="flex flex-col gap-2">
       {params.length > 0 && (
         <fieldset disabled={disabled} className="grid gap-3 sm:grid-cols-2">
-          {params.map((p) => (
-            <ParamField
-              key={p.name}
-              p={p}
-              idPrefix={step.id}
-              value={a[p.name] ?? ''}
-              onChange={(v) => set(p.name, v)}
-              awgContainers={[]}
-              generate
-            />
-          ))}
+          <ParamFields
+            params={params}
+            answers={a}
+            onChange={set}
+            awgContainers={[]}
+            idPrefix={step.id}
+            generate
+          />
         </fieldset>
       )}
       {more > 0 && (
@@ -222,217 +210,6 @@ function ModeChoice({
   );
 }
 
-/** Копия в списке панели: с составом сервисов (с версии 1.6) её можно развернуть. */
-interface BackupRow {
-  id: string;
-  serverId: string | null;
-  serverName: string;
-  createdAt: string;
-  manifest: { setup?: unknown };
-}
-
-/** Источник настройки в адресе: копия, старый сервер при переносе, очистка ("1"/"0"). */
-export interface SetupSearch {
-  backup?: string | undefined;
-  migrate?: string | undefined;
-  wipe?: string | undefined;
-}
-
-/** Очистка по умолчанию: при переносе - да (сервер под старый), при восстановлении - нет. */
-export const wipeOf = (q: SetupSearch) =>
-  q.wipe === undefined ? Boolean(q.migrate) : q.wipe === '1';
-
-type SourceMode = 'empty' | 'copy' | 'migrate';
-
-/**
- * Откуда настройка: пустой сервер, резервная копия этого же сервера (из панели или скачанный
- * раньше файл - например, после переустановки) или перенос с другого сервера панели: его
- * копия (свежая, если он в сети) и его клиенты переходят сюда.
- */
-function SourceCard({
-  serverId,
-  q,
-  installed,
-  disabled,
-}: {
-  serverId: string;
-  q: SetupSearch;
-  installed: string[] | undefined;
-  disabled: boolean;
-}) {
-  const navigate = useNavigate();
-  const qc = useQueryClient();
-  const [mode, setMode] = useState<SourceMode>(q.migrate ? 'migrate' : q.backup ? 'copy' : 'empty');
-  const upload = useAction();
-  const fileRef = useRef<HTMLInputElement>(null);
-  const list = useQuery({
-    queryKey: ['backups'],
-    queryFn: () => api<BackupRow[]>('/api/backups'),
-    enabled: mode !== 'empty',
-  });
-  const servers = useServers();
-  const others = (servers.data ?? []).filter((x) => x.id !== serverId);
-  const old = others.find((x) => x.id === q.migrate);
-  // копии с составом сервисов: свои - для восстановления, старого сервера - для переноса
-  const owner = mode === 'migrate' ? q.migrate : serverId;
-  const copies = (list.data ?? []).filter((b) => b.serverId === owner && b.manifest.setup);
-  const go = (next: SetupSearch) =>
-    void navigate({
-      to: '/servers/$id/setup',
-      params: { id: serverId },
-      search: { backup: next.backup, migrate: next.migrate, wipe: next.wipe },
-    });
-  const off = disabled || upload.busy;
-  const wipe = wipeOf(q);
-  // старый сервер не в сети: свежую копию не снять - берётся последняя его копия в панели
-  const latest = copies[0]?.id;
-  const needCopy = mode === 'migrate' && Boolean(old) && old?.status !== 'online' && !q.backup;
-  useEffect(() => {
-    if (needCopy && latest)
-      void navigate({
-        to: '/servers/$id/setup',
-        params: { id: serverId },
-        search: { backup: latest, migrate: q.migrate, wipe: q.wipe },
-        replace: true,
-      });
-  }, [needCopy, latest, navigate, serverId, q.migrate, q.wipe]);
-
-  function send(file: File) {
-    if (!owner) return;
-    void upload.run(async () => {
-      // файл становится копией того сервера, чья она: этого или старого при переносе
-      const r = await api<{ id: string }>(`/api/servers/${owner}/backups/upload`, {
-        method: 'POST',
-        body: file,
-        // скачанная копия зашифрована (.tar.gz.enc), старая - просто .tar.gz
-        headers: { 'content-type': 'application/octet-stream' },
-      });
-      await qc.invalidateQueries({ queryKey: ['backups'] });
-      go({ ...q, backup: r.id });
-    });
-  }
-
-  const radio = (m: SourceMode, label: string) => (
-    <label className="flex items-center gap-2 text-sm">
-      <input
-        type="radio"
-        name="setup-source"
-        checked={mode === m}
-        disabled={off}
-        onChange={() => {
-          setMode(m);
-          go({});
-        }}
-      />
-      {label}
-    </label>
-  );
-
-  const fileButton = (
-    <>
-      <input
-        ref={fileRef}
-        type="file"
-        accept=".enc,.gz,.tgz,application/gzip,application/octet-stream"
-        className="hidden"
-        onChange={(e) => {
-          const f = e.target.files?.[0];
-          e.target.value = '';
-          if (f) send(f);
-        }}
-      />
-      <Button disabled={off || !owner} onClick={() => fileRef.current?.click()}>
-        <Upload className={upload.busy ? 'size-4 animate-pulse' : 'size-4'} />
-        {upload.busy ? 'Загрузка\u2026' : 'Загрузить файл'}
-      </Button>
-    </>
-  );
-
-  return (
-    <Card className="flex flex-col gap-3 p-4">
-      <div className="flex flex-wrap gap-x-5 gap-y-2">
-        {radio('empty', 'Пустой сервер')}
-        {radio('copy', 'Резервная копия этого сервера')}
-        {radio('migrate', 'Перенос с другого сервера')}
-      </div>
-      {mode === 'copy' && (
-        <div className="flex flex-col gap-2 sm:flex-row sm:items-end">
-          <Field label="Копия" htmlFor="setup-backup" className="grow">
-            <Select
-              id="setup-backup"
-              value={q.backup ?? ''}
-              disabled={off || list.isFetching}
-              onChange={(e) => go({ ...q, backup: e.target.value || undefined })}
-            >
-              <option value="">{copies.length ? 'не выбрана' : 'копий этого сервера нет'}</option>
-              {copies.map((b) => (
-                <option key={b.id} value={b.id}>
-                  {dateTime(b.createdAt)}
-                </option>
-              ))}
-            </Select>
-          </Field>
-          {fileButton}
-        </div>
-      )}
-      {mode === 'migrate' && (
-        <div className="flex flex-col gap-2">
-          <div className="flex flex-col gap-2 sm:flex-row sm:items-end">
-            <Field label="Старый сервер" htmlFor="setup-migrate" className="grow">
-              <Select
-                id="setup-migrate"
-                value={q.migrate ?? ''}
-                disabled={off}
-                onChange={(e) => go({ migrate: e.target.value || undefined, wipe: q.wipe })}
-              >
-                <option value="">не выбран</option>
-                <ServerOptions servers={others} />
-              </Select>
-            </Field>
-            {q.migrate && (
-              <Field label="Данные" htmlFor="setup-migrate-copy" className="grow">
-                <Select
-                  id="setup-migrate-copy"
-                  value={q.backup ?? ''}
-                  disabled={off || list.isFetching}
-                  onChange={(e) => go({ ...q, backup: e.target.value || undefined })}
-                >
-                  <option value="">
-                    {old?.status === 'online'
-                      ? 'свежая копия при переносе'
-                      : 'не в сети: выберите его копию'}
-                  </option>
-                  {copies.map((b) => (
-                    <option key={b.id} value={b.id}>
-                      копия от {dateTime(b.createdAt)}
-                    </option>
-                  ))}
-                </Select>
-              </Field>
-            )}
-            {q.migrate && fileButton}
-          </div>
-          <div className="text-xs text-muted">
-            Сервисы ставятся как на старом сервере, данные&nbsp;&mdash; из копии, клиенты панели
-            переходят сюда с теми же ключами. Если клиенты подключаются по имени (адрес для
-            клиентов), его A-запись нужно перевести на IP этого сервера до запуска.
-          </div>
-        </div>
-      )}
-      {mode !== 'empty' && Boolean(installed?.length) && (
-        <Checkbox
-          label="Удалить то, что уже стоит на сервере"
-          hint={`${installed?.join(', ')}: удаляются перед установкой, всё ставится заново`}
-          checked={wipe}
-          disabled={off}
-          onChange={(e) => go({ ...q, wipe: e.target.checked ? '1' : '0' })}
-        />
-      )}
-      {upload.error && <Alert tone="bad">{upload.error}</Alert>}
-    </Card>
-  );
-}
-
 /**
  * Настройка сервера в один клик: шаги с ответами (по умолчанию отмечено всё, чего на сервере
  * нет), запуск одним действием, ход по шагам и продолжение с упавшего. С ?backup=<id> -
@@ -483,7 +260,6 @@ export function ServerSetupPage() {
   }
   // шаги с развёрнутыми параметрами (по умолчанию видны только пароли)
   const [open, setOpen] = useState<Set<string>>(new Set());
-  const [showOutput, setShowOutput] = useState(false);
   const act = useAction();
   const progress = prog.data?.progress ?? null;
   const running = Boolean(progress && !progress.finishedAt);
@@ -524,9 +300,6 @@ export function ServerSetupPage() {
   const online = s?.status === 'online';
   const lock = s ? serverLock(s) : { busy: true, reason: undefined };
   const busy = !online || lock.busy || act.busy || running || !steps || prog.isFetching;
-  const failed = progress?.finishedAt
-    ? progress.steps.find((x) => x.state === 'failed')
-    : undefined;
 
   const set = (stepId: string, patch: Partial<SetupStep> | ((st: SetupStep) => SetupStep)) =>
     setSteps((list) =>
@@ -574,13 +347,7 @@ export function ServerSetupPage() {
       return false;
     if (st.modes && st.answers?.MODE !== 'reinstall') return false;
     const c = cmds.data?.find((x) => x.id === st.command);
-    return (c?.params ?? []).some(
-      (p) =>
-        p.required &&
-        (p.type === 'password' || p.secret) &&
-        paramVisible(p, st.answers ?? {}) &&
-        !st.answers?.[p.name],
-    );
+    return secretsMissing(c?.params ?? [], st.answers ?? {});
   });
 
   return (
@@ -620,67 +387,12 @@ export function ServerSetupPage() {
       {act.error && <Alert tone="bad">{act.error}</Alert>}
 
       {progress && (
-        <Card className="flex flex-col gap-3 p-4">
-          <div className="flex flex-wrap items-center gap-2">
-            <div className="font-semibold">
-              {running ? 'Идёт настройка' : `Настройка от ${dateTime(progress.startedAt)}`}
-            </div>
-            <div className="grow" />
-            {failed && (
-              <Button
-                size="sm"
-                variant="primary"
-                disabled={busy || missingPasswords}
-                title={
-                  missingPasswords
-                    ? 'Не заполнены пароли'
-                    : (lock.reason ?? `Продолжить с шага \u00ab${failed.title}\u00bb`)
-                }
-                onClick={() => start(failed.id)}
-              >
-                <RotateCcw className="size-3.5" />
-                {/* на узком экране название шага не помещается: упавший шаг виден в списке */}
-                Продолжить
-                <span className="max-sm:hidden">с шага &laquo;{failed.title}&raquo;</span>
-              </Button>
-            )}
-          </div>
-          <div className="flex flex-col gap-1.5 text-[13px]">
-            {progress.steps.map((x) => (
-              <div key={x.id} className="flex items-start gap-2">
-                <Chip
-                  tone={STATE[x.state].tone}
-                  dot={x.state === 'running'}
-                  pulse={x.state === 'running'}
-                >
-                  {STATE[x.state].text}
-                </Chip>
-                <div className="min-w-0">
-                  <div>{x.title}</div>
-                  {x.note && (
-                    <div
-                      className={x.state === 'failed' ? 'text-xs text-bad' : 'text-xs text-muted'}
-                    >
-                      {x.note}
-                    </div>
-                  )}
-                </div>
-              </div>
-            ))}
-          </div>
-          {running || showOutput ? (
-            <ActionOutput actionId={progress.actionId} />
-          ) : (
-            <button
-              type="button"
-              className="inline-flex w-fit items-center gap-1 text-xs text-accent"
-              onClick={() => setShowOutput(true)}
-            >
-              <ChevronDown className="size-3.5" />
-              Показать вывод
-            </button>
-          )}
-        </Card>
+        <ProgressCard
+          progress={progress}
+          disabled={busy || missingPasswords}
+          title={missingPasswords ? 'Не заполнены пароли' : lock.reason}
+          onContinue={start}
+        />
       )}
 
       {!steps ? (
@@ -722,6 +434,8 @@ export function ServerSetupPage() {
                 (!st.modes || st.answers?.MODE === 'reinstall') && (
                   <div className="pl-6.5">
                     <StepFields
+                      serverId={id}
+                      canPickPort={Boolean(s?.services.some((x) => x.kind === 'xui'))}
                       step={st}
                       cmd={cmds.data?.find((c) => c.id === st.command)}
                       disabled={busy}
