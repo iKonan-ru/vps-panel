@@ -7,7 +7,7 @@ import { newId } from '../lib/ids.js';
  * Ошибка вызова агента - ответ для человека, а не сбой панели: общий обработчик отдаёт её текст
  * со statusCode. code - для кода панели: по нему, а не по тексту, решают, что делать дальше.
  */
-export type AgentErrorCode = 'offline' | 'timeout' | 'disconnected' | 'outdated' | 'agent';
+type AgentErrorCode = 'offline' | 'timeout' | 'disconnected' | 'outdated' | 'agent';
 
 const STATUS: Record<AgentErrorCode, number> = {
   offline: 409,
@@ -55,7 +55,7 @@ export interface AgentSocket {
   once(event: 'close', listener: () => void): unknown;
 }
 
-export interface AgentConn {
+interface AgentConn {
   serverId: string;
   ws: AgentSocket;
   /** Операции агента из hello. */
@@ -71,7 +71,7 @@ interface Pending {
   timer: NodeJS.Timeout;
 }
 
-export interface RegistryEvents {
+interface RegistryEvents {
   online: [serverId: string];
   offline: [serverId: string];
   metrics: [serverId: string, metrics: Metrics];

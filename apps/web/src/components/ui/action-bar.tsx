@@ -9,7 +9,7 @@ import { Fragment, type ReactNode } from 'react';
  * свой элемент вместо кнопки (ссылка роутера, сдвоенная LinkButton) - он рисуется на широком
  * экране и среди видимых на узком, а в меню пункт ведёт на onClick или href.
  */
-export interface BarAction {
+interface BarAction {
   key: string;
   /** Полная подпись: кнопка на широком экране, пункт меню. */
   label: string;

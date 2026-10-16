@@ -29,7 +29,7 @@ export function gb(v: number): string {
 }
 
 /** Период оплаты словами: 1 - мес., 3 - 3 мес., 12 - год, 24 - 2 года. */
-export function periodLabel(months: number): string {
+function periodLabel(months: number): string {
   if (months === 1) return 'мес.';
   if (months === 12) return 'год';
   if (months % 12 === 0) {
@@ -109,7 +109,7 @@ export function daysUntil(iso: string | null): number | null {
 }
 
 /** За сколько дней до платежа хостингу дата подсвечивается. */
-export const PAYMENT_SOON_DAYS = 2;
+const PAYMENT_SOON_DAYS = 2;
 
 /** Платёж скоро: дата в ближайшие PAYMENT_SOON_DAYS дней. */
 export function paymentSoon(days: number | null): days is number {

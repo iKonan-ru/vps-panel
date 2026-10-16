@@ -10,7 +10,7 @@ import QRCode from 'qrcode';
 export const esc = (s: string) =>
   s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
 
-export const qr = (text: string) =>
+const qr = (text: string) =>
   QRCode.toString(text, { type: 'svg', errorCorrectionLevel: 'L', margin: 2 });
 
 /** Цвета - токены панели, тема - как в системе. */
@@ -101,7 +101,7 @@ const ICONS = {
 };
 
 /** Иконка устройства по типу: роутер, компьютер, остальное - телефон. */
-export const deviceIcon = (type: string) =>
+const deviceIcon = (type: string) =>
   icon(
     type === 'router'
       ? 'router'
@@ -111,7 +111,7 @@ export const deviceIcon = (type: string) =>
   );
 
 /** "роутер: Keenetic" -> "Роутер: Keenetic". */
-export const capital = (s: string) => s.charAt(0).toUpperCase() + s.slice(1);
+const capital = (s: string) => s.charAt(0).toUpperCase() + s.slice(1);
 export const icon = (n: keyof typeof ICONS) =>
   `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${ICONS[n]}</svg>`;
 

@@ -28,7 +28,7 @@ export interface GithubRelease {
   assets: { name: string; browser_download_url: string; size: number }[];
 }
 
-export type FetchOut = (url: string, init?: RequestInit) => Promise<Response>;
+type FetchOut = (url: string, init?: RequestInit) => Promise<Response>;
 
 /**
  * Релизы репозитория, новые сверху. Ошибка - текстом githubError; исчерпанный лимит запросов -

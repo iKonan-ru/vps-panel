@@ -22,7 +22,7 @@ import type { XrayRoute } from './xray.js';
 type TgMethod = 'sendMessage' | 'getUpdates' | 'getMe';
 
 /** Настройки Telegram в таблице setting (ключ tg_*). */
-export interface TgSettings extends NotifyParams {
+interface TgSettings extends NotifyParams {
   token: string;
   chatId: string;
   /** Включённые события (каталог - NOTIFY_EVENTS). */
@@ -31,7 +31,7 @@ export interface TgSettings extends NotifyParams {
   mutedServers: string[];
 }
 
-export const defaultTg: TgSettings = {
+const defaultTg: TgSettings = {
   token: '',
   chatId: '',
   events: { ...NOTIFY_DEFAULTS },
@@ -72,7 +72,7 @@ const emptyHealth: TgHealth = {
 };
 
 /** Время для текста сообщений: интерфейс и владелец - по Москве. */
-export function tgTime(iso: string): string {
+function tgTime(iso: string): string {
   return new Date(iso).toLocaleString('ru-RU', {
     timeZone: 'Europe/Moscow',
     day: '2-digit',

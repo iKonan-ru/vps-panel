@@ -1,6 +1,6 @@
 const KEY = 'vps-theme';
 
-export type Theme = 'dark' | 'light';
+type Theme = 'dark' | 'light';
 
 export function getTheme(): Theme {
   try {

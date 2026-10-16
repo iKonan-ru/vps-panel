@@ -170,7 +170,7 @@ export async function authRoutes(app: FastifyInstance, opts: { db: Db; secure: b
   });
 }
 
-export async function openSession(
+async function openSession(
   db: Db,
   reply: import('fastify').FastifyReply,
   adminId: string,

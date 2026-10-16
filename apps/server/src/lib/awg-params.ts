@@ -9,7 +9,7 @@ import { randomBytes, randomInt } from 'node:crypto';
 export type AwgProfile = '3.1' | '2.0' | '1.0';
 
 /** I1 приложения: DNS-подобный ответ (icloud.com), тот же у сервера и клиентов. */
-export const DEFAULT_I1 =
+const DEFAULT_I1 =
   '<r 2><b 0x858000010001000000000669636c6f756403636f6d0000010001c00c000100010000105a00044d583737>';
 
 const U31 = 2 ** 31 - 1;

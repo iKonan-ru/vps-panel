@@ -6,15 +6,15 @@ import type { Db } from '../db/index.js';
 import { admins, loginAttempts, sessions } from '../db/schema.js';
 import { newId, newToken } from './ids.js';
 
-export const SESSION_TTL_DAYS = 30;
-export const LOGIN_MAX_ATTEMPTS = 5;
-export const LOGIN_WINDOW_MIN = 15;
+const SESSION_TTL_DAYS = 30;
+const LOGIN_MAX_ATTEMPTS = 5;
+const LOGIN_WINDOW_MIN = 15;
 
 export function sha256(s: string): string {
   return createHash('sha256').update(s).digest('hex');
 }
 
-export async function hashPassword(password: string): Promise<string> {
+async function hashPassword(password: string): Promise<string> {
   return argon2.hash(password, { type: argon2.argon2id, memoryCost: 19456, timeCost: 2 });
 }
 
@@ -27,11 +27,11 @@ export function generateBackupCodes(): string[] {
   return Array.from({ length: 8 }, () => String(randomInt(0, 1e10)).padStart(10, '0'));
 }
 
-export function newTotpSecret(): string {
+function newTotpSecret(): string {
   return authenticator.generateSecret();
 }
 
-export function totpUri(login: string, secret: string, issuer = 'VPS Panel'): string {
+function totpUri(login: string, secret: string, issuer = 'VPS Panel'): string {
   return authenticator.keyuri(login, issuer, secret);
 }
 
@@ -47,7 +47,7 @@ export const PASSWORD_MIN = 12;
 const ALNUM = 'abcdefghijkmnpqrstuvwxyzABCDEFGHJKLMNPQRSTUVWXYZ23456789';
 
 /** Случайная строка без похожих символов (0/O, 1/l/I): пароль и логин из консоли. */
-export function randomString(len: number, alphabet = ALNUM): string {
+function randomString(len: number, alphabet = ALNUM): string {
   let out = '';
   for (let i = 0; i < len; i++) out += alphabet[randomInt(0, alphabet.length)];
   return out;

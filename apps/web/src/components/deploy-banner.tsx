@@ -160,7 +160,7 @@ const mainScript = (html: string) => /\/assets\/index-[\w-]+\.js/.exec(html)?.[0
  * панели (/api/deploy): имя главного скрипта в свежем index.html не совпало с загруженным.
  * Пока идёт обновление, работает прежняя версия - проверка ждёт его конца.
  */
-export function useFreshCode() {
+function useFreshCode() {
   const { data } = useDeploy();
   const building = data?.status?.state === 'building';
   const key = data ? `${data.bootedAt}|${data.version ?? ''}|${data.commit ?? ''}` : null;

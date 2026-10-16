@@ -23,7 +23,7 @@ import {
 import { xuiToken } from './xui-token.js';
 
 /** Клиент 3X-UI, через которого панель выходит в Telegram (на каждом сервере свой uuid). */
-export const EXIT_CLIENT = 'vps-panel';
+const EXIT_CLIENT = 'vps-panel';
 /** Запасные выходы готовятся раз в 6 часов (и после смены основного). */
 const SPARES_EVERY_MS = 6 * 60 * 60_000;
 

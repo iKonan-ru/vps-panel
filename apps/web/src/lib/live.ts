@@ -3,7 +3,7 @@ import type { Metrics, ServerDetail, ServerSummary } from '@vps/protocol';
 import { useEffect } from 'react';
 import { SERVICE_UPDATE_ACTIONS, checkUpdates } from './service-update';
 
-export type LiveEvent = {
+type LiveEvent = {
   type: string;
   serverId?: string;
   /** server.metrics: сами цифры - раз в 2 с, пока открыта вкладка */

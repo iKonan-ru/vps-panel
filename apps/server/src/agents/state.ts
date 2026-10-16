@@ -113,7 +113,7 @@ export function toSummary(
 }
 
 /** Снимок агента из строки сервера (последний пришедший). */
-export function inventoryOf(db: Db, serverId: string): Inventory | undefined {
+function inventoryOf(db: Db, serverId: string): Inventory | undefined {
   return db.select({ c: servers.statusCache }).from(servers).where(eq(servers.id, serverId)).get()
     ?.c?.inventory;
 }

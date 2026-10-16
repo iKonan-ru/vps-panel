@@ -10,7 +10,7 @@ import type { ReachLevel, ReachPoint, ReachProbe, ServerReach } from '@vps/proto
  */
 export const SLOT_MS = 30 * 60_000;
 const GRACE_MS = 3 * 60_000;
-export const SLOTS = 24;
+const SLOTS = 24;
 
 export interface ReachSlot {
   /** Конец интервала (время проверки агента). */
@@ -49,7 +49,7 @@ export function reachSlots(history: ReachPoint[], now: number, current = false):
 }
 
 /** Медиана; null - значений нет. */
-export function median(v: number[]): number | null {
+function median(v: number[]): number | null {
   if (!v.length) return null;
   const s = [...v].sort((a, b) => a - b);
   const h = Math.floor(s.length / 2);

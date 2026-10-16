@@ -29,7 +29,7 @@ import { encryptedSize, opensslDecryptStream, opensslEncryptStream } from '../li
 import type { UiHub } from '../lib/ui-hub.js';
 
 /** Предел архива бэкапа: тело - поток, bodyLimit Fastify его не ограничивает. */
-export const MAX_BACKUP_BYTES = 2 * 1024 * 1024 * 1024;
+const MAX_BACKUP_BYTES = 2 * 1024 * 1024 * 1024;
 
 /**
  * Бэкапы конфигов сервисов. Агент собирает архив и загружает его в панель по

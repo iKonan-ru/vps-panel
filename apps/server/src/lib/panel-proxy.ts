@@ -22,7 +22,7 @@ import { TunnelSocket, tunnelConnection } from './agent-tunnel.js';
  * к 127.0.0.1 сервера, вход - одноразовым тикетом с панели и cookie, привязанной к её сессии.
  * Свой прокси на node:http, а не http-proxy: тот роняет процесс ошибкой внутри обработчика.
  */
-export const PROXIED_KINDS = ['xui', 'mtproxyl'] as const;
+const PROXIED_KINDS = ['xui', 'mtproxyl'] as const;
 type Kind = (typeof PROXIED_KINDS)[number];
 
 const COOKIE = '__Host-vps_proxy';
@@ -87,7 +87,7 @@ export function slugify(name: string): string {
   return s || 'srv';
 }
 
-export interface ProxyTarget {
+interface ProxyTarget {
   serverId: string;
   kind: Kind;
   port: number;
@@ -96,7 +96,7 @@ export interface ProxyTarget {
 }
 
 /** Порт, схема и путь панели сервиса из снимка агента. */
-export function panelTarget(services: Service[], kind: Kind) {
+function panelTarget(services: Service[], kind: Kind) {
   const url = services.find((s) => s.kind === kind)?.panelUrl;
   if (!url) return null;
   try {
@@ -136,7 +136,7 @@ div{max-width:420px;padding:24px;border:1px solid #2a2f3a;border-radius:12px}h1{
 type Log = { warn: (o: unknown, m?: string) => void; info: (o: unknown, m?: string) => void };
 
 /** Итог проверки панели сервиса перед входом; stage - на каком шаге не вышло. */
-export interface ProxyProbe {
+interface ProxyProbe {
   ok: boolean;
   stage?: 'target' | 'agent' | 'tunnel' | 'panel';
   error?: string;

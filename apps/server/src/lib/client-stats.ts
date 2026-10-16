@@ -14,12 +14,12 @@ import { awgRef } from './gclient-services.js';
  * WDTT - раз в 10 с, с окном короче скорость скакала бы между нулём и двойной.
  */
 
-export const SNAPSHOT_TTL_MS = 2_500;
+const SNAPSHOT_TTL_MS = 2_500;
 /** Снимки старше этого (от последнего) не храним: скорость по ним - уже не "сейчас". */
-export const KEEP_MS = 40_000;
+const KEEP_MS = 40_000;
 /** Меньше этого между снимками - скорость не считаем (деление на почти ноль). */
 const MIN_DT_MS = 2_000;
-export const RATE_WINDOW_MS: Record<GService, number> = {
+const RATE_WINDOW_MS: Record<GService, number> = {
   xui: 10_000,
   wdtt: 20_000,
   awg: 6_000,
@@ -47,7 +47,7 @@ export interface LiveRef {
 type Counters = { in: number; out: number } | null;
 
 /** Счётчики записи в снимке: байты от клиента (in) и к клиенту (out); нет записи - null. */
-export function counters(snap: ClientStatsSnapshot, b: LiveRef): Counters {
+function counters(snap: ClientStatsSnapshot, b: LiveRef): Counters {
   switch (b.service) {
     case 'xui': {
       const s = snap.xui?.[b.key];

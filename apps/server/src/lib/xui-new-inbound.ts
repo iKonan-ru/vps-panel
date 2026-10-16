@@ -16,12 +16,12 @@ export const KIND_REMARK: Record<NewInboundKind, string> = { raw: 'VLESS', xhttp
 /** XHTTP - на 8443: 443 на серверах занят другими сервисами. */
 export const XHTTP_PORT = 8443;
 /** Диапазон случайного порта RAW. */
-export const RANDOM_PORT_RANGE: [number, number] = [10000, 60000];
+const RANDOM_PORT_RANGE: [number, number] = [10000, 60000];
 export const FINGERPRINTS = ['firefox', 'chrome', 'safari', 'edge', 'ios', 'android'] as const;
 export type Fingerprint = (typeof FINGERPRINTS)[number];
 export const MAX_SERVER_NAMES = 16;
 
-export interface NewInboundParams {
+interface NewInboundParams {
   kind: NewInboundKind;
   port: number;
   remark: string;
@@ -86,7 +86,7 @@ export interface RealityScanRow {
 }
 
 /** Цель Reality для окна: адрес, имена (уже без YouTube), задержка с сервера. */
-export interface RealityChoice {
+interface RealityChoice {
   target: string;
   serverNames: string[];
   latencyMs: number;
@@ -120,7 +120,7 @@ export function pickTargets(rows: readonly RealityScanRow[], limit = 5): Reality
 }
 
 /** Цель Reality уже стоящего inbound-а (для "Как у inbound X"); имена - тем же фильтром. */
-export interface SameAs {
+interface SameAs {
   id: number;
   remark: string;
   target: string;
