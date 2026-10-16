@@ -28,6 +28,12 @@ export function loadPanelKey(dataDir: string): PanelKey {
   return { privateKey: readFileSync(priv, 'utf8'), publicKey: readFileSync(pub, 'utf8').trim() };
 }
 
+/** Отпечаток открытого ключа как у ssh-keygen -l: sha256 от тела ключа, base64 без "=". */
+export function keyFingerprint(publicKey: string): string {
+  const blob = publicKey.split(/\s+/)[1] ?? '';
+  return `SHA256:${createHash('sha256').update(Buffer.from(blob, 'base64')).digest('base64').replace(/=+$/, '')}`;
+}
+
 export type SshAuth = { mode: 'password'; password: string } | { mode: 'key'; privateKey: string };
 
 export interface SshTarget {

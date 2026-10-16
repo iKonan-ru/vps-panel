@@ -1,11 +1,10 @@
-import { createHash } from 'node:crypto';
 import { eq } from 'drizzle-orm';
 import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
 import { servers } from '../db/schema.js';
 import { actionJournal } from '../lib/action-journal.js';
 import { type ServerRouteOpts, actionRunners } from '../lib/action-runners.js';
-import { loadPanelKey } from '../lib/ssh.js';
+import { keyFingerprint, loadPanelKey } from '../lib/ssh.js';
 import { SshPublicKey } from '../lib/validate.js';
 
 const Id = z.object({ id: z.string() });
@@ -40,9 +39,7 @@ export async function systemRoutes(app: FastifyInstance, opts: ServerRouteOpts) 
     if (!registry.isOnline(id)) return reply.code(409).send({ error: 'сервер не в сети' });
     const res: { keys: { fingerprint: string; panel?: boolean }[]; passwordLogin: boolean } =
       await registry.request(id, 'ssh.keys.list', {}, { timeoutMs: 30_000 });
-    // отпечаток как у ssh-keygen -l: sha256 от тела ключа, base64 без "="
-    const blob = loadPanelKey(env.DATA_DIR).publicKey.split(/\s+/)[1] ?? '';
-    const panelFp = `SHA256:${createHash('sha256').update(Buffer.from(blob, 'base64')).digest('base64').replace(/=+$/, '')}`;
+    const panelFp = keyFingerprint(loadPanelKey(env.DATA_DIR).publicKey);
     for (const k of res.keys) k.panel = k.fingerprint === panelFp;
     return res;
   });
