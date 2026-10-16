@@ -19,7 +19,7 @@ interface AwgConfigs {
   frames: string[];
   /** Как подключение называется у клиента ("(флаг) Страна :: Хостинг"). */
   title: string;
-  /** Имя .conf без расширения = имя туннеля в AmneziaWG ("FI-Hoster"). */
+  /** Имя .conf без расширения - имя туннеля в AmneziaWG ("FI-Hoster"). */
   fileName: string;
 }
 
@@ -35,9 +35,8 @@ function download(text: string, file: string) {
 }
 
 /**
- * Конфиг клиента в трёх форматах: .conf для приложений AmneziaWG, ключ vpn:// для Amnezia VPN
- * (QR - серия кадров, листается сама), обычный WireGuard - только для серверов без обфускации.
- * Конфиги не кэшируются: в них приватный ключ.
+ * Конфиг клиента: .conf для AmneziaWG, vpn:// для Amnezia VPN (QR - серия кадров), WireGuard - без
+ * обфускации. Не кэшируется: в нём приватный ключ.
  */
 export function ClientConfig({
   serverId,
