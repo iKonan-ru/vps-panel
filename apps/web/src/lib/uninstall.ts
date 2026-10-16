@@ -1,14 +1,5 @@
 import { useNavigate } from '@tanstack/react-router';
-
-/** Команда каталога, которая удаляет сервис этого вида (вид - как в инвентаре агента). */
-export const uninstallCommand: Record<string, string> = {
-  xui: 'xui-uninstall',
-  mtproxyl: 'mtproxyl-uninstall',
-  wdtt: 'wdtt-uninstall',
-  amnezia: 'awg-uninstall',
-  openflux: 'openflux-uninstall',
-  naive: 'naive-uninstall',
-};
+import { serviceByKind } from '@vps/protocol';
 
 /**
  * Переход к удалению сервиса: форма команды каталога с этим сервером (там план, проверки и
@@ -17,7 +8,7 @@ export const uninstallCommand: Record<string, string> = {
 export function useUninstall() {
   const navigate = useNavigate();
   return (serverId: string, kind: string, preset?: Record<string, string>) => {
-    const id = uninstallCommand[kind];
+    const id = serviceByKind(kind)?.uninstall;
     if (!id) return;
     void navigate({
       to: '/commands/$id',

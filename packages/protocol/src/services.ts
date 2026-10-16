@@ -8,6 +8,12 @@ export interface ServiceDef {
   /** Ключ привязки глобального клиента и доступа. */
   binding: GService;
   title: string;
+  /** Коротко - для плашек. */
+  short: string;
+  /** Что получает клиент: так сервис называется у клиентов и в доступе. */
+  clientTitle: string;
+  /** Счётчики трафика у записей клиентов: скорость, всего и график в живой статистике. */
+  counters: boolean;
   /** Команда каталога, которая ставит сервис. */
   install: string;
   /** Команда, которая его удаляет; у AWG - по контейнеру (AWG_CONTAINER). */
@@ -26,6 +32,9 @@ export const SERVICES: readonly ServiceDef[] = [
     kind: 'xui',
     binding: 'xui',
     title: '3X-UI',
+    short: '3X-UI',
+    clientTitle: 'VLESS',
+    counters: true,
     install: 'xui',
     uninstall: 'xui-uninstall',
     component: 'xui',
@@ -36,6 +45,9 @@ export const SERVICES: readonly ServiceDef[] = [
     kind: 'mtproxyl',
     binding: 'mtproxyl',
     title: 'MTProxyL',
+    short: 'MTProxy',
+    clientTitle: 'MTProxy',
+    counters: true,
     install: 'mtproxyl',
     uninstall: 'mtproxyl-uninstall',
     component: 'mtproxyl',
@@ -46,6 +58,9 @@ export const SERVICES: readonly ServiceDef[] = [
     kind: 'amnezia',
     binding: 'awg',
     title: 'AmneziaWG',
+    short: 'AWG',
+    clientTitle: 'AWG',
+    counters: true,
     install: 'awg',
     uninstall: 'awg-uninstall',
     component: 'amnezia',
@@ -56,6 +71,9 @@ export const SERVICES: readonly ServiceDef[] = [
     kind: 'wdtt',
     binding: 'wdtt',
     title: 'WDTT',
+    short: 'WDTT',
+    clientTitle: 'WDTT',
+    counters: true,
     install: 'wdtt',
     uninstall: 'wdtt-uninstall',
     component: 'wdtt',
@@ -66,6 +84,9 @@ export const SERVICES: readonly ServiceDef[] = [
     kind: 'openflux',
     binding: 'openflux',
     title: 'OpenFlux',
+    short: 'OpenFlux',
+    clientTitle: 'OpenFlux',
+    counters: false,
     install: 'openflux',
     uninstall: 'openflux-uninstall',
     per: 'device',
@@ -75,6 +96,9 @@ export const SERVICES: readonly ServiceDef[] = [
     kind: 'naive',
     binding: 'naive',
     title: 'Прокси для браузера',
+    short: 'Браузер',
+    clientTitle: 'Браузер',
+    counters: false,
     install: 'naive',
     uninstall: 'naive-uninstall',
     per: 'client',

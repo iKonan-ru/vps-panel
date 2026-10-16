@@ -9,7 +9,7 @@ import { api } from '@/lib/api';
 import { cn } from '@/lib/cn';
 import { useQuery } from '@tanstack/react-query';
 import { Link } from '@tanstack/react-router';
-import type { StdCell, StdKey, StdMatrix } from '@vps/protocol';
+import { type StdCell, type StdItem, type StdMatrix, serviceByCommand } from '@vps/protocol';
 import { Download, RefreshCw } from 'lucide-react';
 
 const tones: Record<StdCell['state'], 'ok' | 'warn' | 'muted' | 'bad'> = {
@@ -20,19 +20,10 @@ const tones: Record<StdCell['state'], 'ok' | 'warn' | 'muted' | 'bad'> = {
   na: 'muted',
 };
 
-/** Вкладка сервиса на странице сервера; у прокси для браузера своей вкладки нет. */
-const serviceTab: Partial<Record<StdKey, string>> = {
-  xui: 'xui',
-  mtproxyl: 'mtproxyl',
-  'awg-3.1': 'awg',
-  'awg-2.0': 'awg',
-  wdtt: 'wdtt',
-  openflux: 'openflux',
-};
-
 /** Вкладка, на которую ведёт сервис в строке сервера: только если сервис там стоит. */
-function tabFor(key: StdKey, cell: StdCell): string | undefined {
-  return cell.state === 'ok' || cell.state === 'warn' ? serviceTab[key] : undefined;
+function tabFor(item: StdItem, cell: StdCell): string | undefined {
+  const tab = item.install ? serviceByCommand(item.install)?.tab : undefined;
+  return cell.state === 'ok' || cell.state === 'warn' ? tab : undefined;
 }
 
 /** Клетка: состояние и текст; недостающее - кнопка установки командой каталога. */
@@ -163,7 +154,7 @@ export function ServicesPage() {
                           online={r.status === 'online'}
                           install={s.install}
                           installHint={s.installHint}
-                          tab={tabFor(s.key, r.cells[s.key])}
+                          tab={tabFor(s, r.cells[s.key])}
                         />
                       </td>
                     ))}
@@ -186,7 +177,7 @@ export function ServicesPage() {
                   )}
                 </Link>
                 {data.standard.map((s) => {
-                  const tab = tabFor(s.key, r.cells[s.key]);
+                  const tab = tabFor(s, r.cells[s.key]);
                   return (
                     <div key={s.key} className="flex items-center gap-3">
                       {tab ? (

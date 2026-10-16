@@ -1,17 +1,20 @@
 import { Button } from '@/components/ui/button';
 import { Switch } from '@/components/ui/switch';
 import { cn } from '@/lib/cn';
-import type { GBinding, GClientAccess, GServer, GService } from '@vps/protocol';
+import {
+  SERVICES as CATALOG,
+  type GBinding,
+  type GClientAccess,
+  type GServer,
+  type GService,
+} from '@vps/protocol';
 import { Check } from 'lucide-react';
 
-export const SERVICES: { id: GService; title: string }[] = [
-  { id: 'xui', title: 'VLESS' },
-  { id: 'mtproxyl', title: 'MTProxy' },
-  { id: 'awg', title: 'AWG' },
-  { id: 'wdtt', title: 'WDTT' },
-  { id: 'openflux', title: 'OpenFlux' },
-  { id: 'naive', title: 'Браузер' },
-];
+/** Сервисы в доступе клиента: ключ привязки и как сервис называется у клиентов. */
+export const SERVICES: { id: GService; title: string }[] = CATALOG.map((s) => ({
+  id: s.binding,
+  title: s.clientTitle,
+}));
 
 /** Сервис установлен на сервере (по последнему снимку). */
 const installed = (s: GServer, service: GService) => s[service];

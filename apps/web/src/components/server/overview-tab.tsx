@@ -12,7 +12,7 @@ import { Num } from '@/components/ui/num';
 import { Section } from '@/components/ui/section';
 import { gb, plural } from '@/lib/format';
 import { type ServerDetail, serverLock } from '@/lib/servers';
-import { uninstallCommand } from '@/lib/uninstall';
+import { serviceByKind } from '@vps/protocol';
 import { Box, Plus, Trash2 } from 'lucide-react';
 import { useState } from 'react';
 
@@ -166,10 +166,10 @@ export function OverviewTab({ s, onTab }: { s: ServerDetail; onTab?: (tab: strin
                   {(s.panelLinks[sv.kind] ?? sv.panelUrl) && (
                     <LinkButton href={s.panelLinks[sv.kind] ?? sv.panelUrl ?? ''} label="Открыть" />
                   )}
-                  {uninstallCommand[sv.kind] && (
+                  {serviceByKind(sv.kind)?.uninstall && (
                     <ButtonLink
                       to="/commands/$id"
-                      params={{ id: uninstallCommand[sv.kind] ?? '' }}
+                      params={{ id: serviceByKind(sv.kind)?.uninstall ?? '' }}
                       search={{
                         server: s.id,
                         run: undefined,
