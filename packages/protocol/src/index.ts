@@ -1,5 +1,6 @@
 export * from './actions.js';
 export * from './agent.js';
+export * from './wire.js';
 export * from './clients.js';
 export * from './devices.js';
 export * from './mtproxy.js';
