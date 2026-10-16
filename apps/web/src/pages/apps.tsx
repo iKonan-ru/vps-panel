@@ -11,10 +11,7 @@ import { useAction } from '@/lib/use-action';
 import { useQueryClient } from '@tanstack/react-query';
 import { RefreshCw } from 'lucide-react';
 
-/**
- * Клиентские приложения по сервисам и ОС: свежие версии с GitHub (раз в 6 часов) и ссылки на
- * магазины. Ссылку можно открыть или скопировать и переслать клиенту.
- */
+/** Клиентские приложения по сервисам и ОС: ссылки открыть или скопировать для клиента. */
 export function AppsPage() {
   const qc = useQueryClient();
   const { data, error } = useApps();
@@ -60,8 +57,8 @@ export function AppsPage() {
             >
               <div className="w-28 shrink-0 text-[13px] font-medium">{p.title}</div>
               <div className="flex min-w-0 grow flex-wrap items-center gap-2">
-                {/* кнопка не сжимается; пояснение, которому не хватает места рядом, - строкой
-                    ниже, а не поверх кнопки копирования */}
+                {/* кнопка не сжимается; пояснение, которому не хватает места, - строкой ниже,
+                    а не поверх кнопки */}
                 {p.links.map((l) => (
                   <span key={l.url} className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1">
                     <span className="shrink-0">

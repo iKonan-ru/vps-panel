@@ -29,8 +29,8 @@ import { ListChecks, Plus, RefreshCw, Server, SlidersHorizontal } from 'lucide-r
 import { type FormEvent, useState } from 'react';
 
 /**
- * Глобальные клиенты: человек с устройствами, VLESS и MTProxy на человека,
- * AWG на устройство, на всех серверах, кроме исключённых (сервер панели - только если включён).
+ * Глобальные клиенты: человек с устройствами; VLESS и MTProxy - на человека, AWG - на устройство;
+ * на всех серверах, кроме исключённых (сервер панели - только если включён).
  */
 export function ClientsPage() {
   const qc = useQueryClient();

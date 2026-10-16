@@ -30,11 +30,7 @@ import {
 import { Server, SquareArrowOutUpRight } from 'lucide-react';
 import type { ReactNode } from 'react';
 
-/**
- * Клиент на одном сервере: живая статистика по сервисам - состояние подключения, скорость,
- * трафик по счётчикам сервисов, графики за последние 5 минут. Опрос раз в 3 с, пока страница
- * открыта и вкладка видна.
- */
+/** Клиент на одном сервере: живая статистика по сервисам. */
 export function ClientServerPage() {
   const { id, serverId } = useParams({ from: '/app/clients/$id/servers/$serverId' });
   const { data, error } = useQuery({

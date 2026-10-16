@@ -9,7 +9,7 @@ import { serviceByKind } from '@vps/protocol';
 import { Check, Circle, LoaderCircle, RotateCw, Server, X } from 'lucide-react';
 import { useCallback, useEffect, useRef, useState } from 'react';
 
-/** Ответ POST /api/proxy/probe (lib/panel-proxy.ts, ProxyProbe). */
+/** Ответ POST /api/proxy/probe/<метка>, ProxyProbe сервера. */
 interface Probe {
   ok: boolean;
   stage?: 'target' | 'agent' | 'tunnel' | 'panel';
@@ -34,10 +34,9 @@ const steps = [
 type StepState = 'wait' | 'run' | 'ok' | 'fail';
 
 /**
- * "Открываю панель": сюда ведёт ссылка "Открыть" панели сервиса (/api/proxy/open/<метка>). Панель
- * проверяет агента, канал до порта панели на сервере и ответ панели - заодно открывает канал, и
- * первые запросы браузера идут по готовому, - затем переходит на поддомен. Не вышло - причина,
- * сама пробует ещё раз, потом - "Повторить" и переход в карточку сервера.
+ * "Открываю панель" сервиса: проверка агента, канала до панели на сервере и её ответа (заодно канал
+ * открывается для первых запросов браузера), затем переход на поддомен. Не вышло - причина, ещё
+ * попытки, потом "Повторить" и переход в карточку сервера.
  */
 export function OpenPanelPage() {
   const { label } = useParams({ strict: false }) as { label: string };

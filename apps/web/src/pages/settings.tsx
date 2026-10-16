@@ -11,7 +11,7 @@ import { Section } from '@/components/ui/section';
 import { WdttSettings } from '@/components/wdtt-settings';
 import { UserCog } from 'lucide-react';
 
-/** Настройки: версия панели, резервная копия, уведомления (с маршрутом до Telegram), WDTT, Firefox; аккаунт - своя страница. */
+/** Настройки панели; аккаунт - отдельная страница. */
 export function SettingsPage() {
   return (
     <>

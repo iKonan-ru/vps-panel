@@ -33,7 +33,7 @@ interface Created {
   installCommand: string;
 }
 
-/** Добавление сервера: данные и хостинг, затем установка агента (InstallAgent). */
+/** Добавление сервера: данные и хостинг, затем установка агента. */
 export function ServerNewPage() {
   // имя по умолчанию - "Хостинг Страна", пока его не поправили руками
   const [customName, setCustomName] = useState<string | null>(null);
@@ -222,10 +222,7 @@ function autoName(h: HostingForm, taken: string[]): string {
   return name;
 }
 
-/**
- * Что дальше: агент в сети - настройка сервера в один клик (ключ панели, безопасность,
- * сервисы, клиенты); можно и просто открыть сервер.
- */
+/** После добавления: настройка в один клик, когда агент в сети, или просто открыть сервер. */
 function NextStep({ serverId }: { serverId: string }) {
   const navigate = useNavigate();
   const { data: s } = useServer(serverId);

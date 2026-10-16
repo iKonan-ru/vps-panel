@@ -72,7 +72,7 @@ type Tab =
   | 'terminal'
   | 'keys'
   | 'log';
-/** Вкладки адаптеров (3x-ui, MTProxyL) показываются, только если агент нашёл сервис. */
+/** Вкладка с service показывается, только если агент нашёл сервис. */
 const tabs: { id: Tab; title: string; service?: string }[] = [
   { id: 'overview', title: 'Обзор' },
   { id: 'xui', title: '3X-UI', service: 'xui' },
@@ -89,7 +89,7 @@ const tabs: { id: Tab; title: string; service?: string }[] = [
   { id: 'log', title: 'Журнал' },
 ];
 
-/** Карточка сервера: шапка с действиями и вкладки (вкладки сервисов - если сервис есть). */
+/** Карточка сервера: шапка с действиями и вкладки. */
 export function ServerPage() {
   const params = useParams({ strict: false }) as { id: string; tab?: string };
   const id = params.id;
@@ -316,7 +316,7 @@ export function ServerPage() {
         </Alert>
       )}
 
-      {/* вкладка появляется плавно; только прозрачность - у терминала на весь экран fixed */}
+      {/* fade-in - только прозрачность: transform сломал бы fixed у терминала на весь экран */}
       <div key={tab} className="flex animate-fade-in flex-col gap-5 [&>*]:shrink-0">
         {tab === 'overview' && <OverviewTab s={s} onTab={(t) => setTab(t as Tab)} />}
         {tab === 'firewall' && <FirewallTab s={s} />}
@@ -357,7 +357,7 @@ export function ServerPage() {
   );
 }
 
-/** Адрес сервера: клик копирует в буфер обмена. */
+/** Текст, который копируется по клику. */
 function CopyText({ text }: { text: string }) {
   const { copied, copy } = useCopy();
   return (

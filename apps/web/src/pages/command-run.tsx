@@ -47,7 +47,7 @@ export function CommandRunPage() {
   const { data: cmds, isFetching: cmdsFetching } = useCommands();
   const { data: servers } = useServers();
   const cmd = cmds?.find((c) => c.id === id);
-  // каталог мог обновиться после выкладки панели: прежде чем сказать "не найдена", перечитываем
+  // каталог мог обновиться после выкладки панели: перед "не найдена" перечитываем
   const [retried, setRetried] = useState(false);
   useEffect(() => {
     if (cmds && !cmd && !retried) {
@@ -57,7 +57,7 @@ export function CommandRunPage() {
   }, [cmds, cmd, retried, qc]);
 
   const [serverId, setServerId] = useState<string>(search.server ?? '');
-  // вкладка в адресе (?tab=), по умолчанию: вывод, если открыт запуск, иначе форма
+  // по умолчанию - вывод, если открыт запуск, иначе форма
   const tab: Tab = search.tab ?? (search.run ? 'output' : 'form');
   const setTab = (t: Tab) =>
     void navigate({
@@ -83,9 +83,8 @@ export function CommandRunPage() {
   const [showAll, setShowAll] = useState(false);
 
   const detail = useServer(serverId);
-  // выбранный сервер занят другим действием - запуск недоступен до его окончания
   const lock = detail.data ? serverLock(detail.data) : { busy: false, reason: undefined };
-  // экземпляры AWG на выбранном сервере (сервисы amnezia из инвентаря) - для параметров awg-container
+  // для параметров awg-container
   const awgContainers = useMemo(
     () =>
       (detail.data?.inventory?.services ?? [])
@@ -105,7 +104,6 @@ export function CommandRunPage() {
     if (!serverId && online.length === 1 && online[0]) setServerId(online[0].id);
   }, [online, serverId]);
 
-  // Значения по умолчанию при выборе сервера
   useEffect(() => {
     if (!cmd || !serverId || loadedFor === `${cmd.id}:${serverId}`) return;
     commandsApi
@@ -131,7 +129,6 @@ export function CommandRunPage() {
       .catch((e: Error) => setError(e.message));
   }, [cmd, serverId, loadedFor, search.preset, search.server]);
 
-  // План пересчитывается с задержкой после правок
   const planTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   // план пересчитывается: до ответа ошибки в форме - от прошлых ответов, запуск недоступен
   const [planPending, setPlanPending] = useState(false);
@@ -193,8 +190,8 @@ export function CommandRunPage() {
   if (!cmd) return <Card className="p-8 text-bad">Команда не найдена</Card>;
   const server = servers?.find((s) => s.id === serverId);
   const runServer = servers?.find((s) => s.id === runServerId);
-  // запуск: ответы этого сервера загружены, план и проверки свежие, карточка сервера есть
-  // (идущее на сервере действие блокирует lock.busy)
+  // ответы этого сервера загружены, план и проверки свежие, карточка сервера есть; занятость
+  // сервера - отдельно, lock.busy
   const canRun =
     Boolean(serverId) &&
     errors.length === 0 &&
