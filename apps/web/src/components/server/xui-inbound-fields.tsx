@@ -10,10 +10,10 @@ import { RefreshCw, Shuffle } from 'lucide-react';
 
 /** Поля окон добавления и правки inbound-ов VLESS: порт, цель Reality, fingerprint. */
 
-export const FINGERPRINTS = ['firefox', 'chrome', 'safari', 'edge', 'ios', 'android'];
+const FINGERPRINTS = ['firefox', 'chrome', 'safari', 'edge', 'ios', 'android'];
 
 /** GET /xui/reality-scan: подходящие цели с сервера (без имён YouTube). */
-export interface ScanTarget {
+interface ScanTarget {
   target: string;
   serverNames: string[];
   latencyMs: number;

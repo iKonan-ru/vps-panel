@@ -13,7 +13,7 @@ import { newId } from './ids.js';
 const LINK_TTL_MS = 30 * 60_000;
 
 /** Загрузка архива агентом: одноразовый токен; busy - загрузка началась, sha256 - принято. */
-export interface BackupUpload {
+interface BackupUpload {
   backupId: string;
   serverId: string;
   expires: number;

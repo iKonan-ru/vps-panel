@@ -49,7 +49,7 @@ export const groupTitles: Record<CommandInfo['group'], string> = {
   maintain: 'Обслуживание',
 };
 
-export function paramVisible(p: CommandParamInfo, answers: Record<string, string>): boolean {
+function paramVisible(p: CommandParamInfo, answers: Record<string, string>): boolean {
   if (!p.showIf) return true;
   return Object.entries(p.showIf).every(([k, v]) => answers[k] === v);
 }

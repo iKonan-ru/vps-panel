@@ -86,7 +86,7 @@ import { xrayRoutes } from './routes/xray.js';
 import { xuiInboundRoutes } from './routes/xui-inbounds.js';
 import { xuiRoutes } from './routes/xui.js';
 
-export interface AppOptions {
+interface AppOptions {
   env: Env;
   db?: Db;
   registry?: AgentRegistry;

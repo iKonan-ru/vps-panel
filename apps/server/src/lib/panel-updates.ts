@@ -13,7 +13,7 @@ import { schedule } from './schedule.js';
 import { getJsonSetting, getSetting, putSetting } from './settings.js';
 import { PANEL_VERSION } from './version.js';
 
-export const PANEL_REPO = 'iKonan-ru/vps-panel';
+const PANEL_REPO = 'iKonan-ru/vps-panel';
 const CACHE_KEY = 'panel_releases';
 const SEMVER = /^(\d+)\.(\d+)\.(\d+)(?:-beta\.(\d+))?$/;
 
@@ -35,7 +35,7 @@ export function compareVersions(a: string, b: string): number {
   return 0;
 }
 
-export const isVersion = (v: string) => SEMVER.test(v);
+const isVersion = (v: string) => SEMVER.test(v);
 
 /**
  * Новые версии панели: релизы GitHub раз в 6 часов (напрямую, при сбое - через xray), блок

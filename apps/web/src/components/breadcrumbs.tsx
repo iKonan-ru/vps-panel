@@ -4,7 +4,7 @@ import { createPortal } from 'react-dom';
 
 export const MOBILE_CRUMBS_ID = 'mobile-crumbs';
 
-export interface Crumb {
+interface Crumb {
   label: string;
   /** Адрес раздела; у последнего звена (текущая страница) не указывается. */
   to?: string;

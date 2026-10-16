@@ -6,11 +6,11 @@ import type { GClientRow, GServer, GService } from '@vps/protocol';
 import { ArrowDownWideNarrow, ArrowUpNarrowWide, Search, X } from 'lucide-react';
 import { useState } from 'react';
 
-export type ClientSort = 'created' | 'name' | 'devices' | 'problems';
-export type ClientState = '' | 'on' | 'off' | 'problems' | 'limited';
+type ClientSort = 'created' | 'name' | 'devices' | 'problems';
+type ClientState = '' | 'on' | 'off' | 'problems' | 'limited';
 
 /** Сортировка и фильтры списка клиентов. desc - по убыванию (новые, больше, проблемные - сверху). */
-export interface ClientsView {
+interface ClientsView {
   sort: ClientSort;
   desc: boolean;
   q: string;

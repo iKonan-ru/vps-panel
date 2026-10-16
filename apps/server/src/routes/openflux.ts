@@ -10,7 +10,7 @@ import { openfluxLink } from '../lib/client-host.js';
 
 const Id = z.object({ id: z.string() });
 /** Имя канала - как у node-install.sh. */
-export const OfChannelName = z.string().regex(/^[a-z0-9][a-z0-9-]{0,30}$/, 'имя канала');
+const OfChannelName = z.string().regex(/^[a-z0-9][a-z0-9-]{0,30}$/, 'имя канала');
 
 /**
  * OpenFlux: каналы выходной ноды. Состояние, журнал и ссылка - не

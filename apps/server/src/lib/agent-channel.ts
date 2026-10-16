@@ -27,7 +27,7 @@ const X25519_SPKI = Buffer.from('302a300506032b656e032100', 'hex');
 const KEY_FILE = 'panel_agent_ed25519.pem';
 
 /** Ключ панели для агентов: DATA_DIR/panel_agent_ed25519.pem, создаётся при первом запуске. */
-export interface PanelKey {
+interface PanelKey {
   /** Открытый ключ, 32 байта. */
   pub: Buffer;
   /** Он же в base64 - так его получает агент (команда установки, agent.json). */
@@ -81,7 +81,7 @@ function nonce(seq: bigint): Buffer {
 }
 
 /** Шифрованный канал: свой ключ на направление, nonce - номер сообщения. */
-export class Channel {
+class Channel {
   private sendSeq = 0n;
   private recvSeq = 0n;
   constructor(

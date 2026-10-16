@@ -5,7 +5,7 @@ import { useQuery } from '@tanstack/react-query';
 import { Link } from '@tanstack/react-router';
 import type { TgHealthView } from '@vps/protocol';
 
-export function useTgHealth() {
+function useTgHealth() {
   return useQuery({
     queryKey: ['tg-health'],
     queryFn: () => api<TgHealthView>('/api/notify/telegram/health'),

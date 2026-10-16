@@ -126,7 +126,7 @@ export function buildWdttSubscription(
 }
 
 /** Сервер в подписке расширения Chrome. */
-export interface BrowserServer {
+interface BrowserServer {
   id: string;
   title: string;
   host: string;

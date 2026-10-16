@@ -9,7 +9,7 @@ import { newId } from './ids.js';
  * только из своего аккаунта, программно - никак. Документ - на один канал: общий документ на
  * нескольких каналах теряет ответы.
  */
-export type OfDocKind = 'vyandex' | 'mailru';
+type OfDocKind = 'vyandex' | 'mailru';
 
 // как valid_url и valid_mailru в node-install.sh (и provision.CheckTransports OpenFlux)
 const KINDS: { kind: OfDocKind; re: RegExp }[] = [

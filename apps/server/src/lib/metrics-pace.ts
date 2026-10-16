@@ -3,7 +3,7 @@ import type { UiHub } from './ui-hub.js';
 
 /** Частота метрик, пока открыта вкладка панели, и когда никто не смотрит (секунды). */
 export const FAST_METRICS_SEC = 2;
-export const SLOW_METRICS_SEC = 30;
+const SLOW_METRICS_SEC = 30;
 /** Закрыли последнюю вкладку - замедлять не сразу: перезагрузка страницы не дёргает агентов. */
 export const SLOW_AFTER_MS = 60_000;
 

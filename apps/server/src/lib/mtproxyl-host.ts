@@ -14,7 +14,7 @@ MTPROXYL_ASSUME_YES=1 MTPROXYL_NONINTERACTIVE=true mtproxyl settings set CUSTOM_
 mtproxyl settings list 2>/dev/null | grep -i custom_ip || true
 `;
 
-export function hasMtproxyl(db: Db, serverId: string): boolean {
+function hasMtproxyl(db: Db, serverId: string): boolean {
   const row = db.select().from(servers).where(eq(servers.id, serverId)).get();
   const inv = row?.statusCache?.inventory;
   return inv?.services.some((s) => s.kind === 'mtproxyl') ?? false;
@@ -43,7 +43,7 @@ export async function setMtproxylHost(
   if (r.exitCode !== 0) throw new Error('MTProxyL: не удалось сменить адрес в ссылках');
 }
 
-export interface MtHostDeps {
+interface MtHostDeps {
   db: Db;
   registry: AgentRegistry;
   journal: ReturnType<typeof actionJournal>;

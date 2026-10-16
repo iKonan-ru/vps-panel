@@ -81,7 +81,7 @@ export function panelHostOptIn(db: Db): boolean {
  * Метка updatedAt привязки: время, но строго позже прошлой метки. По ней сверка узнаёт правку
  * посреди прохода; две метки в одну миллисекунду спрятали бы правку, и сверка её затёрла бы.
  */
-export function stamp(): string {
+function stamp(): string {
   lastStamp = Math.max(Date.now(), lastStamp + 1);
   return new Date(lastStamp).toISOString();
 }
@@ -105,7 +105,7 @@ export function resyncXui(db: Db, gc: Pick<GClients, 'kick'>, serverId: string) 
 }
 
 /** Клиенту разрешён сервис на сервере: доступ null - всё, иначе только отмеченное. */
-export function allowed(c: Pick<Client, 'access'>, serverId: string, service: string): boolean {
+function allowed(c: Pick<Client, 'access'>, serverId: string, service: string): boolean {
   return (
     !c.access ||
     c.access.some((a) => a.serverId === serverId && (a.services as string[]).includes(service))
@@ -119,7 +119,7 @@ const ERROR_RETRY_MS = 30 * 60_000;
 const ABSENT_MS = 30 * 60_000;
 const ABSENT_KEY = 'gclient_absent_since';
 /** Ход сверки сервера: сделано из скольких, что сейчас, ошибки, последние итоги. */
-export interface SyncProgress {
+interface SyncProgress {
   done: number;
   total: number;
   current: string;

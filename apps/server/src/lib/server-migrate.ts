@@ -6,7 +6,7 @@ import { awgRef } from './gclient-services.js';
 import { queued } from './gclients.js';
 import { releaseOfDocs } from './openflux-docs.js';
 
-export interface TransferResult {
+interface TransferResult {
   /** Привязок перешло со старого сервера. */
   moved: number;
   /** Своих привязок нового сервера убрано (их записи заменила копия). */

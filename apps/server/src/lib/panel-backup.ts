@@ -17,11 +17,11 @@ import { esc } from './telegram.js';
 export const PBKDF2_ITER = 100_000;
 
 /** Команда расшифровки и распаковки архива file. */
-export const decryptCommand = (file: string) =>
+const decryptCommand = (file: string) =>
   `openssl enc -d -aes-256-cbc -pbkdf2 -iter ${PBKDF2_ITER} -in ${file} | tar xz`;
 
 /** Та же команда для человека (README архива, Настройки). */
-export const DECRYPT_HINT = decryptCommand('<файл>.enc');
+const DECRYPT_HINT = decryptCommand('<файл>.enc');
 
 /**
  * Шифрование в формате `openssl enc -aes-256-cbc -pbkdf2 -iter 100000 -salt`: "Salted__",
@@ -162,7 +162,7 @@ export async function createPanelBackup(o: {
 }
 
 /** Последний бэкап: когда, куда, итог. */
-export interface PanelBackupLast {
+interface PanelBackupLast {
   at: string;
   to: 'telegram' | 'download';
   ok: boolean;

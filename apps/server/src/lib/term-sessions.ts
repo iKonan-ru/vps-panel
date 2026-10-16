@@ -6,7 +6,7 @@
  */
 
 /** Сколько сессия живёт без подключённого браузера. */
-export const DETACH_MS = 3 * 60_000;
+const DETACH_MS = 3 * 60_000;
 /** Сколько последнего вывода (base64) помнить для повтора при возврате. */
 export const BUFFER_CHARS = 512 * 1024;
 
@@ -16,7 +16,7 @@ export interface TermPeer {
   close(code: number, reason: string): void;
 }
 
-export interface TermSession {
+interface TermSession {
   sid: string;
   serverId: string;
   login: string;

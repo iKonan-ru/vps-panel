@@ -10,7 +10,7 @@ const { Client, utils } = ssh2;
  * SSH нужен панели ровно для одного: зайти на сервер и поставить агента.
  * Ключ панели лежит в DATA_DIR/panel_ssh_ed25519 и создаётся при первом обращении.
  */
-export interface PanelKey {
+interface PanelKey {
   privateKey: string;
   publicKey: string;
 }
@@ -34,9 +34,9 @@ export function keyFingerprint(publicKey: string): string {
   return `SHA256:${createHash('sha256').update(Buffer.from(blob, 'base64')).digest('base64').replace(/=+$/, '')}`;
 }
 
-export type SshAuth = { mode: 'password'; password: string } | { mode: 'key'; privateKey: string };
+type SshAuth = { mode: 'password'; password: string } | { mode: 'key'; privateKey: string };
 
-export interface SshTarget {
+interface SshTarget {
   host: string;
   port: number;
   auth: SshAuth;

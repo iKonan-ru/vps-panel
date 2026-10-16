@@ -14,9 +14,9 @@ import { buildBrowserSubscription } from './subscription.js';
  */
 
 /** На связи: отчёт свежее этого (расширение шлёт раз в 15 минут). */
-export const EXT_ONLINE_MS = 20 * 60_000;
+const EXT_ONLINE_MS = 20 * 60_000;
 /** Установки, не выходившие на связь дольше, забываются (housekeeping). */
-export const EXT_FORGET_DAYS = 60;
+const EXT_FORGET_DAYS = 60;
 
 export const ExtReportSchema = z.object({
   install: z.string().regex(/^[0-9a-f]{16,32}$/),
@@ -26,7 +26,7 @@ export const ExtReportSchema = z.object({
   server: z.string().max(64),
   error: z.string().max(300).default(''),
 });
-export type ExtReport = z.infer<typeof ExtReportSchema>;
+type ExtReport = z.infer<typeof ExtReportSchema>;
 
 function clientOf(db: Db, token: string) {
   return db
@@ -177,7 +177,7 @@ export function pruneExts(db: Db, now = Date.now()) {
 }
 
 /** Браузер клиента идёт через этот сервер сейчас: какое расширение и выбран ли сервер сам. */
-export interface ExtOnServer {
+interface ExtOnServer {
   browser: GBrowserExt['browser'];
   version: string;
   auto: boolean;

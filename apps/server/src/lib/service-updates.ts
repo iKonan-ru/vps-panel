@@ -12,7 +12,7 @@ import { type XuiEnvelope, xuiApi } from './xui-api.js';
 import { xuiToken } from './xui-token.js';
 
 /** Последняя проверка по серверу и сервису. */
-export interface Checked extends ComponentVersion {
+interface Checked extends ComponentVersion {
   /** Версия, о которой уже написали в Telegram. */
   notified?: string;
 }

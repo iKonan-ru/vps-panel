@@ -20,7 +20,7 @@ interface AppDef {
 
 const NOT_IN_RU = 'в российском App Store нет';
 
-export const APPS: AppDef[] = [
+const APPS: AppDef[] = [
   {
     id: 'amneziawg',
     name: 'AmneziaWG',
@@ -189,7 +189,7 @@ export const APPS: AppDef[] = [
   },
 ];
 
-export const OS_TITLES: Record<AppOs, string> = {
+const OS_TITLES: Record<AppOs, string> = {
   android: 'Android',
   ios: 'iPhone и iPad',
   windows: 'Windows',

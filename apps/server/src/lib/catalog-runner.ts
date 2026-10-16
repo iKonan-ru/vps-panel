@@ -17,13 +17,13 @@ import { slugify } from './panel-proxy.js';
 import { redactOutput } from './redact.js';
 import type { SecretBox } from './secret-box.js';
 
-export interface Check {
+interface Check {
   level: 'ok' | 'warn' | 'fail';
   text: string;
 }
 
 /** Куда идёт вывод команды: своё действие (маршрут) или общее (настройка сервера). */
-export interface RunSink {
+interface RunSink {
   runId: string;
   stream: (channel: string, chunk: string) => void;
   /** Вывод этого запуска: из него команда достаёт доступы (логин, пароль, ссылки). */
@@ -35,7 +35,7 @@ export interface RunSink {
   keepBindings?: boolean;
 }
 
-export interface CatalogDeps {
+interface CatalogDeps {
   db: Db;
   env: Env;
   registry: AgentRegistry;

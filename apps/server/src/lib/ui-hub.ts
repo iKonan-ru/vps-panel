@@ -2,7 +2,7 @@ import type { Metrics } from '@vps/protocol';
 import type { WebSocket } from 'ws';
 
 /** События для интерфейса: браузер по ним обновляет данные. */
-export type UiEvent =
+type UiEvent =
   | { type: 'server.online'; serverId: string }
   | { type: 'server.offline'; serverId: string }
   | { type: 'server.metrics'; serverId: string; metrics: Metrics }

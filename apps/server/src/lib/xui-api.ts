@@ -38,7 +38,7 @@ export function parseJson(v: unknown): Record<string, unknown> {
 }
 
 /** Inbound 3X-UI, как его отдаёт inbounds/list и inbounds/get. */
-export type RawInbound = Record<string, unknown>;
+type RawInbound = Record<string, unknown>;
 
 /** Узел группы 3X-UI, которому принадлежит inbound; 0 - этот сервер. */
 export const inboundNode = (i: RawInbound) => Number(i.nodeId ?? i.node_id ?? 0);
@@ -77,7 +77,7 @@ export function unwrap(r: ApiResult, what: string): unknown {
 }
 
 /** Клиент v3 из `clients/get/:email`: в ответе {client, inboundIds}, UUID - в uuid (или id). */
-export interface XuiClient {
+interface XuiClient {
   uuid: string;
   email: string;
   subId: string;

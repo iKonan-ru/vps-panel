@@ -16,7 +16,7 @@ import type { XrayManager } from '../lib/xray.js';
 const Id = z.object({ id: z.string() });
 const Body = z.object({ ip: z.string().trim().max(45) });
 
-export interface IpStep {
+interface IpStep {
   name: string;
   level: 'ok' | 'warn' | 'fail';
   detail: string;

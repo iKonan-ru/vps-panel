@@ -20,7 +20,7 @@ export const SERVICES: { id: GService; title: string }[] = CATALOG.map((s) => ({
 const installed = (s: GServer, service: GService) => s[service];
 
 /** Серверы, на которых заводятся глобальные клиенты: включены и это не сервер панели. */
-export const accessServers = (servers: GServer[]) => servers.filter((s) => s.active);
+const accessServers = (servers: GServer[]) => servers.filter((s) => s.active);
 
 /** Разрешён ли клиенту сервис на сервере (как allowed() в сверке). */
 export function accessAllows(access: GClientAccess, serverId: string, service: GService) {

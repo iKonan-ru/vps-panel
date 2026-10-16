@@ -10,7 +10,7 @@ import { inboundNode, listInbounds, parseJson, streamOf, xuiApi } from './xui-ap
 import { savedXuiToken } from './xui-token.js';
 
 /** Зонды проверок цели по времени проверки (последние PROBES_MS). */
-export type ProbeStore = Record<string, { at: string; probes: ReachProbe[] }[]>;
+type ProbeStore = Record<string, { at: string; probes: ReachProbe[] }[]>;
 
 type Store = Record<string, ServerReach>;
 
@@ -49,7 +49,7 @@ interface MtReach {
 const KEY = 'ru_reach';
 const TOKEN_KEY = 'globalping_token';
 /** Интервал проверок агента и шаг графика: проверки в :00 и :30. */
-export const SLOT_MS = 30 * 60_000;
+const SLOT_MS = 30 * 60_000;
 /** Раз в сколько забирать итог MTProxyL из снимка (он проверяет себя раз в 15 минут). */
 const SYNC_MS = 3 * 60_000;
 const PROBES = 10;
@@ -71,7 +71,7 @@ export function nextTick(now: number): number {
 }
 
 /** Задержка из ответа агента: число мс в разумных пределах, до 0,1; иначе нет. */
-export function readRtt(v: unknown): number | undefined {
+function readRtt(v: unknown): number | undefined {
   const n = Number(v);
   return Number.isFinite(n) && n > 0 && n < 60_000 ? Math.round(n * 10) / 10 : undefined;
 }

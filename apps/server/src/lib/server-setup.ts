@@ -90,7 +90,7 @@ const err = (message: string, statusCode: number) =>
   Object.assign(new Error(message), { statusCode });
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
-export interface SetupDeps {
+interface SetupDeps {
   db: Db;
   env: Env;
   registry: AgentRegistry;

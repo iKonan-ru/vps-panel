@@ -15,7 +15,7 @@ import { clientHost } from './client-host.js';
 import type { SecretBox } from './secret-box.js';
 
 /** Конфиги клиента AWG во всех форматах (окно клиента, глобальный клиент, личная страница). */
-export interface AwgClientConfigs {
+interface AwgClientConfigs {
   version: string;
   conf: string;
   wg: string | null;
