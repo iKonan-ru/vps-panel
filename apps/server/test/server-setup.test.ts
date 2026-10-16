@@ -33,6 +33,9 @@ let installed: string[];
 let failCommand: string | null;
 let inbounds: Record<string, unknown>[];
 let kicks: number;
+let awgHere: { container: string; port: number; address: string }[];
+let awgEnv: Record<string, string>[];
+let restoreParams: Record<string, unknown>[];
 
 const ok = (obj: unknown) => ({ status: 200, data: { success: true, obj } });
 const registry = {
@@ -60,9 +63,9 @@ const registry = {
       const c = CATALOG.find((x) => x.script === p.script);
       // проверки перед запуском: script - preflight команды
       if (!c) return { exitCode: 0, tail: 'OK|порт свободен' };
-      calls.push(
-        `cmd:${c.id}${(p.env as Record<string, string>).AWG_INSTANCE === 'extra' ? ':extra' : ''}`,
-      );
+      const e = p.env as Record<string, string>;
+      if (c.id === 'awg') awgEnv.push(e);
+      calls.push(`cmd:${c.id}${e.AWG_INSTANCE === 'extra' ? ':extra' : ''}`);
       if (c.id === failCommand) return { exitCode: 1, killed: false };
       const k = KIND[c.id];
       if (k && !installed.includes(k)) installed.push(k);
@@ -71,10 +74,11 @@ const registry = {
     calls.push(method);
     // раскладка копии: в 3X-UI появляются inbound-ы старого сервера
     if (method === 'backup.restore') {
+      restoreParams.push(p);
       inbounds.push({ id: 50, remark: 'old', port: 28512, protocol: 'vless' });
       return {};
     }
-    if (method === 'awg.status') return { instances: [], docker: true };
+    if (method === 'awg.status') return { instances: awgHere, docker: true };
     if (method === 'xui.token') return { token: 'tok' };
     if (method === 'xui.api') {
       const q = p as { method: string; path: string; body: Record<string, unknown> };
@@ -155,6 +159,9 @@ beforeEach(() => {
   failCommand = null;
   inbounds = [];
   kicks = 0;
+  awgHere = [];
+  awgEnv = [];
+  restoreParams = [];
   db.insert(servers)
     .values({ id: 's1', name: 'Hoster', host: '203.0.113.10', agentTokenHash: 'x' } as never)
     .run();
@@ -324,9 +331,9 @@ describe('настройка сервера', () => {
       'client-host',
       'xui',
       'awg',
+      'awg-extra:51820',
       'wdtt',
       'naive',
-      'awg-extra:51820',
       'restore',
       'inbounds',
       'gclients',
@@ -358,9 +365,9 @@ describe('настройка сервера', () => {
     expect(calls.filter((c) => c.startsWith('cmd:'))).toEqual([
       'cmd:xui',
       'cmd:awg',
+      'cmd:awg:extra',
       'cmd:wdtt',
       'cmd:naive',
-      'cmd:awg:extra',
     ]);
     expect(calls.indexOf('backup.restore')).toBeGreaterThan(-1);
     // токен 3X-UI выпущен после раскладки (база заменена)
@@ -388,5 +395,117 @@ describe('настройка сервера', () => {
       } as never)
       .run();
     await expect(make().plan('s1', 'b2')).rejects.toThrow(/до версии 1\.6/);
+  });
+
+  /** Копия с 3X-UI и AWG (основной на 10.8.1.0) для восстановления поверх рабочего сервера. */
+  function copyB3() {
+    mkdirSync(join(dir, 'backups'), { recursive: true });
+    writeFileSync(join(dir, 'backups', 'b3.tar.gz'), 'x');
+    db.insert(backups)
+      .values({
+        id: 'b3',
+        serverId: 's1',
+        serverName: 'Old',
+        sha256: 'a'.repeat(64),
+        manifest: {
+          components: [{ id: 'xui' }, { id: 'amnezia', containers: ['amnezia-awg2'] }],
+          setup: {
+            services: ['xui', 'amnezia'],
+            answers: {},
+            awg: [{ container: 'amnezia-awg2', version: '3.1', port: 55424, subnet: '10.8.1.0' }],
+            clientHost: null,
+          },
+        },
+      } as never)
+      .run();
+  }
+
+  async function finished(s: ReturnType<typeof make>, actionId: string) {
+    for (let i = 0; i < 200 && s.progress('s1')?.actionId !== actionId; i++)
+      await new Promise((res) => setTimeout(res, 5));
+    for (let i = 0; i < 200 && !s.progress('s1')?.finishedAt; i++)
+      await new Promise((res) => setTimeout(res, 10));
+    return s.progress('s1');
+  }
+
+  it('копия поверх рабочего сервера: стоящее - оставить, мешающий контейнер - удалить по выбору', async () => {
+    copyB3();
+    installed = ['xui', 'amnezia'];
+    await registry.refreshInventory('s1');
+    // основной контейнер есть, но на другой подсети; дополнительный занял подсеть копии
+    awgHere = [
+      { container: 'amnezia-awg2', port: 55424, address: '10.8.7.1/24' },
+      { container: 'amnezia-awg2-40748', port: 40748, address: '10.8.1.1/24' },
+    ];
+    const s = make();
+    const plan = await s.plan('s1', 'b3');
+    const xui = plan.steps.find((x) => x.id === 'xui');
+    expect(xui?.modes).toEqual(['keep', 'reinstall', 'skip']);
+    expect(xui?.answers?.MODE).toBe('keep');
+    const awg = plan.steps.find((x) => x.id === 'awg');
+    expect(awg?.modes).toEqual(['keep', 'reinstall', 'skip']);
+    const rm = plan.steps.find((x) => x.id === 'awg-remove:amnezia-awg2-40748');
+    expect(rm?.enabled).toBe(false);
+    expect(rm?.note).toMatch(/подсеть 10\.8\.1\.0/);
+    // удаление не отмечено - запуск не начинается
+    const steps = plan.steps.map((x) => ({
+      id: x.id,
+      enabled: x.enabled,
+      answers: x.answers ?? {},
+    }));
+    await expect(s.run('s1', { backupId: 'b3', steps })).rejects.toThrow(/отметить удаление/);
+    // отмечено: контейнер удаляется, основной пересоздаётся с подсетью копии, 3X-UI не ставится
+    const r = await s.run('s1', {
+      backupId: 'b3',
+      steps: steps.map((x) => (x.id === rm?.id ? { ...x, enabled: true } : x)),
+    });
+    const p = await finished(s, r.actionId);
+    expect(p?.steps.find((x) => x.state === 'failed')).toBeUndefined();
+    const cmds = calls.filter((c) => c.startsWith('cmd:'));
+    expect(cmds).toEqual(['cmd:awg-uninstall', 'cmd:awg']);
+    expect(awgEnv[0]).toMatchObject({
+      AWG_REPLACE: 'replace',
+      AWG_SUBNET_IP: '10.8.1.0',
+      AWG_INSTANCE: 'main',
+    });
+    expect(restoreParams[0]?.components).toEqual([]);
+  });
+
+  it('"не трогать" у 3X-UI - его данные из копии не раскладываются', async () => {
+    copyB3();
+    installed = ['xui'];
+    await registry.refreshInventory('s1');
+    const s = make();
+    const plan = await s.plan('s1', 'b3');
+    const steps = plan.steps.map((x) => ({
+      id: x.id,
+      enabled: x.enabled,
+      answers: { ...(x.answers ?? {}), ...(x.id === 'xui' ? { MODE: 'skip' } : {}) },
+    }));
+    const r = await s.run('s1', { backupId: 'b3', steps });
+    const p = await finished(s, r.actionId);
+    expect(p?.steps.find((x) => x.state === 'failed')).toBeUndefined();
+    expect(p?.steps.some((x) => x.id === 'xui')).toBe(false);
+    expect(restoreParams[0]?.components).toEqual(['amnezia']);
+  });
+
+  it('переустановка: сначала удаление, затем установка', async () => {
+    copyB3();
+    installed = ['xui'];
+    await registry.refreshInventory('s1');
+    const s = make();
+    const plan = await s.plan('s1', 'b3');
+    const steps = plan.steps.map((x) => ({
+      id: x.id,
+      enabled: x.enabled,
+      answers: { ...(x.answers ?? {}), ...(x.id === 'xui' ? { MODE: 'reinstall' } : {}) },
+    }));
+    const r = await s.run('s1', { backupId: 'b3', steps });
+    const p = await finished(s, r.actionId);
+    expect(p?.steps.find((x) => x.state === 'failed')).toBeUndefined();
+    expect(calls.filter((c) => c.startsWith('cmd:')).slice(0, 2)).toEqual([
+      'cmd:xui-uninstall',
+      'cmd:xui',
+    ]);
   });
 });
