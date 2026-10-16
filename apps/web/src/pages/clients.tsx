@@ -241,8 +241,7 @@ function AddClientForm({ onDone }: { onDone: (id: string) => void }) {
   );
 }
 
-/** Где заводятся глобальные клиенты: участие сервера и исключённые inbound-ы 3X-UI. */
-/** Серверы и их участие в глобальных клиентах (окно "Серверы"): переключатель и inbound-ы 3X-UI. */
+/** Окно "Серверы": где заводятся глобальные клиенты - участие сервера и исключённые inbound-ы 3X-UI. */
 function ServersList() {
   const ask = useConfirm();
   const qc = useQueryClient();
