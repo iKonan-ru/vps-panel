@@ -412,15 +412,33 @@ func mtproxyl(ctx context.Context, publicIP string) (proto.Service, bool) {
 		}
 		s.Details["ruReach"] = r
 	}
+	s.Version = mtproxylVersion(ctx, mtScript)
+	return s, true
+}
+
+// mtScript - скрипт MTProxyL (/usr/local/bin/mtproxyl - ссылка на него): версия - его строка
+// VERSION="...", та же, что version в mtproxyl status --json.
+var mtScript = "/opt/mtproxyl/mtproxyl.sh"
+
+var reMtVersion = regexp.MustCompile(`(?m)^VERSION="([^"]+)"`)
+
+// mtproxylVersion - версия из скрипта; нет файла или строки - mtproxyl status --json (около
+// секунды: загружает все настройки).
+func mtproxylVersion(ctx context.Context, script string) string {
+	if b, err := os.ReadFile(script); err == nil {
+		if m := reMtVersion.FindSubmatch(b); m != nil {
+			return string(m[1])
+		}
+	}
 	if v := shell.Out(ctx, "sh", "-c", "mtproxyl status --json 2>/dev/null"); v != "" {
 		var st map[string]any
 		if json.Unmarshal([]byte(v), &st) == nil {
 			if ver, ok := st["version"].(string); ok {
-				s.Version = ver
+				return ver
 			}
 		}
 	}
-	return s, true
+	return ""
 }
 
 func amnezia(containers []proto.Container) []proto.Service {
