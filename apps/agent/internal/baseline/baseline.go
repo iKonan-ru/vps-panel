@@ -18,6 +18,7 @@ import (
 	"time"
 
 	"github.com/iKonan-ru/vps-panel/apps/agent/internal/firewall"
+	"github.com/iKonan-ru/vps-panel/apps/agent/internal/proto"
 	"github.com/iKonan-ru/vps-panel/apps/agent/internal/shell"
 	"github.com/iKonan-ru/vps-panel/apps/agent/internal/sshd"
 )
@@ -86,19 +87,12 @@ func MakePlan(ctx context.Context) Plan {
 
 	// Что закроется: слушатели, которых не откроет port-sync.
 	cfg := ReadPortsyncConfig()
-	allowed := plannedAllow(ctx, cfg)
-	denied := map[string]bool{}
-	for _, d := range cfg.DenyPublicPorts {
-		if !strings.Contains(d, "/") {
-			d += "/tcp"
-		}
-		denied[d] = true
-	}
+	allowed, _ := plannedAllow(ctx, cfg)
 	for _, l := range fw.Listeners {
 		if l.Process == "docker-proxy" {
 			continue
 		}
-		key := fmt.Sprintf("%d/%s", l.Port, l.Proto)
+		key := listenerKey(l)
 		if allowed[key] {
 			if !fw.UfwActive {
 				p.Ports = append(p.Ports, PortChange{Port: l.Port, Proto: l.Proto, Process: l.Process, Action: "open"})
@@ -106,9 +100,10 @@ func MakePlan(ctx context.Context) Plan {
 			continue
 		}
 		p.Ports = append(p.Ports, PortChange{Port: l.Port, Proto: l.Proto, Process: l.Process, Action: "close"})
-		// порт из deny-списка закрывается намеренно (9090/9091 - метрики telemt и прочих), это не блокер
-		if isVPNProcess(l.Process) && !fw.UfwActive && !denied[key] {
-			block("ufw", fmt.Sprintf("порт %s процесса %s закроется, а это похоже на VPN: процесс нужно добавить в известные или порт в разрешённые", key, l.Process))
+	}
+	if !fw.UfwActive {
+		for _, why := range closingVPN(fw.Listeners, allowed, deniedPorts(cfg), nil) {
+			block("ufw", why)
 		}
 	}
 	// применять есть что, если хотя бы один нужный шаг не заблокирован
@@ -170,17 +165,46 @@ func isVPNProcess(name string) bool {
 	return false
 }
 
+func listenerKey(l proto.Listener) string { return fmt.Sprintf("%d/%s", l.Port, l.Proto) }
+
+// deniedPorts - deny_public_ports конфига вида "443/tcp" (без протокола - tcp).
+func deniedPorts(cfg PortsyncConfig) map[string]bool {
+	denied := map[string]bool{}
+	for _, d := range cfg.DenyPublicPorts {
+		if !strings.Contains(d, "/") {
+			d += "/tcp"
+		}
+		denied[d] = true
+	}
+	return denied
+}
+
+// closingVPN - порты VPN из listeners, которые port-sync с такими настройками не откроет: по
+// замечанию на каждый. Порт из deny-списка закрывается намеренно (9090/9091 - метрики telemt и
+// прочих), порт из keep останется открытым другим правилом ufw.
+func closingVPN(listeners []proto.Listener, allowed, denied, keep map[string]bool) []string {
+	var out []string
+	for _, l := range listeners {
+		key := listenerKey(l)
+		if l.Process == "docker-proxy" || allowed[key] || denied[key] || keep[key] || !isVPNProcess(l.Process) {
+			continue
+		}
+		out = append(out, fmt.Sprintf("порт %s процесса %s закроется, а это похоже на VPN: процесс нужно добавить в известные или порт в разрешённые", key, l.Process))
+	}
+	return out
+}
+
 // plannedAllow - порты, которые port-sync откроет по конфигу. Считаем через
 // сам скрипт (--json с конфигом в env), чтобы логика была одна.
-func plannedAllow(ctx context.Context, cfg PortsyncConfig) map[string]bool {
+func plannedAllow(ctx context.Context, cfg PortsyncConfig) (map[string]bool, error) {
 	out := map[string]bool{}
 	script, err := assets.ReadFile("assets/vps-portsync.py")
 	if err != nil {
-		return out
+		return out, err
 	}
 	tmp, err := os.CreateTemp("", "portsync-*.py")
 	if err != nil {
-		return out
+		return out, err
 	}
 	defer os.Remove(tmp.Name())
 	_, _ = tmp.Write(script)
@@ -190,15 +214,18 @@ func plannedAllow(ctx context.Context, cfg PortsyncConfig) map[string]bool {
 	defer cancel()
 	// конфиг - через окружение, а не строкой в bash (апострофы и спецсимволы портили бы значения)
 	res, err := shell.ExecEnv(c, 60*time.Second, nil, []string{"PORTSYNC_CONF=" + string(cfgJSON)}, "python3", tmp.Name(), "--json")
-	if err != nil || res.ExitCode != 0 {
-		return out
+	if err != nil {
+		return out, err
+	}
+	if res.ExitCode != 0 {
+		return out, fmt.Errorf("port-sync --json завершился с кодом %d: %s", res.ExitCode, strings.TrimSpace(res.Stderr))
 	}
 	var d struct {
 		HostAllow   [][]any `json:"host_allow"`
 		DockerAllow [][]any `json:"docker_allow"`
 	}
-	if json.Unmarshal([]byte(res.Stdout), &d) != nil {
-		return out
+	if err := json.Unmarshal([]byte(res.Stdout), &d); err != nil {
+		return out, fmt.Errorf("port-sync --json: %w", err)
 	}
 	for _, pair := range append(d.HostAllow, d.DockerAllow...) {
 		if len(pair) == 2 {
@@ -207,7 +234,7 @@ func plannedAllow(ctx context.Context, cfg PortsyncConfig) map[string]bool {
 			out[fmt.Sprintf("%d/%s", int(port), pr)] = true
 		}
 	}
-	return out
+	return out, nil
 }
 
 func fileHas(path, needle string) bool {

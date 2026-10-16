@@ -32,18 +32,7 @@ func State(ctx context.Context) proto.FirewallState {
 	}
 	st.Listeners = Listeners(ctx)
 	// Порт открыт, если ufw неактивен, либо есть allow-правило на него.
-	allowed := map[string]bool{}
-	for _, r := range st.Rules {
-		if r.Action == "allow" && r.Source == "any" {
-			for _, p := range expandPorts(r.Port) {
-				allowed[p+"/"+r.Proto] = true
-				if r.Proto == "any" {
-					allowed[p+"/tcp"] = true
-					allowed[p+"/udp"] = true
-				}
-			}
-		}
-	}
+	allowed := AllowedByRules(st.Rules, nil)
 	for i := range st.Listeners {
 		l := &st.Listeners[i]
 		key := itoa(l.Port) + "/" + l.Proto
@@ -58,6 +47,25 @@ func State(ctx context.Context) proto.FirewallState {
 		}
 	}
 	return st
+}
+
+// AllowedByRules - порты ("443/tcp"), открытые всем allow-правилами из rules; only - какие
+// правила учитывать (nil - все).
+func AllowedByRules(rules []proto.FirewallRule, only func(proto.FirewallRule) bool) map[string]bool {
+	allowed := map[string]bool{}
+	for _, r := range rules {
+		if r.Action != "allow" || r.Source != "any" || (only != nil && !only(r)) {
+			continue
+		}
+		for _, p := range expandPorts(r.Port) {
+			allowed[p+"/"+r.Proto] = true
+			if r.Proto == "any" {
+				allowed[p+"/tcp"] = true
+				allowed[p+"/udp"] = true
+			}
+		}
+	}
+	return allowed
 }
 
 func parseRule(line string) (proto.FirewallRule, bool) {

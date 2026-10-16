@@ -14,6 +14,8 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/iKonan-ru/vps-panel/apps/agent/internal/firewall"
+	"github.com/iKonan-ru/vps-panel/apps/agent/internal/proto"
 	"github.com/iKonan-ru/vps-panel/apps/agent/internal/shell"
 	"github.com/iKonan-ru/vps-panel/apps/agent/internal/sshd"
 )
@@ -99,6 +101,36 @@ func CheckPortsyncConfig(cfg PortsyncConfig) error {
 		return fmt.Errorf("ssh_port: %d", cfg.SSHPort)
 	}
 	return nil
+}
+
+// ApplyPortsyncConfig записывает новые настройки port-sync. При включённом ufw сначала
+// проверяется, что с ними не закроется открытый сейчас порт VPN: закроется - ошибка, и ничего
+// не меняется.
+func ApplyPortsyncConfig(ctx context.Context, cfg PortsyncConfig) error {
+	if err := CheckPortsyncConfig(cfg); err != nil {
+		return err
+	}
+	if fw := firewall.State(ctx); fw.UfwActive {
+		allowed, err := plannedAllow(ctx, cfg)
+		if err != nil {
+			return fmt.Errorf("настройки port-sync не применены: не удалось рассчитать порты (%v)", err)
+		}
+		var open []proto.Listener
+		for _, l := range fw.Listeners {
+			if l.Open {
+				open = append(open, l)
+			}
+		}
+		if closing := closingVPN(open, allowed, deniedPorts(cfg), keepRules(fw.Rules)); len(closing) > 0 {
+			return errors.New("настройки port-sync не применены: " + strings.Join(closing, "; "))
+		}
+	}
+	return WritePortsyncConfig(cfg)
+}
+
+// keepRules - порты, открытые правилами ufw не от port-sync: новые настройки их не закроют.
+func keepRules(rules []proto.FirewallRule) map[string]bool {
+	return firewall.AllowedByRules(rules, func(r proto.FirewallRule) bool { return r.Origin != "portsync" })
 }
 
 func WritePortsyncConfig(cfg PortsyncConfig) error {
