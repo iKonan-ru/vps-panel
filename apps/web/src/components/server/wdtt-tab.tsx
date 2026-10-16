@@ -12,7 +12,7 @@ import { Input } from '@/components/ui/input';
 import { LoadState } from '@/components/ui/placeholder';
 import { Section } from '@/components/ui/section';
 import { api } from '@/lib/api';
-import { bytes } from '@/lib/format';
+import { bytes, expiresLabel } from '@/lib/format';
 import { type ServerDetail, serverLock } from '@/lib/servers';
 import { useAction } from '@/lib/use-action';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
@@ -38,12 +38,6 @@ interface WdttData {
   hashes: number;
   passwords: WdttPassword[];
 }
-
-const expiresLabel = (unix: number) => {
-  if (!unix) return 'без срока';
-  const days = Math.ceil((unix * 1000 - Date.now()) / 86_400_000);
-  return days <= 0 ? 'истёк' : `ещё ${days}\u00a0дн`;
-};
 
 /**
  * Вкладка WDTT: пароли пользователей через admin API сервера.

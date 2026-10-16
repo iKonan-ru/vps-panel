@@ -120,7 +120,7 @@ export function XuiTab({ s }: { s: ServerDetail }) {
   const panelUrl = s.panelLinks.xui ?? svc?.panelUrl;
   const obj = apiStatus.data;
   const noToken = apiStatus.error instanceof ApiError && apiStatus.error.code === 'no-token';
-  // агент 0.3.2+: xray не запущен или падает по кругу (inbound на занятом порту роняет весь xray)
+  // xray не запущен или падает по кругу (inbound на занятом порту роняет весь xray)
   const xrayDown = svc?.details?.xrayDown === true;
   const xrayError = typeof svc?.details?.xrayError === 'string' ? svc.details.xrayError : '';
 

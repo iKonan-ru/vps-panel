@@ -36,7 +36,7 @@ export function ServiceChips({
         if (s.kind !== 'amnezia' && seen.has(s.kind)) return null;
         seen.add(s.kind);
         const href = links[s.kind] ?? s.panelUrl;
-        // сервис упал (агент 0.3.2+): красная плашка, причина - в подсказке
+        // сервис упал: красная плашка, причина - в подсказке
         const down = s.details?.down === true;
         const tone = down ? 'bad' : 'accent';
         const why =
