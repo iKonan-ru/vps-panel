@@ -2,8 +2,7 @@ import { Card } from '@/components/ui/card';
 import { Chip } from '@/components/ui/chip';
 import { Section } from '@/components/ui/section';
 import { TBody, THead, Table } from '@/components/ui/table';
-import type { ServerDetail } from '@/lib/servers';
-import type { Cert } from '@vps/protocol';
+import type { Cert, ServerDetail } from '@vps/protocol';
 import { ShieldCheck } from 'lucide-react';
 
 const sourceTitle: Record<Cert['source'], string> = {

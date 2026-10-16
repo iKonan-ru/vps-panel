@@ -1,4 +1,4 @@
-import type { GClientAccess, Inventory, Metrics } from '@vps/protocol';
+import type { GClientAccess, Inventory, Metrics, PortsyncConfig } from '@vps/protocol';
 import { sql } from 'drizzle-orm';
 import { integer, real, sqliteTable, text } from 'drizzle-orm/sqlite-core';
 
@@ -143,7 +143,7 @@ export const portsyncConfigs = sqliteTable('portsync_config', {
   serverId: text('server_id')
     .primaryKey()
     .references(() => servers.id, { onDelete: 'cascade' }),
-  config: text('config', { mode: 'json' }).$type<Record<string, unknown>>().notNull(),
+  config: text('config', { mode: 'json' }).$type<PortsyncConfig>().notNull(),
 });
 
 export const actionLog = sqliteTable('action_log', {

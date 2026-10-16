@@ -7,10 +7,10 @@ import { Dialog } from '@/components/ui/dialog';
 import { Section } from '@/components/ui/section';
 import { TBody, THead, Table } from '@/components/ui/table';
 import { actions } from '@/lib/actions';
-import { type ServerDetail, serverLock, useServer } from '@/lib/servers';
+import { serverLock, useServer } from '@/lib/servers';
 import { useAction } from '@/lib/use-action';
 import { useQueryClient } from '@tanstack/react-query';
-import type { Container } from '@vps/protocol';
+import type { Container, ServerDetail } from '@vps/protocol';
 import { FileText, Play, RefreshCw, RotateCw, Square, Trash2 } from 'lucide-react';
 import { useEffect, useState } from 'react';
 

@@ -1,4 +1,4 @@
-import type { ServiceUpdate, ServiceUpdateKind } from '@vps/protocol';
+import type { ComponentVersion, ServiceUpdate, ServiceUpdateKind } from '@vps/protocol';
 import { eq } from 'drizzle-orm';
 import type { AgentRegistry } from '../agents/registry.js';
 import type { Db } from '../db/index.js';
@@ -11,19 +11,10 @@ import { getJsonSetting, putSetting } from './settings.js';
 import { type XuiEnvelope, xuiApi } from './xui-api.js';
 import { xuiToken } from './xui-token.js';
 
-/**
- * Последняя проверка по серверу и сервису; notified - версия, о которой уже написали.
- * current - версия на момент проверки (у веб-панели в инвентаре версии нет), detail -
- * пояснение для вкладки, error - почему проверить не удалось.
- */
-export interface Checked {
-  latest: string;
-  available: boolean;
+/** Последняя проверка по серверу и сервису. */
+export interface Checked extends ComponentVersion {
+  /** Версия, о которой уже написали в Telegram. */
   notified?: string;
-  current?: string;
-  detail?: string;
-  error?: string;
-  checkedAt?: string;
 }
 type Store = Record<string, Partial<Record<ServiceUpdateKind, Checked>>>;
 

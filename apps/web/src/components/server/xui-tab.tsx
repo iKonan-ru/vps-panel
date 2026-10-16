@@ -16,11 +16,11 @@ import { LoadState, Placeholder } from '@/components/ui/placeholder';
 import { ApiError, api } from '@/lib/api';
 import { cn } from '@/lib/cn';
 import { uptime } from '@/lib/format';
-import { type ServerDetail, serverLock } from '@/lib/servers';
+import { serverLock } from '@/lib/servers';
 import { startServiceUpdate, useUpdatesCheck } from '@/lib/service-update';
 import { useAction } from '@/lib/use-action';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import type { XuiInboundRow } from '@vps/protocol';
+import type { ServerDetail, XuiInboundRow } from '@vps/protocol';
 import {
   ExternalLink,
   KeyRound,

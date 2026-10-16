@@ -1,4 +1,5 @@
 import { isIP } from 'node:net';
+import type { PortsyncConfig as PortsyncConfigT } from '@vps/protocol';
 import { z } from 'zod';
 
 /**
@@ -73,3 +74,7 @@ export const PortsyncConfig = z.object({
     .default(''),
   ssh_port: z.number().int().min(0).max(65535).default(0),
 });
+
+/** Схема и тип протокола - одно и то же: расхождение не соберётся. */
+const _portsync: z.ZodType<PortsyncConfigT, z.ZodTypeDef, unknown> = PortsyncConfig;
+void _portsync;

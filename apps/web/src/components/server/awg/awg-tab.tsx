@@ -9,10 +9,11 @@ import { Dialog } from '@/components/ui/dialog';
 import { LoadState } from '@/components/ui/placeholder';
 import { api } from '@/lib/api';
 import { cn } from '@/lib/cn';
-import { type ServerDetail, serverLock } from '@/lib/servers';
+import { serverLock } from '@/lib/servers';
 import { useUninstall } from '@/lib/uninstall';
 import { useAction } from '@/lib/use-action';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
+import type { ServerDetail } from '@vps/protocol';
 import { Plus, RefreshCw } from 'lucide-react';
 import { useEffect, useState } from 'react';
 

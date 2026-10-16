@@ -4,7 +4,7 @@ import { Chip } from '@/components/ui/chip';
 import { Section } from '@/components/ui/section';
 import { actionTitles } from '@/lib/actions';
 import { ago } from '@/lib/format';
-import type { ServerDetail } from '@/lib/servers';
+import type { ServerDetail } from '@vps/protocol';
 import { X } from 'lucide-react';
 import { useEffect, useRef, useState } from 'react';
 

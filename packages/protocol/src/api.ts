@@ -1,3 +1,6 @@
+import type { Inventory } from './agent.js';
+import type { ServerSummary } from './server.js';
+
 /** Ответы API панели, общие для сервера и интерфейса. */
 
 // ---- Версия панели ----
@@ -306,4 +309,112 @@ export interface XuiOwnInbound {
   enable: boolean;
   security: string;
   excluded: boolean;
+}
+
+// ---- Карточка сервера ----
+
+export interface ServerDetail extends ServerSummary {
+  inventory: Inventory | null;
+  metricsAt: string | null;
+  /** Незавершённые действия на сервере: после перезагрузки страницы виден их ход. */
+  activeActions: { id: string; kind: string; title: string; startedAt: string }[];
+}
+
+// ---- Резервные копии серверов ----
+
+/** Компонент архива копии. */
+export interface BackupComponent {
+  id: string;
+  title: string;
+  paths?: string[];
+  containers?: string[];
+  sizeBytes: number;
+}
+
+export interface BackupInfo {
+  id: string;
+  serverId: string | null;
+  serverName: string;
+  hostname: string;
+  createdAt: string;
+  size: number;
+  sha256: string;
+  /** setup - состав сервисов: по нему копию разворачивает настройка сервера. */
+  manifest: { components?: BackupComponent[]; setup?: unknown };
+}
+
+// ---- Безопасность и firewall ----
+
+/** Что исправит шаг безопасности (baseline.plan агента). */
+export interface BaselinePlan {
+  steps: { id: string; title: string; needed: boolean; detail?: string; blocker?: string }[];
+  ports: { port: number; proto: string; process: string; action: 'open' | 'close' }[];
+  blockers: string[];
+  canApply: boolean;
+  sshPort: number;
+  rootKeys: number;
+}
+
+/** /etc/vps-portsync.conf сервера. */
+export interface PortsyncConfig {
+  admin_ips: string[];
+  deny_public_ports: string[];
+  extra_allow: string[];
+  known_processes: string[];
+  docker_policy: 'published' | 'explicit';
+  allow_ping: boolean;
+  wan_interface: string;
+  ssh_port: number;
+}
+
+/** Ручное правило ufw. */
+export interface RuleInput {
+  portFrom: number;
+  portTo?: number;
+  proto: 'tcp' | 'udp' | 'any';
+  source: string;
+  action: 'allow' | 'deny';
+  comment: string;
+}
+
+/** Последняя проверка обновления компонента сервера. */
+export interface ComponentVersion {
+  latest: string;
+  available: boolean;
+  /** Версия на момент проверки. */
+  current?: string;
+  detail?: string;
+  /** Почему проверить не удалось. */
+  error?: string;
+  checkedAt?: string;
+}
+
+// ---- 3X-UI: сведения агента и статус ----
+
+export interface XuiInfo {
+  installed: boolean;
+  active: boolean;
+  enabled: boolean;
+  version: string;
+  db: string;
+  panelPort: number;
+  listen: string;
+  basePath: string;
+  https: boolean;
+  certFile: string;
+  twoFactor: boolean;
+  subEnabled: boolean;
+  subPort: number;
+  inbounds: number;
+  log: string;
+  errors: string[];
+}
+
+/** server/status 3X-UI. */
+export interface XuiServerStatus {
+  cpu?: number;
+  mem?: { current: number; total: number };
+  uptime?: number;
+  xray?: { state: string; version: string; errorMsg?: string };
+  appStats?: { threads: number; mem: number; uptime: number };
 }

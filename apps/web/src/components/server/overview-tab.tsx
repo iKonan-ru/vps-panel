@@ -11,8 +11,8 @@ import { LinkButton } from '@/components/ui/link-button';
 import { Num } from '@/components/ui/num';
 import { Section } from '@/components/ui/section';
 import { gb, plural } from '@/lib/format';
-import { type ServerDetail, serverLock } from '@/lib/servers';
-import { serviceByKind } from '@vps/protocol';
+import { serverLock } from '@/lib/servers';
+import { type ServerDetail, serviceByKind } from '@vps/protocol';
 import { Box, Plus, Trash2 } from 'lucide-react';
 import { useState } from 'react';
 

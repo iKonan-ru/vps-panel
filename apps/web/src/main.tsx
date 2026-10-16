@@ -1,9 +1,9 @@
 import { ConfirmProvider } from '@/components/ui/confirm';
 import { ApiError, onActionStarted } from '@/lib/api';
-import type { ServerDetail } from '@/lib/servers';
 import { applyTheme, getTheme } from '@/lib/theme';
 import { QueryCache, QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { RouterProvider } from '@tanstack/react-router';
+import type { ServerDetail } from '@vps/protocol';
 import { StrictMode } from 'react';
 import { createRoot } from 'react-dom/client';
 import './index.css';

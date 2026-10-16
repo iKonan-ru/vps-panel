@@ -4,18 +4,9 @@ import { Chip } from '@/components/ui/chip';
 import { Section } from '@/components/ui/section';
 import { cn } from '@/lib/cn';
 import { ago } from '@/lib/format';
+import type { ComponentVersion } from '@vps/protocol';
 import { Download, RefreshCw, X } from 'lucide-react';
 import type { ReactNode } from 'react';
-
-/** Итог проверки обновлений компонента (lib/service-updates.ts на сервере, versions). */
-export interface ComponentVersion {
-  latest: string;
-  available: boolean;
-  current?: string;
-  detail?: string;
-  error?: string;
-  checkedAt?: string;
-}
 
 export type Versions<K extends string> = Partial<Record<K, ComponentVersion>>;
 

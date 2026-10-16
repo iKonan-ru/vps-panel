@@ -15,10 +15,10 @@ import { actions } from '@/lib/actions';
 import { api } from '@/lib/api';
 import { cn } from '@/lib/cn';
 import { ago } from '@/lib/format';
-import { type ServerDetail, serverLock } from '@/lib/servers';
+import { serverLock } from '@/lib/servers';
 import { useAction } from '@/lib/use-action';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import type { FirewallRule } from '@vps/protocol';
+import type { FirewallRule, ServerDetail } from '@vps/protocol';
 import { Plus, RefreshCw, Settings2, Trash2 } from 'lucide-react';
 import { useState } from 'react';
 

@@ -1,4 +1,10 @@
-import { type ActionListRow, actionTitle } from '@vps/protocol';
+import {
+  type ActionListRow,
+  type BaselinePlan,
+  type PortsyncConfig,
+  type RuleInput,
+  actionTitle,
+} from '@vps/protocol';
 import { api } from './api';
 
 /** Обёртки над маршрутами действий панели. */
@@ -62,35 +68,6 @@ export const actions = {
   registration: (id: string) =>
     api<{ installCommand: string }>(`/api/servers/${id}/registration`, { method: 'POST' }),
 };
-
-export interface BaselinePlan {
-  steps: { id: string; title: string; needed: boolean; detail?: string; blocker?: string }[];
-  ports: { port: number; proto: string; process: string; action: 'open' | 'close' }[];
-  blockers: string[];
-  canApply: boolean;
-  sshPort: number;
-  rootKeys: number;
-}
-
-export interface PortsyncConfig {
-  admin_ips: string[];
-  deny_public_ports: string[];
-  extra_allow: string[];
-  known_processes: string[];
-  docker_policy: 'published' | 'explicit';
-  allow_ping: boolean;
-  wan_interface: string;
-  ssh_port: number;
-}
-
-export interface RuleInput {
-  portFrom: number;
-  portTo?: number;
-  proto: 'tcp' | 'udp' | 'any';
-  source: string;
-  action: 'allow' | 'deny';
-  comment: string;
-}
 
 /** Строка журнала (тип - общий с сервером). */
 export type ActionRow = ActionListRow;

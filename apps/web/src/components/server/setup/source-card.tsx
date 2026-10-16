@@ -11,17 +11,9 @@ import { useServers } from '@/lib/servers';
 import { useAction } from '@/lib/use-action';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useNavigate } from '@tanstack/react-router';
+import type { BackupInfo } from '@vps/protocol';
 import { Upload } from 'lucide-react';
 import { useEffect, useRef, useState } from 'react';
-
-/** Копия в списке панели: с составом сервисов её можно развернуть. */
-interface BackupRow {
-  id: string;
-  serverId: string | null;
-  serverName: string;
-  createdAt: string;
-  manifest: { setup?: unknown };
-}
 
 /** Источник настройки в адресе: копия, старый сервер при переносе, очистка ("1"/"0"). */
 export interface SetupSearch {
@@ -59,7 +51,7 @@ export function SourceCard({
   const fileRef = useRef<HTMLInputElement>(null);
   const list = useQuery({
     queryKey: ['backups'],
-    queryFn: () => api<BackupRow[]>('/api/backups'),
+    queryFn: () => api<BackupInfo[]>('/api/backups'),
     enabled: mode !== 'empty',
   });
   const servers = useServers();
