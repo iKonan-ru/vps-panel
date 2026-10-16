@@ -12,7 +12,7 @@ const EnvSchema = z.object({
    * SUB_DOMAIN). Пусто - https://SUB_DOMAIN или адрес панели.
    */
   SUB_PUBLIC_URL: z.preprocess((v) => (v === '' ? undefined : v), z.string().url().optional()),
-  /** Имя для подписок (sub.example.com): его же обслуживает Caddy (deploy/Caddyfile). */
+  /** Имя для подписок (sub.example.com): его же обслуживает Caddy. */
   SUB_DOMAIN: z.string().default(''),
   DATA_DIR: z.string().default('./data'),
   /** Секрет для подписи сессий, 32+ байта. В проде обязателен. */

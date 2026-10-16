@@ -26,8 +26,7 @@ export function createDb(dataDir: string) {
 
 /**
  * Версия итоговой схемы BOOTSTRAP_SQL (pragma user_version): новая база сразу получает её.
- * Шаги для баз старее свёрнуты в неё: база старее (старый бэкап панели) не поднимется - нужна
- * панель той версии.
+ * Базу старее этой версии панель не поднимет: шагов к ней нет.
  */
 const BASE_VERSION = 19;
 
@@ -43,7 +42,7 @@ const STEPS: ((sqlite: Database.Database) => void)[] = [
     if (!cols.some((c) => c.name === 'client_host'))
       sqlite.exec('alter table server add column client_host text');
   },
-  // 21: события уведомлений вместо прежних групп (offline, audit, updates, reach)
+  // 21: группы уведомлений (offline, audit, updates, reach) -> события
   (sqlite) => {
     const row = sqlite.prepare("select value from setting where key = 'tg_events'").get() as
       | { value: string }

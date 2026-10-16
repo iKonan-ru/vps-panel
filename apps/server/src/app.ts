@@ -137,7 +137,7 @@ export async function buildApp(opts: AppOptions) {
   const journal = actionJournal(db, hub, registry);
   useHostCookies(secure);
 
-  // Поддомены панелей сервисов (lib/panel-proxy.ts): запросы к ним разбираются до Fastify,
+  // Поддомены панелей сервисов: запросы к ним разбираются до Fastify,
   // своим сервером - маршруты, хуки и обработчик ошибок Fastify их не касаются.
   let proxy: PanelProxy | null = null;
   // сертификаты сервисов на самом сервере панели (прокси для браузера): выпускает Caddy панели,
@@ -276,7 +276,7 @@ export async function buildApp(opts: AppOptions) {
   await app.register(terminalRoutes, { db, registry });
   await app.register(agentDistRoutes, { agentDir: env.AGENT_DIR });
   await app.register(deployRoutes, { dataDir: env.DATA_DIR });
-  // запасные выходы xray: клиент vps-panel на каждом сервере с 3X-UI (lib/xray-exits.ts)
+  // запасные выходы xray: клиент vps-panel на каждом сервере с 3X-UI
   const exitDeps = { db, registry, box, xray, log: app.log, panelUrl: env.PANEL_PUBLIC_URL };
   const xraySpares = new XraySpares(exitDeps);
   const syncSpares = () => void xraySpares.sync().catch(() => undefined);
@@ -284,7 +284,7 @@ export async function buildApp(opts: AppOptions) {
   // inbound-ы 3X-UI меняются из панели - выходы в Telegram за ними (основной хранит снимок)
   const exitsAfter = (serverId: string, inboundId: number, gone: boolean) =>
     exitsAfterInboundChange(exitDeps, xraySpares, serverId, inboundId, gone);
-  // глобальные клиенты: сверка с серверами в фоне (раньше маршрутов 3X-UI: правка inbound-а запускает её)
+  // глобальные клиенты: сверка с серверами в фоне (до маршрутов 3X-UI: их правки запускают её)
   const gc = new GClients(
     db,
     box,
@@ -322,7 +322,7 @@ export async function buildApp(opts: AppOptions) {
   stops.push(schedule(() => void panelCerts.refresh().catch(() => undefined), 5_000, 5 * 60_000));
   await app.register(reachRoutes, { reach: ruReach });
   stops.push(xraySpares.start());
-  // доставка в Telegram: раз в 5 минут проверка выходов xray и getMe бота (lib/telegram.ts)
+  // доставка в Telegram: раз в 5 минут проверка выходов xray и getMe бота
   stops.push(
     schedule(
       () =>
@@ -359,7 +359,7 @@ export async function buildApp(opts: AppOptions) {
   await app.register(standardRoutes, { db, registry, env, updates: serviceUpdates });
   await app.register(updateRoutes, { db, hub, registry, updates: serviceUpdates });
   stops.push(gc.start(), startHousekeeping(db, app.log));
-  // IP своих серверов - мимо fail2ban панели (lib/fail2ban-ignore.ts)
+  // IP своих серверов - мимо fail2ban панели
   stops.push(startFail2banIgnore(db, registry, env.DATA_DIR, app.log));
   // метрики агентов раз в 2 с, пока открыта вкладка панели, иначе раз в 30 с
   stops.push(startMetricsPace(registry, hub, app.log));
@@ -450,11 +450,9 @@ export async function buildApp(opts: AppOptions) {
     invalidAt.set(serverId, Date.now());
     app.log.warn({ serverId, err }, 'agent: сообщение не прошло схему, отброшено');
   });
-  // Адрес панели сменился (vps-panel domain: у панели появился домен): агент, подключившийся по
-  // старому адресу, получает новый и переподключается (старый Caddy тоже обслуживает). Адрес тот
-  // же - агент ничего не делает.
-  // Через 5 с после подключения: сначала welcome и первый снимок (запрос до welcome агент
-  // считает нарушением и рвёт связь - так 12.10 отвалились все агенты).
+  // Адрес панели сменился (vps-panel domain): агент, подключившийся по старому адресу, получает
+  // новый и переподключается; адрес тот же - агент ничего не делает. Через 5 с после
+  // подключения: запрос до welcome агент считает нарушением и рвёт связь.
   registry.on('online', (serverId) => {
     if (!secure) return;
     setTimeout(() => {

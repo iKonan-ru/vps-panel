@@ -42,8 +42,8 @@ export function requireOnline(registry: Pick<AgentRegistry, 'isOnline'>, serverI
 export const AGENT_OUTDATED = 'агент устарел: нужно обновить агент';
 
 /**
- * Соединение с агентом, как его видит реестр: SecureAgentSocket (lib/agent-channel.ts) -
- * 'message' приходит уже расшифрованным; в тестах - имитация websocket.
+ * Соединение с агентом, как его видит реестр: у SecureAgentSocket 'message' приходит уже
+ * расшифрованным; в тестах - имитация websocket.
  */
 export interface AgentSocket {
   send(data: string, cb?: (err?: Error) => void): void;
