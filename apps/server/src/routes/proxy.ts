@@ -5,7 +5,7 @@ import type { PanelCerts } from '../lib/panel-certs.js';
 import type { PanelProxy } from '../lib/panel-proxy.js';
 import { sessionOf, sessionToken } from './auth.js';
 
-/** Поддомены панелей сервисов: ask для Caddy и вход по тикету (lib/panel-proxy.ts). */
+/** Поддомены панелей сервисов: ask для Caddy и вход по тикету. */
 export async function proxyRoutes(
   app: FastifyInstance,
   opts: {
@@ -21,13 +21,13 @@ export async function proxyRoutes(
   /**
    * Caddy on_demand_tls: выпускать ли сертификат на этот хост. Без входа (ходит только Caddy):
    * да - только для поддомена, который знает панель, иначе сканер из CT-логов заставил бы
-   * выпускать сертификаты на что угодно. Ещё - имена сервисов самого сервера панели
-   * (lib/panel-certs.ts): запросы к ним панель не обслуживает (PanelProxy.foreign).
+   * выпускать сертификаты на что угодно. Ещё - имена сервисов самого сервера панели: запросы к
+   * ним панель не обслуживает.
    */
   app.get('/api/proxy/ask', async (req, reply) => {
     const { domain } = z.object({ domain: z.string().max(253) }).parse(req.query);
     // Свой IP панели: запрос без имени (https://<IP>: браузер, curl и агенты не передают SNI для
-    // адреса) Caddy ведёт по правилу on_demand, хотя сертификат на IP уже выпущен. Отказ здесь рвал
+    // адреса) Caddy ведёт по правилу on_demand, хотя сертификат на IP уже выпущен. Отказ здесь рвёт
     // рукопожатие; разрешение - Caddy берёт готовый сертификат из хранилища, ничего не выпуская.
     if (selfIp && domain === selfIp) return reply.send('ok');
     if (certs && (await certs.allowed(domain))) return reply.send('ok');

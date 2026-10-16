@@ -2,7 +2,7 @@ import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
 import type { RuReach } from '../lib/ru-reach.js';
 
-/** Доступность из России (lib/ru-reach.ts): итоги, проверка сейчас, токен Globalping. */
+/** Доступность из России: итоги, проверка сейчас, токен Globalping. */
 export async function reachRoutes(app: FastifyInstance, opts: { reach: RuReach }) {
   const { reach } = opts;
 

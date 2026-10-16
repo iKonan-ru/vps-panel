@@ -27,14 +27,14 @@ import { newId } from '../lib/ids.js';
 import { encryptedSize, opensslDecryptStream, opensslEncryptStream } from '../lib/panel-backup.js';
 import type { UiHub } from '../lib/ui-hub.js';
 
+/** Предел архива бэкапа: тело - поток, bodyLimit Fastify его не ограничивает. */
+export const MAX_BACKUP_BYTES = 2 * 1024 * 1024 * 1024;
+
 /**
  * Бэкапы конфигов сервисов. Агент собирает архив и загружает его в панель по
  * одноразовому токену; восстановление на любой сервер - агент скачивает архив
  * по одноразовой ссылке. Файлы в DATA_DIR/backups/<id>.tar.gz.
  */
-/** Предел архива бэкапа: тело - поток, bodyLimit Fastify его не ограничивает. */
-export const MAX_BACKUP_BYTES = 2 * 1024 * 1024 * 1024;
-
 export async function backupRoutes(
   app: FastifyInstance,
   opts: {
@@ -62,7 +62,7 @@ export async function backupRoutes(
   mkdirSync(dir, { recursive: true, mode: 0o700 });
   chmodSync(dir, 0o700);
   const file = (id: string) => join(dir, `${id}.tar.gz`);
-  // копии удалённых серверов (до того, как их стали удалять вместе с сервером) - убрать
+  // копии серверов, которых уже нет в панели, - убрать
   for (const b of db
     .select({ id: backups.id })
     .from(backups)
@@ -156,8 +156,7 @@ export async function backupRoutes(
 
   /**
    * Загрузить файл копии (скачанный раньше): он становится копией этого сервера, и настройка
-   * сервера разворачивает его. Нужен manifest.json с составом сервисов - он есть в копиях с
-   * версии 1.6.
+   * сервера разворачивает его. Нужен manifest.json с составом сервисов.
    */
   app.post(
     '/api/servers/:id/backups/upload',
@@ -202,7 +201,7 @@ export async function backupRoutes(
           count,
           createWriteStream(raw, { mode: 0o600 }),
         );
-        // скачанная копия зашифрована паролем резервных копий; старый незашифрованный файл -
+        // скачанная копия зашифрована паролем резервных копий; незашифрованный файл -
         // как есть. В панели копия хранится расшифрованной (как созданная агентом).
         const head = await readHead(raw, 16);
         if (head.subarray(0, 8).toString() === 'Salted__') {
@@ -333,7 +332,6 @@ export async function backupRoutes(
   });
 }
 
-/** Первые n байт файла. */
 async function readHead(path: string, n: number): Promise<Buffer> {
   const fh = await open(path, 'r');
   try {

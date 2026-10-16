@@ -7,7 +7,7 @@ import { PANEL_COMMIT, PANEL_VERSION } from '../lib/version.js';
 const bootedAt = new Date().toISOString();
 
 /**
- * Ход выкладки панели: deploy/build.py на сервере пишет data/deploy.json (этап, шаг, итог).
+ * Ход выкладки панели: сборка на сервере пишет data/deploy.json (этап, шаг, итог).
  * Пока идёт сборка, отвечает прежняя версия панели - она и показывает полосу с ходом.
  */
 export async function deployRoutes(app: FastifyInstance, opts: { dataDir: string }) {

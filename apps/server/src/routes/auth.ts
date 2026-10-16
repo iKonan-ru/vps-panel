@@ -27,7 +27,6 @@ let cookiePrefix = '';
 export function useHostCookies(secure: boolean) {
   cookiePrefix = secure ? '__Host-' : '';
 }
-/** Cookie сессии панели. */
 export const sessionCookie = () => `${cookiePrefix}vps_session`;
 /** Промежуточная cookie между паролем и кодом TOTP, живёт 5 минут. */
 const pendingCookie = () => `${cookiePrefix}vps_pending`;

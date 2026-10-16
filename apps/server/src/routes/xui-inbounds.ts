@@ -84,7 +84,7 @@ interface Deps extends ServerRouteOpts, InboundExitHooks {
  * Добавление и удаление inbound-ов VLESS с Reality (RAW и XHTTP) из вкладки 3X-UI. Клиенты
  * панели попадают в новый inbound синхронизацией (она запускается сразу), подписки обновляются
  * сами. Inbound на занятом порту останавливает весь Xray, поэтому порт проверяется по отчёту
- * агента, а после добавления Xray проверяется ~20 с: остановился - inbound удаляется.
+ * агента, а после добавления Xray проверяется ~28 с: остановился - inbound удаляется.
  */
 export async function xuiInboundRoutes(app: FastifyInstance, opts: Deps) {
   const { db, registry, hub, box, gc, reach, exitsAfter, syncSpares } = opts;
@@ -216,8 +216,8 @@ export async function xuiInboundRoutes(app: FastifyInstance, opts: Deps) {
 
   /**
    * Правка inbound-а (действие со стримом): подпись, порт, цель Reality и fingerprint; ключи и
-   * остальное - как было. Смена порта или Reality может остановить Xray: если до правки он
-   * работал, панель ~28 с следит за ним и при остановке возвращает inbound как был. Затем -
+   * остальное - без изменений. Смена порта или Reality может остановить Xray: если до правки он
+   * работал, панель ~28 с следит за ним и при остановке возвращает прежний inbound. Затем -
    * синхронизация клиентов (ссылки) и выходы в Telegram.
    */
   app.post('/api/servers/:id/xui/inbounds/:iid/edit', async (req) => {

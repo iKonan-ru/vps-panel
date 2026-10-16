@@ -151,6 +151,4 @@ export async function serverRoutes(
     if (!registrationToken) return reply.code(404).send({ error: 'сервер не найден' });
     return { registrationToken, installCommand: installCommand(env, registrationToken) };
   });
-
-  /** Запросить у агента свежий снимок состояния. */
 }

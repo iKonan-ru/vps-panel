@@ -301,7 +301,7 @@ export async function gclientRoutes(
     if (!b) return reply.code(404).send({ error: 'привязка не найдена' });
     reply.header('Cache-Control', 'no-store');
     const out: GBindingLinks = { links: b.links };
-    // порядок ссылок WDTT задаёт сверка (lib/gclients.ts, wdttEnsure): qwdtt://, затем wdtt://
+    // порядок ссылок WDTT задаёт сверка (wdttEnsure): qwdtt://, затем wdtt://
     if (b.service === 'wdtt') out.wdtt = { qwdtt: b.links[0] ?? '', wdtt: b.links[1] ?? '' };
     return out;
   });

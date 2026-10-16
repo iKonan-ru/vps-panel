@@ -34,7 +34,7 @@ export async function awgRoutes(app: FastifyInstance, opts: ServerRouteOpts) {
         clients?: { publicKey: string; managed?: boolean }[];
       }[];
     } = await registry.request(id, 'awg.status', {}, { timeoutMs: 60_000 });
-    // версии экземпляров - для матрицы сервисов (lib/standard.ts)
+    // версии экземпляров - для матрицы сервисов
     await patchStatusCache(db, id, {
       awgInstances: (st.instances ?? []).map((i) => ({
         container: i.container,

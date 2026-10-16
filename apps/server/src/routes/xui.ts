@@ -109,7 +109,10 @@ export async function xuiRoutes(
     const actionId = await runStreamed(id, 'xui:update', 'xui.update', {}, 20 * 60_000);
     return { actionId };
   });
-  /** Выпуск API-токена панели: агент зовёт x-ui setting -getApiToken, токен хранится в панели (служебная запись "Доступов", не показывается). */
+  /**
+   * Выпуск API-токена панели: агент зовёт x-ui setting -getApiToken, токен хранится в панели
+   * (служебная запись "Доступов", не показывается).
+   */
   app.post('/api/servers/:id/xui/token', async (req) => {
     const { id } = Id.parse(req.params);
     const r = await quickAction<{ token: string }>(id, 'xui:token', 'xui.token', {}, 60_000);
@@ -137,7 +140,7 @@ export async function xuiRoutes(
         ),
       );
     } catch {
-      // старые версии без onlines - без онлайна
+      // 3X-UI без clients/onlines - без онлайна
     }
     const panelEmails = new Set(
       db
@@ -183,8 +186,8 @@ export async function xuiRoutes(
   });
 
   /**
-   * Включение и выключение inbound-а. Подпись, порт и Reality правит окно правки
-   * (routes/xui-inbounds.ts): там же проверка Xray и откат.
+   * Включение и выключение inbound-а. Подпись, порт и Reality правит окно правки: там же
+   * проверка Xray и откат.
    */
   app.post('/api/servers/:id/xui/inbounds/:iid', async (req) => {
     const { id, iid } = z
@@ -396,7 +399,7 @@ export async function xuiRoutes(
     return { ok: true };
   });
 
-  /** VLESS-inbound-ы сервера (свои, не других узлов группы 3X-UI) и отметка "без глобальных клиентов". */
+  /** Свои VLESS-inbound-ы сервера (не узлов группы 3X-UI) и отметка "без глобальных клиентов". */
   app.get('/api/servers/:id/xui/inbounds', async (req): Promise<XuiOwnInbound[]> => {
     const { id } = Id.parse(req.params);
     const row = db.select().from(servers).where(eq(servers.id, id)).get();
