@@ -133,7 +133,7 @@ export function ParamField({
   );
 }
 
-/** Поля параметров команды по порядку: страница запуска команды и шаги настройки сервера. */
+/** Поля параметров команды по порядку. */
 export function ParamFields({
   params,
   answers,
