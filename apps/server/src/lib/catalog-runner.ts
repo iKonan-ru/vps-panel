@@ -154,7 +154,14 @@ export function catalogRunner(deps: CatalogDeps) {
         .where(and(eq(commandDefaults.serverId, id), eq(commandDefaults.commandId, cmd)))
         .limit(1)
     )[0];
-    const base = { ...defaultsFor(c), ...(saved?.answers ?? {}) };
+    // выбор контейнера AWG не запоминается: по нему удаляют, и прошлый выбор (или уже
+    // удалённый контейнер) не должен подставляться в следующий раз
+    const remembered = Object.fromEntries(
+      Object.entries(saved?.answers ?? {}).filter(
+        ([k]) => !c.params.some((p) => p.name === k && p.type === 'awg-container'),
+      ),
+    );
+    const base = { ...defaultsFor(c), ...remembered };
     const live =
       c.liveDefaults === 'awg'
         ? await awgLiveDefaults(db, registry, id)

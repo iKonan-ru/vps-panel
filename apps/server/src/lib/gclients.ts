@@ -162,6 +162,8 @@ export class GClients {
   private stopRequested = false;
   /** Когда начат текущий проход (для панели хода). */
   startedAt: string | null = null;
+  /** Сверка началась или закончилась: интерфейс показывает полосу сверху без опроса. */
+  onSyncChange: ((syncing: boolean) => void) | null = null;
 
   constructor(
     private db: Db,
@@ -230,6 +232,7 @@ export class GClients {
     }
     this.running = true;
     this.startedAt = new Date().toISOString();
+    this.onSyncChange?.(true);
     void (async () => {
       try {
         do {
@@ -243,6 +246,7 @@ export class GClients {
         this.stopRequested = false;
         this.startedAt = null;
         this.progress.clear();
+        this.onSyncChange?.(false);
       }
     })();
   }

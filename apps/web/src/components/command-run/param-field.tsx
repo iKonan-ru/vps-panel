@@ -33,12 +33,15 @@ export function ParamField({
   /** У обязательного пароля - кнопка случайного пароля. */
   generate?: boolean;
 }) {
-  // сохранённый ответ мог указывать на контейнер, которого уже нет: берём первый из стоящих
-  const awgFirst = awgContainers[0]?.name;
+  // контейнер подставляется сам, только если он на сервере один: из нескольких выбирают руками
+  // (по этому полю удаляют - "первый попавшийся" бывает основным контейнером с клиентами)
+  const awgOnly = awgContainers.length === 1 ? awgContainers[0]?.name : undefined;
   const awgValid = awgContainers.some((c) => c.name === value);
   useEffect(() => {
-    if (p.type === 'awg-container' && !awgValid && awgFirst) onChange(awgFirst);
-  }, [p.type, awgValid, awgFirst, onChange]);
+    if (p.type !== 'awg-container' || awgValid) return;
+    if (awgOnly) onChange(awgOnly);
+    else if (value) onChange('');
+  }, [p.type, awgValid, awgOnly, value, onChange]);
   const id = idPrefix ? `p-${idPrefix}-${p.name}` : `p-${p.name}`;
   const wide =
     p.type === 'text' ||
@@ -48,6 +51,11 @@ export function ParamField({
     control = (
       <Select id={id} value={value} onChange={(e) => onChange(e.target.value)}>
         {awgContainers.length === 0 && <option value="">на сервере нет контейнеров AWG</option>}
+        {awgContainers.length > 1 && !awgValid && (
+          <option value="" disabled>
+            выберите контейнер
+          </option>
+        )}
         {awgContainers.map((c) => (
           <option key={c.name} value={c.name}>
             {c.label}

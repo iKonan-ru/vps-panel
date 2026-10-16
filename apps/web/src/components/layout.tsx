@@ -1,4 +1,5 @@
 import { MOBILE_CRUMBS_ID } from '@/components/breadcrumbs';
+import { SyncBanner } from '@/components/clients/sync-banner';
 import { DeployBanner, usePanelVersion } from '@/components/deploy-banner';
 import { Logo } from '@/components/logo';
 import { MOBILE_ACTIONS_ID } from '@/components/mobile-actions';
@@ -229,6 +230,7 @@ export function AppLayout({ login }: { login: string }) {
           className="flex flex-col gap-5 overflow-auto p-4 pt-[calc(56px+env(safe-area-inset-top)+16px)] pb-[calc(72px+env(safe-area-inset-bottom))] md:p-7 [&>*]:shrink-0"
         >
           <DeployBanner />
+          <SyncBanner />
           <TelegramBanner />
           <Outlet />
         </div>
