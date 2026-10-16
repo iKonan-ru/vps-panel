@@ -15,7 +15,7 @@ COPY apps/web apps/web
 RUN pnpm --filter @vps/protocol build && pnpm --filter @vps/web build && pnpm --filter @vps/server build
 RUN --mount=type=cache,id=pnpm-store,target=/pnpm-store pnpm --filter @vps/server --prod --legacy deploy /out/server --store-dir /pnpm-store
 
-# xray-клиент для выхода панели в Telegram (запускается панелью как дочерний процесс, lib/xray.ts)
+# xray-клиент для выхода панели в Telegram (запускается панелью как дочерний процесс)
 FROM alpine:3 AS xray
 ARG XRAY_VERSION=v26.3.27
 # sha256 архивов этой версии (SHA2-256 из .dgst релиза): xray живёт в образе рядом с секретами,

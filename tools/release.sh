@@ -8,7 +8,7 @@
 # .github/workflows/release.yml (образы ghcr.io и релиз). Скрипт ждёт её и печатает итог.
 # update - после релиза обновить свою панель: ssh на PANEL_HOST и "vps-panel update <версия>".
 # nowait - только тег, без ожидания сборки (за ней смотреть в Actions).
-# Настройки - .ship.env (как у tools/ship.sh): GITHUB_TOKEN_FILE, PANEL_HOST, PANEL_SSH_KEY,
+# Настройки - .ship.env: GITHUB_TOKEN_FILE, PANEL_HOST, PANEL_SSH_KEY,
 # KNOWN_HOSTS, LEAK_PATTERNS.
 set -euo pipefail
 cd "$(dirname "$0")/.."

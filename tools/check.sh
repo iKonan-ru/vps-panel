@@ -9,7 +9,7 @@ cd "$(dirname "$0")/.."
 corepack pnpm --filter @vps/protocol build >/dev/null
 corepack pnpm -r --filter @vps/protocol --filter @vps/server --filter @vps/web exec tsc --noEmit
 npx biome check apps/web/src apps/server/src apps/server/test packages/protocol/src >/dev/null
-# типографика текстов интерфейса: ёлочки, тире, многоточие (свод правил - docs/development.md)
+# типографика текстов интерфейса: ёлочки, тире, многоточие
 node tools/check-typography.mjs apps/web/src
 log="$(mktemp)"
 (cd apps/server && npx vitest run >"$log" 2>&1) || { grep -P "FAIL|\x{00D7}" "$log" | head; rm -f "$log"; exit 1; }
@@ -58,7 +58,7 @@ if [ -n "$( (git diff --name-only HEAD -- apps/extension; git ls-files --others 
 fi
 
 # закрытые сведения своей установки (адреса, домены, хостинги): строки из файла
-# LEAK_PATTERNS (задаётся в .ship.env, см. tools/ship.sh) - ни в одном файле репозитория
+# LEAK_PATTERNS (задаётся в .ship.env) - ни в одном файле репозитория
 if [ -z "${LEAK_PATTERNS:-}" ] && [ -f "${SHIP_ENV:-.ship.env}" ]; then
   # shellcheck disable=SC1090
   . "${SHIP_ENV:-.ship.env}"
