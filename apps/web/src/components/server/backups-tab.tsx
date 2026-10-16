@@ -1,4 +1,5 @@
 import { ActionPanel } from '@/components/action-output';
+import { ServerOptions } from '@/components/server-options';
 import { ActionBar } from '@/components/ui/action-bar';
 import { Alert } from '@/components/ui/alert';
 import { Button, ButtonLink, buttonClass } from '@/components/ui/button';
@@ -371,12 +372,7 @@ function RestoreDialog({
           </div>
           <Field label="Сервер" htmlFor="restore-target">
             <Select id="restore-target" value={target} onChange={(e) => setTarget(e.target.value)}>
-              {(servers ?? []).map((sv) => (
-                <option key={sv.id} value={sv.id} disabled={sv.status !== 'online'}>
-                  {sv.name}, {sv.host}
-                  {sv.status === 'online' ? '' : ' (не в сети)'}
-                </option>
-              ))}
+              <ServerOptions servers={servers} withHost onlineOnly />
             </Select>
           </Field>
           <div className="flex flex-col gap-2 text-sm">

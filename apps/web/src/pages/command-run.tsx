@@ -3,6 +3,7 @@ import { ActionStatusChip } from '@/components/actions-table';
 import { Breadcrumbs } from '@/components/breadcrumbs';
 import { History } from '@/components/command-run/history';
 import { ParamField } from '@/components/command-run/param-field';
+import { ServerOptions } from '@/components/server-options';
 import { Alert } from '@/components/ui/alert';
 import { Button, ButtonLink } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
@@ -234,12 +235,7 @@ export function CommandRunPage() {
                   onChange={(e) => setServerId(e.target.value)}
                 >
                   <option value="">не выбран</option>
-                  {(servers ?? []).map((s) => (
-                    <option key={s.id} value={s.id} disabled={s.status !== 'online'}>
-                      {s.name}, {s.host}
-                      {s.status === 'online' ? '' : ' (не в сети)'}
-                    </option>
-                  ))}
+                  <ServerOptions servers={servers} withHost onlineOnly />
                 </Select>
               </Field>
               {serverId && loadedFor !== `${cmd.id}:${serverId}` && (

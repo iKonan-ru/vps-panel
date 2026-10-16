@@ -6,6 +6,7 @@ import { Alert } from '@/components/ui/alert';
 import { Button, ButtonLink } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { Dialog } from '@/components/ui/dialog';
+import { LoadState } from '@/components/ui/placeholder';
 import { api } from '@/lib/api';
 import { cn } from '@/lib/cn';
 import { type ServerDetail, serverLock } from '@/lib/servers';
@@ -61,9 +62,7 @@ export function AwgTab({ s }: { s: ServerDetail }) {
     return ok ? r : null;
   }
 
-  if (!online) return <Card className="p-8 text-[13px] text-muted">Сервер не в сети</Card>;
-  if (error) return <Alert tone="bad">{error.message}</Alert>;
-  if (!data) return <Card className="p-8 text-[13px] text-muted">Загрузка&hellip;</Card>;
+  if (!online || error || !data) return <LoadState offline={!online} error={error} />;
   const openClient = open
     ? data.instances
         .find((i) => i.container === open.container)

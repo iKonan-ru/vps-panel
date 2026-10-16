@@ -4,7 +4,6 @@ import { UninstallBlock } from '@/components/server/uninstall-block';
 import { ActionBar } from '@/components/ui/action-bar';
 import { Alert } from '@/components/ui/alert';
 import { Button } from '@/components/ui/button';
-import { Card } from '@/components/ui/card';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Chip } from '@/components/ui/chip';
 import { useConfirm } from '@/components/ui/confirm';
@@ -12,6 +11,7 @@ import { Dialog } from '@/components/ui/dialog';
 import { Field } from '@/components/ui/field';
 import { Input } from '@/components/ui/input';
 import { LinkButton } from '@/components/ui/link-button';
+import { LoadState } from '@/components/ui/placeholder';
 import { QrCode } from '@/components/ui/qr-code';
 import { Section } from '@/components/ui/section';
 import { Switch } from '@/components/ui/switch';
@@ -94,9 +94,7 @@ export function OpenfluxTab({ s }: { s: ServerDetail }) {
   }
   const blocked = lock.busy || op.busy;
 
-  if (!online) return <Card className="p-8 text-[13px] text-muted">Сервер не в сети</Card>;
-  if (error) return <Alert tone="bad">{error.message}</Alert>;
-  if (!data) return <Card className="p-8 text-[13px] text-muted">Загрузка&hellip;</Card>;
+  if (!online || error || !data) return <LoadState offline={!online} error={error} />;
 
   return (
     <>

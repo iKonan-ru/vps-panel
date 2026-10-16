@@ -27,6 +27,7 @@ import { Dialog } from '@/components/ui/dialog';
 import { Field } from '@/components/ui/field';
 import { Input } from '@/components/ui/input';
 import { PageTitle } from '@/components/ui/page-title';
+import { LoadState } from '@/components/ui/placeholder';
 import { Section } from '@/components/ui/section';
 import { Tabs } from '@/components/ui/tabs';
 import { actions } from '@/lib/actions';
@@ -347,7 +348,7 @@ export function ServerPage() {
         {tab === 'wdtt' && <WdttTab s={s} />}
         {tab === 'openflux' && <OpenfluxTab s={s} />}
         {tab === 'terminal' && (
-          <Suspense fallback={<Card className="p-8 text-[13px] text-muted">Загрузка&hellip;</Card>}>
+          <Suspense fallback={<LoadState />}>
             <TerminalTab s={s} />
           </Suspense>
         )}

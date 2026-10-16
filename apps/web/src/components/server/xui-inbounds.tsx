@@ -9,7 +9,7 @@ import { Dialog } from '@/components/ui/dialog';
 import { Section } from '@/components/ui/section';
 import { Switch } from '@/components/ui/switch';
 import { ApiError, api } from '@/lib/api';
-import { bytes } from '@/lib/format';
+import { bytes, dateFull } from '@/lib/format';
 import { useAction } from '@/lib/use-action';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { Pencil, Plus, Trash2 } from 'lucide-react';
@@ -217,7 +217,7 @@ export function XuiInbounds({
                   i.panelClients ? `из панели: ${i.panelClients}` : '',
                   i.enable ? `онлайн: ${i.online}` : '',
                   `трафик: ${bytes(i.up + i.down)}${i.total ? ` из ${bytes(i.total)}` : ''}`,
-                  i.expiryTime ? `до ${new Date(i.expiryTime).toLocaleDateString('ru-RU')}` : '',
+                  i.expiryTime ? `до ${dateFull(i.expiryTime)}` : '',
                 ]
                   .filter(Boolean)
                   .join(', ')}

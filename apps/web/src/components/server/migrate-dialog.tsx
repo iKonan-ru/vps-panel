@@ -1,3 +1,4 @@
+import { ServerOptions } from '@/components/server-options';
 import { Alert } from '@/components/ui/alert';
 import { Button } from '@/components/ui/button';
 import { Dialog } from '@/components/ui/dialog';
@@ -37,12 +38,7 @@ export function MigrateDialog({
         <Field label="Новый сервер" htmlFor="migrate-target">
           <Select id="migrate-target" value={target} onChange={(e) => setTarget(e.target.value)}>
             <option value="">{others.length ? 'не выбран' : 'других серверов в панели нет'}</option>
-            {others.map((x) => (
-              <option key={x.id} value={x.id}>
-                {x.name}
-                {x.status === 'online' ? '' : ' (не в сети)'}
-              </option>
-            ))}
+            <ServerOptions servers={others} />
           </Select>
         </Field>
         {!others.length && (

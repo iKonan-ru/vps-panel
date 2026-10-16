@@ -4,12 +4,12 @@ import { UninstallBlock } from '@/components/server/uninstall-block';
 import { ActionBar } from '@/components/ui/action-bar';
 import { Alert } from '@/components/ui/alert';
 import { Button } from '@/components/ui/button';
-import { Card } from '@/components/ui/card';
 import { Chip } from '@/components/ui/chip';
 import { useConfirm } from '@/components/ui/confirm';
 import { Dialog } from '@/components/ui/dialog';
 import { Field } from '@/components/ui/field';
 import { Input } from '@/components/ui/input';
+import { LoadState } from '@/components/ui/placeholder';
 import { Section } from '@/components/ui/section';
 import { api } from '@/lib/api';
 import { bytes } from '@/lib/format';
@@ -78,9 +78,7 @@ export function WdttTab({ s }: { s: ServerDetail }) {
   }
   const blocked = lock.busy || op.busy;
 
-  if (!online) return <Card className="p-8 text-[13px] text-muted">Сервер не в сети</Card>;
-  if (error) return <Alert tone="bad">{error.message}</Alert>;
-  if (!data) return <Card className="p-8 text-[13px] text-muted">Загрузка&hellip;</Card>;
+  if (!online || error || !data) return <LoadState offline={!online} error={error} />;
 
   const full = data.passwords.length >= data.limit;
   return (

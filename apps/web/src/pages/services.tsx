@@ -3,6 +3,7 @@ import { Button, ButtonLink } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { Chip } from '@/components/ui/chip';
 import { PageTitle } from '@/components/ui/page-title';
+import { Placeholder } from '@/components/ui/placeholder';
 import { TBody, THead, Table } from '@/components/ui/table';
 import { api } from '@/lib/api';
 import { cn } from '@/lib/cn';
@@ -126,7 +127,7 @@ export function ServicesPage() {
         </Button>
       </div>
       {error && <Alert tone="bad">{error.message}</Alert>}
-      {!data && !error && <Card className="p-8 text-[13px] text-muted">Загрузка&hellip;</Card>}
+      {!data && !error && <Placeholder>Загрузка&hellip;</Placeholder>}
       {data && (
         <>
           <Card className="hidden overflow-hidden md:block">

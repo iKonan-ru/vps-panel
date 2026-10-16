@@ -69,6 +69,23 @@ export function dateTime(iso: string): string {
   return `${dayMonth(d)} ${pad2(d.getHours())}:${pad2(d.getMinutes())}`;
 }
 
+/** Полная дата: 03.10.2026 (местное время). */
+export function dateFull(v: string | number | Date): string {
+  const d = new Date(v);
+  return `${pad2(d.getDate())}.${pad2(d.getMonth() + 1)}.${d.getFullYear()}`;
+}
+
+/** Время по местным часам: 09:30. */
+export function hm(v: string | number | Date): string {
+  const d = new Date(v);
+  return `${pad2(d.getHours())}:${pad2(d.getMinutes())}`;
+}
+
+/** Час, заданный в UTC, по местным часам браузера (со смещением пояса, в том числе нецелым). */
+export function utcHourLocal(utcHour: number): string {
+  return hm(Date.UTC(2020, 0, 1, utcHour));
+}
+
 export function dateShort(iso: string | null): string {
   if (!iso) return '';
   return dayMonth(new Date(iso));
