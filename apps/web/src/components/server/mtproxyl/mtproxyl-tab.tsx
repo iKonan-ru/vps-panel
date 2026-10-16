@@ -13,12 +13,12 @@ import { VersionsSection } from '@/components/server/versions-section';
 import { ActionBar } from '@/components/ui/action-bar';
 import { Alert } from '@/components/ui/alert';
 import { Button, ButtonLink } from '@/components/ui/button';
-import { Card } from '@/components/ui/card';
 import { Chip } from '@/components/ui/chip';
 import { useConfirm } from '@/components/ui/confirm';
 import { Dialog } from '@/components/ui/dialog';
 import { LinkButton } from '@/components/ui/link-button';
 import { Num } from '@/components/ui/num';
+import { LoadState, Placeholder } from '@/components/ui/placeholder';
 import { Section } from '@/components/ui/section';
 import { api } from '@/lib/api';
 import { cn } from '@/lib/cn';
@@ -139,15 +139,9 @@ export function MtproxylTab({ s }: { s: ServerDetail }) {
     return (await run('', 'secret.remove', { label: u.label })) !== null;
   }
 
-  if (!online) return <Card className="p-8 text-[13px] text-muted">Сервер не в сети</Card>;
-  if (loadError) return <Alert tone="bad">{loadError.message}</Alert>;
-  if (!data) return <Card className="p-8 text-[13px] text-muted">Загрузка&hellip;</Card>;
+  if (!online || loadError || !data) return <LoadState offline={!online} error={loadError} />;
   if (!data.installed)
-    return (
-      <Card className="p-8 text-[13px] text-muted">
-        MTProxyL не установлен: установка через каталог команд
-      </Card>
-    );
+    return <Placeholder>MTProxyL не установлен: установка через каталог команд</Placeholder>;
 
   const st = data.status;
   // "Доступность из России" - проверка самого MTProxyL (зонды Globalping), агент кладёт её итог

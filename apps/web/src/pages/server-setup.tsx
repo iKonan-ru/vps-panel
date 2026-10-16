@@ -1,6 +1,7 @@
 import { ActionOutput } from '@/components/action-output';
 import { Breadcrumbs } from '@/components/breadcrumbs';
 import { ParamField } from '@/components/command-run/param-field';
+import { ServerOptions } from '@/components/server-options';
 import { Alert } from '@/components/ui/alert';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
@@ -385,12 +386,7 @@ function SourceCard({
                 onChange={(e) => go({ migrate: e.target.value || undefined, wipe: q.wipe })}
               >
                 <option value="">не выбран</option>
-                {others.map((x) => (
-                  <option key={x.id} value={x.id}>
-                    {x.name}
-                    {x.status === 'online' ? '' : ' (не в сети)'}
-                  </option>
-                ))}
+                <ServerOptions servers={others} />
               </Select>
             </Field>
             {q.migrate && (

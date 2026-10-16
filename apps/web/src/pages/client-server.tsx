@@ -11,10 +11,10 @@ import {
 import { RateChart } from '@/components/clients/rate-chart';
 import { Alert } from '@/components/ui/alert';
 import { ButtonLink } from '@/components/ui/button';
-import { Card } from '@/components/ui/card';
 import { Chip } from '@/components/ui/chip';
 import { Num } from '@/components/ui/num';
 import { PageTitle } from '@/components/ui/page-title';
+import { LoadState } from '@/components/ui/placeholder';
 import { Section } from '@/components/ui/section';
 import { api } from '@/lib/api';
 import { ago, bytes, dateTime } from '@/lib/format';
@@ -50,8 +50,7 @@ export function ClientServerPage() {
   const bindings = (data?.bindings ?? []).filter((b) => b.serverId === serverId);
   const live = useClientLive(id, bindings, serverId);
 
-  if (error) return <Alert tone="bad">{error.message}</Alert>;
-  if (!data) return <Card className="p-8 text-[13px] text-muted">Загрузка&hellip;</Card>;
+  if (error || !data) return <LoadState error={error} />;
   const c = data.client;
   const list = byServer(bindings)[0]?.[1] ?? [];
   const serverName = list[0]?.serverName ?? 'Сервер';

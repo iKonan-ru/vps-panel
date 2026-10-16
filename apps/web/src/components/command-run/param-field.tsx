@@ -6,15 +6,8 @@ import { Textarea } from '@/components/ui/textarea';
 import { cn } from '@/lib/cn';
 import type { CommandParam } from '@/lib/commands';
 import { clampInt, digitsOnly } from '@/lib/masks';
+import { randomToken } from '@/lib/random';
 import { useEffect } from 'react';
-
-const ALPHABET = 'ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz23456789';
-
-/** Случайный пароль из 20 букв и цифр (без похожих: 0/O, 1/l/I) - криптостойкий генератор. */
-export function randomPassword(length = 20): string {
-  const bytes = crypto.getRandomValues(new Uint32Array(length));
-  return Array.from(bytes, (b) => ALPHABET[b % ALPHABET.length]).join('');
-}
 
 export function ParamField({
   p,
@@ -107,7 +100,7 @@ export function ParamField({
         value={value}
         onChange={(e) => onChange(e.target.value)}
         required={p.required}
-        onGenerate={generate && p.required ? () => onChange(randomPassword()) : undefined}
+        onGenerate={generate && p.required ? () => onChange(randomToken()) : undefined}
       />
     );
   } else {

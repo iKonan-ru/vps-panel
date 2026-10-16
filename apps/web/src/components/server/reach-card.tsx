@@ -5,14 +5,13 @@ import { Dialog } from '@/components/ui/dialog';
 import { Section } from '@/components/ui/section';
 import { api } from '@/lib/api';
 import { cn } from '@/lib/cn';
-import { ago, plural } from '@/lib/format';
+import { ago, hm, plural } from '@/lib/format';
 import {
   type ReachProbe,
   type ReachSlot,
   type ReachTarget,
   SLOT_MS,
   type ServerReach,
-  hm,
   ms,
   reachLevel,
   reachSlots,

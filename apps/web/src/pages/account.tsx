@@ -16,6 +16,7 @@ import { Section } from '@/components/ui/section';
 import { TBody, THead, Table } from '@/components/ui/table';
 import { api } from '@/lib/api';
 import { ago, dateShort } from '@/lib/format';
+import { randomToken } from '@/lib/random';
 import { useServers } from '@/lib/servers';
 import { useAction } from '@/lib/use-action';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
@@ -46,15 +47,6 @@ interface Security {
 }
 
 const PASSWORD_MIN = 12;
-const ALNUM = 'abcdefghijkmnpqrstuvwxyzABCDEFGHJKLMNPQRSTUVWXYZ23456789';
-
-/** Случайный пароль в браузере: 20 символов без похожих (0/O, 1/l/I). */
-function randomPassword(): string {
-  const a = new Uint32Array(20);
-  crypto.getRandomValues(a);
-  return Array.from(a, (n) => ALNUM[n % ALNUM.length]).join('');
-}
-
 function Row({
   icon,
   title,
@@ -191,7 +183,7 @@ function PasswordDialog({ onClose }: { onClose: () => void }) {
             <Button
               title="Сгенерировать случайный пароль"
               onClick={() => {
-                const p = randomPassword();
+                const p = randomToken();
                 setNext(p);
                 setNext2(p);
               }}

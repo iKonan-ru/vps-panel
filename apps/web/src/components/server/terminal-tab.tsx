@@ -1,9 +1,9 @@
 import { Alert } from '@/components/ui/alert';
 import { Button } from '@/components/ui/button';
-import { Card } from '@/components/ui/card';
 import { Chip } from '@/components/ui/chip';
 import { useConfirm } from '@/components/ui/confirm';
 import { InfoTip } from '@/components/ui/info-tip';
+import { LoadState } from '@/components/ui/placeholder';
 import type { ServerDetail } from '@/lib/servers';
 import { FitAddon } from '@xterm/addon-fit';
 import { Terminal } from '@xterm/xterm';
@@ -174,7 +174,7 @@ export function TerminalTab({ s }: { s: ServerDetail }) {
     return () => clearTimeout(id);
   }, [full]);
 
-  if (!online) return <Card className="p-8 text-[13px] text-muted">Сервер не в сети</Card>;
+  if (!online) return <LoadState offline />;
 
   return (
     <div className={full ? 'fixed inset-0 z-25 flex flex-col bg-bg p-3' : 'flex flex-col gap-3'}>

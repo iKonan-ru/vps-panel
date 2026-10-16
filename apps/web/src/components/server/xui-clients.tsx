@@ -12,7 +12,7 @@ import { Select } from '@/components/ui/select';
 import { TBody, THead, Table } from '@/components/ui/table';
 import { ApiError, api } from '@/lib/api';
 import { cn } from '@/lib/cn';
-import { bytes } from '@/lib/format';
+import { bytes, dateFull } from '@/lib/format';
 import { useAction } from '@/lib/use-action';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { Link } from '@tanstack/react-router';
@@ -204,9 +204,7 @@ export function XuiClients({
                   title={
                     [
                       c.totalGB ? `лимит: ${bytes(c.totalGB)}` : '',
-                      c.expiryTime > 0
-                        ? `до ${new Date(c.expiryTime).toLocaleDateString('ru-RU')}`
-                        : '',
+                      c.expiryTime > 0 ? `до ${dateFull(c.expiryTime)}` : '',
                     ]
                       .filter(Boolean)
                       .join(', ') || undefined

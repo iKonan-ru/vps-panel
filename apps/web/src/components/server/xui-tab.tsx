@@ -7,7 +7,6 @@ import { type Inbound, XuiInbounds } from '@/components/server/xui-inbounds';
 import { ActionBar } from '@/components/ui/action-bar';
 import { Alert } from '@/components/ui/alert';
 import { Button } from '@/components/ui/button';
-import { Card } from '@/components/ui/card';
 import { Checkbox } from '@/components/ui/checkbox';
 import { useConfirm } from '@/components/ui/confirm';
 import { Dialog } from '@/components/ui/dialog';
@@ -15,10 +14,12 @@ import { Field } from '@/components/ui/field';
 import { Input } from '@/components/ui/input';
 import { LinkButton } from '@/components/ui/link-button';
 import { Num } from '@/components/ui/num';
+import { LoadState, Placeholder } from '@/components/ui/placeholder';
 import { Section } from '@/components/ui/section';
 import { ApiError, api } from '@/lib/api';
 import { cn } from '@/lib/cn';
 import { uptime } from '@/lib/format';
+import { randomToken } from '@/lib/random';
 import { type ServerDetail, serverLock } from '@/lib/servers';
 import { startServiceUpdate, useUpdatesCheck } from '@/lib/service-update';
 import { useAction } from '@/lib/use-action';
@@ -78,15 +79,6 @@ const xuiApi = {
   token: (id: string) => api<{ ok: boolean }>(`/api/servers/${id}/xui/token`, { method: 'POST' }),
   status: (id: string) => api<XuiServerStatus>(`/api/servers/${id}/xui/status`),
 };
-
-function randomPath(): string {
-  const chars = 'abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';
-  let out = '';
-  const buf = new Uint32Array(18);
-  crypto.getRandomValues(buf);
-  for (const b of buf) out += chars[b % chars.length];
-  return out;
-}
 
 /** Вкладка 3X-UI: служба, Xray по API, inbound-ы и клиенты, настройки панели, обновление; журнал - по кнопке. */
 export function XuiTab({ s }: { s: ServerDetail }) {
@@ -167,15 +159,9 @@ export function XuiTab({ s }: { s: ServerDetail }) {
     });
   }
 
-  if (!online) return <Card className="p-8 text-[13px] text-muted">Сервер не в сети</Card>;
-  if (loadError) return <Alert tone="bad">{loadError.message}</Alert>;
-  if (!data) return <Card className="p-8 text-[13px] text-muted">Загрузка&hellip;</Card>;
+  if (!online || loadError || !data) return <LoadState offline={!online} error={loadError} />;
   if (!data.installed)
-    return (
-      <Card className="p-8 text-[13px] text-muted">
-        3X-UI не установлен: установка через каталог команд
-      </Card>
-    );
+    return <Placeholder>3X-UI не установлен: установка через каталог команд</Placeholder>;
 
   const svc = s.services.find((x) => x.kind === 'xui');
   const panelUrl = s.panelLinks.xui ?? svc?.panelUrl;
@@ -477,7 +463,7 @@ function SettingsForm({
               pattern="[A-Za-z0-9_-]{0,64}"
             />
             <Button
-              onClick={() => setBasePath(randomPath())}
+              onClick={() => setBasePath(randomToken(18))}
               title="Длинный случайный путь скрывает панель от сканеров"
             >
               Сгенерировать

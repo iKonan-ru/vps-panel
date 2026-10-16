@@ -8,7 +8,7 @@ import { Section } from '@/components/ui/section';
 import { Select } from '@/components/ui/select';
 import { Switch } from '@/components/ui/switch';
 import { api } from '@/lib/api';
-import { ago } from '@/lib/format';
+import { ago, utcHourLocal } from '@/lib/format';
 import { useAction } from '@/lib/use-action';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { ArrowUpCircle, ExternalLink, RefreshCw } from 'lucide-react';
@@ -49,17 +49,9 @@ export function usePanelUpdate(refetchMs = 10 * 60_000) {
     refetchInterval: refetchMs,
   });
 }
-/**
- * Час автообновления хранится в UTC; в списке - местное время браузера (со смещением пояса,
- * в том числе нецелым), по порядку суток.
- */
-const localTime = (utcHour: number) =>
-  new Date(Date.UTC(2020, 0, 1, utcHour)).toLocaleTimeString('ru-RU', {
-    hour: '2-digit',
-    minute: '2-digit',
-  });
+/** Час автообновления хранится в UTC; в списке - местное время браузера, по порядку суток. */
 const HOURS = [...Array(24).keys()]
-  .map((h) => ({ h, label: localTime(h) }))
+  .map((h) => ({ h, label: utcHourLocal(h) }))
   .sort((a, b) => a.label.localeCompare(b.label));
 
 /**

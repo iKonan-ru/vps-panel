@@ -7,7 +7,7 @@ import { Chip } from '@/components/ui/chip';
 import { Field } from '@/components/ui/field';
 import { InfoTip } from '@/components/ui/info-tip';
 import { Input } from '@/components/ui/input';
-import { bytes } from '@/lib/format';
+import { bytes, dateFull } from '@/lib/format';
 import { useAction } from '@/lib/use-action';
 import { useQuery } from '@tanstack/react-query';
 import { type GOwner, parseMtLinks } from '@vps/protocol';
@@ -19,8 +19,7 @@ import { type FormEvent, Fragment, useState } from 'react';
 /** Дата создания: mtproxyl отдаёт unix-время в секундах (на всякий случай понимаем и мс). */
 function createdAt(v: number): string {
   if (!v) return '-';
-  const d = new Date(v > 1e12 ? v : v * 1000);
-  return d.toLocaleDateString('ru-RU');
+  return dateFull(v > 1e12 ? v : v * 1000);
 }
 
 /** Окно пользователя, верхняя часть: состояние, управление, трафик, подключения. */

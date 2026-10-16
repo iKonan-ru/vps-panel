@@ -110,11 +110,6 @@ export function serverRtt(r: ServerReach | undefined | null): number | null {
   return median(r.targets.flatMap((t) => (t.rtt ? [t.rtt] : [])));
 }
 
-/** Время по местным часам: 09:30. */
-export function hm(ms: number | string): string {
-  return new Date(ms).toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' });
-}
-
 export function useReachProbes(serverId: string, key: string | null) {
   return useQuery({
     queryKey: ['reach-probes', serverId, key],
