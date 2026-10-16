@@ -184,6 +184,7 @@ export async function gclientRoutes(
           },
           servers: [...new Set(mine.map((b) => names.get(b.serverId) ?? b.serverId))],
           limited: c.access !== null,
+          access: c.access,
         };
       });
   });
