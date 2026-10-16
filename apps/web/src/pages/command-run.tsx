@@ -13,6 +13,7 @@ import { PageTitle } from '@/components/ui/page-title';
 import { Select } from '@/components/ui/select';
 import { Tabs } from '@/components/ui/tabs';
 import { type Check, commandsApi, paramVisible, useCommands } from '@/lib/commands';
+import { cap } from '@/lib/format';
 import { serverLock, useServer, useServers } from '@/lib/servers';
 import { useQueryClient } from '@tanstack/react-query';
 import { useNavigate, useParams, useSearch } from '@tanstack/react-router';
@@ -135,7 +136,8 @@ export function CommandRunPage() {
           setPlan(p.steps);
           setErrors(p.errors);
         })
-        .catch(() => undefined)
+        // план не рассчитан: ошибка в форме и запуск недоступен, а не план от прошлых ответов
+        .catch((e: Error) => setErrors([cap(e.message)]))
         .finally(() => setPlanPending(false));
     }, 300);
   }, [cmd, serverId, answers, loadedFor]);

@@ -2,6 +2,7 @@ import { Alert } from '@/components/ui/alert';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { Chip } from '@/components/ui/chip';
+import { useConfirm } from '@/components/ui/confirm';
 import { InfoTip } from '@/components/ui/info-tip';
 import type { ServerDetail } from '@/lib/servers';
 import { FitAddon } from '@xterm/addon-fit';
@@ -68,6 +69,7 @@ export function TerminalTab({ s }: { s: ServerDetail }) {
     ws.current?.close(CLOSE_EXPLICIT, 'closed by user');
   };
 
+  const ask = useConfirm();
   const connect = useCallback(() => {
     const el = box.current;
     if (!el) return;
@@ -82,10 +84,14 @@ export function TerminalTab({ s }: { s: ServerDetail }) {
       // ссылки может не совпадать с адресом. Только http(s), адрес показывается до перехода,
       // новая вкладка без доступа к окну панели.
       linkHandler: {
-        activate: (_e, uri) => {
+        activate: async (_e, uri) => {
           if (!/^https?:\/\//i.test(uri)) return;
-          if (!window.confirm(`Открыть ссылку из вывода сервера?\n\n${uri}`)) return;
-          window.open(uri, '_blank', 'noopener,noreferrer');
+          const ok = await ask({
+            title: 'Открыть ссылку из вывода сервера?',
+            text: <span className="font-mono break-all">{uri}</span>,
+            okLabel: 'Открыть',
+          });
+          if (ok) window.open(uri, '_blank', 'noopener,noreferrer');
         },
       },
     });
@@ -146,7 +152,7 @@ export function TerminalTab({ s }: { s: ServerDetail }) {
       if (sock.readyState === sock.OPEN) sock.send(JSON.stringify({ t: 'resize', cols, rows }));
     });
     t.focus();
-  }, [s.id]);
+  }, [s.id, ask]);
 
   // biome-ignore lint/correctness/useExhaustiveDependencies: gen - принудительное переподключение кнопкой
   useEffect(() => {
@@ -171,7 +177,7 @@ export function TerminalTab({ s }: { s: ServerDetail }) {
   if (!online) return <Card className="p-8 text-[13px] text-muted">Сервер не в сети</Card>;
 
   return (
-    <div className={full ? 'fixed inset-0 z-40 flex flex-col bg-bg p-3' : 'flex flex-col gap-3'}>
+    <div className={full ? 'fixed inset-0 z-25 flex flex-col bg-bg p-3' : 'flex flex-col gap-3'}>
       <div className="flex flex-wrap items-center gap-2">
         <Chip
           tone={state === 'open' ? 'ok' : state === 'connecting' ? 'accent' : 'muted'}

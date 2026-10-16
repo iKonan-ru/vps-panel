@@ -1,6 +1,7 @@
 import { Button } from '@/components/ui/button';
 import { Section } from '@/components/ui/section';
-import { api } from '@/lib/api';
+import { ApiError, api } from '@/lib/api';
+import { cap } from '@/lib/format';
 import { subscribe } from '@/lib/live';
 import { X } from 'lucide-react';
 import { useEffect, useRef, useState } from 'react';
@@ -21,6 +22,8 @@ export function ActionOutput({
 }: { actionId: string; onFinished?: (exitCode: number) => void; tall?: boolean }) {
   const [text, setText] = useState('');
   const [done, setDone] = useState<number | null>(null);
+  // вывод не прочитан: действия нет в журнале (404) или ошибка запроса
+  const [loadError, setLoadError] = useState<{ missing: boolean; text: string } | null>(null);
   const box = useRef<HTMLPreElement>(null);
   // Колбэк в ref, чтобы новая функция при каждом рендере не переподписывала поток.
   const finished = useRef(onFinished);
@@ -31,6 +34,7 @@ export function ActionOutput({
     let reported = false;
     setText('');
     setDone(null);
+    setLoadError(null);
     // итог - один раз: из события или из базы, если действие кончилось до открытия
     const finish = (code: number) => {
       setDone(code);
@@ -42,10 +46,18 @@ export function ActionOutput({
       api<ActionRow>(`/api/actions/${actionId}`)
         .then((a) => {
           if (!alive) return;
+          setLoadError(null);
           setText((t) => (t.length > a.output.length ? t : a.output));
           if (a.finishedAt && a.exitCode !== null) finish(a.exitCode);
         })
-        .catch(() => undefined);
+        .catch((e: Error) => {
+          if (!alive) return;
+          const missing = e instanceof ApiError && e.status === 404;
+          setLoadError({
+            missing,
+            text: missing ? 'Действие не найдено в журнале' : cap(e.message),
+          });
+        });
     const un = subscribe((ev) => {
       // сокет переподключился: события за время обрыва (в том числе конец) потеряны
       if (ev.type === 'hello') return void load();
@@ -79,11 +91,19 @@ export function ActionOutput({
         onScroll={onScroll}
         className={`${tall ? 'max-h-[70vh] min-h-[320px]' : 'max-h-[50vh] min-h-[160px]'} ${done === 0 ? 'console-ok' : ''} min-w-0 overflow-auto console rounded-lg p-3 font-mono text-xs leading-relaxed whitespace-pre-wrap [overflow-wrap:anywhere]`}
       >
-        {text ? renderAnsi(text) : <span className="text-[#8b95a3]">Ожидание вывода&hellip;</span>}
+        {text ? (
+          renderAnsi(text)
+        ) : loadError ? (
+          <span className="text-[#ff6b68]">{loadError.text}</span>
+        ) : (
+          <span className="text-[#8b95a3]">Ожидание вывода&hellip;</span>
+        )}
       </pre>
       <div className={done === 0 ? 'text-xs text-ok' : 'text-xs text-muted'}>
         {done === null
-          ? 'Выполняется\u2026'
+          ? loadError?.missing
+            ? 'Вывод недоступен'
+            : 'Выполняется\u2026'
           : done === 0
             ? 'Завершено успешно'
             : `Завершено с ошибкой (код ${done})`}
