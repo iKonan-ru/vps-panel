@@ -75,7 +75,6 @@ export function OpenfluxTab({ s }: { s: ServerDetail }) {
     enabled: online,
     refetchInterval: 60_000,
   });
-  const [err, setErr] = useState<string | null>(null);
   const [action, setAction] = useState<{ id: string; title: string } | null>(null);
   const [add, setAdd] = useState(false);
   const [logs, setLogs] = useState<string | null>(null);
@@ -87,15 +86,10 @@ export function OpenfluxTab({ s }: { s: ServerDetail }) {
   // пока идёт операция, остальные кнопки вкладки недоступны (двойной тап, соседний канал)
   const op = useAction();
   async function call(title: string, json: Record<string, unknown>) {
-    setErr(null);
     await op.run(async () => {
-      try {
-        const r = await exec(json);
-        if (r.actionId) setAction({ id: r.actionId, title });
-        await refresh();
-      } catch (e) {
-        setErr((e as Error).message);
-      }
+      const r = await exec(json);
+      if (r.actionId) setAction({ id: r.actionId, title });
+      await refresh();
     });
   }
   const blocked = lock.busy || op.busy;
@@ -106,7 +100,7 @@ export function OpenfluxTab({ s }: { s: ServerDetail }) {
 
   return (
     <>
-      {err && <Alert tone="bad">{err}</Alert>}
+      {op.error && <Alert tone="bad">{op.error}</Alert>}
       {action && (
         <ActionPanel
           title={action.title}
@@ -207,35 +201,27 @@ export function OpenfluxTab({ s }: { s: ServerDetail }) {
                     label: 'Ссылка',
                     icon: <QrCodeIcon className="size-3.5" />,
                     mobile: true,
-                    onClick: async () => {
-                      setErr(null);
-                      try {
+                    onClick: () =>
+                      op.run(async () => {
                         const r = await api<{ link: string }>(
                           `/api/servers/${s.id}/openflux/link`,
                           { method: 'POST', json: { channel: c.channel } },
                         );
                         setLink(r.link);
-                      } catch (e) {
-                        setErr((e as Error).message);
-                      }
-                    },
+                      }),
                   },
                   {
                     key: 'log',
                     label: 'Журнал канала',
                     icon: <FileText className="size-3.5" />,
-                    onClick: async () => {
-                      setErr(null);
-                      try {
+                    onClick: () =>
+                      op.run(async () => {
                         const r = await api<{ text: string }>(
                           `/api/servers/${s.id}/openflux/logs`,
                           { method: 'POST', json: { channel: c.channel, lines: 300 } },
                         );
                         setLogs(r.text || 'Журнал пуст');
-                      } catch (e) {
-                        setErr((e as Error).message);
-                      }
-                    },
+                      }),
                   },
                   {
                     key: 'restart',

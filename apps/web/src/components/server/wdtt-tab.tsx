@@ -66,20 +66,14 @@ export function WdttTab({ s }: { s: ServerDetail }) {
   const [add, setAdd] = useState(false);
   const [links, setLinks] = useState<WdttPassword | null>(null);
   const [edit, setEdit] = useState<WdttPassword | null>(null);
-  const [err, setErr] = useState<string | null>(null);
 
   const refresh = () => qc.invalidateQueries({ queryKey: ['wdtt', s.id] });
   // пока идёт операция, остальные кнопки вкладки недоступны (двойной тап, соседний пароль)
   const op = useAction();
   async function call(fn: () => Promise<unknown>) {
-    setErr(null);
     await op.run(async () => {
-      try {
-        await fn();
-        await refresh();
-      } catch (e) {
-        setErr((e as Error).message);
-      }
+      await fn();
+      await refresh();
     });
   }
   const blocked = lock.busy || op.busy;
@@ -91,7 +85,7 @@ export function WdttTab({ s }: { s: ServerDetail }) {
   const full = data.passwords.length >= data.limit;
   return (
     <>
-      {err && <Alert tone="bad">{err}</Alert>}
+      {op.error && <Alert tone="bad">{op.error}</Alert>}
       {data.hashes === 0 && (
         <Alert tone="info">
           Хеши звонков VK не заданы: клиентам нужно добавить свои в приложении. Общие хеши задаются
