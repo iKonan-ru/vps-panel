@@ -34,6 +34,7 @@ import { loadChunk } from '@/lib/chunk';
 import { cn } from '@/lib/cn';
 import { agentVersionShort, cap, uptime } from '@/lib/format';
 import { serverLock, useServer } from '@/lib/servers';
+import { useAction } from '@/lib/use-action';
 import { useCopy } from '@/lib/use-copy';
 import { useQueryClient } from '@tanstack/react-query';
 import { useNavigate, useParams } from '@tanstack/react-router';
@@ -398,16 +399,14 @@ function RenameDialog({
 }: { serverId: string; name: string; open: boolean; onClose: () => void }) {
   const qc = useQueryClient();
   const [v, setV] = useState(name);
-  const [error, setError] = useState<string | null>(null);
+  const save = useAction();
   async function submit(e: FormEvent) {
     e.preventDefault();
-    try {
+    const ok = await save.run(async () => {
       await actions.patchServer(serverId, { name: v.trim() });
       await qc.invalidateQueries({ queryKey: ['servers'] });
-      onClose();
-    } catch (err) {
-      setError((err as Error).message);
-    }
+    });
+    if (ok) onClose();
   }
   return (
     <Dialog open={open} onClose={onClose} title="Переименовать">
@@ -421,10 +420,10 @@ function RenameDialog({
             maxLength={64}
           />
         </Field>
-        {error && <Alert tone="bad">{error}</Alert>}
+        {save.error && <Alert tone="bad">{save.error}</Alert>}
         <div className="flex justify-end gap-2">
           <Button onClick={onClose}>Отмена</Button>
-          <Button type="submit" variant="primary">
+          <Button type="submit" variant="primary" disabled={save.busy}>
             Сохранить
           </Button>
         </div>
