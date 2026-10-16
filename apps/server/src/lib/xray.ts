@@ -1,62 +1,10 @@
 import { type ChildProcess, spawn } from 'node:child_process';
 import { existsSync, mkdirSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
+import type { XrayCheck, XrayExitView, XrayOutbound, XrayStatus } from '@vps/protocol';
 import { ProxyAgent, fetch as ufetch } from 'undici';
 import type { Db } from '../db/index.js';
 import { getJsonSetting, getSetting, putSetting } from './settings.js';
-
-/**
- * Выход панели в заблокированные сети (сейчас - Telegram): xray-клиент к VLESS-Reality
- * инбаундам 3x-ui на заграничных серверах. Бинарник xray лежит в образе панели, панель
- * запускает его как дочерний процесс, пишет конфиг в /data/xray и перезапускает при смене.
- *
- * Выходов несколько: основной выбирает владелец в настройках, запасные панель готовит сама
- * (routes/xray.ts, клиент vps-panel на каждом сервере с 3X-UI). У каждого выхода свой
- * HTTP-вход 127.0.0.1:3128+N с маршрутом в свой outbound: выходы проверяются по отдельности,
- * и переключение на запасной не требует перезапуска. Порядок для запросов - последний
- * рабочий первым, затем остальные по порядку (основной, запасные).
- */
-export interface XrayOutbound {
-  serverId: string;
-  serverName: string;
-  inboundId: number;
-  inboundRemark: string;
-  address: string;
-  port: number;
-  uuid: string;
-  publicKey: string;
-  shortId: string;
-  sni: string;
-  fingerprint: string;
-  flow: string;
-  updatedAt: string;
-}
-
-export type XrayCheck = { at: string; ok: boolean; ms: number; err: string | null };
-
-/** Выход для интерфейса: без uuid целиком, с итогом последней проверки. */
-export type XrayExitView = Omit<XrayOutbound, 'uuid' | 'publicKey' | 'shortId'> & {
-  uuid: string;
-  primary: boolean;
-  lastCheck: XrayCheck | null;
-};
-
-export interface XrayStatus {
-  configured: boolean;
-  binary: boolean;
-  running: boolean;
-  pid: number | null;
-  startedAt: string | null;
-  restarts: number;
-  lastError: string | null;
-  /** Проверка основного выхода (как раньше). */
-  lastCheck: XrayCheck | null;
-  outbound: XrayExitView | null;
-  /** Все выходы по порядку: основной, затем запасные. */
-  exits: XrayExitView[];
-  /** Запасные: когда готовились и что не вышло по серверам. */
-  spares: { at: string | null; errors: { server: string; error: string }[] };
-}
 
 /** Выход, через который можно сделать запрос: undici-диспетчер его HTTP-входа. */
 export interface XrayRoute {

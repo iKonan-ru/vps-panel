@@ -6,6 +6,7 @@ import { InfoTip } from '@/components/ui/info-tip';
 import { api } from '@/lib/api';
 import { cn } from '@/lib/cn';
 import { useQuery } from '@tanstack/react-query';
+import type { EngineInfo } from '@vps/protocol';
 import { Download } from 'lucide-react';
 import { useState } from 'react';
 
@@ -14,22 +15,6 @@ import { useState } from 'react';
 export type MtVersionKind = 'mtproxyl' | 'mtproxyl-panel';
 
 export type MtVersions = Versions<MtVersionKind>;
-
-interface EngineVersion {
-  tag: string;
-  date: string;
-  prerelease: boolean;
-  installed: boolean;
-  image: boolean;
-  ready: boolean;
-}
-
-interface EngineInfo {
-  current: string;
-  binary: boolean;
-  versions: EngineVersion[];
-  registryError?: string;
-}
 
 /**
  * Выбор версии движка telemt (lib/mtproxyl-engine.ts на сервере): ставятся только версии с

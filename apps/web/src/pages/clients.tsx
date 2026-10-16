@@ -24,18 +24,9 @@ import { api } from '@/lib/api';
 import { useAction } from '@/lib/use-action';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { Link, useNavigate } from '@tanstack/react-router';
-import type { GClientAccess, GClientRow, GServer } from '@vps/protocol';
+import type { GClientAccess, GClientRow, GServer, XuiOwnInbound } from '@vps/protocol';
 import { ListChecks, Plus, RefreshCw, Server, SlidersHorizontal } from 'lucide-react';
 import { type FormEvent, useState } from 'react';
-
-interface XuiInbound {
-  id: number;
-  remark: string;
-  port: number;
-  enable: boolean;
-  security: string;
-  excluded: boolean;
-}
 
 /**
  * Глобальные клиенты: человек с устройствами, VLESS и MTProxy на человека,
@@ -343,7 +334,7 @@ function InboundsForm({ server, onDone }: { server: GServer; onDone: () => void 
   const qc = useQueryClient();
   const { data, error } = useQuery({
     queryKey: ['xui-vless', server.id],
-    queryFn: () => api<XuiInbound[]>(`/api/servers/${server.id}/xui/inbounds`),
+    queryFn: () => api<XuiOwnInbound[]>(`/api/servers/${server.id}/xui/inbounds`),
     gcTime: 0,
   });
   const [excluded, setExcluded] = useState<number[] | null>(null);

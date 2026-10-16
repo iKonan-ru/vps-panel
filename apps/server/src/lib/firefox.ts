@@ -1,6 +1,7 @@
 import { createHash, createHmac, randomUUID } from 'node:crypto';
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
+import type { FirefoxState, FirefoxView } from '@vps/protocol';
 import type { Env } from '../config.js';
 import type { Db } from '../db/index.js';
 import { extensionVersion } from './extension.js';
@@ -12,21 +13,6 @@ import { zip } from './zip.js';
 const AMO = 'https://addons.mozilla.org/api/v5';
 const KEY_SETTING = 'firefox_amo';
 const STATE_SETTING = 'firefox_state';
-
-export interface FirefoxState {
-  /** Подписанная версия расширения (есть архив в data/firefox). */
-  signed: string | null;
-  busy: boolean;
-  error: string | null;
-  at: string | null;
-}
-
-export interface FirefoxView extends FirefoxState {
-  keySet: boolean;
-  id: string;
-  /** Версия расширения в этой панели (apps/extension/manifest.json). */
-  version: string | null;
-}
 
 /**
  * Расширение Firefox: подпись у Mozilla (addons.mozilla.org, канал unlisted - в каталоге не

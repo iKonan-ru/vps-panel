@@ -6,6 +6,8 @@ import {
   type NotifyEvent,
   type NotifyEvents,
   type NotifyParams,
+  type TgHealth,
+  type TgHealthView,
   readNotifyEvents,
 } from '@vps/protocol';
 import { ProxyAgent, fetch as ufetch } from 'undici';
@@ -48,22 +50,6 @@ interface TgChat {
 interface TgMsg {
   chat: TgChat;
   date: number;
-}
-
-/**
- * Состояние доставки (setting tg_health): доходят ли уведомления. Пишут его отправки и проверка
- * раз в 5 минут (probe); пока не доходят - плашка в каркасе панели и строка в настройках.
- */
-export interface TgHealth {
-  /** null - ещё не проверяли. */
-  ok: boolean | null;
-  /** С какого времени не доходит (первая неудача подряд). */
-  failingSince: string | null;
-  lastOkAt: string | null;
-  /** Каким путём дошло последнее: direct, env, proxy:<id сервера>, agent:<id сервера>. */
-  lastOkVia: string | null;
-  lastError: string | null;
-  checkedAt: string | null;
 }
 
 /** Недоставленное сообщение: уйдёт после восстановления. */
@@ -135,7 +121,7 @@ export class Telegram {
     ];
   }
 
-  health(): TgHealth & { pending: number } {
+  health(): TgHealthView {
     return { ...this.healthState, pending: this.pending().length };
   }
 

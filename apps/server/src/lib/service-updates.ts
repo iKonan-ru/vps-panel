@@ -1,3 +1,4 @@
+import type { ServiceUpdate, ServiceUpdateKind } from '@vps/protocol';
 import { eq } from 'drizzle-orm';
 import type { AgentRegistry } from '../agents/registry.js';
 import type { Db } from '../db/index.js';
@@ -9,21 +10,6 @@ import type { SecretBox } from './secret-box.js';
 import { getJsonSetting, putSetting } from './settings.js';
 import { type XuiEnvelope, xuiApi } from './xui-api.js';
 import { xuiToken } from './xui-token.js';
-
-/**
- * 3X-UI, ядро Xray внутри 3X-UI, MTProxyL (менеджер) и его веб-панель. Движок telemt сюда не
- * входит: его обновление необязательно, версия меняется во вкладке MTProxyL
- * (lib/mtproxyl-engine.ts).
- */
-export type ServiceUpdateKind = 'xui' | 'xray' | 'mtproxyl' | 'mtproxyl-panel';
-
-/** Обновление установленного сервиса. */
-export interface ServiceUpdate {
-  kind: ServiceUpdateKind;
-  title: string;
-  current: string;
-  latest: string;
-}
 
 /**
  * Последняя проверка по серверу и сервису; notified - версия, о которой уже написали.

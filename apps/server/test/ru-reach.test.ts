@@ -1,11 +1,6 @@
+import type { ReachTarget, ServerReach } from '@vps/protocol';
 import { describe, expect, it } from 'vitest';
-import {
-  type ReachTarget,
-  type ServerReach,
-  apply,
-  inboundTargets,
-  level,
-} from '../src/lib/ru-reach.js';
+import { apply, inboundTargets, level } from '../src/lib/ru-reach.js';
 
 describe('доступность из России', () => {
   it('цели inbound-ов: свои включённые поверх TCP, Reality и TLS - с SNI', () => {

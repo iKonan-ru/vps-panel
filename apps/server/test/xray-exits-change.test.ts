@@ -1,3 +1,4 @@
+import type { XrayOutbound } from '@vps/protocol';
 import { describe, expect, it } from 'vitest';
 import { createDb } from '../src/db/index.js';
 import { servers } from '../src/db/schema.js';
@@ -7,7 +8,6 @@ import {
   exitsAfterServerRemoved,
   telegramExitOf,
 } from '../src/lib/xray-exits.js';
-import type { XrayOutbound } from '../src/lib/xray.js';
 import { saveXuiToken } from '../src/lib/xui-token.js';
 
 const reality = (port: number, network = 'tcp') =>

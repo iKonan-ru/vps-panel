@@ -1,39 +1,8 @@
-/**
- * Описание команды каталога. Команда - bash-скрипт, который агент выполняет
- * с ответами на вопросы в переменных окружения. Секреты в командную строку не
- * попадают и в журнале не сохраняются.
- */
-export type ParamType =
-  | 'string'
-  | 'password'
-  | 'number'
-  | 'port'
-  | 'select'
-  | 'bool'
-  | 'text'
-  | 'domain'
-  /** Контейнер AWG, который есть на выбранном сервере (список строит форма по инвентарю). */
-  | 'awg-container';
+import type { CommandInfo, CommandParamInfo } from '@vps/protocol';
 
-export interface CommandParam {
-  /** Имя переменной окружения в скрипте. */
-  name: string;
-  label: string;
-  type: ParamType;
-  default?: string;
-  /** Генерирует значение по умолчанию при открытии формы (случайный порт, путь, пароль). */
+export interface CommandParam extends CommandParamInfo {
+  /** Значение по умолчанию на каждый показ формы (случайный порт, путь, пароль). */
   generate?: () => string;
-  required?: boolean;
-  hint?: string;
-  options?: { value: string; label: string }[];
-  /** Регулярное выражение для проверки (строка, чтобы отдать в браузер). */
-  pattern?: string;
-  min?: number;
-  max?: number;
-  /** Секрет: не запоминается как значение по умолчанию и не пишется в журнал. */
-  secret?: boolean;
-  /** Показывать только при таком значении другого параметра: { name: value }. */
-  showIf?: Record<string, string>;
 }
 
 export interface RunContext {
@@ -108,18 +77,6 @@ export interface AccessEntry {
   title: string;
   fields: { label: string; value: string; secret?: boolean }[];
   note?: string;
-}
-
-/** Описание для интерфейса: без скриптов и функций. */
-export interface CommandInfo {
-  id: string;
-  title: string;
-  group: CommandDef['group'];
-  service?: string;
-  description: string;
-  params: Omit<CommandParam, 'generate'>[];
-  hasPreflight: boolean;
-  after?: string;
 }
 
 export function toInfo(c: CommandDef): CommandInfo {

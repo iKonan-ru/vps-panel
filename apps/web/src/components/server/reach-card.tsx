@@ -7,11 +7,8 @@ import { api } from '@/lib/api';
 import { cn } from '@/lib/cn';
 import { ago, hm, plural } from '@/lib/format';
 import {
-  type ReachProbe,
   type ReachSlot,
-  type ReachTarget,
   SLOT_MS,
-  type ServerReach,
   ms,
   reachLevel,
   reachSlots,
@@ -21,6 +18,7 @@ import {
 } from '@/lib/reach';
 import { useAction } from '@/lib/use-action';
 import { useQueryClient } from '@tanstack/react-query';
+import type { ReachProbe, ReachTarget, ServerReach } from '@vps/protocol';
 import { Radar } from 'lucide-react';
 import { useEffect, useState } from 'react';
 

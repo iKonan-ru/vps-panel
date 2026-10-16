@@ -1,5 +1,5 @@
 import { type NotifyChoice, NotifyDialog, notifySummary } from '@/components/notify-dialog';
-import { type TgHealth, failingFor } from '@/components/telegram-banner';
+import { failingFor } from '@/components/telegram-banner';
 import { Alert } from '@/components/ui/alert';
 import { Button } from '@/components/ui/button';
 import { Chip } from '@/components/ui/chip';
@@ -13,6 +13,7 @@ import { ago } from '@/lib/format';
 import { useServers } from '@/lib/servers';
 import { useAction } from '@/lib/use-action';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
+import type { TgHealthView } from '@vps/protocol';
 import { Power, Route, Search, Send, SlidersHorizontal } from 'lucide-react';
 import { type FormEvent, useState } from 'react';
 
@@ -21,7 +22,7 @@ interface TgSettings extends NotifyChoice {
   tokenSet: boolean;
   chatId: string;
   lastRoute: { via: string; at: string } | null;
-  health: TgHealth;
+  health: TgHealthView;
 }
 
 /** Путь доставки (lib/telegram.ts): proxy:<id> - выход xray, agent:<id> - агент сервера. */

@@ -11,20 +11,21 @@ import { Field } from '@/components/ui/field';
 import { Input } from '@/components/ui/input';
 import { PageTitle } from '@/components/ui/page-title';
 import { api } from '@/lib/api';
-import {
-  type CommandInfo,
-  isSecretParam,
-  secretsMissing,
-  useCommands,
-  visibleParams,
-} from '@/lib/commands';
+import { isSecretParam, secretsMissing, useCommands, visibleParams } from '@/lib/commands';
 import { dateTime } from '@/lib/format';
 import { subscribe } from '@/lib/live';
 import { serverLock, useServer } from '@/lib/servers';
 import { useAction } from '@/lib/use-action';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useParams, useSearch } from '@tanstack/react-router';
-import type { SetupCheck, SetupMode, SetupPlan, SetupProgress, SetupStep } from '@vps/protocol';
+import type {
+  CommandInfo,
+  SetupCheck,
+  SetupMode,
+  SetupPlan,
+  SetupProgress,
+  SetupStep,
+} from '@vps/protocol';
 import { ChevronDown, Play } from 'lucide-react';
 import { useEffect, useRef, useState } from 'react';
 

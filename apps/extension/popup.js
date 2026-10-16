@@ -7,7 +7,12 @@ const send = (msg) => B.runtime.sendMessage(msg);
 function when(iso) {
   if (!iso) return '';
   const d = new Date(iso);
-  return d.toLocaleString('ru-RU', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' });
+  return d.toLocaleString('ru-RU', {
+    day: '2-digit',
+    month: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+  });
 }
 
 let editing = false;

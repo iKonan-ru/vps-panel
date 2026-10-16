@@ -1,13 +1,8 @@
+import type { AppLink, AppOs, AppView } from '@vps/protocol';
 import type { Db } from '../db/index.js';
 import { type GithubRelease, githubReleases } from './github.js';
 import { schedule } from './schedule.js';
 import { getJsonSetting, putSetting } from './settings.js';
-
-/**
- * Клиентские приложения: свежая версия по ОС. Файлы не храним - ссылки на
- * релизы GitHub, где их нет - на магазины. Список релизов обновляется раз в 6 часов.
- */
-export type AppOs = 'android' | 'ios' | 'windows' | 'macos' | 'linux';
 
 type LinkDef =
   /** Файл из релиза репозитория: имя по шаблону (фрагменты ОС, ABI, расширения). */
@@ -211,19 +206,6 @@ interface Release {
 interface Cache {
   checkedAt?: string;
   repos: Record<string, { releases: Release[]; error?: string }>;
-}
-
-export interface AppLink {
-  label: string;
-  url: string;
-  version?: string;
-  note?: string;
-}
-export interface AppView {
-  id: string;
-  name: string;
-  purpose: string;
-  platforms: { os: AppOs; title: string; links: AppLink[] }[];
 }
 
 const KEY = 'app_releases';

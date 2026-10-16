@@ -1,43 +1,6 @@
 import { useQuery } from '@tanstack/react-query';
+import type { CommandInfo, CommandParamInfo } from '@vps/protocol';
 import { api } from './api';
-
-export type ParamType =
-  | 'string'
-  | 'password'
-  | 'number'
-  | 'port'
-  | 'select'
-  | 'bool'
-  | 'text'
-  | 'domain'
-  | 'awg-container';
-
-export interface CommandParam {
-  name: string;
-  label: string;
-  type: ParamType;
-  default?: string;
-  required?: boolean;
-  hint?: string;
-  options?: { value: string; label: string }[];
-  pattern?: string;
-  min?: number;
-  max?: number;
-  secret?: boolean;
-  showIf?: Record<string, string>;
-}
-
-export interface CommandInfo {
-  id: string;
-  title: string;
-  group: 'install' | 'maintain';
-  /** Сервис: команды одного сервиса показываются одной карточкой. */
-  service?: string;
-  description: string;
-  params: CommandParam[];
-  hasPreflight: boolean;
-  after?: string;
-}
 
 export interface CommandRun {
   id: string;
@@ -86,22 +49,25 @@ export const groupTitles: Record<CommandInfo['group'], string> = {
   maintain: 'Обслуживание',
 };
 
-export function paramVisible(p: CommandParam, answers: Record<string, string>): boolean {
+export function paramVisible(p: CommandParamInfo, answers: Record<string, string>): boolean {
   if (!p.showIf) return true;
   return Object.entries(p.showIf).every(([k, v]) => answers[k] === v);
 }
 
 /** Обязательный пароль или секрет: в ссылках и значениях по умолчанию его нет, вводят руками. */
-export function isSecretParam(p: CommandParam): boolean {
+export function isSecretParam(p: CommandParamInfo): boolean {
   return Boolean(p.required) && (p.type === 'password' || Boolean(p.secret));
 }
 
 /** Параметры, которые видны при этих ответах (showIf). */
-export function visibleParams(params: CommandParam[], answers: Record<string, string>) {
+export function visibleParams(params: CommandParamInfo[], answers: Record<string, string>) {
   return params.filter((p) => paramVisible(p, answers));
 }
 
 /** Среди видимых параметров есть незаполненный обязательный пароль или секрет. */
-export function secretsMissing(params: CommandParam[], answers: Record<string, string>): boolean {
+export function secretsMissing(
+  params: CommandParamInfo[],
+  answers: Record<string, string>,
+): boolean {
   return params.some((p) => isSecretParam(p) && !answers[p.name] && paramVisible(p, answers));
 }

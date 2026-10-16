@@ -1,6 +1,7 @@
+import type { XrayOutbound } from '@vps/protocol';
 import { describe, expect, it } from 'vitest';
 import { createDb } from '../src/db/index.js';
-import { XrayManager, type XrayOutbound } from '../src/lib/xray.js';
+import { XrayManager } from '../src/lib/xray.js';
 
 const ob = (serverId: string, port = 443): XrayOutbound => ({
   serverId,
