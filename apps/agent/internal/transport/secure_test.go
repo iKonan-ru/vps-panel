@@ -137,10 +137,7 @@ func run(t *testing.T, f *fakePanel, token string, pinned ed25519.PublicKey, set
 func TestRegistrationOverSecureChannel(t *testing.T) {
 	_, key, _ := ed25519.GenerateKey(rand.Reader)
 	f := &fakePanel{key: key, credHash: TokenHash("regtok"), gotResult: make(chan map[string]any, 1)}
-	var savedKey ed25519.PublicKey
-	_, welcome, _ := run(t, f, "reg:regtok", nil, func(c *Client) {
-		c.OnPanelKey = func(k ed25519.PublicKey) { savedKey = k }
-	})
+	_, welcome, _ := run(t, f, "reg:regtok", key.Public().(ed25519.PublicKey))
 	select {
 	case tok := <-welcome:
 		if tok == "" || f.auth()["tokenHash"] != TokenHash(tok) {
@@ -160,8 +157,22 @@ func TestRegistrationOverSecureChannel(t *testing.T) {
 	case <-time.After(3 * time.Second):
 		t.Fatal("нет ответа на запрос")
 	}
-	if savedKey == nil || !savedKey.Equal(key.Public()) {
-		t.Fatal("ключ панели должен запомниться после проверенного welcome")
+}
+
+func TestNoPanelKeyNoConnection(t *testing.T) {
+	_, key, _ := ed25519.GenerateKey(rand.Reader)
+	f := &fakePanel{key: key, credHash: TokenHash("tok"), gotResult: make(chan map[string]any, 1)}
+	_, _, errs := run(t, f, "tok", nil)
+	select {
+	case err := <-errs:
+		if err == nil || !strings.Contains(err.Error(), "ключ панели не задан") {
+			t.Fatalf("без ключа панели ожидался отказ, получено %v", err)
+		}
+	case <-time.After(3 * time.Second):
+		t.Fatal("сессия не завершилась")
+	}
+	if f.auth() != nil {
+		t.Fatal("без ключа панели агент ничего не шлёт")
 	}
 }
 
@@ -186,7 +197,7 @@ func TestPinnedKeyMismatchRejected(t *testing.T) {
 func TestWelcomeWithoutProofRejected(t *testing.T) {
 	_, key, _ := ed25519.GenerateKey(rand.Reader)
 	f := &fakePanel{key: key, credHash: TokenHash("tok"), badProof: true, gotResult: make(chan map[string]any, 1)}
-	_, welcome, errs := run(t, f, "tok", nil)
+	_, welcome, errs := run(t, f, "tok", key.Public().(ed25519.PublicKey))
 	select {
 	case err := <-errs:
 		if err == nil || !strings.Contains(err.Error(), "не подтвердила токен") {

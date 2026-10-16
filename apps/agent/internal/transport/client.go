@@ -33,15 +33,14 @@ type Client struct {
 	handler Handler
 	log     *slog.Logger
 
-	mu       sync.Mutex
-	conn     *websocket.Conn
-	ch       *channel
 	panelKey ed25519.PublicKey
+
+	mu   sync.Mutex
+	conn *websocket.Conn
+	ch   *channel
 	// OnWelcome вызывается после проверенного welcome (serverId, protocol, постоянный токен -
 	// при регистрации: его создаёт сам агент, панель получает только хеш).
 	OnWelcome func(serverID, protocol, token string)
-	// OnPanelKey - ключ панели принят впервые (старый агент без ключа в конфиге): запомнить.
-	OnPanelKey func(key ed25519.PublicKey)
 	// OnDisconnect - соединение с панелью оборвалось: то, что живёт только пока панель на
 	// связи (сессии веб-терминала, туннели), закрывается - закрыть его потом уже некому.
 	OnDisconnect func()
@@ -52,7 +51,7 @@ type Client struct {
 	Inline map[string]bool
 }
 
-// New - клиент панели. panelKey - запомненный ключ панели (nil - принять первый и запомнить).
+// New - клиент панели. panelKey - ключ панели из конфига: другой панели агент не поверит.
 func New(panelURL, token string, panelKey ed25519.PublicKey, hello any, h Handler, log *slog.Logger) *Client {
 	ws := strings.Replace(strings.Replace(panelURL, "https://", "wss://", 1), "http://", "ws://", 1)
 	return &Client{url: strings.TrimRight(ws, "/") + "/ws/agent?v=2", token: token, panelKey: panelKey, hello: hello, handler: h, log: log}
@@ -95,20 +94,20 @@ func (c *Client) Run(ctx context.Context) {
 }
 
 // handshake - рукопожатие v2 (secure.go): ключ панели, канал, доказательство токена, hello.
-// Возвращает канал, стенограмму, ключ панели и хеш учётных данных (для проверки welcome).
-func (c *Client) handshake(conn *websocket.Conn, tok string) (*channel, []byte, ed25519.PublicKey, string, string, error) {
+// Возвращает канал, стенограмму и хеш учётных данных (для проверки welcome).
+func (c *Client) handshake(conn *websocket.Conn, tok string) (*channel, []byte, string, string, error) {
 	priv, err := ecdh.X25519().GenerateKey(rand.Reader)
 	if err != nil {
-		return nil, nil, nil, "", "", err
+		return nil, nil, "", "", err
 	}
 	_ = conn.SetWriteDeadline(time.Now().Add(10 * time.Second))
 	if err := conn.WriteJSON(map[string]any{"type": "hello2", "eph": base64.StdEncoding.EncodeToString(priv.PublicKey().Bytes())}); err != nil {
-		return nil, nil, nil, "", "", err
+		return nil, nil, "", "", err
 	}
 	_ = conn.SetReadDeadline(time.Now().Add(15 * time.Second))
 	mt, data, err := conn.ReadMessage()
 	if err != nil {
-		return nil, nil, nil, "", "", err
+		return nil, nil, "", "", err
 	}
 	var sh struct {
 		Type string `json:"type"`
@@ -117,14 +116,11 @@ func (c *Client) handshake(conn *websocket.Conn, tok string) (*channel, []byte, 
 		Sig  string `json:"sig"`
 	}
 	if mt != websocket.TextMessage || json.Unmarshal(data, &sh) != nil || sh.Type != "server-hello" {
-		return nil, nil, nil, "", "", errors.New("панель ответила не по протоколу v2")
+		return nil, nil, "", "", errors.New("панель ответила не по протоколу v2")
 	}
-	c.mu.Lock()
-	pinned := c.panelKey
-	c.mu.Unlock()
-	ch, th, key, err := verifyServerHello(priv, pinned, sh.Eph, sh.Key, sh.Sig)
+	ch, th, err := verifyServerHello(priv, c.panelKey, sh.Eph, sh.Key, sh.Sig)
 	if err != nil {
-		return nil, nil, nil, "", "", err
+		return nil, nil, "", "", err
 	}
 	auth := map[string]any{"type": "auth"}
 	var credHash, newToken string
@@ -132,7 +128,7 @@ func (c *Client) handshake(conn *websocket.Conn, tok string) (*channel, []byte, 
 		// постоянный токен создаёт сам агент: панель получает только его хеш
 		b := make([]byte, 32)
 		if _, err := rand.Read(b); err != nil {
-			return nil, nil, nil, "", "", err
+			return nil, nil, "", "", err
 		}
 		newToken = base64.RawURLEncoding.EncodeToString(b)
 		credHash = TokenHash(reg)
@@ -145,17 +141,20 @@ func (c *Client) handshake(conn *websocket.Conn, tok string) (*channel, []byte, 
 	for _, m := range []any{auth, map[string]any{"type": "hello", "protocol": "1.0", "host": c.hello, "methods": c.Methods}} {
 		b, err := json.Marshal(m)
 		if err != nil {
-			return nil, nil, nil, "", "", err
+			return nil, nil, "", "", err
 		}
 		_ = conn.SetWriteDeadline(time.Now().Add(10 * time.Second))
 		if err := conn.WriteMessage(websocket.BinaryMessage, ch.seal(b)); err != nil {
-			return nil, nil, nil, "", "", err
+			return nil, nil, "", "", err
 		}
 	}
-	return ch, th, key, credHash, newToken, nil
+	return ch, th, credHash, newToken, nil
 }
 
 func (c *Client) session(ctx context.Context) error {
+	if len(c.panelKey) != ed25519.PublicKeySize {
+		return errors.New("ключ панели не задан - соединение не устанавливается")
+	}
 	c.mu.Lock()
 	tok := c.token
 	c.mu.Unlock()
@@ -169,7 +168,7 @@ func (c *Client) session(ctx context.Context) error {
 	}
 	defer conn.Close()
 	conn.SetReadLimit(maxMessage)
-	ch, th, key, credHash, newToken, err := c.handshake(conn, tok)
+	ch, th, credHash, newToken, err := c.handshake(conn, tok)
 	if err != nil {
 		return err
 	}
@@ -242,13 +241,6 @@ func (c *Client) session(ctx context.Context) error {
 				return errors.New("панель не подтвердила токен агента - соединение отклонено")
 			}
 			welcomed = true
-			c.mu.Lock()
-			firstKey := c.panelKey == nil
-			c.panelKey = key
-			c.mu.Unlock()
-			if firstKey && c.OnPanelKey != nil {
-				c.OnPanelKey(key)
-			}
 			if newToken != "" {
 				c.SetToken(newToken)
 			}

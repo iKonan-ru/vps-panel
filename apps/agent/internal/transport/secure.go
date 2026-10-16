@@ -105,35 +105,36 @@ func proof(tokenHash, label string, th []byte) string {
 	return base64.StdEncoding.EncodeToString(m.Sum(nil))
 }
 
-// verifyServerHello проверяет ответ панели и выводит канал. pinned - запомненный ключ панели
-// (nil - первое подключение после обновления старого агента: ключ принимается и запоминается,
-// но только после того, как панель докажет в welcome знание токена).
-func verifyServerHello(priv *ecdh.PrivateKey, pinned ed25519.PublicKey, ephPb64, keyB64, sigB64 string) (*channel, []byte, ed25519.PublicKey, error) {
+// verifyServerHello проверяет ответ панели и выводит канал. pinned - ключ панели из конфига.
+func verifyServerHello(priv *ecdh.PrivateKey, pinned ed25519.PublicKey, ephPb64, keyB64, sigB64 string) (*channel, []byte, error) {
+	if len(pinned) != ed25519.PublicKeySize {
+		return nil, nil, errors.New("ключ панели не задан - соединение не устанавливается")
+	}
 	ephP, err1 := base64.StdEncoding.DecodeString(ephPb64)
 	key, err2 := base64.StdEncoding.DecodeString(keyB64)
 	sig, err3 := base64.StdEncoding.DecodeString(sigB64)
 	if err1 != nil || err2 != nil || err3 != nil || len(ephP) != 32 || len(key) != ed25519.PublicKeySize || len(sig) != ed25519.SignatureSize {
-		return nil, nil, nil, errors.New("панель ответила не по протоколу v2")
+		return nil, nil, errors.New("панель ответила не по протоколу v2")
 	}
-	if pinned != nil && !hmac.Equal(pinned, key) {
-		return nil, nil, nil, errors.New("ключ панели не совпал с запомненным - это не наша панель, соединение отклонено")
+	if !hmac.Equal(pinned, key) {
+		return nil, nil, errors.New("ключ панели не совпал с ключом из конфига - это не наша панель, соединение отклонено")
 	}
 	ephA := priv.PublicKey().Bytes()
 	th := transcript(ephA, ephP, key)
 	if !ed25519.Verify(key, th, sig) {
-		return nil, nil, nil, errors.New("подпись панели не сошлась - соединение отклонено")
+		return nil, nil, errors.New("подпись панели не сошлась - соединение отклонено")
 	}
 	pub, err := ecdh.X25519().NewPublicKey(ephP)
 	if err != nil {
-		return nil, nil, nil, err
+		return nil, nil, err
 	}
 	shared, err := priv.ECDH(pub)
 	if err != nil {
-		return nil, nil, nil, err
+		return nil, nil, err
 	}
 	ch, err := deriveChannel(shared, ephA, ephP)
 	if err != nil {
-		return nil, nil, nil, err
+		return nil, nil, err
 	}
-	return ch, th, ed25519.PublicKey(key), nil
+	return ch, th, nil
 }
