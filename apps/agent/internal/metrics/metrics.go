@@ -5,6 +5,7 @@ import (
 	"context"
 	"runtime"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/shirou/gopsutil/v4/cpu"
@@ -111,11 +112,17 @@ func (c *Collector) Collect(ctx context.Context) (Metrics, error) {
 	return m, nil
 }
 
-func Host(agentVersion string) HostInfo {
-	hi := HostInfo{Arch: runtime.GOARCH, AgentVersion: agentVersion, CPUCores: runtime.NumCPU()}
+// cpuModel - модель процессора: за время работы агента не меняется, а cpu.Info разбирает весь
+// /proc/cpuinfo.
+var cpuModel = sync.OnceValue(func() string {
 	if list, err := cpu.Info(); err == nil && len(list) > 0 {
-		hi.CPUModel = strings.TrimSpace(list[0].ModelName)
+		return strings.TrimSpace(list[0].ModelName)
 	}
+	return ""
+})
+
+func Host(agentVersion string) HostInfo {
+	hi := HostInfo{Arch: runtime.GOARCH, AgentVersion: agentVersion, CPUCores: runtime.NumCPU(), CPUModel: cpuModel()}
 	if info, err := host.Info(); err == nil {
 		hi.Hostname = info.Hostname
 		hi.OS = info.Platform + " " + info.PlatformVersion
