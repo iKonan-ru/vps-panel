@@ -353,7 +353,7 @@ describe('GClients.reconcile: 3X-UI', () => {
     expect(xui.s1?.clients.get(c.slug)).toBeUndefined();
     expect(xui.s2?.clients.get(c.slug)).toBeTruthy();
     const st = (await g.serverStates()).find((t) => t.row.id === 's1');
-    expect(st).toMatchObject({ panelHost: true, enabled: false, active: false });
+    expect(st).toMatchObject({ panelHost: true, active: false });
 
     putSetting(db, PANEL_HOST_KEY, '1');
     db.update(gclientBindings).set(queued()).run();
@@ -734,6 +734,41 @@ describe('GClients.reconcile: сервис пропал из снимка', () =
       const g2 = new GClients(db, box, registry, journal, async () => [], { warn: () => {} });
       await g2.reconcile();
       expect(mtOn()).toEqual([]);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('сервис, который агент не смог проверить, не считается удалённым', async () => {
+    vi.useFakeTimers({ toFake: ['Date'] });
+    try {
+      mk('Ольга');
+      const g = new GClients(db, box, registry, journal, async () => [], { warn: () => {} });
+      await g.reconcile();
+      const xuiOn = () =>
+        db
+          .select()
+          .from(gclientBindings)
+          .all()
+          .filter((b) => b.service === 'xui' && b.serverId === 's1');
+      expect(xuiOn()).toHaveLength(1);
+      // база 3X-UI не прочиталась: сервиса нет в снимке, но он в unchecked
+      db.update(servers)
+        .set({
+          statusCache: {
+            inventory: {
+              ...inventory,
+              services: inventory.services.slice(1),
+              unchecked: ['xui'],
+            },
+          },
+        } as never)
+        .where(eq(servers.id, 's1'))
+        .run();
+      await g.reconcile();
+      vi.setSystemTime(Date.now() + 60 * 60_000);
+      await g.reconcile();
+      expect(xuiOn()).toHaveLength(1);
     } finally {
       vi.useRealTimers();
     }

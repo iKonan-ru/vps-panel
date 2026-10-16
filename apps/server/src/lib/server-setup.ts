@@ -1,4 +1,12 @@
 import { randomBytes } from 'node:crypto';
+import {
+  AWG_MAIN,
+  SERVICES,
+  type ServiceDef,
+  awgContainerName,
+  serviceByCommand,
+  serviceByKind,
+} from '@vps/protocol';
 import type {
   SetupCheck,
   SetupMode,
@@ -18,7 +26,7 @@ import { access, gclientBindings, servers } from '../db/schema.js';
 import { upsertAccess } from './access.js';
 import { type actionJournal, liveOutput } from './action-journal.js';
 import type { BackupRestorer } from './backup-restore.js';
-import { AWG_MAIN, type BackupSetup, backupSnapshot } from './backup-setup.js';
+import { type BackupSetup, backupSnapshot, subnetOf } from './backup-setup.js';
 import type { CatalogRunner } from './catalog-runner.js';
 import { checkClientHost } from './client-host.js';
 import { type GClients, queued } from './gclients.js';
@@ -41,32 +49,8 @@ import {
 } from './xui-new-inbound.js';
 import { saveXuiToken, xuiToken } from './xui-token.js';
 
-/** Сервисы каталога по порядку установки: команда и вид сервиса в отчёте агента. */
-const SERVICES: { command: string; kind: string; title: string }[] = [
-  { command: 'xui', kind: 'xui', title: '3X-UI' },
-  { command: 'mtproxyl', kind: 'mtproxyl', title: 'MTProxyL' },
-  { command: 'awg', kind: 'amnezia', title: 'AmneziaWG' },
-  { command: 'wdtt', kind: 'wdtt', title: 'WDTT' },
-  { command: 'openflux', kind: 'openflux', title: 'OpenFlux' },
-  { command: 'naive', kind: 'naive', title: 'Прокси для браузера' },
-];
-
-/** Команда удаления сервиса каталога (для "Переустановить"). */
-const UNINSTALL: Record<string, string> = {
-  xui: 'xui-uninstall',
-  mtproxyl: 'mtproxyl-uninstall',
-  wdtt: 'wdtt-uninstall',
-  openflux: 'openflux-uninstall',
-  naive: 'naive-uninstall',
-};
-
-/** Компоненты архива копии - по виду сервиса в отчёте агента (у остальных данных в копии нет). */
-const KIND_COMPONENT: Record<string, string> = {
-  xui: 'xui',
-  mtproxyl: 'mtproxyl',
-  wdtt: 'wdtt',
-  amnezia: 'amnezia',
-};
+const isAwg = (svc: ServiceDef) => svc.install === 'awg';
+const componentOf = (command: string) => serviceByCommand(command)?.component;
 
 /**
  * Снятие агента со старого сервера после переноса: служба выключается и удаляется чуть позже
@@ -81,25 +65,12 @@ systemctl daemon-reload'
 echo "Агент удалится через 20 секунд"
 `;
 
-/** Компонент архива копии по команде сервиса. */
-const COMPONENT: Record<string, string> = {
-  xui: 'xui',
-  mtproxyl: 'mtproxyl',
-  wdtt: 'wdtt',
-  awg: 'amnezia',
-};
-
 /** Контейнер AWG на сервере (awg.status): имя, порт UDP, подсеть 10.8.N.0. */
 interface AwgHere {
   container: string;
   port: number;
   subnet: string;
 }
-
-const subnetOf = (address: string) => {
-  const m = /(\d+)\.(\d+)\.(\d+)\.\d+\/\d+/.exec(address);
-  return m ? `${m[1]}.${m[2]}.${m[3]}.0` : '';
-};
 
 /** Режим шага с уже стоящим сервисом; без выбора - обычная установка. */
 const modeOf = (s: SetupStep) => (s.modes ? (s.answers?.MODE ?? s.modes[0]) : 'install');
@@ -109,6 +80,10 @@ const willInstall = (s: SetupStep) =>
   s.enabled && s.kind === 'service' && (modeOf(s) === 'install' || modeOf(s) === 'reinstall');
 
 const isAwgStep = (s: SetupStep) => s.id === 'awg' || s.id.startsWith('awg-extra');
+
+/** Контейнер шага AWG: основной или дополнительный на своём порту. */
+const stepContainer = (s: SetupStep) =>
+  s.id === 'awg' ? AWG_MAIN : awgContainerName(s.answers?.AWG_SERVER_PORT ?? '');
 
 const progressKey = (id: string) => `setup.progress.${id}`;
 const err = (message: string, statusCode: number) =>
@@ -295,19 +270,19 @@ export function serverSetup(deps: SetupDeps) {
         answers: { NAME: r.clientHost ?? '' },
       },
     ];
-    for (const s of SERVICES) {
+    for (const svc of SERVICES) {
       // AWG: "уже стоит" - основной контейнер; дополнительные основному не мешают
       const installed =
         !asEmpty &&
-        (s.command === 'awg'
+        (isAwg(svc)
           ? (inventory(id)?.containers ?? []).some((c) => c.name === AWG_MAIN)
-          : has(id, s.kind));
-      const answers = await screenAnswers(id, s.command);
+          : has(id, svc.kind));
+      const answers = await screenAnswers(id, svc.install);
       steps.push({
-        id: s.command,
+        id: svc.install,
         kind: 'service',
-        title: s.title,
-        command: s.command,
+        title: svc.title,
+        command: svc.install,
         ...(installed
           ? {
               enabled: false,
@@ -354,13 +329,13 @@ export function serverSetup(deps: SetupDeps) {
   function installedHere(id: string): string[] {
     const inv = inventory(id);
     const out: string[] = [];
-    for (const s of SERVICES) {
-      if (s.command === 'awg') {
+    for (const svc of SERVICES) {
+      if (isAwg(svc)) {
         for (const c of inv?.containers ?? [])
           if (c.name.startsWith(AWG_MAIN)) out.push(`AmneziaWG (${c.name})`);
         continue;
       }
-      if (has(id, s.kind)) out.push(s.title);
+      if (has(id, svc.kind)) out.push(svc.title);
     }
     return out;
   }
@@ -394,7 +369,7 @@ export function serverSetup(deps: SetupDeps) {
       );
     const snap = await backupSnapshot(db, registry, from.id);
     const comps = new Set<string | undefined>(
-      snap.services.map((k) => KIND_COMPONENT[k]).filter(Boolean),
+      snap.services.map((k) => serviceByKind(k)?.component).filter(Boolean),
     );
     return { bk: null, snap, comps, from, fresh: true };
   }
@@ -537,10 +512,10 @@ export function serverSetup(deps: SetupDeps) {
         continue;
       }
       if (s.kind === 'service' && s.command) {
-        const kind = SERVICES.find((x) => x.command === s.command)?.kind ?? '';
-        const inSnap = snap.services.includes(kind);
+        const svc = serviceByCommand(s.command);
+        const inSnap = snap.services.includes(svc?.kind ?? '');
         const answers = { ...(s.answers ?? {}), ...(snap.answers[s.command] ?? {}) };
-        const fromBackup = comps.has(s.command) ? { fromBackup: true } : {};
+        const fromBackup = comps.has(componentOf(s.command)) ? { fromBackup: true } : {};
         if (s.modes) {
           // уже стоит: из копии - оставить и заменить данными; в копии его нет - не трогать
           const modes: SetupMode[] = inSnap ? ['keep', 'reinstall', 'skip'] : ['skip', 'reinstall'];
@@ -832,8 +807,8 @@ export function serverSetup(deps: SetupDeps) {
     // компоненты копии, которые не раскладываются: "не трогать" у их сервиса
     const exclude = new Set<string>();
     for (const x of all)
-      if (x.modes && modeOf(x) === 'skip' && x.command && COMPONENT[x.command])
-        exclude.add(COMPONENT[x.command] as string);
+      if (x.modes && modeOf(x) === 'skip' && x.command && componentOf(x.command))
+        exclude.add(componentOf(x.command) as string);
     const ctx: Ctx = {
       action,
       say,
@@ -990,7 +965,7 @@ export function serverSetup(deps: SetupDeps) {
    */
   async function awgKeep(id: string, s: SetupStep, ctx: Ctx): Promise<string> {
     const a = s.answers ?? {};
-    const name = s.id === 'awg' ? AWG_MAIN : `${AWG_MAIN}-${a.AWG_SERVER_PORT ?? ''}`;
+    const name = s.id === 'awg' ? AWG_MAIN : awgContainerName(a.AWG_SERVER_PORT ?? '');
     const t = (await awgHere(id))?.find((x) => x.container === name);
     const same =
       t &&
@@ -1017,47 +992,57 @@ export function serverSetup(deps: SetupDeps) {
   function keepsBindings(s: SetupStep, ctx: Ctx): boolean {
     const cmd = s.command ?? '';
     if (cmd === 'naive' || cmd === 'openflux') return true;
-    return Boolean(s.fromBackup) && !ctx.exclude.has(COMPONENT[cmd] ?? cmd);
+    return Boolean(s.fromBackup) && !ctx.exclude.has(componentOf(cmd) ?? cmd);
   }
 
-  /** Очистка: удалить наши сервисы, что стоят сейчас (контейнеры AWG - каждый). */
-  async function wipe(id: string, ctx: Ctx): Promise<string> {
-    const back = (cmd: string) =>
-      ctx.all.find((x) => x.command === cmd && x.kind === 'service' && willInstall(x));
-    // контейнеры AWG, которые поставятся снова (из копии), - их пиры вернёт копия
-    const awgBack = new Set(
-      ctx.all
-        .filter((x) => isAwgStep(x) && willInstall(x) && !ctx.exclude.has('amnezia'))
-        .map((x) =>
-          x.id === 'awg' ? AWG_MAIN : `${AWG_MAIN}-${x.answers?.AWG_SERVER_PORT ?? ''}`,
-        ),
-    );
+  /**
+   * Удалить наши сервисы, что стоят на сервере (контейнеры AWG - каждый). keep - удаление того,
+   * что сразу вернётся с прежними записями: привязки клиентов не снимаются.
+   */
+  async function removeServices(
+    id: string,
+    ctx: Ctx,
+    opts: { label: string; keep: (svc: ServiceDef, container?: string) => boolean },
+  ): Promise<string[]> {
     const done: string[] = [];
     for (const svc of SERVICES) {
-      if (svc.command === 'awg') {
-        if (!has(id, 'amnezia')) continue;
+      if (!has(id, svc.kind)) continue;
+      if (isAwg(svc)) {
         const here = await awgHere(id);
         if (!here) throw new Error('агент не ответил, какие контейнеры AWG стоят');
         for (const t of here) {
-          ctx.say(`Удаление: контейнер ${t.container}`);
-          await runCommand(
-            id,
-            'awg-uninstall',
-            { AWG_CONTAINER: t.container, CONFIRM: 'yes' },
-            ctx,
-            awgBack.has(t.container),
-          );
+          ctx.say(`${opts.label}удаление контейнера ${t.container}`);
+          const answers = { AWG_CONTAINER: t.container, CONFIRM: 'yes' };
+          await runCommand(id, svc.uninstall, answers, ctx, opts.keep(svc, t.container));
           done.push(t.container);
         }
         continue;
       }
-      const un = UNINSTALL[svc.command];
-      if (!un || !has(id, svc.kind)) continue;
-      ctx.say(`Удаление: ${svc.title}`);
-      const step = back(svc.command);
-      await runCommand(id, un, { CONFIRM: 'yes' }, ctx, step ? keepsBindings(step, ctx) : false);
+      ctx.say(`${opts.label}удаление ${svc.title}`);
+      await runCommand(id, svc.uninstall, { CONFIRM: 'yes' }, ctx, opts.keep(svc));
       done.push(svc.title);
     }
+    return done;
+  }
+
+  /** Очистка перед установкой: наши сервисы удаляются, всё ставится как на пустой сервер. */
+  async function wipe(id: string, ctx: Ctx): Promise<string> {
+    // контейнеры AWG, которые поставятся снова (из копии), - их пиры вернёт копия
+    const awgBack = new Set(
+      ctx.all
+        .filter((x) => isAwgStep(x) && willInstall(x) && !ctx.exclude.has('amnezia'))
+        .map(stepContainer),
+    );
+    const done = await removeServices(id, ctx, {
+      label: '',
+      keep: (svc, container) => {
+        if (container) return awgBack.has(container);
+        const step = ctx.all.find(
+          (x) => x.command === svc.install && x.kind === 'service' && willInstall(x),
+        );
+        return step ? keepsBindings(step, ctx) : false;
+      },
+    });
     return done.length ? `удалено: ${done.join(', ')}` : 'удалять нечего';
   }
 
@@ -1079,25 +1064,7 @@ export function serverSetup(deps: SetupDeps) {
           `${from.name} не в сети: снять с него сервисы нельзя \u2014 можно выбрать \u00abТолько удалить из панели\u00bb`,
         );
       await registry.refreshInventory(fromId);
-      for (const svc of SERVICES) {
-        if (svc.command === 'awg') {
-          if (!has(fromId, 'amnezia')) continue;
-          for (const t of (await awgHere(fromId)) ?? []) {
-            ctx.say(`${from.name}: удаление контейнера ${t.container}`);
-            await runCommand(
-              fromId,
-              'awg-uninstall',
-              { AWG_CONTAINER: t.container, CONFIRM: 'yes' },
-              ctx,
-            );
-          }
-          continue;
-        }
-        const un = UNINSTALL[svc.command];
-        if (!un || !has(fromId, svc.kind)) continue;
-        ctx.say(`${from.name}: удаление ${svc.title}`);
-        await runCommand(fromId, un, { CONFIRM: 'yes' }, ctx);
-      }
+      await removeServices(fromId, ctx, { label: `${from.name}: `, keep: () => false });
       // ключ панели в root: доступ к серверу больше не нужен (последний ключ агент не удалит)
       try {
         const fp = keyFingerprint(loadPanelKey(env.DATA_DIR).publicKey);
@@ -1187,7 +1154,7 @@ export function serverSetup(deps: SetupDeps) {
       }
       case 'service': {
         const cmd = s.command as string;
-        const svc = SERVICES.find((x) => x.command === cmd);
+        const svc = serviceByCommand(cmd);
         const extra = s.id.startsWith('awg-extra');
         const mode = modeOf(s);
         if (mode === 'skip') return null;
@@ -1195,15 +1162,9 @@ export function serverSetup(deps: SetupDeps) {
           if (cmd !== 'awg') return 'оставлен, данные заменит копия';
           return awgKeep(id, s, ctx);
         }
-        if (mode === 'reinstall' && cmd !== 'awg' && UNINSTALL[cmd]) {
+        if (mode === 'reinstall' && svc && !isAwg(svc)) {
           say(`Удаление: ${s.title}`);
-          await runCommand(
-            id,
-            UNINSTALL[cmd] as string,
-            { CONFIRM: 'yes' },
-            ctx,
-            keepsBindings(s, ctx),
-          );
+          await runCommand(id, svc.uninstall, { CONFIRM: 'yes' }, ctx, keepsBindings(s, ctx));
         }
         if (mode === 'install' && !extra && svc && cmd !== 'awg' && has(id, svc.kind)) return null;
         // дополнительный AWG: порт и подсеть - из копии или свободные сейчас, когда основной
@@ -1220,17 +1181,7 @@ export function serverSetup(deps: SetupDeps) {
           : cmd === 'awg' && mode === 'reinstall'
             ? { ...withPasswords(s), AWG_REPLACE: 'replace' }
             : withPasswords(s);
-        const p = await runner.prepare(id, cmd, answers);
-        const from = action.output.length;
-        const r = await runner.execute(id, p, {
-          runId: action.id,
-          stream: action.stream,
-          output: () => action.output.slice(from),
-        });
-        ctx.secrets.push(...r.secrets);
-        if (r.exitCode !== 0) throw new Error(`команда завершилась с кодом ${r.exitCode}`);
-        // следующим шагам нужен свежий отчёт: что стоит, какие порты заняты
-        await registry.refreshInventory(id);
+        await runCommand(id, cmd, answers, ctx);
         return 'установлен';
       }
       case 'inbounds': {
@@ -1306,11 +1257,7 @@ export function serverSetup(deps: SetupDeps) {
         // контейнеры AWG, чьи данные заменила копия: ключи их прежних пиров не нужны
         const replaced = ctx.exclude.has('amnezia')
           ? []
-          : ctx.all
-              .filter((x) => isAwgStep(x) && x.enabled)
-              .map((x) =>
-                x.id === 'awg' ? AWG_MAIN : `${AWG_MAIN}-${x.answers?.AWG_SERVER_PORT ?? ''}`,
-              );
+          : ctx.all.filter((x) => isAwgStep(x) && x.enabled).map(stepContainer);
         const r = transferClients(db, ctx.migrateFrom, id, replaced);
         hub.broadcast({ type: 'server.changed', serverId: id });
         hub.broadcast({ type: 'server.changed', serverId: ctx.migrateFrom });

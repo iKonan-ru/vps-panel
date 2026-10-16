@@ -1,3 +1,4 @@
+import { type GService, SERVICES, serviceByKind } from '@vps/protocol';
 import { and, eq } from 'drizzle-orm';
 import { type AgentRegistry, agentUnreachable } from '../agents/registry.js';
 import { toSummary } from '../agents/state.js';
@@ -48,17 +49,17 @@ type Device = typeof gclientDevices.$inferSelect;
 interface ServerState {
   row: ServerRow;
   online: boolean;
-  /** Галочка участия: у сервера панели - только явное включение (PANEL_HOST_KEY). */
-  enabled: boolean;
+  /**
+   * На нём заводятся глобальные клиенты: включён переключатель, у сервера панели - ещё и явное
+   * включение (PANEL_HOST_KEY).
+   */
   active: boolean;
   /** сервер, на котором стоит панель: клиенты на нём - только если владелец включил */
   panelHost: boolean;
-  xui: boolean;
-  awg: boolean;
-  mtproxyl: boolean;
-  wdtt: boolean;
-  openflux: boolean;
-  naive: boolean;
+  /** Сервис стоит по последнему отчёту агента. */
+  has: Record<GService, boolean>;
+  /** Агент не смог проверить сервис в последнем снимке: его привязки сейчас не трогаются. */
+  unchecked: Set<GService>;
   awgInstances: { container: string; version: string; state: string }[] | null;
   /** Порты VLESS-inbound-ов 3X-UI по последнему отчёту агента (раз в 5 минут) и его время. */
   xuiPorts: { at: string; ports: number[] } | null;
@@ -263,9 +264,8 @@ export class GClients {
   }
 
   /**
-   * Все серверы: active - на нём заводятся глобальные клиенты (включён переключатель и это не
-   * сервер панели), xui - агент нашёл 3X-UI, awg - контейнеры AmneziaWG, awgInstances -
-   * экземпляры и их версии по последнему опросу (null - не опрашивались).
+   * Все серверы с тем, что на них стоит; awgInstances - экземпляры AWG и их версии по последнему
+   * опросу (null - не опрашивались).
    */
   async serverStates(): Promise<ServerState[]> {
     const ips = await this.panelIps();
@@ -278,18 +278,19 @@ export class GClients {
         const s = toSummary(row, this.registry, null, ips);
         const inv = row.statusCache?.inventory;
         const inbounds = s.services.find((x) => x.kind === 'xui')?.details?.inbounds;
+        const has = Object.fromEntries(
+          SERVICES.map((d) => [d.binding, s.services.some((x) => x.kind === d.kind)]),
+        ) as Record<GService, boolean>;
+        const unchecked = new Set(
+          (inv?.unchecked ?? []).flatMap((k) => serviceByKind(k)?.binding ?? []),
+        );
         return {
           row,
           online: s.status === 'online',
-          enabled: row.gclients && (!s.panelHost || onPanel),
           active: row.gclients && (!s.panelHost || onPanel),
           panelHost: s.panelHost,
-          xui: s.services.some((x) => x.kind === 'xui'),
-          awg: s.services.some((x) => x.kind === 'amnezia'),
-          mtproxyl: s.services.some((x) => x.kind === 'mtproxyl'),
-          wdtt: s.services.some((x) => x.kind === 'wdtt'),
-          openflux: s.services.some((x) => x.kind === 'openflux'),
-          naive: s.services.some((x) => x.kind === 'naive'),
+          has,
+          unchecked,
           awgInstances: row.statusCache?.awgInstances ?? null,
           xuiPorts:
             inv && Array.isArray(inbounds)
@@ -359,54 +360,20 @@ export class GClients {
       );
 
     for (const t of states.filter((x) => x.active)) {
-      // VLESS: человек x сервер с 3X-UI
-      if (t.xui)
-        for (const c of live.filter((x) => allowed(x, t.row.id, 'xui'))) {
+      // VLESS, MTProxy, WDTT, прокси для браузера: человек x сервер с сервисом
+      for (const d of SERVICES) {
+        if (d.per !== 'client' || !t.has[d.binding] || t.unchecked.has(d.binding)) continue;
+        for (const c of live.filter((x) => allowed(x, t.row.id, d.binding))) {
           const want = {
             clientId: c.id,
             deviceId: null,
             serverId: t.row.id,
-            service: 'xui',
+            service: d.binding,
             ref: c.slug,
           };
           if (!has(want)) bindings.push(this.addBinding(want));
         }
-      // MTProxy: человек x сервер с MTProxyL
-      if (t.mtproxyl)
-        for (const c of live.filter((x) => allowed(x, t.row.id, 'mtproxyl'))) {
-          const want = {
-            clientId: c.id,
-            deviceId: null,
-            serverId: t.row.id,
-            service: 'mtproxyl',
-            ref: c.slug,
-          };
-          if (!has(want)) bindings.push(this.addBinding(want));
-        }
-      // WDTT: человек x сервер с WDTT - пароль на несколько устройств
-      if (t.wdtt)
-        for (const c of live.filter((x) => allowed(x, t.row.id, 'wdtt'))) {
-          const want = {
-            clientId: c.id,
-            deviceId: null,
-            serverId: t.row.id,
-            service: 'wdtt',
-            ref: c.slug,
-          };
-          if (!has(want)) bindings.push(this.addBinding(want));
-        }
-      // Прокси для браузера: человек x сервер с naive
-      if (t.naive)
-        for (const c of live.filter((x) => allowed(x, t.row.id, 'naive'))) {
-          const want = {
-            clientId: c.id,
-            deviceId: null,
-            serverId: t.row.id,
-            service: 'naive',
-            ref: c.slug,
-          };
-          if (!has(want)) bindings.push(this.addBinding(want));
-        }
+      }
       // AWG: устройство x сервер с контейнерами AWG; экземпляр 3.x всегда, 2.0 - по галочке, но
       // только если экземпляр этой версии на сервере есть (нет - и не заводим, без ошибок).
       // Экземпляры - не старше 30 минут: поставили новый - клиенты на него попадут
@@ -415,7 +382,7 @@ export class GClients {
         const c = live.find((x) => x.id === d.clientId);
         return c !== undefined && allowed(c, t.row.id, 'awg');
       });
-      if (t.awg && awgDevices.length) {
+      if (t.has.awg && !t.unchecked.has('awg') && awgDevices.length) {
         if ((!t.awgInstances || Date.now() - asked > 30 * 60_000) && t.online)
           try {
             this.awgAsked.set(t.row.id, Date.now());
@@ -445,7 +412,7 @@ export class GClients {
       }
       // OpenFlux: устройство x сервер с OpenFlux - канал на устройство; у роутеров
       // приложения OpenFlux нет
-      if (t.openflux)
+      if (t.has.openflux && !t.unchecked.has('openflux'))
         for (const d of liveDevices) {
           const c = live.find((x) => x.id === d.clientId);
           if (!c || d.type === 'router' || !allowed(c, t.row.id, 'openflux')) continue;
@@ -473,16 +440,10 @@ export class GClients {
       // его нет в снимках дольше ABSENT_MS: на один снимок он пропадает и при перезапуске docker
       // или переустановке, а стёртая привязка оставила бы на сервере пир или пароль, который
       // панель уже не отзовёт. Пока сервиса нет, его привязки не трогаются.
-      for (const [service, present] of [
-        ['xui', t.xui],
-        ['awg', t.awg],
-        ['mtproxyl', t.mtproxyl],
-        ['wdtt', t.wdtt],
-        ['openflux', t.openflux],
-        ['naive', t.naive],
-      ] as const) {
+      for (const { binding: service } of SERVICES) {
+        const present = t.has[service];
         const key = `${t.row.id}:${service}`;
-        if (present || !t.online) {
+        if (present || !t.online || t.unchecked.has(service)) {
           if (present && this.absentSince.delete(key)) this.saveAbsent();
           continue;
         }
@@ -495,15 +456,12 @@ export class GClients {
         for (const b of mine.filter((x) => x.service === service))
           this.db.delete(gclientBindings).where(eq(gclientBindings.id, b.id)).run();
       }
-      const present: Record<string, boolean> = {
-        xui: t.xui,
-        awg: t.awg,
-        mtproxyl: t.mtproxyl,
-        wdtt: t.wdtt,
-        openflux: t.openflux,
-        naive: t.naive,
-      };
-      mine = mine.filter((b) => present[b.service] !== false || !t.online);
+      // сервиса нет (или агент его не проверил) - его привязки в этот проход не трогаются
+      mine = mine.filter(
+        (b) =>
+          !t.online ||
+          (t.has[b.service as GService] !== false && !t.unchecked.has(b.service as GService)),
+      );
       // сервер исключили, клиента или устройство удалили, сняли доступ к сервису на сервере или
       // галочку AWG 2.0 - убрать
       const drop = (b: Binding) => {
@@ -630,6 +588,17 @@ export class GClients {
       mt ??= this.registry.request<MtStatus>(row.id, 'mtproxyl.status', {}, { timeoutMs: 120_000 });
       return mt;
     };
+    const remove: Record<GService, (b: Binding) => Promise<void>> = {
+      xui: async (b) => xuiRemove((await xuiCtx()).api, b.ref),
+      awg: (b) => awgRemove(this.deps, row.id, b.ref),
+      mtproxyl: (b) => mtRemove(this.deps, row.id, b.ref),
+      wdtt: (b) => wdttRemove(this.deps, row.id, b),
+      naive: (b) => naiveRemove(this.deps, row.id, b.ref),
+      openflux: async (b) => {
+        await ofRemove(this.deps, row.id, b.ref);
+        releaseOfDocs(this.db, b.id);
+      },
+    };
     let stoppedAt: number | null = null;
     for (const [i, b] of work.entries()) {
       prog.done = i;
@@ -649,15 +618,7 @@ export class GClients {
       prog.current = label;
       try {
         if (!c || ctx.drop(b)) {
-          if (b.service === 'xui') await xuiRemove((await xuiCtx()).api, b.ref);
-          if (b.service === 'awg') await awgRemove(this.deps, row.id, b.ref);
-          if (b.service === 'mtproxyl') await mtRemove(this.deps, row.id, b.ref);
-          if (b.service === 'wdtt') await wdttRemove(this.deps, row.id, b);
-          if (b.service === 'naive') await naiveRemove(this.deps, row.id, b.ref);
-          if (b.service === 'openflux') {
-            await ofRemove(this.deps, row.id, b.ref);
-            releaseOfDocs(this.db, b.id);
-          }
+          await remove[b.service as GService]?.(b);
           this.db.delete(gclientBindings).where(eq(gclientBindings.id, b.id)).run();
           say(`${label}: удалён`);
           continue;

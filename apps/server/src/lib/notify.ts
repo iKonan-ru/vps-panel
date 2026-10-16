@@ -1,4 +1,4 @@
-import type { Inventory, NotifyEvent, ServiceKind } from '@vps/protocol';
+import { type Inventory, type NotifyEvent, serviceByKind } from '@vps/protocol';
 import { eq } from 'drizzle-orm';
 import type { AgentRegistry } from '../agents/registry.js';
 import type { StatusCache } from '../agents/state.js';
@@ -33,13 +33,6 @@ function shortDate(iso: string, now = new Date()): string {
  * Вкладка карточки сервера для сервиса (id вкладок - apps/web/src/pages/server.tsx); у сервисов
  * без своей вкладки - обзор.
  */
-const SERVICE_TAB: Partial<Record<ServiceKind, string>> = {
-  xui: 'xui',
-  mtproxyl: 'mtproxyl',
-  amnezia: 'awg',
-  wdtt: 'wdtt',
-  openflux: 'openflux',
-};
 
 /** Адрес карточки сервера в панели (с вкладкой) или пусто, если адрес панели не задан. */
 export function serverHref(panelUrl: string, id: string, tab?: string): string {
@@ -196,12 +189,12 @@ export class Notifier {
           d.notified = true;
           const why =
             typeof s.details.downReason === 'string' ? `: ${esc(s.details.downReason)}` : '';
-          const name = await this.serverName(id, SERVICE_TAB[s.kind]);
+          const name = await this.serverName(id, serviceByKind(s.kind)?.tab);
           await this.tg.send(`${name}: ${esc(s.title)} не работает${why}`);
         }
         next.set(key, d);
       } else if (was?.notified && (await this.tg.wants('serviceUp', id))) {
-        const name = await this.serverName(id, SERVICE_TAB[s.kind]);
+        const name = await this.serverName(id, serviceByKind(s.kind)?.tab);
         await this.tg.send(`${name}: ${esc(s.title)} снова работает`);
       }
     }

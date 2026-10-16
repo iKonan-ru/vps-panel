@@ -26,10 +26,8 @@ export interface BackupSetup {
   clientHost: string | null;
 }
 
-/** Основной контейнер AWG; дополнительные - amnezia-awg2-<порт>. */
-export const AWG_MAIN = 'amnezia-awg2';
-
-const subnetOf = (address: string) => {
+/** Подсеть клиентов AWG (10.8.N.0) по адресу интерфейса. */
+export const subnetOf = (address: string) => {
   const m = /(\d+)\.(\d+)\.(\d+)\.\d+\/\d+/.exec(address);
   return m ? `${m[1]}.${m[2]}.${m[3]}.0` : '';
 };
