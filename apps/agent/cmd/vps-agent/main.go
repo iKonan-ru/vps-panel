@@ -9,6 +9,7 @@ import (
 	"log/slog"
 	"os"
 	"os/signal"
+	"strings"
 	"sync/atomic"
 	"syscall"
 	"time"
@@ -19,8 +20,10 @@ import (
 	"github.com/iKonan-ru/vps-panel/apps/agent/internal/dockerapi"
 	"github.com/iKonan-ru/vps-panel/apps/agent/internal/inventory"
 	"github.com/iKonan-ru/vps-panel/apps/agent/internal/metrics"
+	"github.com/iKonan-ru/vps-panel/apps/agent/internal/portsync"
 	"github.com/iKonan-ru/vps-panel/apps/agent/internal/proto"
 	"github.com/iKonan-ru/vps-panel/apps/agent/internal/services"
+	"github.com/iKonan-ru/vps-panel/apps/agent/internal/shell"
 	"github.com/iKonan-ru/vps-panel/apps/agent/internal/terminal"
 	"github.com/iKonan-ru/vps-panel/apps/agent/internal/transport"
 	"github.com/iKonan-ru/vps-panel/apps/agent/internal/tunnel"
@@ -62,12 +65,48 @@ func setMetricsEvery(d time.Duration) {
 	metricsEvery <- d
 }
 
+// portsyncCmd - команды port-sync без демона: состояние для vps-portsync (state) или быстрая
+// проверка после записи в базу 3x-ui.
+func portsyncCmd(state bool) int {
+	ctx, cancel := context.WithTimeout(context.Background(), 100*time.Second)
+	defer cancel()
+	if !state {
+		if !portsync.XuiChanged(ctx, time.Now()) {
+			return 0
+		}
+		res, err := shell.Exec(ctx, time.Minute, nil, "systemctl", "start", "--no-block", "vps-portsync.service")
+		if err != nil || res.ExitCode != 0 {
+			fmt.Fprintln(os.Stderr, "vps-agent: systemctl start vps-portsync.service:", err, strings.TrimSpace(res.Stderr))
+			return 1
+		}
+		return 0
+	}
+	st, err := portsync.Compute(ctx, portsync.ReadConfig())
+	if err != nil {
+		fmt.Fprintln(os.Stderr, "vps-agent: port-sync:", err)
+		return 1
+	}
+	enc := json.NewEncoder(os.Stdout)
+	enc.SetEscapeHTML(false)
+	enc.SetIndent("", "  ")
+	if err := enc.Encode(st); err != nil {
+		fmt.Fprintln(os.Stderr, "vps-agent: port-sync:", err)
+		return 1
+	}
+	return 0
+}
+
 func main() {
 	cfgPath := flag.String("config", config.DefaultPath, "путь к конфигу")
 	showVersion := flag.Bool("version", false, "показать версию")
 	dumpInventory := flag.Bool("inventory", false, "собрать снимок и напечатать JSON (без подключения к панели)")
 	naiveRender := flag.Bool("naive-render", false, "собрать /etc/vps-naive/Caddyfile из config.json и users.json (команда установки прокси для браузера; externalCert - сертификат от Caddy панели)")
+	portsyncState := flag.Bool("portsync-state", false, "напечатать JSON желаемого состояния port-sync (его применяет vps-portsync)")
+	portsyncIfChanged := flag.Bool("portsync-if-changed", false, "запустить vps-portsync.service, если в 3x-ui изменилось то, что берёт port-sync (vps-portsync-xui.path)")
 	flag.Parse()
+	if *portsyncState || *portsyncIfChanged {
+		os.Exit(portsyncCmd(*portsyncState))
+	}
 	if *naiveRender {
 		if err := adapters.NaiveRenderFiles(); err != nil {
 			fmt.Fprintln(os.Stderr, "vps-agent:", err)

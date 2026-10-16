@@ -1,0 +1,9 @@
+[Unit]
+Description=vps-portsync: full run only if 3x-ui ports changed
+# 3X-UI пишет в базу каждые несколько секунд: без лимита запусков, иначе systemd выключит
+# vps-portsync-xui.path
+StartLimitIntervalSec=0
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/bin/vps-agent -portsync-if-changed

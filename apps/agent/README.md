@@ -64,6 +64,8 @@ curl --proto '=https' -fsSL https://<панель>/agent/install.sh | sh -s -- \
 | `-version` | напечатать версию |
 | `-inventory` | собрать снимок и напечатать JSON, к панели не подключаясь |
 | `-naive-render` | собрать `/etc/vps-naive/Caddyfile` из config.json и users.json (вызывает команда установки прокси для браузера) |
+| `-portsync-state` | напечатать JSON желаемого состояния firewall port-sync: его применяет `vps-portsync` |
+| `-portsync-if-changed` | запустить `vps-portsync.service`, если в 3X-UI изменилось то, что берёт port-sync (вызывает `vps-portsync-xui.path` на каждую запись в базу 3X-UI) |
 
 ## Канал с панелью
 
@@ -141,7 +143,8 @@ systemctl daemon-reload
 | `internal/metrics` | метрики и сведения о хосте |
 | `internal/services` | поиск сервисов и проверка, работают ли они |
 | `internal/audit` | замечания аудита безопасности |
-| `internal/baseline` | эталон сервера: sshd, ufw, fail2ban, автообновления, port-sync (`assets/`) |
+| `internal/baseline` | эталон сервера: sshd, ufw, fail2ban, автообновления, установка port-sync (`assets/`) |
+| `internal/portsync` | желаемое состояние port-sync: какие порты открыть на хосте и для контейнеров; `vps-portsync.py` только применяет его |
 | `internal/lockout` | защита от самоблокировки: ключи root, пароли SSH, порты VPN, которые закроет firewall |
 | `internal/firewall` | ufw, слушающие порты, DOCKER-USER |
 | `internal/adapters` | 3X-UI, MTProxyL, AmneziaWG, WDTT, OpenFlux, naive, Telegram |

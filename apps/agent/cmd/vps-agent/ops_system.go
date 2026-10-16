@@ -58,10 +58,10 @@ func systemOps(panelURL string) map[string]op {
 			if err := baseline.ApplyPortsyncConfig(ctx, *p.Config); err != nil {
 				return nil, err
 			}
-			return portsync(ctx)
+			return runPortsync(ctx)
 		}),
 		"firewall.portsync.run": plain(func(ctx context.Context, _ stream) (any, error) {
-			return portsync(ctx)
+			return runPortsync(ctx)
 		}),
 		"firewall.enable": plain(func(ctx context.Context, out stream) (any, error) {
 			return done(baseline.EnableFirewall(ctx, out))
@@ -142,7 +142,7 @@ type sshKeyParams struct {
 	Comment     string `json:"comment"`
 }
 
-func portsync(ctx context.Context) (any, error) {
+func runPortsync(ctx context.Context) (any, error) {
 	out, err := baseline.RunPortsync(ctx)
 	if err != nil {
 		return nil, err
