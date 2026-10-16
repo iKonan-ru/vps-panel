@@ -268,25 +268,60 @@ export async function exitsAfterInboundChange(
             `Основной выход в Telegram перенесён на inbound \u00ab${cand.remark || `#${cand.id}`}\u00bb этого сервера`,
           );
         } else {
-          const views = xray.status().exits.slice(1);
-          const ok = views.findIndex((v) => v.lastCheck?.ok);
-          next = rest[ok >= 0 ? ok : 0] ?? null;
-          notes.push(
-            next
-              ? `Основной выход в Telegram перенесён на запасной: ${next.serverName}`
-              : 'Основной выход в Telegram снят: подходящего inbound нет, его нужно выбрать в \u00abНастройках\u00bb',
-          );
+          next = bestSpare(xray, rest);
+          notes.push(movedNote(next, 'подходящего inbound нет'));
         }
       }
-      await xray.save(next);
-      if (next) await xray.start();
-      else await xray.stop();
+      await setPrimary(xray, next);
     } catch (e) {
       notes.push(`Основной выход в Telegram не обновлён: ${(e as Error).message}`);
     }
   }
   void spares.sync().catch((e: Error) => log.warn({ err: e.message }, 'xray: запасные'));
   return notes;
+}
+
+/** Сервер удалён из панели: основной выход через него - на запасной, запасные - заново. */
+export async function exitsAfterServerRemoved(
+  deps: ExitDeps,
+  spares: Pick<XraySpares, 'sync'>,
+  serverId: string,
+): Promise<void> {
+  const { xray, log } = deps;
+  const [primary, ...rest] = xray.exits();
+  if (primary?.serverId === serverId) {
+    const next = bestSpare(
+      xray,
+      rest.filter((x) => x.serverId !== serverId),
+    );
+    await setPrimary(xray, next).catch((e: Error) => log.warn({ err: e.message }, 'xray'));
+    log.info({ serverId }, movedNote(next, 'сервер удалён из панели'));
+  }
+  await spares.sync().catch((e: Error) => log.warn({ err: e.message }, 'xray: запасные'));
+}
+
+/** Запасной выход, чья проверка прошла, иначе первый. */
+function bestSpare(xray: Pick<XrayManager, 'status'>, spares: XrayOutbound[]): XrayOutbound | null {
+  const views = xray.status().exits.slice(1);
+  const ok = spares.findIndex((x) =>
+    views.some((v) => v.serverId === x.serverId && v.lastCheck?.ok),
+  );
+  return spares[ok >= 0 ? ok : 0] ?? null;
+}
+
+function movedNote(next: XrayOutbound | null, why: string): string {
+  return next
+    ? `Основной выход в Telegram перенесён на запасной: ${next.serverName}`
+    : `Основной выход в Telegram снят: ${why}, его нужно выбрать в \u00abНастройках\u00bb`;
+}
+
+async function setPrimary(
+  xray: Pick<XrayManager, 'save' | 'start' | 'stop'>,
+  next: XrayOutbound | null,
+) {
+  await xray.save(next);
+  if (next) await xray.start();
+  else await xray.stop();
 }
 
 /** Выходы в Telegram для маршрутов inbound-ов 3X-UI (routes/xui.ts, routes/xui-inbounds.ts). */

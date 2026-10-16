@@ -147,14 +147,14 @@ Hiddify и личная страница: конфиги AWG с QR, ссылки
 
 | Документ | О чём |
 | --- | --- |
-| [docs/install.md](docs/install.md) | установка, переменные, обновление, удаление, резервная копия и восстановление, переезд со сборки из исходников |
+| [docs/install.md](docs/install.md) | установка, переменные, обновление, удаление, резервная копия и восстановление |
 | [docs/features.md](docs/features.md) | все возможности и сервисы на серверах |
 | [docs/architecture.md](docs/architecture.md) | как устроено и как защищено |
 | [docs/development.md](docs/development.md) | разработка, проверки, релизы, структура репозитория |
 | [CHANGELOG.md](CHANGELOG.md) | изменения по версиям |
 | [apps/agent/README.md](apps/agent/README.md) | агент: конфиг, операции, сборка, удаление |
 | [apps/extension/README.md](apps/extension/README.md) | расширение Chrome и Firefox |
-| [deploy/README.md](deploy/README.md) | сборка панели из исходников и тонкости Caddy, fail2ban, маршрута до Telegram |
+| [deploy/README.md](deploy/README.md) | файлы выкладки и сборка релиза: Caddy, fail2ban, маршрут до Telegram |
 
 ## Благодарности
 

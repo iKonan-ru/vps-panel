@@ -1,5 +1,6 @@
-// Проверка типографики русских текстов интерфейса (apps/web/src): в строках и JSX-тексте с
-// кириллицей нет прямых двойных кавычек, " - " вместо тире, "..." вместо многоточия и "->".
+// Проверка типографики русских текстов интерфейса (apps/web/src): в строках, атрибутах и
+// JSX-тексте с кириллицей нет прямых двойных кавычек, " - " вместо тире, "..." вместо многоточия
+// и "->".
 import { readFileSync, readdirSync, statSync } from 'node:fs';
 import { join } from 'node:path';
 
@@ -31,6 +32,10 @@ for (const f of files) {
   for (const m of src.matchAll(/'((?:[^'\\\n]|\\.)*)'|`((?:[^`\\]|\\.)*)`/g)) {
     const t = m[1] ?? m[2] ?? '';
     pieces.push({ t, at: m.index, quotes: m[1] !== undefined || m[2] !== undefined });
+  }
+  // атрибуты JSX в двойных кавычках: title="...", hint="..."
+  for (const m of src.matchAll(/[A-Za-z]="([^"\n]*[Ѐ-ӿ][^"\n]*)"/g)) {
+    pieces.push({ t: m[1], at: m.index + 2, attr: true });
   }
   // JSX-текст: между > и < на одной или нескольких строках
   for (const m of src.matchAll(/>([^<>{}]*[Ѐ-ӿ][^<>{}]*)</g)) {

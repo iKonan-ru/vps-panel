@@ -1,7 +1,7 @@
 import type { StatusCache } from '../agents/state.js';
 import type { Db } from '../db/index.js';
 import { servers } from '../db/schema.js';
-import { panelAddresses } from './panel-host.js';
+import { isPanelHost, panelAddresses } from './panel-host.js';
 
 /** Сколько живёт разрешение, выданное командой установки (проверки и запуск). */
 const PENDING_MS = 2 * 60 * 60_000;
@@ -22,11 +22,6 @@ export class PanelCerts {
     private panelUrl: string,
   ) {}
 
-  /** Сервер с этим адресом - сервер панели. */
-  async isPanelHost(host: string): Promise<boolean> {
-    return (await panelAddresses(this.panelUrl)).includes(host);
-  }
-
   allow(name: string) {
     const n = name.trim().toLowerCase();
     this.pending.set(n, Date.now() + PENDING_MS);
@@ -40,7 +35,7 @@ export class PanelCerts {
       .select({ host: servers.host, cache: servers.statusCache })
       .from(servers);
     return rows
-      .filter((r) => ips.includes(r.host))
+      .filter((r) => isPanelHost(r.host, (r.cache as StatusCache | null)?.inventory, ips))
       .flatMap((r) => (r.cache as StatusCache | null)?.inventory?.services ?? [])
       .filter((s) => s.kind === 'naive' && typeof s.details?.domain === 'string')
       .map((s) => String(s.details?.domain).toLowerCase());

@@ -43,6 +43,33 @@ const STEPS: ((sqlite: Database.Database) => void)[] = [
     if (!cols.some((c) => c.name === 'client_host'))
       sqlite.exec('alter table server add column client_host text');
   },
+  // 21: события уведомлений вместо прежних групп (offline, audit, updates, reach)
+  (sqlite) => {
+    const row = sqlite.prepare("select value from setting where key = 'tg_events'").get() as
+      | { value: string }
+      | undefined;
+    if (!row) return;
+    let saved: Record<string, unknown>;
+    try {
+      saved = JSON.parse(row.value) as Record<string, unknown>;
+    } catch {
+      return;
+    }
+    const groups: Record<string, string[]> = {
+      offline: ['online'],
+      audit: ['auditNew', 'auditClosed'],
+      updates: ['pkgUpdates', 'updXui', 'updXray', 'updMtproxyl', 'updMtproxylPanel', 'payment'],
+      reach: ['reachAddr', 'reachInbound', 'reachMtproxy', 'reachBack'],
+    };
+    for (const [group, keys] of Object.entries(groups)) {
+      if (typeof saved[group] !== 'boolean') continue;
+      for (const k of keys) if (!(k in saved)) saved[k] = saved[group];
+      if (group !== 'offline') delete saved[group];
+    }
+    sqlite
+      .prepare("update setting set value = ? where key = 'tg_events'")
+      .run(JSON.stringify(saved));
+  },
 ];
 
 /** Шаги, которых база ещё не видела, - по порядку, каждый с отметкой версии. */

@@ -13,6 +13,7 @@ import { awgLiveDefaults } from './awg-alloc.js';
 import { clientHost } from './client-host.js';
 import { queued } from './gclients.js';
 import type { PanelCerts } from './panel-certs.js';
+import { isPanelHost, panelAddresses } from './panel-host.js';
 import { slugify } from './panel-proxy.js';
 import { redactOutput } from './redact.js';
 import type { SecretBox } from './secret-box.js';
@@ -68,10 +69,10 @@ export function catalogRunner(deps: CatalogDeps) {
           id: servers.id,
           name: servers.name,
           host: servers.host,
-          // адрес для клиентов: без него CLIENT_HOST в командах - всегда IP
           clientHost: servers.clientHost,
           sshPort: servers.sshPort,
           agentVersion: servers.agentVersion,
+          cache: servers.statusCache,
         })
         .from(servers)
         .where(eq(servers.id, id))
@@ -79,10 +80,11 @@ export function catalogRunner(deps: CatalogDeps) {
     )[0];
     if (!r) throw err('сервер не найден', 404);
     const latest = latestAgentVersion(env.AGENT_DIR);
-    const panelHost = Boolean(await certs?.isPanelHost(r.host));
+    const { cache, ...row } = r;
+    const inv = (cache as StatusCache | null)?.inventory;
     return {
-      ...r,
-      panelHost,
+      ...row,
+      panelHost: isPanelHost(r.host, inv, await panelAddresses(env.PANEL_PUBLIC_URL)),
       agentUpdateAvailable: Boolean(latest && r.agentVersion && r.agentVersion !== latest),
     };
   }

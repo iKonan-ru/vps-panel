@@ -33,12 +33,13 @@ import { type PanelRelease, PanelUpdates } from './lib/panel-updates.js';
 import { RuReach } from './lib/ru-reach.js';
 import { schedule } from './lib/schedule.js';
 import { SecretBox } from './lib/secret-box.js';
+import { onServerRemoved } from './lib/server-remove.js';
 import { serverSetup } from './lib/server-setup.js';
 import { ServiceUpdates } from './lib/service-updates.js';
 import { Telegram } from './lib/telegram.js';
 import { UiHub } from './lib/ui-hub.js';
 import { PANEL_VERSION } from './lib/version.js';
-import { XraySpares, exitsAfterInboundChange } from './lib/xray-exits.js';
+import { XraySpares, exitsAfterInboundChange, exitsAfterServerRemoved } from './lib/xray-exits.js';
 import { XrayManager } from './lib/xray.js';
 import { accessRoutes } from './routes/access.js';
 import { accountRoutes } from './routes/account.js';
@@ -377,6 +378,16 @@ export async function buildApp(opts: AppOptions) {
     syncSpares: () => void xraySpares.sync().catch(() => undefined),
   });
   await app.register(setupRoutes, { setup });
+  stops.push(
+    onServerRemoved((id) => {
+      void notifier.forget(id);
+      gc.forget(id);
+      ruReach.forget(id);
+      void serviceUpdates.forget(id);
+      setup.forget(id);
+      void exitsAfterServerRemoved(exitDeps, xraySpares, id);
+    }),
+  );
   await app.register(clientHostRoutes, {
     db,
     gc,

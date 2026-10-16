@@ -12,9 +12,9 @@ import { InfoTip } from '@/components/ui/info-tip';
 import { PageTitle } from '@/components/ui/page-title';
 import { Select } from '@/components/ui/select';
 import { Tabs } from '@/components/ui/tabs';
-import { type Check, commandsApi, paramVisible } from '@/lib/commands';
+import { type Check, commandsApi, paramVisible, useCommands } from '@/lib/commands';
 import { serverLock, useServer, useServers } from '@/lib/servers';
-import { useQuery, useQueryClient } from '@tanstack/react-query';
+import { useQueryClient } from '@tanstack/react-query';
 import { useNavigate, useParams, useSearch } from '@tanstack/react-router';
 import {
   AlertTriangle,
@@ -35,11 +35,7 @@ export function CommandRunPage() {
   const search = useSearch({ from: '/app/commands/$id' });
   const navigate = useNavigate();
   const qc = useQueryClient();
-  const { data: cmds, isFetching: cmdsFetching } = useQuery({
-    queryKey: ['commands'],
-    queryFn: commandsApi.list,
-    staleTime: 60_000,
-  });
+  const { data: cmds, isFetching: cmdsFetching } = useCommands();
   const { data: servers } = useServers();
   const cmd = cmds?.find((c) => c.id === id);
   // каталог мог обновиться после выкладки панели: прежде чем сказать "не найдена", перечитываем

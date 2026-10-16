@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { createDb } from '../src/db/index.js';
 import { servers } from '../src/db/schema.js';
 import { PanelCerts } from '../src/lib/panel-certs.js';
+import { isPanelHost, panelAddresses } from '../src/lib/panel-host.js';
 
 // адрес панели - IP: panelAddresses обходится без DNS, сервер с этим адресом - сервер панели
 const PANEL_URL = 'https://203.0.113.10';
@@ -25,10 +26,12 @@ function make(naiveDomain?: string) {
 }
 
 describe('сертификаты сервисов на сервере панели', () => {
-  it('сервер панели - по адресу панели', async () => {
-    const c = make();
-    expect(await c.isPanelHost('203.0.113.10')).toBe(true);
-    expect(await c.isPanelHost('198.51.100.7')).toBe(false);
+  it('сервер панели - по адресу панели или по jail vps-panel', async () => {
+    const ips = await panelAddresses(PANEL_URL);
+    expect(isPanelHost('203.0.113.10', undefined, ips)).toBe(true);
+    expect(isPanelHost('198.51.100.7', undefined, ips)).toBe(false);
+    const jail = { audit: { fail2banJails: ['sshd', 'vps-panel'] } } as never;
+    expect(isPanelHost('198.51.100.7', jail, ips)).toBe(true);
   });
 
   it('разрешено: имя от команды установки и имя прокси сервера панели', async () => {

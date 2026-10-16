@@ -47,11 +47,10 @@ apps/
   extension/    расширение Chrome и Firefox для прокси для браузера
 packages/
   protocol/     zod-схемы протокола агент-панель и общие типы
-deploy/         Dockerfile, Caddyfile, fail2ban; release/ - vps-panel и compose.yml релизов;
-                install.sh и docker-compose.yml - сборка из исходников
+deploy/         Dockerfile, Caddyfile, fail2ban; release/ - vps-panel и compose.yml релизов
 install.sh      установка из релиза одной командой
 .github/        CI и сборка релизов (образы ghcr.io)
-tools/          check.sh, ship.sh, сборка wdtt-server и Caddy с forwardproxy, подпись расширения Firefox
+tools/          check.sh, ship.sh, release.sh, сборка wdtt-server и Caddy с forwardproxy
 ```
 
 ## Документы подпроектов
@@ -60,4 +59,4 @@ tools/          check.sh, ship.sh, сборка wdtt-server и Caddy с forwardp
 | --- | --- |
 | `apps/agent/README.md` | агент: установка, конфиг, флаги, канал, операции, сборка, отладка, удаление |
 | `apps/extension/README.md` | расширение Chrome и Firefox: файлы, установка, подпись, обновление |
-| `deploy/README.md` | сборка панели из исходников: Caddy, fail2ban, маршрут до Telegram, файлы команд |
+| `deploy/README.md` | файлы выкладки и сборка релиза: Caddy, fail2ban, маршрут до Telegram, файлы команд |

@@ -133,12 +133,8 @@ export const naiveCmd: CommandDef = {
   cleanup: ['/tmp/vps-naive-caddy'],
   script: `${PROLOGUE}${NAIVE_FUNCS}
 NAIVE_DOMAIN=$(printf '%s' "$NAIVE_DOMAIN" | tr 'A-Z' 'a-z')
-/usr/local/bin/vps-agent -h 2>&1 | grep -q naive-render || { echo "агент сервера устарел, нужно обновить агент" >&2; exit 2; }
 ext=false
-if [ "$PANEL_HOST" = 1 ]; then
-  ext=true
-  /usr/local/bin/vps-agent -h 2>&1 | grep -q externalCert || { echo "агент сервера панели устарел, нужно обновить агент" >&2; exit 2; }
-fi
+[ "$PANEL_HOST" = 1 ] && ext=true
 arch=$(uname -m)
 case "$arch" in
   x86_64) bin=caddy-linux-amd64;;
@@ -245,7 +241,6 @@ if [ "\${PANEL_HOST:-}" = 1 ]; then
 fi
 `,
   preflight: `${NAIVE_FUNCS}
-/usr/local/bin/vps-agent -h 2>&1 | grep -q naive-render && echo "OK|версия агента подходит" || echo "FAIL|агент сервера устарел, нужно обновить агент"
 D=$(printf '%s' "$NAIVE_DOMAIN" | tr 'A-Z' 'a-z')
 ip=$(getent ahostsv4 "$D" 2>/dev/null | awk '{print $1; exit}')
 if [ -z "$ip" ]; then echo "FAIL|имени $D нет в DNS: нужна A-запись на $SERVER_HOST";
@@ -255,7 +250,6 @@ o=$(port_owner "$NAIVE_PORT")
 if [ -z "$o" ]; then echo "OK|порт $NAIVE_PORT свободен"; elif [ "$o" = caddy ] && naive_unit_active; then echo "OK|порт $NAIVE_PORT занят этим прокси (переустановка)"; else echo "FAIL|порт $NAIVE_PORT занят ($o)"; fi
 mp=$(mt_port)
 if [ "$PANEL_HOST" = 1 ]; then
-/usr/local/bin/vps-agent -h 2>&1 | grep -q externalCert || echo "FAIL|агент сервера панели устарел, нужно обновить агент"
 c=$(docker ps --filter label=com.docker.compose.service=caddy --format '{{.Names}}' 2>/dev/null | head -1)
 if [ -n "$c" ]; then echo "OK|сервер панели: сертификат выпустит Caddy панели, прокси будет только на порту $NAIVE_PORT"; else echo "FAIL|контейнер Caddy панели не найден"; fi
 else

@@ -57,11 +57,9 @@ export function ClientsPage() {
   const shown = data ? applyView(data, servers.data ?? [], view) : undefined;
   const [adding, setAdding] = useState(false);
   const [serversOpen, setServersOpen] = useState(false);
-  // полная сверка всех клиентов: кнопка крутится, пока сверка идёт (опрос раз в 2 с)
   const sync = useAction();
-  const [syncAsked, setSyncAsked] = useState(false);
   const syncState = useSyncState();
-  const syncing = sync.busy || syncAsked || Boolean(syncState.data?.syncing);
+  const syncing = sync.busy || Boolean(syncState.data?.syncing);
 
   return (
     <>
@@ -99,20 +97,8 @@ export function ClientsPage() {
               title: syncing ? undefined : 'Полная синхронизация всех клиентов на всех серверах',
               onClick: () =>
                 void sync.run(async () => {
-                  setSyncAsked(true);
-                  try {
-                    await api('/api/gclients/sync', { method: 'POST', json: { all: true } });
-                    // ждём конца сверки: кнопка освобождается, когда сервер скажет "не идёт"
-                    for (let i = 0; i < 300; i++) {
-                      await new Promise((r) => setTimeout(r, 2_000));
-                      const st = await api<{ syncing: boolean }>('/api/gclients/syncing');
-                      if (!st.syncing) break;
-                    }
-                  } finally {
-                    setSyncAsked(false);
-                    await qc.invalidateQueries({ queryKey: ['gclients'] });
-                    void qc.invalidateQueries({ queryKey: ['gclients-syncing'] });
-                  }
+                  await api('/api/gclients/sync', { method: 'POST', json: { all: true } });
+                  await qc.invalidateQueries({ queryKey: ['gclients-syncing'] });
                 }),
             },
           ]}
@@ -361,8 +347,9 @@ function ServersList() {
 }
 
 function InboundsForm({ server, onDone }: { server: GServer; onDone: () => void }) {
+  const qc = useQueryClient();
   const { data, error } = useQuery({
-    queryKey: ['xui-inbounds', server.id],
+    queryKey: ['xui-vless', server.id],
     queryFn: () => api<XuiInbound[]>(`/api/servers/${server.id}/xui/inbounds`),
     gcTime: 0,
   });
@@ -401,7 +388,9 @@ function InboundsForm({ server, onDone }: { server: GServer; onDone: () => void 
                 json: { inboundIds: ex },
               }),
             );
-            if (ok) onDone();
+            if (!ok) return;
+            void qc.invalidateQueries({ queryKey: ['xui-inbounds', server.id] });
+            onDone();
           }}
         >
           Сохранить

@@ -1,3 +1,4 @@
+import { useQuery } from '@tanstack/react-query';
 import { api } from './api';
 
 export type ParamType =
@@ -75,6 +76,10 @@ export const commandsApi = {
   cancel: (actionId: string) =>
     api<{ cancelled: boolean }>(`/api/actions/${actionId}/cancel`, { method: 'POST' }),
 };
+
+export function useCommands() {
+  return useQuery({ queryKey: ['commands'], queryFn: commandsApi.list, staleTime: 5 * 60_000 });
+}
 
 export const groupTitles: Record<CommandInfo['group'], string> = {
   install: 'Установка сервисов',

@@ -17,6 +17,7 @@ import { Section } from '@/components/ui/section';
 import { TBody, Table } from '@/components/ui/table';
 import { actions } from '@/lib/actions';
 import { api } from '@/lib/api';
+import { useCommands } from '@/lib/commands';
 import { gb, plural } from '@/lib/format';
 import { type ServerDetail, serverLock } from '@/lib/servers';
 import { type ServiceUpdateKind, startServiceUpdate } from '@/lib/service-update';
@@ -60,6 +61,7 @@ function mbps(bps: number): string {
 export function OverviewTab({ s, onTab }: { s: ServerDetail; onTab?: (tab: string) => void }) {
   // диалог исправления: null - закрыт, '' - все шаги, иначе - шаг из замечания
   const qc = useQueryClient();
+  const commands = useCommands();
   const [baseline, setBaseline] = useState<string | null>(null);
   const [cleanup, setCleanup] = useState(false);
   // запущенное из блока "Обслуживание" действие с выводом: обновление пакетов или сервиса
@@ -180,7 +182,8 @@ export function OverviewTab({ s, onTab }: { s: ServerDetail; onTab?: (tab: strin
   /** Кнопка замечания аудита по его url: fix:, cleanup:, tab:, cmd: (команда каталога) или ссылка. */
   function findingAction(f: Finding) {
     const url = f.url ?? '';
-    if (url.startsWith('cmd:'))
+    if (url.startsWith('cmd:')) {
+      if (!commands.data?.some((c) => c.id === url.slice(4))) return null;
       return (
         <ButtonLink
           to="/commands/$id"
@@ -192,6 +195,7 @@ export function OverviewTab({ s, onTab }: { s: ServerDetail; onTab?: (tab: strin
           <Wrench className="size-3.5" />
         </ButtonLink>
       );
+    }
     if (url.startsWith('fix:'))
       return (
         <Button

@@ -23,12 +23,12 @@ import { AWG_MAIN, type BackupSetup, backupSnapshot } from './backup-setup.js';
 import type { CatalogRunner } from './catalog-runner.js';
 import { checkClientHost } from './client-host.js';
 import { type GClients, queued } from './gclients.js';
-import { MT_HOST_SCRIPT } from './mtproxyl-host.js';
+import { setMtproxylHost } from './mtproxyl-host.js';
 import { redactOutput } from './redact.js';
 import type { SecretBox } from './secret-box.js';
 import { transferClients } from './server-migrate.js';
 import { removeServer } from './server-remove.js';
-import { getJsonSetting, putSetting } from './settings.js';
+import { deleteSetting, getJsonSetting, putSetting } from './settings.js';
 import { keyFingerprint, loadPanelKey } from './ssh.js';
 import type { UiHub } from './ui-hub.js';
 import { ownVlessInbounds, xuiApi } from './xui-api.js';
@@ -880,6 +880,7 @@ export function serverSetup(deps: SetupDeps) {
       await action.finish(exit, redactOutput(action.output, secrets));
       // синхронизация - после окончания: пока шло действие, сервер был занят
       if (
+        ctx.resync ||
         state.steps.some((s) => (s.id === 'gclients' || s.id === 'migrate') && s.state === 'done')
       )
         gc.kick();
@@ -902,6 +903,8 @@ export function serverSetup(deps: SetupDeps) {
     /** Копия для раскладки (свежая при переносе - когда снята). */
     backupId?: string | undefined;
     onBackup: (bid: string) => void;
+    /** Ссылки клиентов сервера изменились: синхронизация после настройки. */
+    resync?: boolean;
   };
 
   /**
@@ -952,22 +955,8 @@ export function serverSetup(deps: SetupDeps) {
         });
       if (rows.length) notes.push('доступы к панелям - как в копии');
     }
-    if (comps.has('mtproxyl') && has(id, 'mtproxyl')) {
-      const res = await registry.request<{ exitCode: number }>(
-        id,
-        'command.run',
-        {
-          runId: ctx.action.id,
-          script: MT_HOST_SCRIPT,
-          env: { MT_HOST: row(id).clientHost ?? '' },
-          files: {},
-          cleanup: [],
-          timeoutSec: 120,
-        },
-        { timeoutMs: 180_000, onStream: ctx.action.stream },
-      );
-      if (res.exitCode !== 0) throw new Error('MTProxyL: не удалось сменить адрес в ссылках');
-    }
+    if (comps.has('mtproxyl') && has(id, 'mtproxyl'))
+      await setMtproxylHost(registry, id, row(id).clientHost ?? '', ctx.action);
     return notes.join(', ');
   }
 
@@ -1192,6 +1181,9 @@ export function serverSetup(deps: SetupDeps) {
         const c = await checkClientHost(name, r.host);
         if (!c.ok) throw new Error(c.error ?? 'имя не указывает на сервер');
         db.update(servers).set({ clientHost: name }).where(eq(servers.id, id)).run();
+        db.update(gclientBindings).set(queued()).where(eq(gclientBindings.serverId, id)).run();
+        ctx.resync = true;
+        if (has(id, 'mtproxyl')) await setMtproxylHost(registry, id, name, action);
         return `${name}: клиенты получат это имя вместо IP`;
       }
       case 'service': {
@@ -1331,7 +1323,12 @@ export function serverSetup(deps: SetupDeps) {
     }
   }
 
-  return { plan, preflight, run, progress };
+  function forget(id: string) {
+    probes.delete(id);
+    deleteSetting(db, progressKey(id));
+  }
+
+  return { plan, preflight, run, progress, forget };
 }
 
 export type ServerSetup = ReturnType<typeof serverSetup>;
