@@ -217,7 +217,7 @@ func Create(ctx context.Context, p CreateParams, stream func(channel, chunk stri
 
 	if p.UploadURL != "" {
 		log("== загрузка в панель")
-		if err := upload(ctx, p.UploadURL, p.Token, archive, man); err != nil {
+		if err := upload(ctx, p.UploadURL, p.Token, archive); err != nil {
 			return nil, err
 		}
 		log("== загружено")
@@ -264,7 +264,7 @@ func addPath(tw *tar.Writer, root, prefix string) error {
 	})
 }
 
-func upload(ctx context.Context, url, token, archive string, man Manifest) error {
+func upload(ctx context.Context, url, token, archive string) error {
 	fh, err := os.Open(archive)
 	if err != nil {
 		return err
@@ -278,8 +278,6 @@ func upload(ctx context.Context, url, token, archive string, man Manifest) error
 	req.ContentLength = st.Size()
 	req.Header.Set("Authorization", "Bearer "+token)
 	req.Header.Set("Content-Type", "application/gzip")
-	mj, _ := json.Marshal(man)
-	req.Header.Set("X-Backup-Manifest", string(mj))
 	cl := &http.Client{Timeout: 10 * time.Minute}
 	resp, err := cl.Do(req)
 	if err != nil {
