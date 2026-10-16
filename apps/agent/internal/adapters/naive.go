@@ -20,6 +20,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/iKonan-ru/vps-panel/apps/agent/internal/fsutil"
 	"github.com/iKonan-ru/vps-panel/apps/agent/internal/shell"
 )
 
@@ -243,25 +244,15 @@ func naiveReadUsers() (map[string]string, error) {
 
 // naiveWrite пишет файл атомарно (через временный рядом) с правами и группой службы.
 func naiveWrite(name string, data []byte, groupRead bool) error {
-	path := filepath.Join(naiveDir, name)
-	tmp := path + ".tmp"
-	mode := os.FileMode(0o600)
+	mode, owner := os.FileMode(0o600), fsutil.Keep
 	if groupRead {
 		mode = 0o640
-	}
-	if err := os.WriteFile(tmp, data, mode); err != nil {
-		return err
-	}
-	if groupRead {
 		if g, err := user.LookupGroup(naiveGroup); err == nil {
 			gid, _ := strconv.Atoi(g.Gid)
-			_ = os.Chown(tmp, 0, gid)
+			owner = fsutil.Owner{UID: 0, GID: gid}
 		}
 	}
-	if err := os.Chmod(tmp, mode); err != nil {
-		return err
-	}
-	return os.Rename(tmp, path)
+	return fsutil.WriteAtomicOwned(filepath.Join(naiveDir, name), data, mode, owner)
 }
 
 // NaiveRenderFiles - Caddyfile из файлов на диске (vps-agent -naive-render в команде установки).

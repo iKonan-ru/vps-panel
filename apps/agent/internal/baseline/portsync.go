@@ -15,6 +15,7 @@ import (
 	"time"
 
 	"github.com/iKonan-ru/vps-panel/apps/agent/internal/firewall"
+	"github.com/iKonan-ru/vps-panel/apps/agent/internal/fsutil"
 	"github.com/iKonan-ru/vps-panel/apps/agent/internal/proto"
 	"github.com/iKonan-ru/vps-panel/apps/agent/internal/shell"
 	"github.com/iKonan-ru/vps-panel/apps/agent/internal/sshd"
@@ -141,7 +142,7 @@ func WritePortsyncConfig(cfg PortsyncConfig) error {
 	if err != nil {
 		return err
 	}
-	return os.WriteFile(portsyncConf, b, 0o644)
+	return fsutil.WriteAtomic(portsyncConf, b, 0o644)
 }
 
 // portsyncUnits - юниты port-sync: имя в systemd -> файл в assets.
@@ -164,10 +165,7 @@ func RefreshPortsync(ctx context.Context) (bool, error) {
 	changed := false
 	script, _ := assets.ReadFile("assets/vps-portsync.py")
 	if !bytes.Equal(cur, script) {
-		if err := os.WriteFile(portsyncBin+".new", script, 0o755); err != nil {
-			return false, err
-		}
-		if err := os.Rename(portsyncBin+".new", portsyncBin); err != nil {
+		if err := fsutil.WriteAtomic(portsyncBin, script, 0o755); err != nil {
 			return false, err
 		}
 		changed = true
@@ -183,7 +181,7 @@ func RefreshPortsync(ctx context.Context) (bool, error) {
 		if bytes.Equal(old, b) {
 			continue
 		}
-		if err := os.WriteFile(path, b, 0o644); err != nil {
+		if err := fsutil.WriteAtomic(path, b, 0o644); err != nil {
 			return changed, err
 		}
 		units = true
@@ -202,10 +200,7 @@ func RefreshPortsync(ctx context.Context) (bool, error) {
 // InstallPortsync кладёт скрипт, конфиг (если нет) и юниты.
 func InstallPortsync(ctx context.Context, stream func(channel, chunk string)) error {
 	script, _ := assets.ReadFile("assets/vps-portsync.py")
-	if err := os.WriteFile(portsyncBin+".new", script, 0o755); err != nil {
-		return err
-	}
-	if err := os.Rename(portsyncBin+".new", portsyncBin); err != nil {
+	if err := fsutil.WriteAtomic(portsyncBin, script, 0o755); err != nil {
 		return err
 	}
 	if _, err := os.Stat(portsyncConf); err != nil {
@@ -217,7 +212,7 @@ func InstallPortsync(ctx context.Context, stream func(channel, chunk string)) er
 	}
 	for unit, a := range portsyncUnits {
 		b, _ := assets.ReadFile("assets/" + a)
-		if err := os.WriteFile("/etc/systemd/system/"+unit, b, 0o644); err != nil {
+		if err := fsutil.WriteAtomic("/etc/systemd/system/"+unit, b, 0o644); err != nil {
 			return err
 		}
 	}

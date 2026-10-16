@@ -25,6 +25,8 @@ import (
 	"sync"
 	"sync/atomic"
 	"time"
+
+	"github.com/iKonan-ru/vps-panel/apps/agent/internal/fsutil"
 )
 
 const (
@@ -92,7 +94,7 @@ func Run(ctx context.Context, panelURL string, sums map[string]string, log func(
 	if !reSha256.MatchString(want) {
 		return "", errors.New("неверная контрольная сумма агента")
 	}
-	if cur, err := fileSum(binPath); err == nil && cur == want {
+	if cur, err := fsutil.FileSum(binPath); err == nil && cur == want {
 		return want, ErrUpToDate
 	}
 
@@ -106,7 +108,7 @@ func Run(ctx context.Context, panelURL string, sums map[string]string, log func(
 	}
 	defer func() { <-running }()
 	// пока ждали, бинарник мог заменить предыдущий запрос
-	if cur, err := fileSum(binPath); err == nil && cur == want {
+	if cur, err := fsutil.FileSum(binPath); err == nil && cur == want {
 		return want, ErrUpToDate
 	}
 	// недокачанные куски других версий больше не нужны
@@ -440,17 +442,4 @@ func (d *downloader) copy(ctx context.Context, dst io.Writer, src io.Reader) (in
 
 func mb(b int64) string {
 	return fmt.Sprintf("%.1f МБ", float64(b)/1024/1024)
-}
-
-func fileSum(path string) (string, error) {
-	f, err := os.Open(path)
-	if err != nil {
-		return "", err
-	}
-	defer f.Close()
-	h := sha256.New()
-	if _, err := io.Copy(h, f); err != nil {
-		return "", err
-	}
-	return hex.EncodeToString(h.Sum(nil)), nil
 }
