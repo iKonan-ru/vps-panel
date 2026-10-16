@@ -91,6 +91,13 @@ export function dateShort(iso: string | null): string {
   return dayMonth(new Date(iso));
 }
 
+/** Срок по unix-времени в секундах: "ещё 12 дн", "истёк"; 0 - "без срока". */
+export function expiresLabel(unix: number): string {
+  if (!unix) return 'без срока';
+  const days = Math.ceil((unix * 1000 - Date.now()) / 86_400_000);
+  return days <= 0 ? 'истёк' : `ещё ${days}${NB}дн`;
+}
+
 /** Календарных дней до даты (по местному времени): 0 - сегодня, 1 - завтра. */
 export function daysUntil(iso: string | null): number | null {
   if (!iso) return null;

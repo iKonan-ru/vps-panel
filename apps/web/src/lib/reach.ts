@@ -14,7 +14,7 @@ export interface ReachTarget {
   errors: string[];
   error?: string;
   checkedAt: string | null;
-  /** Медиана задержки последней проверки, мс (нет у MTProxyL и у старых агентов). */
+  /** Медиана задержки последней проверки, мс (у MTProxyL нет). */
   rtt?: number;
   history: { at: string; percent: number; total: number; rtt?: number }[];
   source: 'agent' | 'mtproxyl';

@@ -145,8 +145,7 @@ export function OverviewTab({ s, onTab }: { s: ServerDetail; onTab?: (tab: strin
                 </div>
                 <div className="min-w-0 grow">
                   <div className="font-medium">
-                    {/* старые агенты присылают "3x-ui" - название панели берём по виду сервиса */}
-                    {sv.kind === 'xui' ? '3X-UI' : sv.title}
+                    {sv.title}
                     {sv.version && <span className="ml-1.5 text-xs text-muted">{sv.version}</span>}
                     {sv.details?.down === true && (
                       <Chip tone="bad" className="ml-1.5">

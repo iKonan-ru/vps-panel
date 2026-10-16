@@ -94,14 +94,6 @@ export function ClientServerPage() {
         </ButtonLink>
       </div>
       {s && !s.online && <Alert tone="info">Сервер не в сети: живой статистики нет</Alert>}
-      {s?.outdated && (
-        <Alert tone="info">
-          Агент сервера устарел: живой статистики не будет до его обновления в{' '}
-          <Link to="/servers/$id" params={{ id: serverId }} className="text-accent hover:underline">
-            карточке сервера
-          </Link>
-        </Alert>
-      )}
       {s?.error && <Alert tone="bad">Агент не ответил: {s.error}</Alert>}
 
       <ServerNow live={live} serverId={serverId} lives={lives} total={list.length} />
