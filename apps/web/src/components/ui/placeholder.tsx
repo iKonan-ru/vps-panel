@@ -2,7 +2,7 @@ import { Alert } from '@/components/ui/alert';
 import { Card } from '@/components/ui/card';
 import type { ReactNode } from 'react';
 
-/** Карточка-заглушка вместо содержимого: "Сервер не в сети", "Загрузка", "не установлен". */
+/** Карточка-заглушка вместо содержимого. */
 export function Placeholder({ children }: { children: ReactNode }) {
   return <Card className="p-8 text-[13px] text-muted">{children}</Card>;
 }

@@ -21,12 +21,7 @@ import { GripVertical } from 'lucide-react';
 import { type ReactNode, useState } from 'react';
 import { createPortal } from 'react-dom';
 
-/**
- * Вертикальный список с перетаскиванием за ручку (мышь, палец, клавиатура).
- * children получает элемент и ручку, которую нужно поставить в разметку строки.
- * За курсором едет копия строки (DragOverlay) - при отпускании она плавно встаёт
- * на место; сама строка на это время остаётся бледным силуэтом.
- */
+/** Список с перетаскиванием за ручку; children получает элемент и ручку для разметки строки. */
 export function SortableList<T>({
   items,
   getId,

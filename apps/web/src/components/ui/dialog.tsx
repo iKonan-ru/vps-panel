@@ -6,7 +6,7 @@ import { type ReactNode, useEffect, useRef } from 'react';
 /** Открытые окна по порядку: Esc закрывает только верхнее (подтверждение поверх окна). */
 const stack: symbol[] = [];
 
-/** Простое модальное окно: затемнение, Esc закрывает, кнопка в углу. */
+/** Модальное окно; Esc и клик по затемнению закрывают. */
 export function Dialog({
   open,
   onClose,

@@ -3,7 +3,7 @@ import { Label } from '@/components/ui/label';
 import { cn } from '@/lib/cn';
 import type { ReactNode } from 'react';
 
-/** Поле формы: подпись сверху (пояснение - за иконкой рядом), элемент. htmlFor связывает подпись с полем. */
+/** Поле формы: подпись сверху, hint - за иконкой рядом; htmlFor связывает подпись с полем. */
 export function Field({
   label,
   htmlFor,

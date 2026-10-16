@@ -2,12 +2,7 @@ import { Card } from '@/components/ui/card';
 import { InfoTip } from '@/components/ui/info-tip';
 import type { ReactNode } from 'react';
 
-/**
- * Карточка с шапкой: заголовок слева (info - пояснение за иконкой рядом), плашки (extra) за ним,
- * действия справа. Действия - своей колонкой у первой строки: не поместившиеся плашки уходят на
- * строку ниже, а не сдвигают кнопки. extraBelow - на узком экране плашки всегда отдельной строкой
- * под заголовком (когда их несколько и меняется их число).
- */
+/** Карточка с шапкой: заголовок (info - пояснение), плашки extra и действия справа. */
 export function Section({
   title,
   info,
@@ -19,6 +14,7 @@ export function Section({
   title: ReactNode;
   info?: ReactNode;
   extra?: ReactNode;
+  /** На узком экране плашки - всегда строкой под заголовком. */
   extraBelow?: boolean;
   actions?: ReactNode;
   children: ReactNode;
@@ -46,6 +42,7 @@ export function Section({
           {buttons && <div className="col-start-2 row-start-1 md:col-start-3">{buttons}</div>}
         </div>
       ) : (
+        // действия - своей колонкой: не поместившиеся плашки уходят ниже, а не сдвигают кнопки
         <div className="grid grid-cols-[minmax(0,1fr)_auto] items-start gap-x-2.5 border-b border-border px-4 py-3">
           <div className="flex min-w-0 flex-wrap items-center gap-x-2.5 gap-y-2">
             {head}

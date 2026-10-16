@@ -2,10 +2,7 @@ import { cn } from '@/lib/cn';
 import { ChevronDown } from 'lucide-react';
 import type { SelectHTMLAttributes } from 'react';
 
-/**
- * Нативный select со своей стрелкой. Сам список вариантов рисует браузер,
- * его вид и курсор задать нельзя - для этого нужен собственный выпадающий список.
- */
+/** Нативный select со своей стрелкой; список вариантов рисует браузер. */
 export function Select({
   className,
   size = 'md',

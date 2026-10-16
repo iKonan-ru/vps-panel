@@ -5,10 +5,7 @@ import { useCopy } from '@/lib/use-copy';
 import { Check, Copy, Dices, Eye, EyeOff } from 'lucide-react';
 import { type InputHTMLAttributes, useState } from 'react';
 
-/**
- * Поле пароля: значение скрыто точками, справа кнопки показать и скопировать; с onGenerate -
- * ещё кнопка случайного пароля (новый пароль сразу показывается, чтобы его можно было записать).
- */
+/** Поле пароля с кнопками показать и скопировать; пароль от onGenerate сразу виден. */
 export function PasswordInput({
   className,
   value,

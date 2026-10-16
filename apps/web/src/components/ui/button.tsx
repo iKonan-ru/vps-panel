@@ -19,7 +19,7 @@ const sizes: Record<Size, string> = {
   icon: 'h-9 w-9 justify-center',
   'icon-sm': 'h-7 w-7 justify-center',
 };
-/** На узком экране кнопка с label сжимается до квадрата с иконкой. */
+/** На узком экране кнопка с label (без short) сжимается до квадрата с иконкой. */
 const compact: Record<Size, string> = {
   md: 'max-md:w-9 max-md:px-0 max-md:justify-center',
   sm: 'max-md:w-7.5 max-md:px-0 max-md:justify-center',
@@ -52,10 +52,7 @@ export function buttonClass({
   );
 }
 
-/**
- * Иконка (children) и подпись, которая на узком экране прячется; short - короткая подпись,
- * которая на узком экране остаётся (значок без слов там, где он не очевиден).
- */
+/** Иконка и подпись label, скрытая на узком экране; short - подпись, которая там остаётся. */
 function Content({
   label,
   short,
@@ -82,10 +79,7 @@ interface Look {
 interface ButtonProps extends ButtonHTMLAttributes<HTMLButtonElement> {
   variant?: Variant;
   size?: Size;
-  /**
-   * Подпись кнопки. На широком экране показывается рядом с иконкой (children), на узком
-   * скрыта - остаётся только иконка, подпись уходит в title и aria-label.
-   */
+  /** Подпись: на широком экране рядом с иконкой, на узком - в title и aria-label. */
   label?: ReactNode;
   /** Короткая подпись, видимая на узком экране вместо одного значка. */
   short?: ReactNode;
@@ -159,7 +153,7 @@ function ButtonA({
 /** Ссылка роутера в виде кнопки: те же to, params, search, что у Link, с проверкой типов. */
 export const ButtonLink = createLink(ButtonA);
 
-/** Обычная ссылка (<a href>) в виде кнопки; target - на стороне вызова (tg:// - не в новой вкладке). */
+/** Обычная ссылка в виде кнопки; target задаёт вызов (tg:// - не в новой вкладке). */
 export function ButtonAnchor({
   variant,
   size,

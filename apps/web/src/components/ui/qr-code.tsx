@@ -1,13 +1,7 @@
 import { loadChunk } from '@/lib/chunk';
 import { type ReactNode, useEffect, useState } from 'react';
 
-/**
- * QR-код одного размера во всей панели: квадрат 400px на широком экране, на мобиле - во всю
- * ширину окна. Картинка строится крупно (целое число пикселей на модуль) и показывается без
- * сглаживания: плотные коды (конфиги AWG, кадры vpn://) иначе не читаются камерой. Белый фон -
- * тёмный код на тёмной теме камера не видит. По центру родителя (mx-auto, self-center): в окне
- * с растянутыми строками код иначе прижимался влево. note - подпись под кодом.
- */
+/** QR-код: 400px на широком экране, во всю ширину на узком; note - подпись под кодом. */
 export function QrCode({
   text,
   alt,
@@ -36,6 +30,8 @@ export function QrCode({
   }, [text, level]);
   return (
     <div className="mx-auto flex w-full flex-col items-center gap-2 self-center md:w-[400px]">
+      {/* белый фон, крупно и без сглаживания: тёмный на тёмной теме или размытый плотный код
+          (конфиг AWG, кадры vpn://) камера не читает */}
       <div className="flex aspect-square w-full items-center justify-center rounded-lg bg-white p-2">
         {url ? (
           <img src={url} alt={alt} className="size-full [image-rendering:pixelated]" />
