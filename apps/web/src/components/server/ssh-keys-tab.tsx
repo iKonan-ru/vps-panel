@@ -9,9 +9,10 @@ import { Section } from '@/components/ui/section';
 import { Textarea } from '@/components/ui/textarea';
 import { actions } from '@/lib/actions';
 import { api } from '@/lib/api';
-import { type ServerDetail, serverLock } from '@/lib/servers';
+import { serverLock } from '@/lib/servers';
 import { useAction } from '@/lib/use-action';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
+import type { ServerDetail } from '@vps/protocol';
 import { Pencil, RefreshCw, Trash2 } from 'lucide-react';
 import { type FormEvent, useState } from 'react';
 

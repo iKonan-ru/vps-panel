@@ -1,7 +1,6 @@
 import { useQueryClient } from '@tanstack/react-query';
-import type { Metrics, ServerSummary } from '@vps/protocol';
+import type { Metrics, ServerDetail, ServerSummary } from '@vps/protocol';
 import { useEffect } from 'react';
-import type { ServerDetail } from './servers';
 import { SERVICE_UPDATE_ACTIONS, checkUpdates } from './service-update';
 
 export type LiveEvent = {

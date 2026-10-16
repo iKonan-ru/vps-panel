@@ -12,6 +12,7 @@ import { open } from 'node:fs/promises';
 import { join } from 'node:path';
 import { PassThrough, Transform } from 'node:stream';
 import { pipeline } from 'node:stream/promises';
+import type { BackupInfo } from '@vps/protocol';
 import { desc, eq, isNull } from 'drizzle-orm';
 import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
@@ -82,9 +83,17 @@ export async function backupRoutes(
     return registry.request(id, 'backup.detect', {}, { timeoutMs: 60_000 });
   });
 
-  app.get('/api/backups', async () => {
-    return db.select().from(backups).orderBy(desc(backups.createdAt)).limit(200);
-  });
+  app.get(
+    '/api/backups',
+    async (): Promise<BackupInfo[]> =>
+      db
+        .select()
+        .from(backups)
+        .orderBy(desc(backups.createdAt))
+        .limit(200)
+        .all()
+        .map((b) => ({ ...b, manifest: b.manifest as BackupInfo['manifest'] })),
+  );
 
   /** Создать: агент архивирует и загружает; действие в журнале со стримом. */
   app.post('/api/servers/:id/backups', async (req, reply) => {

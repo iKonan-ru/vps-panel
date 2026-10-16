@@ -13,9 +13,10 @@ import { LoadState } from '@/components/ui/placeholder';
 import { Section } from '@/components/ui/section';
 import { api } from '@/lib/api';
 import { bytes, expiresLabel } from '@/lib/format';
-import { type ServerDetail, serverLock } from '@/lib/servers';
+import { serverLock } from '@/lib/servers';
 import { useAction } from '@/lib/use-action';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
+import type { ServerDetail } from '@vps/protocol';
 import { Pencil, Plus, Power, QrCode as QrCodeIcon, Trash2, Unlink } from 'lucide-react';
 import { type FormEvent, useState } from 'react';
 

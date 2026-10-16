@@ -1,6 +1,6 @@
 import { ActionPanel } from '@/components/action-output';
 import { CreateDialog, RestoreDialog } from '@/components/server/backups-dialogs';
-import { type Backup, backupsApi } from '@/components/server/backups-model';
+import { backupsApi } from '@/components/server/backups-model';
 import { ActionBar } from '@/components/ui/action-bar';
 import { Alert } from '@/components/ui/alert';
 import { Button, buttonClass } from '@/components/ui/button';
@@ -10,9 +10,10 @@ import { Section } from '@/components/ui/section';
 import { TBody, THead, Table } from '@/components/ui/table';
 import { api } from '@/lib/api';
 import { ago, bytes, dateTime } from '@/lib/format';
-import { type ServerDetail, serverLock } from '@/lib/servers';
+import { serverLock } from '@/lib/servers';
 import { useAction } from '@/lib/use-action';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
+import type { BackupInfo, ServerDetail } from '@vps/protocol';
 import { Archive, ArchiveRestore, Download, Trash2, Upload } from 'lucide-react';
 import { useState } from 'react';
 
@@ -39,9 +40,9 @@ export function BackupsTab({ s }: { s: ServerDetail }) {
   const op = useAction();
   const [action, setAction] = useState<{ id: string; title: string } | null>(null);
   const [createOpen, setCreateOpen] = useState(false);
-  const [restore, setRestore] = useState<Backup | null>(null);
+  const [restore, setRestore] = useState<BackupInfo | null>(null);
 
-  async function remove(b: Backup) {
+  async function remove(b: BackupInfo) {
     const ok = await ask({
       title: `Удалить резервную копию от ${dateTime(b.createdAt)}?`,
       okLabel: 'Удалить',
@@ -54,14 +55,14 @@ export function BackupsTab({ s }: { s: ServerDetail }) {
     });
   }
 
-  const components = (b: Backup) =>
+  const components = (b: BackupInfo) =>
     (b.manifest.components ?? []).map((c) => (
       <Chip key={c.id} title={c.title}>
         {c.id}
       </Chip>
     ));
   /** Кнопки бэкапа: в строке таблицы и в карточке на мобиле. */
-  const backupActions = (b: Backup) => (
+  const backupActions = (b: BackupInfo) => (
     <ActionBar
       dense
       actions={[

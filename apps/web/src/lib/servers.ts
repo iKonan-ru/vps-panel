@@ -1,5 +1,5 @@
 import { useQuery } from '@tanstack/react-query';
-import { type ServerSummary, isBlockingAction } from '@vps/protocol';
+import { type ServerDetail, type ServerSummary, isBlockingAction } from '@vps/protocol';
 import { api } from './api';
 
 export function useServers() {
@@ -8,13 +8,6 @@ export function useServers() {
     queryFn: () => api<ServerSummary[]>('/api/servers'),
     refetchInterval: 60_000,
   });
-}
-
-export interface ServerDetail extends ServerSummary {
-  inventory: import('@vps/protocol').Inventory | null;
-  metricsAt: string | null;
-  /** Незавершённые действия на этом сервере (чтобы после перезагрузки страницы видеть их ход). */
-  activeActions: { id: string; kind: string; title: string; startedAt: string }[];
 }
 
 /**

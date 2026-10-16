@@ -1,5 +1,5 @@
 import { ServerOptions } from '@/components/server-options';
-import { type Backup, type Component, backupsApi } from '@/components/server/backups-model';
+import { backupsApi } from '@/components/server/backups-model';
 import { Alert } from '@/components/ui/alert';
 import { Button, ButtonLink } from '@/components/ui/button';
 import { Checkbox } from '@/components/ui/checkbox';
@@ -10,7 +10,7 @@ import { Select } from '@/components/ui/select';
 import { bytes, dateTime } from '@/lib/format';
 import { useServers } from '@/lib/servers';
 import { useAction } from '@/lib/use-action';
-import { SERVICES } from '@vps/protocol';
+import { type BackupComponent, type BackupInfo, SERVICES } from '@vps/protocol';
 import { useEffect, useState } from 'react';
 
 export function CreateDialog({
@@ -24,7 +24,7 @@ export function CreateDialog({
   onClose: () => void;
   onStarted: (actionId: string) => void;
 }) {
-  const [components, setComponents] = useState<Component[] | null>(null);
+  const [components, setComponents] = useState<BackupComponent[] | null>(null);
   const [chosen, setChosen] = useState<string[]>([]);
   const [error, setError] = useState<string | null>(null);
   const save = useAction();
@@ -93,7 +93,7 @@ export function RestoreDialog({
   onClose,
   onStarted,
 }: {
-  backup: Backup | null;
+  backup: BackupInfo | null;
   defaultServerId: string;
   onClose: () => void;
   onStarted: (actionId: string, title: string) => void;

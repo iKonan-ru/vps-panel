@@ -24,10 +24,11 @@ import { api } from '@/lib/api';
 import { cn } from '@/lib/cn';
 import { ago, bytes, uptime } from '@/lib/format';
 import { reachLevel, reachTone } from '@/lib/reach';
-import { type ServerDetail, serverLock } from '@/lib/servers';
+import { serverLock } from '@/lib/servers';
 import { useUpdatesCheck } from '@/lib/service-update';
 import { useAction } from '@/lib/use-action';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
+import type { ServerDetail } from '@vps/protocol';
 import {
   ExternalLink,
   Layers,

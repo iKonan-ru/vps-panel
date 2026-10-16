@@ -6,8 +6,9 @@ import { InfoTip } from '@/components/ui/info-tip';
 import { Input } from '@/components/ui/input';
 import { Select } from '@/components/ui/select';
 import { Textarea } from '@/components/ui/textarea';
-import { type PortsyncConfig, type RuleInput, actions } from '@/lib/actions';
+import { actions } from '@/lib/actions';
 import { useAction } from '@/lib/use-action';
+import type { PortsyncConfig, RuleInput } from '@vps/protocol';
 import { type FormEvent, useEffect, useState } from 'react';
 
 export function RuleDialog({

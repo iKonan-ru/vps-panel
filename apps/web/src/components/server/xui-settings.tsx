@@ -1,4 +1,3 @@
-import type { XuiInfo } from '@/components/server/xui-model';
 import { Button } from '@/components/ui/button';
 import { Checkbox } from '@/components/ui/checkbox';
 import { useConfirm } from '@/components/ui/confirm';
@@ -6,6 +5,7 @@ import { Field } from '@/components/ui/field';
 import { Input } from '@/components/ui/input';
 import { Section } from '@/components/ui/section';
 import { randomToken } from '@/lib/random';
+import type { XuiInfo } from '@vps/protocol';
 import { type FormEvent, useState } from 'react';
 
 export function SettingsForm({

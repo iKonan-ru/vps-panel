@@ -1,4 +1,4 @@
-import { HostingSchema, type ServerSummary, actionTitle } from '@vps/protocol';
+import { HostingSchema, type ServerDetail, type ServerSummary, actionTitle } from '@vps/protocol';
 import { and, eq, isNull } from 'drizzle-orm';
 import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
@@ -111,12 +111,13 @@ export async function serverRoutes(
         startedAt: new Date().toISOString(),
       });
     const inventory = cache.inventory ?? null;
-    return {
+    const detail: ServerDetail = {
       ...withLinks(toSummary(row, registry, latestAgentVersion(env.AGENT_DIR), await panelIps())),
       inventory,
       metricsAt: registry.latestMetrics(row.id)?.at ?? cache.metricsAt ?? null,
       activeActions,
     };
+    return detail;
   });
 
   app.patch('/api/servers/:id', async (req, reply) => {

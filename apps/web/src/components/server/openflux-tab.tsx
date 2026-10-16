@@ -17,9 +17,10 @@ import { Section } from '@/components/ui/section';
 import { Switch } from '@/components/ui/switch';
 import { api } from '@/lib/api';
 import { ago } from '@/lib/format';
-import { type ServerDetail, serverLock } from '@/lib/servers';
+import { serverLock } from '@/lib/servers';
 import { useAction } from '@/lib/use-action';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
+import type { ServerDetail } from '@vps/protocol';
 import {
   Download,
   FileText,

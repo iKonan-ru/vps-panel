@@ -1,4 +1,5 @@
 import { isIP } from 'node:net';
+import type { PortsyncConfig as PortsyncConfigT } from '@vps/protocol';
 import { and, eq } from 'drizzle-orm';
 import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
@@ -109,13 +110,20 @@ export async function baselineFirewallRoutes(app: FastifyInstance, opts: ServerR
     const { id } = Id.parse(req.params);
     return quickAction(id, 'portsync.run', 'firewall.portsync.run', {}, 120_000);
   });
-  app.get('/api/servers/:id/firewall/portsync', async (req) => {
+  app.get('/api/servers/:id/firewall/portsync', async (req): Promise<PortsyncConfigT> => {
     const { id } = Id.parse(req.params);
     const row = (
       await db.select().from(portsyncConfigs).where(eq(portsyncConfigs.serverId, id)).limit(1)
     )[0];
     if (row) return row.config;
-    return registry.request(id, 'firewall.portsync.config', {}, { timeoutMs: 30_000 });
+    return registry.request<PortsyncConfigT>(
+      id,
+      'firewall.portsync.config',
+      {},
+      {
+        timeoutMs: 30_000,
+      },
+    );
   });
   app.put('/api/servers/:id/firewall/portsync', async (req) => {
     const { id } = Id.parse(req.params);

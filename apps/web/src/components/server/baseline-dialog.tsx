@@ -4,8 +4,9 @@ import { Button } from '@/components/ui/button';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Chip } from '@/components/ui/chip';
 import { Dialog } from '@/components/ui/dialog';
-import { type BaselinePlan, actions } from '@/lib/actions';
+import { actions } from '@/lib/actions';
 import { useAction } from '@/lib/use-action';
+import type { BaselinePlan } from '@vps/protocol';
 import { Check, KeyRound } from 'lucide-react';
 import { useCallback, useEffect, useState } from 'react';
 

@@ -1,35 +1,8 @@
 import { api } from '@/lib/api';
+import type { XuiInfo, XuiServerStatus } from '@vps/protocol';
 
 /** Компоненты блока "Версии": сама панель 3X-UI и Xray внутри неё. */
 export type XuiVersionKind = 'xui' | 'xray';
-
-export interface XuiInfo {
-  installed: boolean;
-  active: boolean;
-  enabled: boolean;
-  version: string;
-  db: string;
-  panelPort: number;
-  listen: string;
-  basePath: string;
-  https: boolean;
-  certFile: string;
-  twoFactor: boolean;
-  subEnabled: boolean;
-  subPort: number;
-  inbounds: number;
-  log: string;
-  errors: string[];
-}
-
-/** server/status 3X-UI (поле obj ответа REST API). */
-export interface XuiServerStatus {
-  cpu?: number;
-  mem?: { current: number; total: number };
-  uptime?: number;
-  xray?: { state: string; version: string; errorMsg?: string };
-  appStats?: { threads: number; mem: number; uptime: number };
-}
 
 export const xuiApi = {
   info: (id: string) => api<XuiInfo>(`/api/servers/${id}/xui`),

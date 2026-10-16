@@ -11,11 +11,11 @@ import { TBody, Table } from '@/components/ui/table';
 import { actions } from '@/lib/actions';
 import { api } from '@/lib/api';
 import { useCommands } from '@/lib/commands';
-import { type ServerDetail, serverLock } from '@/lib/servers';
+import { serverLock } from '@/lib/servers';
 import { startServiceUpdate, useUpdatesCheck } from '@/lib/service-update';
 import { useAction } from '@/lib/use-action';
 import { useQuery } from '@tanstack/react-query';
-import type { Finding, ServiceUpdate } from '@vps/protocol';
+import type { Finding, ServerDetail, ServiceUpdate } from '@vps/protocol';
 import { ArrowRight, ClipboardCheck, Download, Trash2, Wrench, X } from 'lucide-react';
 import { type ReactNode, useState } from 'react';
 

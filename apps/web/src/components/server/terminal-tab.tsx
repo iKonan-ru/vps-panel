@@ -4,7 +4,7 @@ import { Chip } from '@/components/ui/chip';
 import { useConfirm } from '@/components/ui/confirm';
 import { InfoTip } from '@/components/ui/info-tip';
 import { LoadState } from '@/components/ui/placeholder';
-import type { ServerDetail } from '@/lib/servers';
+import type { ServerDetail } from '@vps/protocol';
 import { FitAddon } from '@xterm/addon-fit';
 import { Terminal } from '@xterm/xterm';
 import '@xterm/xterm/css/xterm.css';
