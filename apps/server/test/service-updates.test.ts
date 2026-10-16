@@ -31,7 +31,7 @@ let panelStatus = 'Состояние: работает (v1.2.12)';
 let statusFails = false;
 const registry = {
   isOnline: () => true,
-  // движок (engine.versions) проверка обновлений больше не спрашивает - любой другой вызов ошибка
+  // движок (engine.versions) проверка обновлений не спрашивает - любой другой вызов ошибка
   request: async (_id: string, method: string) => {
     if (method === 'mtproxyl.status') {
       if (statusFails) throw new Error('агент не ответил');
