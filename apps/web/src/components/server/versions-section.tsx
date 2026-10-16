@@ -36,7 +36,6 @@ export function VersionsSection<K extends string>({
   onUpdate,
   action,
   onHideAction,
-  onActionFinished,
   children,
 }: {
   rows: { kind: K; title: string; current?: string | undefined; hint?: string }[];
@@ -49,7 +48,6 @@ export function VersionsSection<K extends string>({
   /** Идущее или законченное обновление: вывод - в блоке, как в "Обзоре". */
   action: { id: string; title: string } | null;
   onHideAction: () => void;
-  onActionFinished: () => void;
   children?: ReactNode;
 }) {
   const checkedAt = rows
@@ -82,7 +80,7 @@ export function VersionsSection<K extends string>({
               <X className="size-3.5" />
             </Button>
           </div>
-          <ActionOutput key={action.id} actionId={action.id} onFinished={onActionFinished} />
+          <ActionOutput key={action.id} actionId={action.id} />
         </div>
       )}
       {rows.map(({ kind, title, current, hint }) => {

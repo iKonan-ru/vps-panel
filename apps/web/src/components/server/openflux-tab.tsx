@@ -102,12 +102,7 @@ export function OpenfluxTab({ s }: { s: ServerDetail }) {
     <>
       {op.error && <Alert tone="bad">{op.error}</Alert>}
       {action && (
-        <ActionPanel
-          title={action.title}
-          actionId={action.id}
-          onHide={() => setAction(null)}
-          onFinished={() => void refresh()}
-        />
+        <ActionPanel title={action.title} actionId={action.id} onHide={() => setAction(null)} />
       )}
       {data.channels.length > 0 && (
         <div className="flex flex-wrap items-center gap-x-4 gap-y-2 rounded-xl border border-border bg-surface px-4 py-3 text-[13px]">

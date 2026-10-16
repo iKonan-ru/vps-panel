@@ -20,7 +20,8 @@ import { ApiError, api } from '@/lib/api';
 import { cn } from '@/lib/cn';
 import { uptime } from '@/lib/format';
 import { type ServerDetail, serverLock } from '@/lib/servers';
-import { startServiceUpdate } from '@/lib/service-update';
+import { startServiceUpdate, useUpdatesCheck } from '@/lib/service-update';
+import { useAction } from '@/lib/use-action';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import {
   ExternalLink,
@@ -74,8 +75,6 @@ const xuiApi = {
       method: 'POST',
       json: { action },
     }),
-  update: (id: string) =>
-    api<{ actionId: string }>(`/api/servers/${id}/xui/update`, { method: 'POST' }),
   token: (id: string) => api<{ ok: boolean }>(`/api/servers/${id}/xui/token`, { method: 'POST' }),
   status: (id: string) => api<XuiServerStatus>(`/api/servers/${id}/xui/status`),
 };
@@ -125,79 +124,47 @@ export function XuiTab({ s }: { s: ServerDetail }) {
     queryFn: () => api<Versions<XuiVersionKind>>(`/api/servers/${s.id}/xui/versions`),
     enabled: online,
   });
-  const [checking, setChecking] = useState(false);
+  // после обновления версии перепроверяются сами (lib/live.ts)
+  const updates = useUpdatesCheck(s.id);
   // проверка версий идёт - обновлять нельзя (решение по старым данным)
-  const versionsBusy = checking || versions.isFetching;
-  // recheck - это было обновление: по окончании перепроверить версии; inVersions - вывод в блоке
-  // "Версии", иначе - сверху вкладки
+  const versionsBusy = updates.checking || versions.isFetching;
+  // inVersions - вывод в блоке "Версии" (обновление), иначе - сверху вкладки
   const [action, setAction] = useState<{
     id: string;
     title: string;
-    recheck?: boolean;
     inVersions?: boolean;
   } | null>(null);
-  const [error, setError] = useState<string | null>(null);
   const [showLog, setShowLog] = useState(false);
-  const [busy, setBusy] = useState(false);
+  const op = useAction();
   // пока на сервере идёт другое действие, изменения недоступны (выпуск токена - можно)
   const lock = serverLock(s);
 
-  const refresh = () => {
-    void qc.invalidateQueries({ queryKey: ['xui', s.id] });
-    void qc.invalidateQueries({ queryKey: ['xui-api', s.id] });
-    void qc.invalidateQueries({ queryKey: ['xui-inbounds', s.id] });
-    void qc.invalidateQueries({ queryKey: ['xui-clients', s.id] });
-    void qc.invalidateQueries({ queryKey: ['servers'] });
-  };
+  const refresh = () =>
+    Promise.all([
+      qc.invalidateQueries({ queryKey: ['xui', s.id] }),
+      qc.invalidateQueries({ queryKey: ['xui-api', s.id] }),
+      qc.invalidateQueries({ queryKey: ['xui-inbounds', s.id] }),
+      qc.invalidateQueries({ queryKey: ['xui-clients', s.id] }),
+      qc.invalidateQueries({ queryKey: ['servers'] }),
+    ]);
 
   async function start(title: string, fn: () => Promise<{ actionId: string }>, update = false) {
-    setBusy(true);
-    setError(null);
-    try {
+    await op.run(async () => {
       const r = await fn();
-      setAction({ id: r.actionId, title, recheck: update, inVersions: update });
-    } catch (e) {
-      setError((e as Error).message);
-    } finally {
-      setBusy(false);
-    }
-  }
-
-  /** Проверить обновления сервера сейчас; итог виден и здесь, и в "Обзоре", и в списке. */
-  async function recheck() {
-    setChecking(true);
-    setError(null);
-    try {
-      await api(`/api/servers/${s.id}/updates/check`, { method: 'POST' });
-    } catch (e) {
-      setError((e as Error).message);
-    } finally {
-      // кнопки версий - только после свежего списка: иначе "Обновить" по старым данным
-      await qc.invalidateQueries({ queryKey: ['xui-versions', s.id] });
-      await qc.invalidateQueries({ queryKey: ['service-updates'] });
-      await qc.invalidateQueries({ queryKey: ['service-updates-all'] });
-      setChecking(false);
-    }
+      setAction({ id: r.actionId, title, inVersions: update });
+    });
   }
 
   function updateComponent(kind: XuiVersionKind, latest: string) {
-    if (kind === 'xui')
-      return start(`Обновление 3X-UI до ${latest}`, () => xuiApi.update(s.id), true);
-    return start(`Обновление Xray до ${latest}`, () => startServiceUpdate.xray(s.id), true);
+    const title = `Обновление ${kind === 'xui' ? '3X-UI' : 'Xray'} до ${latest}`;
+    return start(title, () => startServiceUpdate[kind](s.id), true);
   }
 
   async function issueToken() {
-    setBusy(true);
-    setError(null);
-    try {
+    await op.run(async () => {
       await xuiApi.token(s.id);
-      refresh();
-      void qc.invalidateQueries({ queryKey: ['access', s.id] });
-    } catch (e) {
-      setError((e as Error).message);
-    } finally {
-      setBusy(false);
-    }
+      await Promise.all([refresh(), qc.invalidateQueries({ queryKey: ['access', s.id] })]);
+    });
   }
 
   if (!online) return <Card className="p-8 text-[13px] text-muted">Сервер не в сети</Card>;
@@ -227,19 +194,14 @@ export function XuiTab({ s }: { s: ServerDetail }) {
           После исправления inbound в панели 3X-UI (например, занятого порта) Xray запустится сам.
         </Alert>
       )}
-      {error && <Alert tone="bad">{error}</Alert>}
+      {(op.error ?? updates.error) && <Alert tone="bad">{op.error ?? updates.error}</Alert>}
       {data.errors.map((e) => (
         <Alert key={e} tone="info">
           {e}
         </Alert>
       ))}
       {action && !action.inVersions && (
-        <ActionPanel
-          title={action.title}
-          actionId={action.id}
-          onHide={() => setAction(null)}
-          onFinished={refresh}
-        />
+        <ActionPanel title={action.title} actionId={action.id} onHide={() => setAction(null)} />
       )}
 
       {/* как в "Обзоре": на мобиле по две в ряд */}
@@ -349,7 +311,7 @@ export function XuiTab({ s }: { s: ServerDetail }) {
             icon,
             onClick: () => void start(label, () => xuiApi.service(s.id, a)),
             // стоп/старт и автозапуск выбраны по состоянию: пока оно перечитывается - нельзя
-            disabled: busy || lock.busy || isFetching,
+            disabled: op.busy || lock.busy || isFetching,
             title: lock.reason,
             group: 'service',
           })),
@@ -358,7 +320,7 @@ export function XuiTab({ s }: { s: ServerDetail }) {
             label: noToken ? 'Выпустить API-токен' : 'Перевыпустить API-токен',
             icon: <KeyRound className="size-3.5" />,
             onClick: () => void issueToken(),
-            disabled: busy || lock.busy,
+            disabled: op.busy || lock.busy,
             title: 'Нужен для статуса Xray, inbound и клиентов панели',
             group: 'more',
           },
@@ -384,11 +346,11 @@ export function XuiTab({ s }: { s: ServerDetail }) {
         }
       />
 
-      <XuiInbounds serverId={s.id} disabled={busy || lock.busy} reason={lock.reason} />
+      <XuiInbounds serverId={s.id} disabled={op.busy || lock.busy} reason={lock.reason} />
       <XuiClients
         serverId={s.id}
         inbounds={inboundList.data}
-        disabled={busy || lock.busy}
+        disabled={op.busy || lock.busy}
         reason={lock.reason}
       />
 
@@ -409,21 +371,17 @@ export function XuiTab({ s }: { s: ServerDetail }) {
         ]}
         data={versions.data}
         checking={versionsBusy}
-        disabled={busy || lock.busy || versionsBusy}
+        disabled={op.busy || lock.busy || versionsBusy}
         reason={lock.reason}
-        onCheck={() => void recheck()}
+        onCheck={() => void updates.check()}
         onUpdate={(kind, latest) => void updateComponent(kind, latest)}
         action={action?.inVersions ? action : null}
         onHideAction={() => setAction(null)}
-        onActionFinished={() => {
-          refresh();
-          if (action?.recheck) void recheck();
-        }}
       />
 
       <SettingsForm
         info={data}
-        busy={busy || lock.busy}
+        busy={op.busy || lock.busy}
         onSubmit={(body) => start('Настройки 3X-UI', () => xuiApi.set(s.id, body))}
       />
 
@@ -432,7 +390,7 @@ export function XuiTab({ s }: { s: ServerDetail }) {
         kind="xui"
         title="3X-UI"
         loses="Панель, Xray и все inbound с клиентами удалятся, привязки клиентов панели снимутся"
-        disabled={busy || lock.busy}
+        disabled={op.busy || lock.busy}
         reason={lock.reason}
       />
 

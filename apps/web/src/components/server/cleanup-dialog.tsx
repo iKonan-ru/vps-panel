@@ -6,7 +6,7 @@ import { Dialog } from '@/components/ui/dialog';
 import { api } from '@/lib/api';
 import { bytes } from '@/lib/format';
 import { useAction } from '@/lib/use-action';
-import { useQuery, useQueryClient } from '@tanstack/react-query';
+import { useQuery } from '@tanstack/react-query';
 import { Trash2 } from 'lucide-react';
 import { useEffect, useState } from 'react';
 
@@ -27,7 +27,6 @@ export function CleanupDialog({
   open,
   onClose,
 }: { serverId: string; open: boolean; onClose: () => void }) {
-  const qc = useQueryClient();
   const scan = useQuery({
     queryKey: ['cleanup', serverId],
     queryFn: () => api<{ items: CleanupItem[] }>(`/api/servers/${serverId}/cleanup`),
@@ -80,13 +79,7 @@ export function CleanupDialog({
     <Dialog open={open} onClose={onClose} title="Очистка диска" wide>
       {actionId ? (
         <>
-          <ActionOutput
-            actionId={actionId}
-            onFinished={() => {
-              void qc.invalidateQueries({ queryKey: ['servers'] });
-              void qc.invalidateQueries({ queryKey: ['cleanup', serverId] });
-            }}
-          />
+          <ActionOutput actionId={actionId} />
           <div className="flex justify-end">
             <Button onClick={onClose}>Закрыть</Button>
           </div>

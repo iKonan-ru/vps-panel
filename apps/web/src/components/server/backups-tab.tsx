@@ -157,12 +157,7 @@ export function BackupsTab({ s }: { s: ServerDetail }) {
     <>
       {op.error && <Alert tone="bad">{op.error}</Alert>}
       {action && (
-        <ActionPanel
-          title={action.title}
-          actionId={action.id}
-          onHide={() => setAction(null)}
-          onFinished={() => qc.invalidateQueries({ queryKey: ['backups'] })}
-        />
+        <ActionPanel title={action.title} actionId={action.id} onHide={() => setAction(null)} />
       )}
       <Section
         title={

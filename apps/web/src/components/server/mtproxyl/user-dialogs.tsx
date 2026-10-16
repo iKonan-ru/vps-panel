@@ -41,7 +41,7 @@ export function UserInfo({
   reason: string | undefined;
   onToggle: () => void;
   onRemove: () => void;
-  /** Бросает ошибку, если mtproxyl отказал (имя занято и т.п.). */
+  /** Бросает ошибку, если mtproxyl отказал (имя занято и т.п.); пока идёт - кнопки окна недоступны. */
   onRename: (name: string) => Promise<void>;
 }) {
   const [rename, setRename] = useState<string | null>(null);
@@ -59,11 +59,17 @@ export function UserInfo({
         {u.enabled ? <Chip tone="ok">включён</Chip> : <Chip tone="muted">выключен</Chip>}
         {owner && <OwnerLink owner={owner} />}
         <div className="grow" />
-        <Button size="sm" disabled={disabled} title={reason} onClick={onToggle}>
+        <Button size="sm" disabled={disabled || save.busy} title={reason} onClick={onToggle}>
           <Power className="size-3.5" />
           {u.enabled ? 'Выключить' : 'Включить'}
         </Button>
-        <Button size="sm" variant="danger" disabled={disabled} title={reason} onClick={onRemove}>
+        <Button
+          size="sm"
+          variant="danger"
+          disabled={disabled || save.busy}
+          title={reason}
+          onClick={onRemove}
+        >
           <Trash2 className="size-3.5" />
           Удалить
         </Button>
@@ -72,7 +78,7 @@ export function UserInfo({
         <Button
           variant="link"
           className="self-start text-xs"
-          disabled={disabled}
+          disabled={disabled || save.busy}
           title={reason}
           onClick={() => {
             setRename(u.label);
