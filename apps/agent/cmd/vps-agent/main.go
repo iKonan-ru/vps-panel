@@ -9,6 +9,7 @@ import (
 	"log/slog"
 	"os"
 	"os/signal"
+	"sync/atomic"
 	"syscall"
 	"time"
 
@@ -99,6 +100,23 @@ func main() {
 	client := transport.New(cfg.PanelURL, token, panelKey, metrics.Host(Version), handler(ops), log)
 	client.Methods = methods(ops)
 	client.Inline = inlineOps
+	client.AfterResult = func(_ string, data any) {
+		if s, ok := data.(inventory.Snapshot); ok {
+			services.MarkReported(s.Health())
+		}
+	}
+	// pushing - снимок по своей инициативе собирается или отправляется
+	var pushing atomic.Bool
+	pushInventory := func() {
+		if !pushing.CompareAndSwap(false, true) {
+			return
+		}
+		defer pushing.Store(false)
+		snap := inventory.Collect(ctx, Version)
+		if client.Send(map[string]any{"type": "inventory", "inventory": snap}) == nil {
+			services.MarkReported(snap.Health())
+		}
+	}
 	client.OnDisconnect = func() {
 		terminal.CloseAll()
 		tunnel.CloseAll()
@@ -124,9 +142,7 @@ func main() {
 			}
 		}
 		// Первый снимок сразу после подключения.
-		go func() {
-			_ = client.Send(map[string]any{"type": "inventory", "inventory": inventory.Collect(ctx, Version)})
-		}()
+		go pushInventory()
 	}
 
 	go func() {
@@ -161,7 +177,7 @@ func main() {
 					_ = client.Send(map[string]any{"type": "metrics", "metrics": m})
 				}
 			case <-inv.C:
-				_ = client.Send(map[string]any{"type": "inventory", "inventory": inventory.Collect(ctx, Version)})
+				go pushInventory()
 			case <-hw.C:
 				if checking {
 					continue
@@ -176,13 +192,10 @@ func main() {
 				}()
 			case h := <-healthCh:
 				checking = false
-				if h != services.Reported() {
+				// без связи снимок не уйдёт, а после подключения он отправится и так
+				if h != services.Reported() && client.Connected() && !pushing.Load() {
 					log.Info("сервисы: состояние сменилось", "down", h)
-					// до прихода нового снимка не слать его повторно
-					services.MarkReported(h)
-					go func() {
-						_ = client.Send(map[string]any{"type": "inventory", "inventory": inventory.Collect(ctx, Version)})
-					}()
+					go pushInventory()
 				}
 			}
 		}

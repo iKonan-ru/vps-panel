@@ -92,7 +92,7 @@ func containerDown(c proto.Container) bool { return c.State != "running" }
 // показывал бы "упало" до следующего планового снимка через 5 минут.
 var reported atomic.Value
 
-// MarkReported - запомнить состояние, с которым уходит снимок.
+// MarkReported - запомнить состояние, с которым снимок ушёл панели.
 func MarkReported(h string) { reported.Store(h) }
 
 // Reported - состояние последнего снимка ("" - ничего не упало или снимка ещё не было).
