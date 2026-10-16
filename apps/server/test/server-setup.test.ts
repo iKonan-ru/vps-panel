@@ -14,6 +14,7 @@ import { BackupRestorer } from '../src/lib/backup-restore.js';
 import { catalogRunner } from '../src/lib/catalog-runner.js';
 import { SecretBox } from '../src/lib/secret-box.js';
 import { serverSetup } from '../src/lib/server-setup.js';
+import { keyFingerprint, loadPanelKey } from '../src/lib/ssh.js';
 import { savedXuiToken } from '../src/lib/xui-token.js';
 
 /** Вид сервиса в отчёте агента после команды установки. */
@@ -36,6 +37,10 @@ let kicks: number;
 let awgHere: { container: string; port: number; address: string }[];
 let awgEnv: Record<string, string>[];
 let restoreParams: Record<string, unknown>[];
+/** Ответы опроса перед планом; null - агент такого не умеет. */
+let rootKeys: string[] | null;
+let baselineNeeded: string[] | null;
+let baselineNothing: boolean;
 
 const ok = (obj: unknown) => ({ status: 200, data: { success: true, obj } });
 const registry = {
@@ -78,6 +83,11 @@ const registry = {
       inbounds.push({ id: 50, remark: 'old', port: 28512, protocol: 'vless' });
       return {};
     }
+    if (method === 'ssh.keys.list' && rootKeys)
+      return { keys: rootKeys.map((fingerprint) => ({ fingerprint })), passwordLogin: false };
+    if (method === 'baseline.plan' && baselineNeeded)
+      return { steps: baselineNeeded.map((title) => ({ id: title, title, needed: true })) };
+    if (method === 'baseline.apply' && baselineNothing) throw new Error('исправлять нечего');
     if (method === 'awg.status') return { instances: awgHere, docker: true };
     if (method === 'xui.token') return { token: 'tok' };
     if (method === 'xui.api') {
@@ -162,6 +172,9 @@ beforeEach(() => {
   awgHere = [];
   awgEnv = [];
   restoreParams = [];
+  rootKeys = null;
+  baselineNeeded = null;
+  baselineNothing = false;
   db.insert(servers)
     .values({ id: 's1', name: 'Hoster', host: '203.0.113.10', agentTokenHash: 'x' } as never)
     .run();
@@ -202,6 +215,48 @@ describe('настройка сервера', () => {
     const x = plan.steps.find((s) => s.id === 'xui');
     expect(x?.enabled).toBe(false);
     expect(x?.note).toBe('уже установлен');
+  });
+
+  it('опрос сервера: сделанное заранее выключено и объяснено', async () => {
+    installed = ['xui'];
+    await registry.refreshInventory('s1');
+    const cache = db.select().from(servers).get()?.statusCache as {
+      inventory: { audit: Record<string, unknown> };
+    };
+    cache.inventory.audit.pendingUpdates = 0;
+    db.update(servers)
+      .set({ statusCache: cache } as never)
+      .run();
+    inbounds = [{ id: 1, remark: 'mine', port: 443, protocol: 'vless' }];
+    rootKeys = [keyFingerprint(loadPanelKey(dir).publicKey)];
+    baselineNeeded = [];
+    const plan = await make().plan('s1');
+    const step = (id: string) => plan.steps.find((x) => x.id === id);
+    expect(step('key')).toMatchObject({ enabled: false, note: 'ключ панели уже есть' });
+    expect(step('baseline')).toMatchObject({ enabled: false, note: 'проблем не найдено' });
+    expect(step('upgrade')).toMatchObject({ enabled: false, note: 'обновлений нет' });
+    expect(step('inbounds')).toMatchObject({ enabled: false, note: 'свои inbound VLESS уже есть' });
+  });
+
+  it('опрос сервера: есть что исправить - шаг включён и сказано что', async () => {
+    rootKeys = ['SHA256:other'];
+    baselineNeeded = ['fail2ban', 'ufw'];
+    const plan = await make().plan('s1');
+    expect(plan.steps.find((x) => x.id === 'key')?.enabled).toBe(true);
+    expect(plan.steps.find((x) => x.id === 'baseline')).toMatchObject({
+      enabled: true,
+      note: 'исправит: fail2ban; ufw',
+    });
+  });
+
+  it('исправлять нечего - не ошибка', async () => {
+    baselineNothing = true;
+    const p = await runAll(make());
+    expect(p.steps.find((x) => x.id === 'baseline')).toMatchObject({
+      state: 'done',
+      note: 'проблем не найдено',
+    });
+    expect(p.steps.find((x) => x.state === 'failed')).toBeUndefined();
   });
 
   it('без пароля запуск не начинается', async () => {

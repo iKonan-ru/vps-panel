@@ -26,7 +26,7 @@ import { MT_HOST_SCRIPT } from './mtproxyl-host.js';
 import { redactOutput } from './redact.js';
 import type { SecretBox } from './secret-box.js';
 import { getJsonSetting, putSetting } from './settings.js';
-import { loadPanelKey } from './ssh.js';
+import { keyFingerprint, loadPanelKey } from './ssh.js';
 import type { UiHub } from './ui-hub.js';
 import { ownVlessInbounds, xuiApi } from './xui-api.js';
 import { type NewItem, addInbounds, bestRealityTarget, inboundList } from './xui-inbound-ops.js';
@@ -128,6 +128,58 @@ export function serverSetup(deps: SetupDeps) {
   const has = (id: string, kind: string) =>
     inventory(id)?.services.some((s) => s.kind === kind) ?? false;
 
+  /** Что на сервере уже сделано; null - агент не ответил (шаг остаётся включённым). */
+  interface Probe {
+    panelKey: boolean | null;
+    /** Что исправит шаг безопасности; пусто - проблем нет. */
+    baseline: string[] | null;
+    /** Свои inbound VLESS в 3X-UI. */
+    ownVless: number | null;
+  }
+  const PROBE_TTL = 30_000;
+  const probes = new Map<string, { at: number; p: Promise<Probe> }>();
+
+  /**
+   * Опрос сервера перед планом: лишние шаги выключаются заранее. Кэш короткий - план, проверки
+   * и запуск идут друг за другом и опрашивать сервер трижды незачем.
+   */
+  function probe(id: string): Promise<Probe> {
+    const c = probes.get(id);
+    if (c && Date.now() - c.at < PROBE_TTL) return c.p;
+    const p = (async (): Promise<Probe> => {
+      const fp = keyFingerprint(loadPanelKey(env.DATA_DIR).publicKey);
+      const [panelKey, baseline, ownVless] = await Promise.all([
+        registry
+          .request<{ keys: { fingerprint: string }[] }>(
+            id,
+            'ssh.keys.list',
+            {},
+            { timeoutMs: 30_000 },
+          )
+          .then((r) => r.keys.some((k) => k.fingerprint === fp))
+          .catch(() => null),
+        registry
+          .request<{ steps: { title: string; needed: boolean }[] }>(
+            id,
+            'baseline.plan',
+            {},
+            { timeoutMs: 120_000 },
+          )
+          .then((r) => r.steps.filter((x) => x.needed).map((x) => x.title))
+          .catch(() => null),
+        has(id, 'xui')
+          ? xuiToken(db, box, registry, id)
+              .then((t) => inboundList(xuiApi(registry, id, t)))
+              .then((l) => ownVlessInbounds(l).length)
+              .catch(() => null)
+          : Promise.resolve(null),
+      ]);
+      return { panelKey, baseline, ownVless };
+    })();
+    probes.set(id, { at: Date.now(), p });
+    return p;
+  }
+
   /** Ответы команды для экрана: пароли пустые - их вводят (решение владельца). */
   async function screenAnswers(id: string, cmd: string, extra: Record<string, string> = {}) {
     const c = findCommand(cmd);
@@ -171,15 +223,34 @@ export function serverSetup(deps: SetupDeps) {
   async function plan(id: string, backupId?: string): Promise<SetupPlan> {
     if (backupId) return backupPlan(id, backupId);
     const r = row(id);
+    const pr = await probe(id);
+    const pending = inventory(id)?.audit.pendingUpdates;
+    // нечего делать - шаг выключен и сказано почему; включить можно, вреда не будет
+    const off = (cond: boolean, note: string) => (cond ? { enabled: false, note } : {});
     const steps: SetupStep[] = [
-      { id: 'key', kind: 'key', title: 'Ключ панели в root', enabled: true },
+      {
+        id: 'key',
+        kind: 'key',
+        title: 'Ключ панели в root',
+        enabled: true,
+        ...off(pr.panelKey === true, 'ключ панели уже есть'),
+      },
       {
         id: 'baseline',
         kind: 'baseline',
         title: 'Исправление проблем безопасности',
         enabled: true,
+        ...(pr.baseline?.length ? { note: `исправит: ${pr.baseline.join('; ')}` } : {}),
+        ...off(pr.baseline?.length === 0, 'проблем не найдено'),
       },
-      { id: 'upgrade', kind: 'upgrade', title: 'Обновление пакетов', enabled: true },
+      {
+        id: 'upgrade',
+        kind: 'upgrade',
+        title: 'Обновление пакетов',
+        enabled: true,
+        ...(pending ? { note: `доступно обновлений: ${pending}` } : {}),
+        ...off(pending === 0, 'обновлений нет'),
+      },
       {
         id: 'client-host',
         kind: 'client-host',
@@ -231,7 +302,8 @@ export function serverSetup(deps: SetupDeps) {
         RAW_PORT: String(randomFreePort((p) => p === XHTTP_PORT)),
         XHTTP_PORT: String(XHTTP_PORT),
       },
-      ...(xuiThere ? { note: 'если своих inbound VLESS ещё нет' } : {}),
+      ...(xuiThere && pr.ownVless === null ? { note: 'если своих inbound VLESS ещё нет' } : {}),
+      ...off(Boolean(pr.ownVless), 'свои inbound VLESS уже есть'),
     });
     steps.push(
       { id: 'gclients', kind: 'gclients', title: 'Синхронизация клиентов', enabled: true },
@@ -373,7 +445,7 @@ export function serverSetup(deps: SetupDeps) {
         steps.push({ ...s, ...fromBackup, enabled: inSnap, answers });
         continue;
       }
-      if (s.id === 'inbounds')
+      if (s.id === 'inbounds') {
         steps.push({
           id: 'restore',
           kind: 'restore',
@@ -383,6 +455,10 @@ export function serverSetup(deps: SetupDeps) {
           note: 'ключи, пользователи и inbound-ы старого сервера',
           answers: { BACKUP: bid },
         });
+        // нужны ли свои inbound-ы, решает копия: после раскладки шаг проверит сам
+        steps.push({ ...s, enabled: true, note: 'если в копии нет своих inbound VLESS' });
+        continue;
+      }
       steps.push(s);
     }
     return {
@@ -541,6 +617,7 @@ export function serverSetup(deps: SetupDeps) {
         if (s.id === req.from) break;
         if (s.state === 'done' || s.state === 'skipped') done.add(s.id);
       }
+    probes.delete(id);
     const action = journal.open(id, 'server.setup', {
       steps: steps.map((s) => s.id),
       ...(req.backupId ? { backupId: req.backupId } : {}),
@@ -593,6 +670,7 @@ export function serverSetup(deps: SetupDeps) {
         save();
       }
       state.finishedAt = new Date().toISOString();
+      probes.delete(id);
       save();
       await action.finish(exit, redactOutput(action.output, secrets));
       // синхронизация - после окончания: пока шло действие, сервер был занят
@@ -719,16 +797,29 @@ export function serverSetup(deps: SetupDeps) {
     switch (s.kind) {
       case 'key': {
         const key = loadPanelKey(env.DATA_DIR).publicKey;
-        await registry.request(id, 'ssh.keys.add', { keys: [key] }, { timeoutMs: 30_000 });
-        return 'ключ панели добавлен в authorized_keys root';
+        const r = await registry.request<{ added?: number }>(
+          id,
+          'ssh.keys.add',
+          { keys: [key] },
+          { timeoutMs: 30_000 },
+        );
+        return r?.added === 0
+          ? 'ключ панели уже был'
+          : 'ключ панели добавлен в authorized_keys root';
       }
       case 'baseline':
-        await registry.request(
-          id,
-          'baseline.apply',
-          { steps: [] },
-          { timeoutMs: 20 * 60_000, onStream: action.stream },
-        );
+        try {
+          await registry.request(
+            id,
+            'baseline.apply',
+            { steps: [] },
+            { timeoutMs: 20 * 60_000, onStream: action.stream },
+          );
+        } catch (e) {
+          // агент: все проблемы уже исправлены - это не ошибка
+          if ((e as Error).message.includes('исправлять нечего')) return 'проблем не найдено';
+          throw e;
+        }
         await registry.refreshInventory(id);
         return 'готово';
       case 'upgrade':

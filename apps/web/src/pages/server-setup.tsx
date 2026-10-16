@@ -27,7 +27,7 @@ import type {
   SetupStepState,
 } from '@vps/protocol';
 import { ChevronDown, Play, RotateCcw, Upload } from 'lucide-react';
-import { useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 
 /** Поля команд, которые настройка задаёт сама: экземпляр AWG и поведение при уже стоящем. */
 const HIDDEN = new Set(['AWG_INSTANCE', 'AWG_REPLACE']);
@@ -375,6 +375,16 @@ export function ServerSetupPage() {
   const act = useAction();
   const progress = prog.data?.progress ?? null;
   const running = Boolean(progress && !progress.finishedAt);
+  // настройка закончилась - план заново: на сервере теперь другое, лишнее выключится
+  const doneAt = progress?.finishedAt ?? null;
+  const progLoaded = Boolean(prog.data);
+  const seenDone = useRef<string | null | undefined>(undefined);
+  useEffect(() => {
+    if (!progLoaded) return;
+    if (seenDone.current !== undefined && doneAt && doneAt !== seenDone.current)
+      void qc.invalidateQueries({ queryKey: ['setup-plan', id] });
+    seenDone.current = doneAt;
+  }, [doneAt, progLoaded, qc, id]);
   const online = s?.status === 'online';
   const lock = s ? serverLock(s) : { busy: true, reason: undefined };
   const busy = !online || lock.busy || act.busy || running || !steps || prog.isFetching;
@@ -470,11 +480,17 @@ export function ServerSetupPage() {
                 size="sm"
                 variant="primary"
                 disabled={busy || missingPasswords}
-                title={missingPasswords ? 'Не заполнены пароли' : lock.reason}
+                title={
+                  missingPasswords
+                    ? 'Не заполнены пароли'
+                    : (lock.reason ?? `Продолжить с шага \u00ab${failed.title}\u00bb`)
+                }
                 onClick={() => start(failed.id)}
               >
                 <RotateCcw className="size-3.5" />
-                Продолжить с шага &laquo;{failed.title}&raquo;
+                {/* на узком экране название шага не помещается: упавший шаг виден в списке */}
+                Продолжить
+                <span className="max-sm:hidden">с шага &laquo;{failed.title}&raquo;</span>
               </Button>
             )}
           </div>
@@ -520,7 +536,9 @@ export function ServerSetupPage() {
       )}
 
       {!steps ? (
-        <Card className="p-8 text-[13px] text-muted">Загрузка&hellip;</Card>
+        <Card className="p-8 text-[13px] text-muted">
+          Опрос сервера: что уже сделано, а что нужно&hellip;
+        </Card>
       ) : (
         <Card className="flex flex-col divide-y divide-border">
           {steps.map((st) => (
