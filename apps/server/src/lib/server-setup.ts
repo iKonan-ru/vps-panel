@@ -54,10 +54,13 @@ const componentOf = (command: string) => serviceByCommand(command)?.component;
 
 /**
  * Снятие агента со старого сервера после переноса: служба выключается и удаляется чуть позже
- * (systemd-run), чтобы агент успел ответить панели, что команда выполнена.
+ * (systemd-run), чтобы агент успел ответить панели, что команда выполнена. Запуски port-sync
+ * (path-юнит, таймер, docker-watch) без агента только падали бы - они выключаются, правила ufw
+ * остаются как есть.
  */
 const AGENT_REMOVE_SCRIPT = `set -e
 systemd-run --on-active=20 --unit=vps-agent-remove --collect /bin/sh -c '
+for u in vps-portsync-xui.path vps-portsync.timer vps-portsync-docker-watch.service; do systemctl disable --now "$u" 2>/dev/null || true; done
 systemctl disable --now vps-agent.service
 rm -f /etc/systemd/system/vps-agent.service /usr/local/bin/vps-agent
 rm -rf /etc/vps-agent

@@ -87,6 +87,11 @@ const registry = {
       // проверки перед запуском: script - preflight команды; снятие агента - свой скрипт
       if (!c) {
         if (String(p.script).includes('vps-agent-remove')) calls.push(`agent-remove:${id}`);
+        if (
+          /disable --now "\$u"/.test(String(p.script)) &&
+          String(p.script).includes('vps-portsync-xui.path')
+        )
+          calls.push(`portsync-off:${id}`);
         const env = (p.env ?? {}) as Record<string, string>;
         if ('MT_HOST' in env) calls.push(`mt-host:${env.MT_HOST}`);
         return { exitCode: 0, tail: 'OK|порт свободен' };
@@ -745,6 +750,8 @@ describe('настройка сервера', () => {
     // старый: сервисы сняты на нём, агент снят, из панели удалён
     expect(cmdServers).toContain('s0:xui-uninstall');
     expect(calls).toContain('agent-remove:s0');
+    // запуски port-sync без агента выключены
+    expect(calls).toContain('portsync-off:s0');
     expect(db.select().from(servers).where(eq(servers.id, 's0')).get()).toBeUndefined();
   });
 
