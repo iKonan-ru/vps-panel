@@ -1,6 +1,6 @@
 import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
-import type { AgentRegistry } from '../agents/registry.js';
+import { type AgentRegistry, requireOnline } from '../agents/registry.js';
 import type { Db } from '../db/index.js';
 import type { SecretBox } from '../lib/secret-box.js';
 import { type ExitDeps, type XraySpares, prepareExit, realityInbounds } from '../lib/xray-exits.js';
@@ -28,9 +28,9 @@ export async function xrayRoutes(
 
   app.get('/api/xray', async () => xray.status());
 
-  app.get('/api/xray/inbounds', async (req, reply) => {
+  app.get('/api/xray/inbounds', async (req) => {
     const { server } = z.object({ server: z.string() }).parse(req.query);
-    if (!registry.isOnline(server)) return reply.code(409).send({ error: 'сервер не в сети' });
+    requireOnline(registry, server);
     const api = xuiApi(registry, server, await xuiToken(db, box, registry, server));
     const list = await realityInbounds(api);
     return {

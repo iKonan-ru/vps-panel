@@ -1,7 +1,6 @@
 import { randomUUID } from 'node:crypto';
 import { eq } from 'drizzle-orm';
 import type { AgentRegistry } from '../agents/registry.js';
-import type { StatusCache } from '../agents/state.js';
 import type { Db } from '../db/index.js';
 import { servers } from '../db/schema.js';
 import { panelAddresses } from './panel-host.js';
@@ -11,8 +10,12 @@ import type { XrayManager, XrayOutbound } from './xray.js';
 import {
   type XuiCall,
   type XuiEnvelope,
+  getInbound,
+  inboundNode,
+  listInbounds,
   parseJson,
   readClient,
+  streamOf,
   unwrap,
   xuiApi,
 } from './xui-api.js';
@@ -38,23 +41,18 @@ const fail = (statusCode: number, message: string) =>
 
 /** Reality-inbound-ы VLESS сервера (для выбора в настройках и подбора запасного). */
 export async function realityInbounds(api: XuiCall) {
-  const list =
-    (unwrap(await api('GET', 'inbounds/list'), 'inbounds/list') as Record<string, unknown>[]) ?? [];
-  return list
-    .filter((i) => {
-      const ss = parseJson(i.streamSettings);
-      return i.protocol === 'vless' && ss.security === 'reality';
-    })
+  return (await listInbounds(api))
+    .filter((i) => i.protocol === 'vless' && streamOf(i).security === 'reality')
     .map((i) => {
-      const ss = parseJson(i.streamSettings);
+      const network = streamOf(i).network;
       return {
         id: Number(i.id),
         remark: String(i.remark ?? ''),
         port: Number(i.port),
         enable: Boolean(i.enable),
-        // выход xray панели умеет только TCP (raw - новое имя того же)
-        tcp: ss.network === 'tcp' || ss.network === 'raw' || ss.network === undefined,
-        nodeId: Number(i.nodeId ?? i.node_id ?? 0),
+        // выход xray панели умеет только TCP (raw - то же под новым именем)
+        tcp: network === 'tcp' || network === 'raw' || network === undefined,
+        nodeId: inboundNode(i),
       };
     });
 }
@@ -72,16 +70,13 @@ export async function prepareExit(
   const row = (await db.select().from(servers).where(eq(servers.id, serverId)).limit(1))[0];
   if (!row) throw fail(404, 'сервер не найден');
   if (!registry.isOnline(row.id)) throw fail(409, 'сервер не в сети');
-  const inv = (row.statusCache as StatusCache | null)?.inventory;
+  const inv = row.statusCache?.inventory;
   if (!inv?.services.some((s) => s.kind === 'xui')) throw fail(409, 'на сервере нет 3X-UI');
   const api = xuiApi(registry, row.id, await xuiToken(db, box, registry, row.id));
 
-  const inbound = unwrap(await api('GET', `inbounds/get/${inboundId}`), 'inbounds/get') as Record<
-    string,
-    unknown
-  > | null;
+  const inbound = await getInbound(api, inboundId);
   if (!inbound) throw fail(502, '3X-UI не вернула inbound');
-  const ss = parseJson(inbound.streamSettings);
+  const ss = streamOf(inbound);
   const rs = parseJson(ss.realitySettings);
   const rsSettings = parseJson(rs.settings);
   if (inbound.protocol !== 'vless' || ss.security !== 'reality')
@@ -193,7 +188,7 @@ export class XraySpares {
     const errors: { server: string; error: string }[] = [];
     for (const r of rows) {
       if (r.id === primary.serverId || panelIps.includes(r.host)) continue;
-      const inv = (r.cache as StatusCache | null)?.inventory;
+      const inv = r.cache?.inventory;
       if (!inv?.services.some((s) => s.kind === 'xui')) continue;
       if (!registry.isOnline(r.id)) {
         const old = prev.get(r.id);

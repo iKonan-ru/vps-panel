@@ -1,6 +1,5 @@
 import { eq } from 'drizzle-orm';
 import type { AgentRegistry } from '../agents/registry.js';
-import type { StatusCache } from '../agents/state.js';
 import { PROLOGUE } from '../commands/util.js';
 import type { Db } from '../db/index.js';
 import { gclientBindings, servers } from '../db/schema.js';
@@ -17,7 +16,7 @@ mtproxyl settings list 2>/dev/null | grep -i custom_ip || true
 
 export function hasMtproxyl(db: Db, serverId: string): boolean {
   const row = db.select().from(servers).where(eq(servers.id, serverId)).get();
-  const inv = (row?.statusCache as StatusCache | null)?.inventory;
+  const inv = row?.statusCache?.inventory;
   return inv?.services.some((s) => s.kind === 'mtproxyl') ?? false;
 }
 
@@ -67,19 +66,17 @@ export function applyClientHost(deps: MtHostDeps, serverId: string): string | nu
     return null;
   }
   const host = row.clientHost ?? '';
-  let action: Action;
   try {
-    action = deps.journal.open(serverId, 'mtproxyl:host', { host: host || null });
+    return deps.journal.background(
+      serverId,
+      'mtproxyl:host',
+      { host: host || null },
+      (action) => setMtproxylHost(deps.registry, serverId, host, action),
+      { after: () => resyncServer(deps, serverId) },
+    );
   } catch {
+    // сервер занят другим действием: ссылки MTProxyL останутся прежними до следующей смены
     resyncServer(deps, serverId);
     return null;
   }
-  setMtproxylHost(deps.registry, serverId, host, action)
-    .then(() => action.finish(0))
-    .catch((e: Error) => {
-      action.stream('stderr', `\nОШИБКА: ${e.message}\n`);
-      return action.finish(1);
-    })
-    .finally(() => resyncServer(deps, serverId));
-  return action.id;
 }

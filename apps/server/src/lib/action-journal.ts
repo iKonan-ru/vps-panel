@@ -95,12 +95,59 @@ export function actionJournal(db: Db, hub: UiHub, registry: AgentRegistry) {
     };
   }
 
-  return {
-    open,
-    /** Начать без стрима; сервер занят другим действием - исключение 409. */
-    async start(serverId: string, kind: string, params: Record<string, unknown> = {}) {
-      return open(serverId, kind, params).id;
-    },
-    finish,
-  };
+  /**
+   * Короткое действие: результат fn - сразу, log(результат) - итог в журнал. Ошибка - в журнал
+   * с кодом 1 и дальше со своим statusCode (без него - 502: это ответ сервиса, не сбой панели).
+   */
+  async function quick<T>(
+    serverId: string,
+    kind: string,
+    params: Record<string, unknown>,
+    fn: () => Promise<T>,
+    log: (r: T) => string = () => '',
+  ): Promise<T> {
+    const id = open(serverId, kind, params).id;
+    try {
+      const r = await fn();
+      await finish(id, serverId, 0, log(r));
+      return r;
+    } catch (e) {
+      const message = e instanceof Error ? e.message : String(e);
+      await finish(id, serverId, 1, message);
+      const code = (e as { statusCode?: unknown }).statusCode;
+      throw Object.assign(new Error(message), {
+        statusCode: typeof code === 'number' ? code : 502,
+        ...((e as { code?: unknown }).code ? { code: (e as { code: unknown }).code } : {}),
+      });
+    }
+  }
+
+  /**
+   * Длинное действие со стримом: id сразу, fn - в фоне. fn бросила - текст ошибки в вывод и код
+   * 1. after - когда действие закрыто и сервер свободен (синхронизация после него не пропустит
+   * сервер как занятый).
+   */
+  function background(
+    serverId: string,
+    kind: string,
+    params: Record<string, unknown>,
+    fn: (action: Action) => Promise<void>,
+    opts: { after?: (ok: boolean) => void; force?: boolean } = {},
+  ): string {
+    const action = open(serverId, kind, params, opts.force);
+    void (async () => {
+      let ok = true;
+      try {
+        await fn(action);
+      } catch (e) {
+        ok = false;
+        action.stream('stderr', `\nОШИБКА: ${e instanceof Error ? e.message : String(e)}\n`);
+      }
+      await action.finish(ok ? 0 : 1);
+      opts.after?.(ok);
+    })();
+    return action.id;
+  }
+
+  return { open, quick, background, finish };
 }

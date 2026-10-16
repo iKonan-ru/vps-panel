@@ -1,6 +1,5 @@
 import { and, eq, inArray, sql } from 'drizzle-orm';
-import type { AgentRegistry } from '../agents/registry.js';
-import type { StatusCache } from '../agents/state.js';
+import { type AgentRegistry, requireOnline } from '../agents/registry.js';
 import { defaultsFor, findCommand, stripSecrets, validateAnswers } from '../commands/index.js';
 import type { CommandDef, RunContext } from '../commands/types.js';
 import { type Env, panelDomain } from '../config.js';
@@ -81,7 +80,7 @@ export function catalogRunner(deps: CatalogDeps) {
     if (!r) throw err('сервер не найден', 404);
     const latest = latestAgentVersion(env.AGENT_DIR);
     const { cache, ...row } = r;
-    const inv = (cache as StatusCache | null)?.inventory;
+    const inv = cache?.inventory;
     return {
       ...row,
       panelHost: isPanelHost(r.host, inv, await panelAddresses(env.PANEL_PUBLIC_URL)),
@@ -139,7 +138,7 @@ export function catalogRunner(deps: CatalogDeps) {
     const row = (
       await db.select({ cache: servers.statusCache }).from(servers).where(eq(servers.id, id))
     )[0];
-    const inv = (row?.cache as StatusCache | null)?.inventory;
+    const inv = row?.cache?.inventory;
     if (!inv || inv.services.some((s) => s.kind === 'mtproxyl')) return {};
     const naive = inv.services.some((s) => s.kind === 'naive');
     const busy = (port: number) =>
@@ -187,7 +186,7 @@ export function catalogRunner(deps: CatalogDeps) {
     answers: Record<string, string>,
   ): Promise<{ checks: Check[]; canRun: boolean }> {
     const c = command(cmd);
-    if (!registry.isOnline(id)) throw err('сервер не в сети', 409);
+    requireOnline(registry, id);
     const checks: Check[] = validateAnswers(c, answers).map((e) => ({ level: 'fail', text: e }));
     const row = await serverRow(id);
     const certName = c.panelCertParam ? answers[c.panelCertParam]?.trim() : '';
@@ -229,7 +228,7 @@ export function catalogRunner(deps: CatalogDeps) {
    */
   async function prepare(id: string, cmd: string, answers: Record<string, string>) {
     const c = command(cmd);
-    if (!registry.isOnline(id)) throw err('сервер не в сети', 409);
+    requireOnline(registry, id);
     const errors = validateAnswers(c, answers);
     if (errors.length) throw err(errors.join('; '), 400);
     const row = await serverRow(id);

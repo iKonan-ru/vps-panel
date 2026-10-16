@@ -1,19 +1,17 @@
 import { eq } from 'drizzle-orm';
 import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
-import type { StatusCache } from '../agents/state.js';
 import { servers } from '../db/schema.js';
 import { actionJournal } from '../lib/action-journal.js';
 import type { ServerRouteOpts } from '../lib/action-runners.js';
 import { type GClients, resyncXui } from '../lib/gclients.js';
 import type { RuReach } from '../lib/ru-reach.js';
 import type { InboundExitHooks } from '../lib/xray-exits.js';
-import { type XuiCall, unwrap, xuiApi } from '../lib/xui-api.js';
+import { getInbound, inboundNode, listInbounds, unwrap } from '../lib/xui-api.js';
 import {
   type NewItem,
   XRAY_CHECKS_MS,
   addInbounds,
-  inboundList,
   watchXray,
   xrayState,
 } from '../lib/xui-inbound-ops.js';
@@ -32,7 +30,7 @@ import {
   realityOfInbounds,
   withReality,
 } from '../lib/xui-new-inbound.js';
-import { savedXuiToken } from '../lib/xui-token.js';
+import { xuiFor } from '../lib/xui-token.js';
 
 const Id = z.object({ id: z.string() });
 const Host = z
@@ -93,21 +91,11 @@ export async function xuiInboundRoutes(app: FastifyInstance, opts: Deps) {
   const checks = opts.xrayChecksMs ?? XRAY_CHECKS_MS;
   const journal = actionJournal(db, hub, registry);
 
-  function apiFor(id: string): XuiCall {
-    if (!registry.isOnline(id))
-      throw Object.assign(new Error('сервер не в сети'), { statusCode: 409 });
-    const token = savedXuiToken(db, box, id);
-    if (!token)
-      throw Object.assign(new Error('нет API-токена 3X-UI: его нужно выпустить на вкладке 3X-UI'), {
-        statusCode: 409,
-        code: 'no-token',
-      });
-    return xuiApi(registry, id, token);
-  }
+  const apiFor = (id: string) => xuiFor(db, box, registry, id);
   const listeners = (id: string) => {
     const row = db.select().from(servers).where(eq(servers.id, id)).get();
     if (!row) throw Object.assign(new Error('сервер не найден'), { statusCode: 404 });
-    return (row.statusCache as StatusCache | null)?.inventory?.firewall.listeners ?? [];
+    return row.statusCache?.inventory?.firewall.listeners ?? [];
   };
   /**
    * Клиенты панели - в inbound-ы сервера сейчас, не через 5 минут. Вызывается после окончания
@@ -119,7 +107,7 @@ export async function xuiInboundRoutes(app: FastifyInstance, opts: Deps) {
   app.get('/api/servers/:id/xui/inbound-new', async (req) => {
     const { id } = Id.parse(req.params);
     const api = apiFor(id);
-    const list = await inboundList(api);
+    const list = await listInbounds(api);
     const ls = listeners(id);
     const busy = (p: number) => portBusy(p, list, ls) !== null;
     const remarks = list.map((i) => String(i.remark ?? ''));
@@ -143,7 +131,7 @@ export async function xuiInboundRoutes(app: FastifyInstance, opts: Deps) {
     const { id } = Id.parse(req.params);
     const { not } = z.object({ not: z.string().max(200).optional() }).parse(req.query);
     const skip = new Set((not ?? '').split(',').map(Number).filter(Number.isInteger));
-    const list = await inboundList(apiFor(id));
+    const list = await listInbounds(apiFor(id));
     const ls = listeners(id);
     return { port: randomFreePort((p) => skip.has(p) || portBusy(p, list, ls) !== null) };
   });
@@ -171,36 +159,40 @@ export async function xuiInboundRoutes(app: FastifyInstance, opts: Deps) {
         statusCode: 400,
       });
     const api = apiFor(id);
-    const action = journal.open(id, 'xui:inbound.add', {
-      items: body.items,
-      target: body.target,
-      serverNames: names.length,
-      fingerprint: body.fingerprint,
-    });
-    const say = (line: string) => action.stream('log', `${line}\n`);
-    void (async () => {
-      try {
-        await addInbounds(api, {
-          items: body.items as NewItem[],
-          target: body.target,
-          serverNames: names,
-          fingerprint: body.fingerprint,
-          listeners: () => listeners(id),
-          say,
-          checks,
-        });
+    let created = false;
+    const actionId = journal.background(
+      id,
+      'xui:inbound.add',
+      {
+        items: body.items,
+        target: body.target,
+        serverNames: names.length,
+        fingerprint: body.fingerprint,
+      },
+      async (action) => {
+        const say = (line: string) => action.stream('log', `${line}\n`);
+        try {
+          await addInbounds(api, {
+            items: body.items as NewItem[],
+            target: body.target,
+            serverNames: names,
+            fingerprint: body.fingerprint,
+            listeners: () => listeners(id),
+            say,
+            checks,
+          });
+        } catch (e) {
+          created = ((e as { created?: string[] }).created ?? []).length > 0;
+          throw e;
+        }
+        created = true;
         // новый RAW может стать запасным выходом в Telegram этого сервера
         syncSpares();
         say('Клиенты панели добавятся синхронизацией, подписки обновятся сами');
-        await action.finish(0);
-        resync(id);
-      } catch (e) {
-        say(`ОШИБКА: ${(e as Error).message}`);
-        await action.finish(1);
-        if (((e as { created?: string[] }).created ?? []).length) resync(id);
-      }
-    })();
-    return { actionId: action.id };
+      },
+      { after: () => created && resync(id) },
+    );
+    return { actionId };
   });
 
   /** Окно правки: текущие подпись, порт, тип и Reality (без ключей), цели других inbound-ов. */
@@ -208,7 +200,7 @@ export async function xuiInboundRoutes(app: FastifyInstance, opts: Deps) {
     const { id, iid } = z
       .object({ id: z.string(), iid: z.coerce.number().int().positive() })
       .parse(req.params);
-    const list = await inboundList(apiFor(id));
+    const list = await listInbounds(apiFor(id));
     const got = list.find((i) => Number(i.id) === iid);
     if (!got) throw Object.assign(new Error('inbound не найден'), { statusCode: 404 });
     const kind = inboundKind(got);
@@ -239,23 +231,22 @@ export async function xuiInboundRoutes(app: FastifyInstance, opts: Deps) {
         statusCode: 400,
       });
     const api = apiFor(id);
-    const action = journal.open(id, 'xui:inbound', {
-      inbound: iid,
-      ...(body.remark !== undefined ? { remark: body.remark } : {}),
-      ...(body.port !== undefined ? { port: body.port } : {}),
-      ...(body.target ? { target: body.target, serverNames: names?.length } : {}),
-      ...(body.fingerprint ? { fingerprint: body.fingerprint } : {}),
-    });
-    const say = (line: string) => action.stream('log', `${line}\n`);
-    void (async () => {
-      try {
-        const got = unwrap(await api('GET', `inbounds/get/${iid}`), 'inbounds/get') as Record<
-          string,
-          unknown
-        > | null;
+    let changed = false;
+    const actionId = journal.background(
+      id,
+      'xui:inbound',
+      {
+        inbound: iid,
+        ...(body.remark !== undefined ? { remark: body.remark } : {}),
+        ...(body.port !== undefined ? { port: body.port } : {}),
+        ...(body.target ? { target: body.target, serverNames: names?.length } : {}),
+        ...(body.fingerprint ? { fingerprint: body.fingerprint } : {}),
+      },
+      async (action) => {
+        const say = (line: string) => action.stream('log', `${line}\n`);
+        const got = await getInbound(api, iid);
         if (!got) throw new Error('inbound не найден');
-        if (Number(got.nodeId ?? got.node_id ?? 0))
-          throw new Error('inbound другого узла правится на нём');
+        if (inboundNode(got)) throw new Error('inbound другого узла правится на нём');
         const kind = inboundKind(got);
         const cur = kind ? realityOf(got) : null;
         const next: Record<string, unknown> = { ...got };
@@ -266,7 +257,7 @@ export async function xuiInboundRoutes(app: FastifyInstance, opts: Deps) {
         }
         const portChanged = body.port !== undefined && body.port !== Number(got.port);
         if (portChanged && body.port !== undefined) {
-          const others = (await inboundList(api)).filter((x) => Number(x.id) !== iid);
+          const others = (await listInbounds(api)).filter((x) => Number(x.id) !== iid);
           const busy = portBusy(body.port, others, listeners(id));
           if (busy) throw new Error(busy);
           next.port = body.port;
@@ -293,7 +284,6 @@ export async function xuiInboundRoutes(app: FastifyInstance, opts: Deps) {
         }
         if (!done.length) {
           say('Без изменений');
-          await action.finish(0);
           return;
         }
         const risky = portChanged || Object.keys(reality).length > 0;
@@ -310,16 +300,13 @@ export async function xuiInboundRoutes(app: FastifyInstance, opts: Deps) {
           say('Xray работает');
         }
         if (risky) for (const n of await exitsAfter(id, iid, false)) say(n);
-        // подпись тоже в ссылках: синхронизация после любой правки
         say('Ссылки клиентов панели обновятся синхронизацией, подписки - сами');
-        await action.finish(0);
-        resync(id);
-      } catch (e) {
-        say(`ОШИБКА: ${(e as Error).message}`);
-        await action.finish(1);
-      }
-    })();
-    return { actionId: action.id };
+        changed = true;
+      },
+      // подпись тоже в ссылках: синхронизация после любой правки
+      { after: () => changed && resync(id) },
+    );
+    return { actionId };
   });
 
   /** Удаление inbound-а: ссылки на него уходят из подписок синхронизацией. */
@@ -328,44 +315,34 @@ export async function xuiInboundRoutes(app: FastifyInstance, opts: Deps) {
       .object({ id: z.string(), iid: z.coerce.number().int().positive() })
       .parse(req.params);
     const api = apiFor(id);
-    const actionId = await journal.start(id, 'xui:inbound.remove', { inbound: iid });
-    try {
-      const got = unwrap(await api('GET', `inbounds/get/${iid}`), 'inbounds/get') as Record<
-        string,
-        unknown
-      > | null;
-      if (!got) throw Object.assign(new Error('inbound не найден'), { statusCode: 404 });
-      // на мастере группы 3X-UI удаление inbound-а узла удаляет его и на узле
-      if (Number(got.nodeId ?? got.node_id ?? 0))
-        throw Object.assign(new Error('inbound другого узла удаляется на нём'), {
-          statusCode: 409,
-        });
-      unwrap(await api('POST', `inbounds/del/${iid}`), 'inbounds/del');
-      const row = db.select().from(servers).where(eq(servers.id, id)).get();
-      if (row?.xuiExcluded.includes(iid))
-        db.update(servers)
-          .set({ xuiExcluded: row.xuiExcluded.filter((x) => x !== iid) })
-          .where(eq(servers.id, id))
-          .run();
-      reach.dropInbound(id, iid);
-      const notes = await exitsAfter(id, iid, true);
-      await journal.finish(
-        actionId,
-        id,
-        0,
-        [
+    await journal.quick(
+      id,
+      'xui:inbound.remove',
+      { inbound: iid },
+      async () => {
+        const got = await getInbound(api, iid);
+        if (!got) throw Object.assign(new Error('inbound не найден'), { statusCode: 404 });
+        // на мастере группы 3X-UI удаление inbound-а узла удаляет его и на узле
+        if (inboundNode(got))
+          throw Object.assign(new Error('inbound другого узла удаляется на нём'), {
+            statusCode: 409,
+          });
+        unwrap(await api('POST', `inbounds/del/${iid}`), 'inbounds/del');
+        const row = db.select().from(servers).where(eq(servers.id, id)).get();
+        if (row?.xuiExcluded.includes(iid))
+          db.update(servers)
+            .set({ xuiExcluded: row.xuiExcluded.filter((x) => x !== iid) })
+            .where(eq(servers.id, id))
+            .run();
+        reach.dropInbound(id, iid);
+        return [
           `удалён inbound \u00ab${String(got.remark || `#${iid}`)}\u00bb, порт ${String(got.port)}`,
-          ...notes,
-        ].join('\n'),
-      );
-      resync(id);
-      return { ok: true };
-    } catch (e) {
-      await journal.finish(actionId, id, 1, (e as Error).message);
-      const code = (e as { statusCode?: unknown }).statusCode;
-      throw Object.assign(new Error((e as Error).message), {
-        statusCode: typeof code === 'number' ? code : 502,
-      });
-    }
+          ...(await exitsAfter(id, iid, true)),
+        ];
+      },
+      (notes) => notes.join('\n'),
+    );
+    resync(id);
+    return { ok: true };
   });
 }

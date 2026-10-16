@@ -21,12 +21,11 @@ export async function dockerRoutes(app: FastifyInstance, opts: ServerRouteOpts) 
     await quickAction(id, `docker.${action}`, 'docker.action', { id: cid, action }, 120_000);
     return reply.send({ ok: true });
   });
-  app.get('/api/servers/:id/docker/:cid/logs', async (req, reply) => {
+  app.get('/api/servers/:id/docker/:cid/logs', async (req) => {
     const { id, cid } = z.object({ id: z.string(), cid: DockerRef }).parse(req.params);
     const { tail } = z
       .object({ tail: z.coerce.number().int().min(10).max(5000).default(500) })
       .parse(req.query);
-    if (!registry.isOnline(id)) return reply.code(409).send({ error: 'сервер не в сети' });
     return registry.request(id, 'docker.logs', { id: cid, tail }, { timeoutMs: 60_000 });
   });
 }

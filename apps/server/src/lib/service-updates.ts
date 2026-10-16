@@ -1,6 +1,5 @@
 import { eq } from 'drizzle-orm';
 import type { AgentRegistry } from '../agents/registry.js';
-import type { StatusCache } from '../agents/state.js';
 import type { Db } from '../db/index.js';
 import { servers } from '../db/schema.js';
 import type { Action } from './action-journal.js';
@@ -123,7 +122,7 @@ export class ServiceUpdates {
     const store = await this.load();
     const res: Record<string, ServiceUpdate[]> = {};
     for (const r of rows) {
-      const services = ((r.cache ?? {}) as StatusCache).inventory?.services ?? [];
+      const services = r.cache?.inventory?.services ?? [];
       const checked = store[r.id] ?? {};
       const out: ServiceUpdate[] = [];
       for (const kind of KINDS) {
@@ -231,9 +230,7 @@ export class ServiceUpdates {
         .where(eq(servers.id, id))
         .limit(1)
     )[0];
-    const kinds = new Set(
-      ((row?.cache ?? {}) as StatusCache).inventory?.services.map((s) => s.kind) ?? [],
-    );
+    const kinds = new Set(row?.cache?.inventory?.services.map((s) => s.kind) ?? []);
     const results: Partial<Record<ServiceUpdateKind, Checked | null>> = {};
     if (kinds.has('xui')) {
       results.xui = await this.guard(id, 'xui', () => this.checkXui(id));

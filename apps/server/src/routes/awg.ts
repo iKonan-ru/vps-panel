@@ -2,6 +2,7 @@ import { DEVICE_IDS } from '@vps/protocol';
 import { and, eq, notInArray } from 'drizzle-orm';
 import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
+import { requireOnline } from '../agents/registry.js';
 import { patchStatusCache } from '../agents/state.js';
 import { awgClients, servers } from '../db/schema.js';
 import { actionJournal } from '../lib/action-journal.js';
@@ -19,9 +20,9 @@ export async function awgRoutes(app: FastifyInstance, opts: ServerRouteOpts) {
   const journal = actionJournal(db, hub, registry);
   const { quickAction } = actionRunners(registry, journal);
 
-  app.get('/api/servers/:id/awg', async (req, reply) => {
+  app.get('/api/servers/:id/awg', async (req) => {
     const { id } = Id.parse(req.params);
-    if (!registry.isOnline(id)) return reply.code(409).send({ error: 'сервер не в сети' });
+    requireOnline(registry, id);
     // ошибки агента (устарел - 409, сбой - 502) отдаёт общий обработчик с их текстом
     const st: {
       docker?: boolean;
@@ -84,7 +85,7 @@ export async function awgRoutes(app: FastifyInstance, opts: ServerRouteOpts) {
       .parse(req.body ?? {});
     const row = (await db.select().from(servers).where(eq(servers.id, id)).limit(1))[0];
     if (!row) return reply.code(404).send({ error: 'сервер не найден' });
-    if (!registry.isOnline(id)) return reply.code(409).send({ error: 'сервер не в сети' });
+    requireOnline(registry, id);
     const cfg = await awgClientConfigs({
       db,
       registry,

@@ -1,5 +1,6 @@
 import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
+import { requireOnline } from '../agents/registry.js';
 import { actionJournal } from '../lib/action-journal.js';
 import { type ServerRouteOpts, actionRunners } from '../lib/action-runners.js';
 import { MT_SECRET_OUTPUT_OPS } from '../lib/mtproxyl-secrets.js';
@@ -13,15 +14,14 @@ export async function mtproxylRoutes(app: FastifyInstance, opts: ServerRouteOpts
   const journal = actionJournal(db, hub, registry);
   const { runStreamed, quickAction } = actionRunners(registry, journal);
 
-  app.get('/api/servers/:id/mtproxyl', async (req, reply) => {
+  app.get('/api/servers/:id/mtproxyl', async (req) => {
     const { id } = Id.parse(req.params);
-    if (!registry.isOnline(id)) return reply.code(409).send({ error: 'сервер не в сети' });
     return registry.request(id, 'mtproxyl.status', {}, { timeoutMs: 120_000 });
   });
   /** Версии движка telemt: установленная и те, что ставятся без сборки на сервере. */
-  app.get('/api/servers/:id/mtproxyl/engine', async (req, reply) => {
+  app.get('/api/servers/:id/mtproxyl/engine', async (req) => {
     const { id } = Id.parse(req.params);
-    if (!registry.isOnline(id)) return reply.code(409).send({ error: 'сервер не в сети' });
+    requireOnline(registry, id);
     return engines.info(id);
   });
   /** Операции, которые печатают ссылки с секретом пользователя: их вывод в журнал не пишется. */

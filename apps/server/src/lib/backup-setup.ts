@@ -1,6 +1,5 @@
 import { eq } from 'drizzle-orm';
 import type { AgentRegistry } from '../agents/registry.js';
-import type { StatusCache } from '../agents/state.js';
 import type { Db } from '../db/index.js';
 import { commandDefaults, servers } from '../db/schema.js';
 
@@ -42,7 +41,7 @@ export async function backupSnapshot(
   serverId: string,
 ): Promise<BackupSetup> {
   const row = db.select().from(servers).where(eq(servers.id, serverId)).get();
-  const inv = (row?.statusCache as StatusCache | null)?.inventory;
+  const inv = row?.statusCache?.inventory;
   const answers: BackupSetup['answers'] = {};
   for (const d of db
     .select()

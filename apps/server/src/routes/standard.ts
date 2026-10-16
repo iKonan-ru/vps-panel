@@ -1,7 +1,8 @@
 import type { StdMatrix } from '@vps/protocol';
 import type { FastifyInstance } from 'fastify';
 import type { AgentRegistry } from '../agents/registry.js';
-import { type StatusCache, patchStatusCache, toSummary } from '../agents/state.js';
+import { patchStatusCache, toSummary } from '../agents/state.js';
+
 import type { Env } from '../config.js';
 import type { Db } from '../db/index.js';
 import { servers } from '../db/schema.js';
@@ -29,7 +30,7 @@ export async function standardRoutes(
         const s = toSummary(row, registry, null, ips);
         // сервер панели - в эталоне, только если на нём заводятся глобальные клиенты
         if (s.panelHost && !panelHostOptIn(db)) return null;
-        const cache = (row.statusCache ?? {}) as StatusCache;
+        const cache = row.statusCache ?? {};
         let awg: AwgInstanceBrief[] | null = cache.awgInstances ?? null;
         if (!s.services.some((x) => x.kind === 'amnezia')) awg = [];
         else if (s.status === 'online') {

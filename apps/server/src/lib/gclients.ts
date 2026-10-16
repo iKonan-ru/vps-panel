@@ -1,6 +1,7 @@
 import { and, eq } from 'drizzle-orm';
-import type { AgentRegistry } from '../agents/registry.js';
-import { type StatusCache, toSummary } from '../agents/state.js';
+import { type AgentRegistry, agentUnreachable } from '../agents/registry.js';
+import { toSummary } from '../agents/state.js';
+
 import type { Db } from '../db/index.js';
 import { gclientBindings, gclientDevices, gclients, servers } from '../db/schema.js';
 import { type actionJournal, onActionFinished } from './action-journal.js';
@@ -36,7 +37,7 @@ import { schedule } from './schedule.js';
 import type { SecretBox } from './secret-box.js';
 import { getJsonSetting, getSetting, putSetting } from './settings.js';
 import { type WdttPassword, wdttApi } from './wdtt.js';
-import { type XuiCall, ownVlessInbounds, unwrap, xuiApi } from './xui-api.js';
+import { type XuiCall, listInbounds, ownVlessInbounds, xuiApi } from './xui-api.js';
 import { xuiToken } from './xui-token.js';
 
 type Client = typeof gclients.$inferSelect;
@@ -275,7 +276,7 @@ export class GClients {
       .all()
       .map((row) => {
         const s = toSummary(row, this.registry, null, ips);
-        const inv = (row.statusCache as StatusCache | null)?.inventory;
+        const inv = row.statusCache?.inventory;
         const inbounds = s.services.find((x) => x.kind === 'xui')?.details?.inbounds;
         return {
           row,
@@ -289,7 +290,7 @@ export class GClients {
           wdtt: s.services.some((x) => x.kind === 'wdtt'),
           openflux: s.services.some((x) => x.kind === 'openflux'),
           naive: s.services.some((x) => x.kind === 'naive'),
-          awgInstances: (row.statusCache as StatusCache | null)?.awgInstances ?? null,
+          awgInstances: row.statusCache?.awgInstances ?? null,
           xuiPorts:
             inv && Array.isArray(inbounds)
               ? {
@@ -599,8 +600,7 @@ export class GClients {
           row.id,
           await xuiToken(this.db, this.box, this.registry, row.id),
         );
-        const list = unwrap(await api('GET', 'inbounds/list'), 'inbounds/list');
-        const inbounds = (list as Record<string, unknown>[] | null) ?? [];
+        const inbounds = await listInbounds(api);
         const own = ownVlessInbounds(inbounds).map((i) => Number(i.id));
         return { api, own, ...xuiTargets(inbounds, row.xuiExcluded) };
       })();
@@ -748,7 +748,7 @@ export class GClients {
         say(`${label}: ошибка: ${error}`);
         // агент завис или отключился: остальное по серверу - в следующий проход, а не каждая
         // привязка со своим таймаутом
-        if (/^(агент (не ответил вовремя|отключился)|сервер не в сети)/i.test(error)) {
+        if (agentUnreachable(e)) {
           say('агент не отвечает - остальное в следующий раз');
           stoppedAt = i + 1;
           break;

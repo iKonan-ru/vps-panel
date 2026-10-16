@@ -3,7 +3,8 @@ import { and, eq, isNull } from 'drizzle-orm';
 import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
 import type { AgentRegistry } from '../agents/registry.js';
-import { type StatusCache, toSummary } from '../agents/state.js';
+import { toSummary } from '../agents/state.js';
+
 import type { Env } from '../config.js';
 import type { Db } from '../db/index.js';
 import { actionLog, servers } from '../db/schema.js';
@@ -87,7 +88,7 @@ export async function serverRoutes(
     const { id } = z.object({ id: z.string() }).parse(req.params);
     const row = (await db.select().from(servers).where(eq(servers.id, id)).limit(1))[0];
     if (!row) return reply.code(404).send({ error: 'сервер не найден' });
-    const cache = (row.statusCache ?? {}) as StatusCache;
+    const cache = row.statusCache ?? {};
     // незавершённые действия: после перезагрузки страницы их вывод показывается снова
     const activeActions = (
       await db

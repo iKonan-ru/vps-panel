@@ -1,4 +1,3 @@
-import type { StatusCache } from '../agents/state.js';
 import type { Db } from '../db/index.js';
 import { servers } from '../db/schema.js';
 import { isPanelHost, panelAddresses } from './panel-host.js';
@@ -35,8 +34,8 @@ export class PanelCerts {
       .select({ host: servers.host, cache: servers.statusCache })
       .from(servers);
     return rows
-      .filter((r) => isPanelHost(r.host, (r.cache as StatusCache | null)?.inventory, ips))
-      .flatMap((r) => (r.cache as StatusCache | null)?.inventory?.services ?? [])
+      .filter((r) => isPanelHost(r.host, r.cache?.inventory, ips))
+      .flatMap((r) => r.cache?.inventory?.services ?? [])
       .filter((s) => s.kind === 'naive' && typeof s.details?.domain === 'string')
       .map((s) => String(s.details?.domain).toLowerCase());
   }

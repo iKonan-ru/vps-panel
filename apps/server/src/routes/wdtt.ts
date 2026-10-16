@@ -1,7 +1,7 @@
 import { eq } from 'drizzle-orm';
 import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
-import type { AgentRegistry } from '../agents/registry.js';
+import { type AgentRegistry, requireOnline } from '../agents/registry.js';
 import type { Db } from '../db/index.js';
 import { gclientBindings, servers } from '../db/schema.js';
 import { actionJournal } from '../lib/action-journal.js';
@@ -36,8 +36,7 @@ export async function wdttRoutes(
   const serverOf = (id: string) => {
     const s = db.select().from(servers).where(eq(servers.id, id)).get();
     if (!s) throw Object.assign(new Error('сервер не найден'), { statusCode: 404 });
-    if (!registry.isOnline(id))
-      throw Object.assign(new Error('сервер не в сети'), { statusCode: 409 });
+    requireOnline(registry, id);
     return s;
   };
 
@@ -99,15 +98,9 @@ export async function wdttRoutes(
     form: Record<string, string>,
     logParams: Record<string, unknown>,
   ) {
-    const actionId = await journal.start(serverId, kind, logParams);
-    try {
-      await wdttApi(registry, serverId, 'POST', path, form);
-      await journal.finish(actionId, serverId, 0, '');
-    } catch (e) {
-      const msg = e instanceof Error ? e.message : String(e);
-      await journal.finish(actionId, serverId, 1, msg);
-      throw Object.assign(new Error(msg), { statusCode: 502 });
-    }
+    await journal.quick(serverId, kind, logParams, () =>
+      wdttApi(registry, serverId, 'POST', path, form),
+    );
   }
 
   app.post('/api/servers/:id/wdtt/passwords', async (req) => {

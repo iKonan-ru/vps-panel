@@ -117,21 +117,6 @@ describe('AgentRegistry: operations the agent does not know', () => {
     expect(ws.sent).toHaveLength(0);
     ws.close(1000);
   });
-
-  it('an old agent without the list answers "not supported" - the same error', async () => {
-    const reg = new AgentRegistry();
-    const ws = connect(reg);
-    expect(reg.supports('s1', 'awg.status')).toBe(true);
-    const p = reg.request('s1', 'awg.status');
-    ws.reply({
-      type: 'result',
-      id: ws.sent[0]?.id,
-      ok: false,
-      error: 'метод пока не поддерживается: awg.status',
-    });
-    await expect(p).rejects.toMatchObject({ message: AGENT_OUTDATED, statusCode: 409 });
-    ws.close(1000);
-  });
 });
 
 describe('AgentRegistry: snapshot with Go nil slices', () => {

@@ -1,6 +1,7 @@
 import { eq } from 'drizzle-orm';
 import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
+import { requireOnline } from '../agents/registry.js';
 import { servers } from '../db/schema.js';
 import { actionJournal } from '../lib/action-journal.js';
 import { type ServerRouteOpts, actionRunners } from '../lib/action-runners.js';
@@ -34,9 +35,9 @@ export async function systemRoutes(app: FastifyInstance, opts: ServerRouteOpts) 
     return quickAction<{ added: number }>(id, 'ssh.keys.add', 'ssh.keys.add', { keys }, 30_000);
   });
   /** Ключи root на сервере (чтение, не действие); ключ панели помечен. */
-  app.get('/api/servers/:id/ssh-keys', async (req, reply) => {
+  app.get('/api/servers/:id/ssh-keys', async (req) => {
     const { id } = Id.parse(req.params);
-    if (!registry.isOnline(id)) return reply.code(409).send({ error: 'сервер не в сети' });
+    requireOnline(registry, id);
     const res: { keys: { fingerprint: string; panel?: boolean }[]; passwordLogin: boolean } =
       await registry.request(id, 'ssh.keys.list', {}, { timeoutMs: 30_000 });
     const panelFp = keyFingerprint(loadPanelKey(env.DATA_DIR).publicKey);

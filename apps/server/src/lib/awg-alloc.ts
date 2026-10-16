@@ -1,6 +1,7 @@
 import { randomInt } from 'node:crypto';
 import type { AgentRegistry } from '../agents/registry.js';
-import { type StatusCache, patchStatusCache } from '../agents/state.js';
+import { patchStatusCache } from '../agents/state.js';
+
 import type { Db } from '../db/index.js';
 import { servers } from '../db/schema.js';
 
@@ -49,7 +50,7 @@ export async function awgLiveDefaults(
   let hasMain = false;
   await Promise.all(
     rows.map(async (row) => {
-      const cache = (row.statusCache ?? {}) as StatusCache;
+      const cache = row.statusCache ?? {};
       let subnets = cache.awgSubnets ?? [];
       let st: AwgBrief | null = null;
       if (registry.isOnline(row.id)) {

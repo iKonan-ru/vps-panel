@@ -2,7 +2,6 @@ import { eq } from 'drizzle-orm';
 import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
 import type { AgentRegistry } from '../agents/registry.js';
-import type { StatusCache } from '../agents/state.js';
 import type { Db } from '../db/index.js';
 import { servers } from '../db/schema.js';
 import type { actionJournal } from '../lib/action-journal.js';
@@ -40,7 +39,7 @@ export async function clientHostRoutes(
     const r = row(id);
     if (!r) return reply.code(404).send({ error: 'сервер не найден' });
     // подсказка: имя прокси для браузера (A-запись уже есть) или <слаг>.<домен панели>
-    const inv = (r.statusCache as StatusCache | null)?.inventory;
+    const inv = r.statusCache?.inventory;
     const naive = inv?.services.find((s) => s.kind === 'naive')?.details?.domain;
     const domain = new URL(opts.panelUrl).hostname;
     return {

@@ -37,13 +37,39 @@ export function parseJson(v: unknown): Record<string, unknown> {
   return (v as Record<string, unknown>) ?? {};
 }
 
+/** Inbound 3X-UI, как его отдаёт inbounds/list и inbounds/get. */
+export type RawInbound = Record<string, unknown>;
+
+/** Узел группы 3X-UI, которому принадлежит inbound; 0 - этот сервер. */
+export const inboundNode = (i: RawInbound) => Number(i.nodeId ?? i.node_id ?? 0);
+
+/** streamSettings inbound-а объектом. */
+export const streamOf = (i: RawInbound) => parseJson(i.streamSettings);
+
 /**
- * Свои VLESS-inbound-ы сервера: без inbound-ов других узлов группы 3X-UI (функция "узлы", nodeId
- * не 0) - туда глобальные клиенты не заводятся.
+ * Свои VLESS-inbound-ы сервера: без inbound-ов других узлов группы 3X-UI - туда глобальные
+ * клиенты не заводятся.
  */
-export function ownVlessInbounds(list: Record<string, unknown>[]): Record<string, unknown>[] {
-  return list.filter((i) => i.protocol === 'vless' && !Number(i.nodeId ?? i.node_id ?? 0));
+export function ownVlessInbounds(list: RawInbound[]): RawInbound[] {
+  return list.filter((i) => i.protocol === 'vless' && !inboundNode(i));
 }
+
+/** Все inbound-ы 3X-UI сервера. */
+export async function listInbounds(api: XuiCall): Promise<RawInbound[]> {
+  return (unwrap(await api('GET', 'inbounds/list'), 'inbounds/list') as RawInbound[] | null) ?? [];
+}
+
+/** Один inbound или null. */
+export async function getInbound(api: XuiCall, id: number): Promise<RawInbound | null> {
+  return unwrap(await api('GET', `inbounds/get/${id}`), 'inbounds/get') as RawInbound | null;
+}
+
+/** Нет API-токена 3X-UI: код no-token - вкладка предлагает его выпустить. */
+export const noXuiToken = () =>
+  Object.assign(new Error('нет API-токена 3X-UI: его нужно выпустить на вкладке 3X-UI'), {
+    statusCode: 409,
+    code: 'no-token',
+  });
 
 /** obj ответа или исключение с текстом 3X-UI. */
 export function unwrap(r: ApiResult, what: string): unknown {

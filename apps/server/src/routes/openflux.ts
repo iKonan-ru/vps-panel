@@ -1,6 +1,7 @@
 import { eq } from 'drizzle-orm';
 import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
+import { requireOnline } from '../agents/registry.js';
 import { servers } from '../db/schema.js';
 import { actionJournal } from '../lib/action-journal.js';
 import { type ServerRouteOpts, actionRunners } from '../lib/action-runners.js';
@@ -21,8 +22,7 @@ export async function openfluxRoutes(app: FastifyInstance, opts: ServerRouteOpts
   const journal = actionJournal(db, hub, registry);
   const { runStreamed, quickAction } = actionRunners(registry, journal);
   const online = (id: string) => {
-    if (!registry.isOnline(id))
-      throw Object.assign(new Error('сервер не в сети'), { statusCode: 409 });
+    requireOnline(registry, id);
   };
 
   app.get('/api/servers/:id/openflux', async (req) => {

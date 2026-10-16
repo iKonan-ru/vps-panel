@@ -2,6 +2,7 @@ import { isIP } from 'node:net';
 import { and, eq } from 'drizzle-orm';
 import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
+import { requireOnline } from '../agents/registry.js';
 import { firewallRules, portsyncConfigs } from '../db/schema.js';
 import { actionJournal } from '../lib/action-journal.js';
 import { type ServerRouteOpts, actionRunners } from '../lib/action-runners.js';
@@ -16,9 +17,8 @@ export async function baselineFirewallRoutes(app: FastifyInstance, opts: ServerR
   const journal = actionJournal(db, hub, registry);
   const { runStreamed, quickAction } = actionRunners(registry, journal);
 
-  app.post('/api/servers/:id/baseline/plan', async (req, reply) => {
+  app.post('/api/servers/:id/baseline/plan', async (req) => {
     const { id } = Id.parse(req.params);
-    if (!registry.isOnline(id)) return reply.code(409).send({ error: 'сервер не в сети' });
     return registry.request(id, 'baseline.plan', {}, { timeoutMs: 120_000 });
   });
   /** Исправление проблем: steps - какие шаги плана применить (пусто = все нужные). */
@@ -53,8 +53,7 @@ export async function baselineFirewallRoutes(app: FastifyInstance, opts: ServerR
           .refine((v) => isIP(v) !== 0, 'нужен адрес IPv4 или IPv6'),
       })
       .parse(req.body ?? {});
-    if (!registry.isOnline(id))
-      throw Object.assign(new Error('сервер не в сети'), { statusCode: 409 });
+    requireOnline(registry, id);
     const action = journal.open(id, 'fail2ban.unban', { jail, ip });
     try {
       const r = await registry.request<{ exitCode: number }>(
@@ -110,13 +109,12 @@ export async function baselineFirewallRoutes(app: FastifyInstance, opts: ServerR
     const { id } = Id.parse(req.params);
     return quickAction(id, 'portsync.run', 'firewall.portsync.run', {}, 120_000);
   });
-  app.get('/api/servers/:id/firewall/portsync', async (req, reply) => {
+  app.get('/api/servers/:id/firewall/portsync', async (req) => {
     const { id } = Id.parse(req.params);
     const row = (
       await db.select().from(portsyncConfigs).where(eq(portsyncConfigs.serverId, id)).limit(1)
     )[0];
     if (row) return row.config;
-    if (!registry.isOnline(id)) return reply.code(409).send({ error: 'сервер не в сети' });
     return registry.request(id, 'firewall.portsync.config', {}, { timeoutMs: 30_000 });
   });
   app.put('/api/servers/:id/firewall/portsync', async (req) => {

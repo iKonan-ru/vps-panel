@@ -1,16 +1,29 @@
-import { and, eq } from 'drizzle-orm';
+import type { XuiClientRow } from '@vps/protocol';
+import { and, eq, isNull } from 'drizzle-orm';
 import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
-import type { StatusCache } from '../agents/state.js';
-import { access, gclientBindings, servers } from '../db/schema.js';
+import { requireOnline } from '../agents/registry.js';
+import { listenersOf as listenersIn } from '../agents/state.js';
+import { access, gclientBindings, gclients, servers } from '../db/schema.js';
 import { upsertAccess } from '../lib/access.js';
 import { actionJournal } from '../lib/action-journal.js';
 import { type ServerRouteOpts, actionRunners } from '../lib/action-runners.js';
-import { type GClients, resyncXui } from '../lib/gclients.js';
+import { xuiTargets } from '../lib/gclient-services.js';
+import { type GClients, queued, resyncXui } from '../lib/gclients.js';
 import { type InboundExitHooks, telegramExitOf } from '../lib/xray-exits.js';
-import { parseJson, unwrap, xuiApi } from '../lib/xui-api.js';
+import {
+  getInbound,
+  inboundNode,
+  listInbounds,
+  ownVlessInbounds,
+  parseJson,
+  readClient,
+  streamOf,
+  unwrap,
+  xuiApi,
+} from '../lib/xui-api.js';
 import { portBusy } from '../lib/xui-new-inbound.js';
-import { saveXuiToken, savedXuiToken } from '../lib/xui-token.js';
+import { saveXuiToken, xuiFor, xuiToken } from '../lib/xui-token.js';
 
 const Id = z.object({ id: z.string() });
 
@@ -23,9 +36,8 @@ export async function xuiRoutes(
   const journal = actionJournal(db, hub, registry);
   const { runStreamed, quickAction } = actionRunners(registry, journal);
 
-  app.get('/api/servers/:id/xui', async (req, reply) => {
+  app.get('/api/servers/:id/xui', async (req) => {
     const { id } = Id.parse(req.params);
-    if (!registry.isOnline(id)) return reply.code(409).send({ error: 'сервер не в сети' });
     return registry.request(id, 'xui.info', {}, { timeoutMs: 60_000 });
   });
   app.post('/api/servers/:id/xui/set', async (req) => {
@@ -75,9 +87,8 @@ export async function xuiRoutes(
     return { actionId };
   });
   /** Мусор на диске: категории с размерами (агент считает по факту). */
-  app.get('/api/servers/:id/cleanup', async (req, reply) => {
+  app.get('/api/servers/:id/cleanup', async (req) => {
     const { id } = Id.parse(req.params);
-    if (!registry.isOnline(id)) return reply.code(409).send({ error: 'сервер не в сети' });
     return registry.request(id, 'disk.cleanup.scan', {}, { timeoutMs: 120_000 });
   });
   /** Очистка выбранных категорий: длинное действие с выводом. */
@@ -105,37 +116,19 @@ export async function xuiRoutes(
     await saveXuiToken(db, box, id, r.token);
     return { ok: true };
   });
-  /** Вызов REST 3X-UI с сохранённым токеном; нет токена - 409 no-token (вкладка предложит выпустить). */
-  function apiFor(id: string) {
-    if (!registry.isOnline(id))
-      throw Object.assign(new Error('сервер не в сети'), { statusCode: 409 });
-    const token = savedXuiToken(db, box, id);
-    if (!token)
-      throw Object.assign(new Error('нет API-токена 3X-UI: его нужно выпустить на вкладке 3X-UI'), {
-        statusCode: 409,
-        code: 'no-token',
-      });
-    return xuiApi(registry, id, token);
-  }
+  const apiFor = (id: string) => xuiFor(db, box, registry, id);
+  const listenersOf = (id: string) => listenersIn(db, id);
 
   /**
    * Inbound-ы 3X-UI для вкладки: без настроек клиентов (UUID в браузер не уходят) - число
    * клиентов, онлайн (clients/onlines), клиенты панели (email = ref привязок VLESS), трафик.
    */
-  app.get('/api/servers/:id/xui/inbound-list', async (req, reply) => {
+  app.get('/api/servers/:id/xui/inbound-list', async (req) => {
     const { id } = Id.parse(req.params);
     const row = db.select().from(servers).where(eq(servers.id, id)).get();
-    if (!row) return reply.code(404).send({ error: 'сервер не найден' });
-    let api: ReturnType<typeof xuiApi>;
-    try {
-      api = apiFor(id);
-    } catch (e) {
-      const err = e as Error & { statusCode: number; code?: string };
-      return reply.code(err.statusCode).send({ error: err.message, code: err.code });
-    }
-    const list =
-      (unwrap(await api('GET', 'inbounds/list'), 'inbounds/list') as Record<string, unknown>[]) ??
-      [];
+    if (!row) throw Object.assign(new Error('сервер не найден'), { statusCode: 404 });
+    const api = apiFor(id);
+    const list = await listInbounds(api);
     let online = new Set<string>();
     try {
       online = new Set(
@@ -156,7 +149,7 @@ export async function xuiRoutes(
     );
     const exits = xray.exits();
     return list.map((i) => {
-      const st = parseJson(i.streamSettings);
+      const st = streamOf(i);
       const reality = parseJson(st.realitySettings);
       const tls = parseJson(st.tlsSettings);
       const clients = ((parseJson(i.settings).clients as Record<string, unknown>[]) ?? []).map(
@@ -173,7 +166,7 @@ export async function xuiRoutes(
         network: String(st.network ?? ''),
         security: String(st.security ?? ''),
         sni: String(names[0] ?? tls.serverName ?? ''),
-        node: Boolean(Number(i.nodeId ?? i.node_id ?? 0)),
+        node: Boolean(inboundNode(i)),
         up: Number(i.up ?? 0),
         down: Number(i.down ?? 0),
         total: Number(i.total ?? 0),
@@ -199,64 +192,236 @@ export async function xuiRoutes(
       .parse(req.params);
     const { enable } = z.object({ enable: z.boolean() }).parse(req.body ?? {});
     const api = apiFor(id);
-    const actionId = await journal.start(id, 'xui:inbound', { inbound: iid, enable });
-    try {
-      const got = unwrap(await api('GET', `inbounds/get/${iid}`), 'inbounds/get') as Record<
-        string,
-        unknown
-      > | null;
-      if (!got) throw Object.assign(new Error('inbound не найден'), { statusCode: 404 });
-      const was = got.enable !== false;
-      if (enable === was) {
-        await journal.finish(actionId, id, 0, 'без изменений');
-        return { ok: true };
-      }
-      if (enable) {
-        // включение на занятом порту останавливает весь Xray; сам Xray в снимке не считается -
-        // только что выключенный inbound он ещё может слушать
-        const others = (
-          (unwrap(await api('GET', 'inbounds/list'), 'inbounds/list') as Record<
-            string,
-            unknown
-          >[]) ?? []
-        ).filter((x) => Number(x.id) !== iid && x.enable !== false);
-        const row = db.select().from(servers).where(eq(servers.id, id)).get();
-        const ls = (
-          (row?.statusCache as StatusCache | null)?.inventory?.firewall.listeners ?? []
-        ).filter((l) => !/xray/i.test(l.process));
-        const busy = portBusy(Number(got.port), others, ls);
-        if (busy) throw Object.assign(new Error(busy), { statusCode: 409 });
-      }
-      unwrap(await api('POST', `inbounds/setEnable/${iid}`, { enable }), 'inbounds/setEnable');
-      const done = [enable ? 'включён' : 'выключен'];
-      if (enable) syncSpares();
-      else done.push(...(await exitsAfter(id, iid, true)));
-      await journal.finish(actionId, id, 0, done.join(', '));
-      resyncXui(db, gc, id);
-      return { ok: true };
-    } catch (e) {
-      await journal.finish(actionId, id, 1, (e as Error).message);
-      const code = (e as { statusCode?: unknown }).statusCode;
-      throw Object.assign(new Error((e as Error).message), {
-        statusCode: typeof code === 'number' ? code : 502,
-      });
-    }
+    const changed = await journal.quick(
+      id,
+      'xui:inbound',
+      { inbound: iid, enable },
+      async () => {
+        const got = await getInbound(api, iid);
+        if (!got) throw Object.assign(new Error('inbound не найден'), { statusCode: 404 });
+        if (enable === (got.enable !== false)) return null;
+        if (enable) {
+          // включение на занятом порту останавливает весь Xray; сам Xray в снимке не считается -
+          // только что выключенный inbound он ещё может слушать
+          const others = (await listInbounds(api)).filter(
+            (x) => Number(x.id) !== iid && x.enable !== false,
+          );
+          const ls = listenersOf(id).filter((l) => !/xray/i.test(l.process));
+          const busy = portBusy(Number(got.port), others, ls);
+          if (busy) throw Object.assign(new Error(busy), { statusCode: 409 });
+        }
+        unwrap(await api('POST', `inbounds/setEnable/${iid}`, { enable }), 'inbounds/setEnable');
+        const done = [enable ? 'включён' : 'выключен'];
+        if (enable) syncSpares();
+        else done.push(...(await exitsAfter(id, iid, true)));
+        return done;
+      },
+      (done) => (done ? done.join(', ') : 'без изменений'),
+    );
+    if (changed) resyncXui(db, gc, id);
+    return { ok: true };
   });
 
   /**
-   * Состояние 3X-UI и Xray по REST API (через агента, с токеном из "Доступов"). Только этот
-   * запрос: универсальный прокси к API 3X-UI шёл мимо журнала действий. Нет токена - 409 с
-   * кодом no-token (вкладка предлагает выпустить).
+   * Состояние 3X-UI и Xray по REST API: только этот запрос, без общего прокси к API 3X-UI -
+   * изменения идут действиями с журналом.
    */
-  app.get('/api/servers/:id/xui/status', async (req, reply) => {
+  app.get('/api/servers/:id/xui/status', async (req) => {
     const { id } = Id.parse(req.params);
-    if (!registry.isOnline(id)) return reply.code(409).send({ error: 'сервер не в сети' });
-    const token = savedXuiToken(db, box, id);
-    if (!token)
-      return reply.code(409).send({
-        error: 'нет API-токена 3X-UI: его нужно выпустить на вкладке 3X-UI',
-        code: 'no-token',
-      });
-    return unwrap(await xuiApi(registry, id, token)('GET', 'server/status'), 'server/status');
+    return unwrap(await apiFor(id)('GET', 'server/status'), 'server/status');
+  });
+
+  /** Привязки VLESS сервера к живым клиентам панели: email (ref) -> привязка и клиент. */
+  function xuiBindings(serverId: string) {
+    return new Map(
+      db
+        .select({ b: gclientBindings, c: gclients })
+        .from(gclientBindings)
+        .innerJoin(gclients, eq(gclients.id, gclientBindings.clientId))
+        .where(
+          and(
+            eq(gclientBindings.serverId, serverId),
+            eq(gclientBindings.service, 'xui'),
+            isNull(gclients.deletedAt),
+          ),
+        )
+        .all()
+        .map((r) => [r.b.ref, r]),
+    );
+  }
+
+  /** Клиенты 3X-UI для вкладки: inbound-ы, трафик, онлайн, клиент панели (без UUID и subId). */
+  app.get('/api/servers/:id/xui/clients', async (req): Promise<XuiClientRow[]> => {
+    const { id } = Id.parse(req.params);
+    const api = apiFor(id);
+    const list = (unwrap(await api('GET', 'clients/list'), 'clients/list') ?? []) as Record<
+      string,
+      unknown
+    >[];
+    let online = new Set<string>();
+    try {
+      online = new Set(
+        ((unwrap(await api('POST', 'clients/onlines'), 'clients/onlines') as string[]) ?? []).map(
+          String,
+        ),
+      );
+    } catch {
+      // без онлайна
+    }
+    const panel = xuiBindings(id);
+    return list.map((c) => {
+      const email = String(c.email ?? '');
+      const t = (c.traffic ?? {}) as Record<string, unknown>;
+      const p = panel.get(email);
+      return {
+        email,
+        comment: String(c.comment ?? ''),
+        enable: c.enable !== false,
+        inboundIds: ((c.inboundIds as number[] | undefined) ?? []).map(Number),
+        up: Number(t.up ?? 0),
+        down: Number(t.down ?? 0),
+        totalGB: Number(c.totalGB ?? 0),
+        expiryTime: Number(c.expiryTime ?? 0),
+        online: online.has(email),
+        panel: p ? { clientId: p.c.id, name: p.c.name, custom: p.b.xuiInbounds !== null } : null,
+      };
+    });
+  });
+
+  /**
+   * Inbound-ы клиента 3X-UI: привязать и отвязать по разнице (attach/detach), в журнале. У клиента
+   * панели набор запоминается в привязке (xui_inbounds), и сверка его держит; совпал с общим
+   * (свои VLESS минус исключённые) или reset - снова "как у всех" (новые inbound-ы - сами).
+   */
+  app.post('/api/servers/:id/xui/clients/:email/inbounds', async (req) => {
+    const { id, email } = z
+      .object({ id: z.string(), email: z.string().min(1).max(200) })
+      .parse(req.params);
+    const body = z
+      .object({
+        inboundIds: z.array(z.number().int().positive()).max(100).default([]),
+        reset: z.boolean().optional(),
+      })
+      .parse(req.body ?? {});
+    const row = db.select().from(servers).where(eq(servers.id, id)).get();
+    if (!row) throw Object.assign(new Error('сервер не найден'), { statusCode: 404 });
+    const api = apiFor(id);
+    const inbounds = await listInbounds(api);
+    const p = xuiBindings(id).get(email);
+    const def = xuiTargets(inbounds, row.xuiExcluded).target;
+    const want = body.reset ? def : [...new Set(body.inboundIds)];
+    if (!want.length)
+      throw Object.assign(
+        new Error('нужен хотя бы один inbound (клиента панели убирают с сервера в его карточке)'),
+        { statusCode: 400 },
+      );
+    const allowed = new Set((p ? ownVlessInbounds(inbounds) : inbounds).map((i) => Number(i.id)));
+    const bad = want.filter((i) => !allowed.has(i));
+    if (bad.length)
+      throw Object.assign(
+        new Error(
+          p
+            ? `клиенту панели подходят только свои inbound VLESS сервера (не подходят: ${bad.join(', ')})`
+            : `нет таких inbound: ${bad.join(', ')}`,
+        ),
+        { statusCode: 400 },
+      );
+    let kick = false;
+    await journal.quick(
+      id,
+      'xui:client.inbounds',
+      { email, inbounds: want, ...(body.reset ? { reset: true } : {}) },
+      async () => {
+        const cur = readClient(
+          unwrap(await api('GET', `clients/get/${encodeURIComponent(email)}`), 'clients/get'),
+        );
+        if (!cur) throw Object.assign(new Error('клиент не найден в 3X-UI'), { statusCode: 404 });
+        const add = want.filter((i) => !cur.inboundIds.includes(i));
+        const del = cur.inboundIds.filter((i) => !want.includes(i));
+        if (add.length)
+          unwrap(
+            await api('POST', `clients/${encodeURIComponent(email)}/attach`, { inboundIds: add }),
+            'attach',
+          );
+        if (del.length)
+          unwrap(
+            await api('POST', `clients/${encodeURIComponent(email)}/detach`, { inboundIds: del }),
+            'detach',
+          );
+        let note = '';
+        if (p) {
+          const same = want.length === def.length && want.every((i) => def.includes(i));
+          // ссылки подписки - заново сверкой (набор inbound-ов изменился)
+          db.update(gclientBindings)
+            .set({ ...queued(), xuiInbounds: same ? null : want })
+            .where(eq(gclientBindings.id, p.b.id))
+            .run();
+          kick = true;
+          note = same ? ', набор как у всех' : ', свой набор клиента панели';
+        }
+        return `привязано ${add.length ? add.join(', ') : '-'}, отвязано ${del.length ? del.join(', ') : '-'}${note}`;
+      },
+      (log) => log,
+    );
+    if (kick) gc.kick();
+    return { ok: true };
+  });
+
+  /**
+   * Удалить клиента 3X-UI (clients/del), в журнале. Клиента панели здесь не удалить - сверка
+   * заведёт его снова: убирают его в карточке клиента (доступ или удаление).
+   */
+  app.delete('/api/servers/:id/xui/clients/:email', async (req) => {
+    const { id, email } = z
+      .object({ id: z.string(), email: z.string().min(1).max(200) })
+      .parse(req.params);
+    const p = xuiBindings(id).get(email);
+    if (p)
+      throw Object.assign(
+        new Error(
+          `\u00ab${email}\u00bb\u00a0\u2014 клиент панели (${p.c.name}), синхронизация создаст его снова. VLESS или самого клиента убирают в его карточке`,
+        ),
+        { statusCode: 409 },
+      );
+    const api = apiFor(id);
+    await journal.quick(
+      id,
+      'xui:client.del',
+      { email },
+      async () => {
+        unwrap(await api('POST', `clients/del/${encodeURIComponent(email)}`), 'clients/del');
+      },
+      () => 'удалён',
+    );
+    return { ok: true };
+  });
+
+  /** VLESS-inbound-ы сервера (свои, не других узлов группы 3X-UI) и отметка "без глобальных клиентов". */
+  app.get('/api/servers/:id/xui/inbounds', async (req) => {
+    const { id } = Id.parse(req.params);
+    const row = db.select().from(servers).where(eq(servers.id, id)).get();
+    if (!row) throw Object.assign(new Error('сервер не найден'), { statusCode: 404 });
+    requireOnline(registry, id);
+    const list = await listInbounds(xuiApi(registry, id, await xuiToken(db, box, registry, id)));
+    return ownVlessInbounds(list).map((i) => ({
+      id: Number(i.id),
+      remark: String(i.remark ?? ''),
+      port: Number(i.port),
+      enable: i.enable !== false,
+      security: String(streamOf(i).security ?? ''),
+      excluded: row.xuiExcluded.includes(Number(i.id)),
+    }));
+  });
+
+  app.put('/api/servers/:id/xui/excluded', async (req) => {
+    const { id } = Id.parse(req.params);
+    const body = z.object({ inboundIds: z.array(z.number().int()).max(200) }).parse(req.body ?? {});
+    db.update(servers).set({ xuiExcluded: body.inboundIds }).where(eq(servers.id, id)).run();
+    db.update(gclientBindings)
+      .set(queued())
+      .where(and(eq(gclientBindings.serverId, id), eq(gclientBindings.service, 'xui')))
+      .run();
+    gc.kick();
+    return { ok: true };
   });
 }

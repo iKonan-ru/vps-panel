@@ -13,7 +13,6 @@ import type { Socket } from 'node:net';
 import type { Service } from '@vps/protocol';
 import { and, eq, gt } from 'drizzle-orm';
 import type { AgentRegistry } from '../agents/registry.js';
-import type { StatusCache } from '../agents/state.js';
 import type { Db } from '../db/index.js';
 import { servers, sessions } from '../db/schema.js';
 import { TunnelSocket, tunnelConnection } from './agent-tunnel.js';
@@ -291,7 +290,7 @@ export class PanelProxy {
           .from(servers)
       ).filter((r) => slugify(r.name) === slug);
       const row = rows.length === 1 ? rows[0] : undefined;
-      const services = (row?.cache as StatusCache | null)?.inventory?.services ?? [];
+      const services = row?.cache?.inventory?.services ?? [];
       const p = row ? panelTarget(services, kind) : null;
       if (row && p) {
         t = { serverId: row.id, kind, ...p };

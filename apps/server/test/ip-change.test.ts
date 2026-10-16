@@ -14,7 +14,21 @@ async function setup(addr: string) {
   db.insert(servers)
     .values({ id: 's', name: 's', host: '203.0.113.1', sshPort: 1 } as never)
     .run();
-  const journal = { start: vi.fn(async () => 'a1'), finish: vi.fn(async () => {}) };
+  const journal = {
+    quick: vi.fn(
+      async (
+        _s: string,
+        _k: string,
+        _p: unknown,
+        fn: () => Promise<unknown>,
+        log?: (r: unknown) => string,
+      ) => {
+        const r = await fn();
+        log?.(r);
+        return r;
+      },
+    ),
+  };
   const retarget = vi.fn(async () => true);
   const app = Fastify();
   await app.register(ipChangeRoutes, {
@@ -50,10 +64,11 @@ describe('смена IP сервера', () => {
     expect(sw.statusCode).toBe(200);
     expect(db.select().from(servers).get()?.host).toBe('127.0.0.1');
     expect(retarget).toHaveBeenCalledWith('s', '127.0.0.1');
-    expect(journal.start).toHaveBeenCalledWith('s', 'server:ip', {
-      from: '203.0.113.1',
-      to: '127.0.0.1',
-    });
+    expect(journal.quick.mock.calls[0]?.slice(0, 3)).toEqual([
+      's',
+      'server:ip',
+      { from: '203.0.113.1', to: '127.0.0.1' },
+    ]);
   });
 
   it('не IP, тот же адрес, агент со старого и SSH молчит - не переключается', async () => {
