@@ -7,6 +7,7 @@ import { Section } from '@/components/ui/section';
 import { Switch } from '@/components/ui/switch';
 import { api } from '@/lib/api';
 import { ago, bytes } from '@/lib/format';
+import { useAction } from '@/lib/use-action';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { Download, Send } from 'lucide-react';
 import { type FormEvent, useState } from 'react';
@@ -35,22 +36,23 @@ export function PanelBackupSettings() {
     queryFn: () => api<PanelBackupStatus>('/api/panel-backup'),
   });
   const [password, setPassword] = useState('');
-  const [busy, setBusy] = useState(false);
+  const op = useAction();
   const [msg, setMsg] = useState<{ tone: 'ok' | 'bad'; text: string } | null>(null);
+  const note: { tone: 'ok' | 'bad'; text: string } | null = op.error
+    ? { tone: 'bad', text: op.error }
+    : msg;
 
   async function call(fn: () => Promise<unknown>, ok: string) {
-    setBusy(true);
     setMsg(null);
-    try {
-      await fn();
-      setMsg({ tone: 'ok', text: ok });
-    } catch (e) {
-      setMsg({ tone: 'bad', text: (e as Error).message });
-    } finally {
-      // кнопки - только после свежего состояния (переключатель Telegram по старому значению)
-      await qc.invalidateQueries({ queryKey: ['panel-backup'] });
-      setBusy(false);
-    }
+    await op.run(async () => {
+      try {
+        await fn();
+        setMsg({ tone: 'ok', text: ok });
+      } finally {
+        // кнопки - только после свежего состояния (переключатель Telegram по старому значению)
+        await qc.invalidateQueries({ queryKey: ['panel-backup'] });
+      }
+    });
   }
 
   if (!st) return null;
@@ -103,7 +105,7 @@ export function PanelBackupSettings() {
                   onChange={(e) => setPassword(e.target.value)}
                 />
               </div>
-              <Button type="submit" disabled={busy || password.length < 8}>
+              <Button type="submit" disabled={op.busy || password.length < 8}>
                 Сохранить
               </Button>
             </div>
@@ -112,7 +114,7 @@ export function PanelBackupSettings() {
         <div className="flex items-center gap-3">
           <Switch
             checked={st.telegram}
-            disabled={busy || !st.passwordSet}
+            disabled={op.busy || !st.passwordSet}
             label="Ежедневная отправка в Telegram"
             onChange={() =>
               void call(
@@ -129,7 +131,7 @@ export function PanelBackupSettings() {
         </div>
         <div className="flex flex-wrap gap-2">
           <Button
-            disabled={busy || !st.passwordSet}
+            disabled={op.busy || !st.passwordSet}
             onClick={() =>
               void call(async () => {
                 const r = await api<{ ok: boolean; error?: string }>('/api/panel-backup/telegram', {
@@ -161,7 +163,7 @@ export function PanelBackupSettings() {
         {last?.ok && last.size && (
           <div className="text-xs text-muted">Размер: {bytes(last.size)}</div>
         )}
-        {msg && <Alert tone={msg.tone}>{msg.text}</Alert>}
+        {note && <Alert tone={note.tone}>{note.text}</Alert>}
       </div>
     </Section>
   );

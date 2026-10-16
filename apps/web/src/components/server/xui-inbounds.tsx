@@ -10,6 +10,7 @@ import { Section } from '@/components/ui/section';
 import { Switch } from '@/components/ui/switch';
 import { ApiError, api } from '@/lib/api';
 import { bytes } from '@/lib/format';
+import { useAction } from '@/lib/use-action';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { Pencil, Plus, Trash2 } from 'lucide-react';
 import { useState } from 'react';
@@ -73,8 +74,7 @@ export function XuiInbounds({
     retry: false,
   });
   const [edit, setEdit] = useState<Inbound | null>(null);
-  const [err, setErr] = useState<string | null>(null);
-  const [busy, setBusy] = useState(false);
+  const op = useAction();
   const [adding, setAdding] = useState(false);
   const [run, setRun] = useState<{ id: string; title: string } | null>(null);
   const noToken = error instanceof ApiError && error.code === 'no-token';
@@ -90,19 +90,11 @@ export function XuiInbounds({
       });
       if (!ok) return false;
     }
-    setBusy(true);
-    setErr(null);
-    try {
+    return op.run(async () => {
       await api(`/api/servers/${serverId}/xui/inbounds/${i.id}`, { method: 'POST', json: body });
       await qc.invalidateQueries({ queryKey: ['xui-inbounds', serverId] });
       void qc.invalidateQueries({ queryKey: ['xui', serverId] });
-      return true;
-    } catch (e) {
-      setErr((e as Error).message);
-      return false;
-    } finally {
-      setBusy(false);
-    }
+    });
   }
 
   async function remove(i: Inbound) {
@@ -113,22 +105,17 @@ export function XuiInbounds({
       danger: true,
     });
     if (!ok) return;
-    setBusy(true);
-    setErr(null);
-    try {
+    await op.run(async () => {
       await api(`/api/servers/${serverId}/xui/inbounds/${i.id}/delete`, { method: 'POST' });
       await qc.invalidateQueries({ queryKey: ['xui-inbounds', serverId] });
       void qc.invalidateQueries({ queryKey: ['xui', serverId] });
       void qc.invalidateQueries({ queryKey: ['xui-clients', serverId] });
-    } catch (e) {
-      setErr((e as Error).message);
-    } finally {
-      setBusy(false);
-    }
+    });
   }
 
   const list = data ?? [];
-  const locked = disabled || busy;
+  // список перечитывается - кнопки по нему недоступны (решение по старым данным)
+  const locked = disabled || op.busy || isFetching;
   return (
     <>
       {run && (
@@ -157,7 +144,7 @@ export function XuiInbounds({
             title={noToken ? 'Нужен API-токен 3X-UI' : reason}
             disabled={locked || !data}
             onClick={() => {
-              setErr(null);
+              op.setError(null);
               setAdding(true);
             }}
           >
@@ -165,9 +152,9 @@ export function XuiInbounds({
           </Button>
         }
       >
-        {err && !edit && (
+        {op.error && !edit && (
           <div className="p-4 pb-0">
-            <Alert tone="bad">{err}</Alert>
+            <Alert tone="bad">{op.error}</Alert>
           </div>
         )}
         {error && (
@@ -254,7 +241,7 @@ export function XuiInbounds({
               aria-label="Изменить inbound"
               disabled={locked || i.node}
               onClick={() => {
-                setErr(null);
+                op.setError(null);
                 setEdit(i);
               }}
             >

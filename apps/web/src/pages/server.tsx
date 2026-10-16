@@ -460,21 +460,15 @@ function RemoveDialog({
   const qc = useQueryClient();
   const nav = useNavigate();
   const [typed, setTyped] = useState('');
-  const [error, setError] = useState<string | null>(null);
-  const [busy, setBusy] = useState(false);
+  const op = useAction();
   async function go() {
-    if (busy) return;
-    setBusy(true);
-    try {
+    const ok = await op.run(async () => {
       await actions.deleteServer(serverId);
-    } catch (e) {
-      setError((e as Error).message);
-      setBusy(false);
-      return;
-    }
-    // сначала уходим со страницы сервера: перезапрос удалённого сервера (404 с повторами) держал
-    // бы окно открытым; потом убираем его из кэша и обновляем список
-    await nav({ to: '/' });
+      // сначала уходим со страницы сервера: перезапрос удалённого сервера (404 с повторами)
+      // держал бы окно открытым; потом убираем его из кэша и обновляем список
+      await nav({ to: '/' });
+    });
+    if (!ok) return;
     qc.removeQueries({ queryKey: ['servers', serverId] });
     void qc.invalidateQueries({ queryKey: ['servers'], exact: true });
   }
@@ -498,10 +492,10 @@ function RemoveDialog({
           autoComplete="off"
         />
       </Field>
-      {error && <Alert tone="bad">{error}</Alert>}
+      {op.error && <Alert tone="bad">{op.error}</Alert>}
       <div className="flex justify-end gap-2">
         <Button onClick={onClose}>Отмена</Button>
-        <Button variant="danger" disabled={typed !== name || busy} onClick={go}>
+        <Button variant="danger" disabled={typed !== name || op.busy} onClick={go}>
           Удалить
         </Button>
       </div>

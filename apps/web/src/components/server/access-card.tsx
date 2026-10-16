@@ -11,6 +11,7 @@ import { Section } from '@/components/ui/section';
 import { SortableList } from '@/components/ui/sortable';
 import { Textarea } from '@/components/ui/textarea';
 import { api } from '@/lib/api';
+import { useAction } from '@/lib/use-action';
 import { useCopy } from '@/lib/use-copy';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { Check, Copy, Eye, EyeOff, KeyRound, Pencil, Plus, Trash2 } from 'lucide-react';
@@ -96,7 +97,7 @@ export function AccessCard({ serverId }: { serverId: string }) {
     queryFn: () => accessApi.list(serverId),
   });
   const [edit, setEdit] = useState<AccessEntry | 'new' | null>(null);
-  const [error, setError] = useState<string | null>(null);
+  const op = useAction();
 
   async function remove(e: AccessEntry) {
     if (
@@ -107,12 +108,10 @@ export function AccessCard({ serverId }: { serverId: string }) {
       }))
     )
       return;
-    try {
+    await op.run(async () => {
       await accessApi.remove(serverId, e.id);
       await qc.invalidateQueries({ queryKey: ['access', serverId] });
-    } catch (err) {
-      setError((err as Error).message);
-    }
+    });
   }
 
   // порядок после перетаскивания: держим локально, пока не придёт список с сервера,
@@ -120,15 +119,13 @@ export function AccessCard({ serverId }: { serverId: string }) {
   const [moved, setMoved] = useState<{ base: AccessEntry[] | undefined; items: AccessEntry[] }>();
   async function reorder(next: AccessEntry[]) {
     setMoved({ base: data, items: next });
-    try {
-      await accessApi.order(
+    const ok = await op.run(() =>
+      accessApi.order(
         serverId,
         next.map((e) => e.id),
-      );
-    } catch (err) {
-      setError((err as Error).message);
-      setMoved(undefined);
-    }
+      ),
+    );
+    if (!ok) setMoved(undefined);
     await qc.invalidateQueries({ queryKey: ['access', serverId] });
   }
 
@@ -147,9 +144,9 @@ export function AccessCard({ serverId }: { serverId: string }) {
         </Button>
       }
     >
-      {error && (
+      {op.error && (
         <div className="px-4 pt-3">
-          <Alert tone="bad">{error}</Alert>
+          <Alert tone="bad">{op.error}</Alert>
         </div>
       )}
       {list.length === 0 && (
@@ -217,8 +214,7 @@ function AccessDialog({
   const [title, setTitle] = useState('');
   const [note, setNote] = useState('');
   const [fields, setFields] = useState<FieldRow[]>([]);
-  const [error, setError] = useState<string | null>(null);
-  const [busy, setBusy] = useState(false);
+  const op = useAction();
   const [initFor, setInitFor] = useState<string | null>(null);
   const key = entry === null ? null : entry === 'new' ? 'new' : entry.id;
   if (key !== null && initFor !== key) {
@@ -236,7 +232,7 @@ function AccessDialog({
       setNote(entry.note);
       setFields(entry.fields.map(row));
     }
-    setError(null);
+    op.setError(null);
   }
   if (key === null && initFor !== null) setInitFor(null);
 
@@ -245,9 +241,7 @@ function AccessDialog({
 
   async function submit(e: FormEvent) {
     e.preventDefault();
-    setBusy(true);
-    setError(null);
-    try {
+    await op.run(async () => {
       const body = {
         kind: entry !== 'new' && entry ? entry.kind : 'custom',
         title: title.trim(),
@@ -263,11 +257,7 @@ function AccessDialog({
       if (entry === 'new') await accessApi.create(serverId, body);
       else if (entry) await accessApi.update(serverId, entry.id, body);
       onSaved();
-    } catch (err) {
-      setError((err as Error).message);
-    } finally {
-      setBusy(false);
-    }
+    });
   }
 
   return (
@@ -338,10 +328,10 @@ function AccessDialog({
         <Field label="Заметка" htmlFor="acc-note">
           <Textarea id="acc-note" rows={2} value={note} onChange={(e) => setNote(e.target.value)} />
         </Field>
-        {error && <Alert tone="bad">{error}</Alert>}
+        {op.error && <Alert tone="bad">{op.error}</Alert>}
         <div className="flex justify-end gap-2">
           <Button onClick={onClose}>Отмена</Button>
-          <Button type="submit" variant="primary" disabled={busy || !title.trim()}>
+          <Button type="submit" variant="primary" disabled={op.busy || !title.trim()}>
             Сохранить
           </Button>
         </div>

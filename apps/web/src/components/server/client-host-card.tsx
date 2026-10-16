@@ -6,6 +6,7 @@ import { Field } from '@/components/ui/field';
 import { Input } from '@/components/ui/input';
 import { Section } from '@/components/ui/section';
 import { api } from '@/lib/api';
+import { useAction } from '@/lib/use-action';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { Pencil, SearchCheck } from 'lucide-react';
 import { type FormEvent, useState } from 'react';
@@ -75,40 +76,27 @@ function ClientHostForm({
   const qc = useQueryClient();
   const [name, setName] = useState(data.clientHost || data.suggestion);
   const [check, setCheck] = useState<Check | null>(null);
-  const [busy, setBusy] = useState(false);
-  const [err, setErr] = useState<string | null>(null);
+  const op = useAction();
   const value = name.trim().toLowerCase();
 
   async function verify() {
-    setBusy(true);
-    setErr(null);
-    try {
+    await op.run(async () => {
       setCheck(
         await api<Check>(`/api/servers/${serverId}/client-host/check`, {
           method: 'POST',
           json: { name: value },
         }),
       );
-    } catch (e) {
-      setErr((e as Error).message);
-    } finally {
-      setBusy(false);
-    }
+    });
   }
 
   async function save(target: string, e?: FormEvent) {
     e?.preventDefault();
-    setBusy(true);
-    setErr(null);
-    try {
+    await op.run(async () => {
       await api(`/api/servers/${serverId}/client-host`, { method: 'PUT', json: { name: target } });
       await qc.invalidateQueries({ queryKey: ['client-host', serverId] });
       onDone();
-    } catch (x) {
-      setErr((x as Error).message);
-    } finally {
-      setBusy(false);
-    }
+    });
   }
 
   const checked = check?.ok === true;
@@ -132,7 +120,7 @@ function ClientHostForm({
             placeholder={data.suggestion}
           />
           <Button
-            disabled={busy || !value}
+            disabled={op.busy || !value}
             onClick={() => void verify()}
             label="Проверить"
             short="Проверить"
@@ -148,7 +136,7 @@ function ClientHostForm({
             : check.error}
         </Alert>
       )}
-      {err && <Alert tone="bad">{err}</Alert>}
+      {op.error && <Alert tone="bad">{op.error}</Alert>}
       <div className="text-xs text-muted">
         Ссылки и конфиги на личных страницах перевыпустятся. VLESS-подписка обновится сама, а AWG,
         WDTT и OpenFlux клиентам нужно один раз взять заново, иначе после смены IP они перестанут
@@ -156,7 +144,7 @@ function ClientHostForm({
       </div>
       <div className="flex flex-wrap justify-end gap-2">
         {data.clientHost && (
-          <Button variant="ghost" disabled={busy} onClick={() => void save('')}>
+          <Button variant="ghost" disabled={op.busy} onClick={() => void save('')}>
             Вернуть IP
           </Button>
         )}
@@ -164,7 +152,7 @@ function ClientHostForm({
         <Button
           type="submit"
           variant="primary"
-          disabled={busy || !checked || value === data.clientHost}
+          disabled={op.busy || !checked || value === data.clientHost}
           title={checked ? undefined : 'Имя не проверено'}
         >
           Сохранить

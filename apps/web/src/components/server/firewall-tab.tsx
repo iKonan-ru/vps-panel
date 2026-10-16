@@ -19,6 +19,7 @@ import { api } from '@/lib/api';
 import { cn } from '@/lib/cn';
 import { ago } from '@/lib/format';
 import { type ServerDetail, serverLock } from '@/lib/servers';
+import { useAction } from '@/lib/use-action';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import type { FirewallRule } from '@vps/protocol';
 import { Plus, RefreshCw, Settings2, Trash2 } from 'lucide-react';
@@ -40,8 +41,7 @@ export function FirewallTab({ s }: { s: ServerDetail }) {
   // пока на сервере идёт другое действие, изменения недоступны
   const lock = serverLock(s);
   const canAct = online && !lock.busy;
-  const [error, setError] = useState<string | null>(null);
-  const [busy, setBusy] = useState<string | null>(null);
+  const op = useAction();
   const [actionId, setActionId] = useState<{ id: string; title: string } | null>(null);
   const [disableOpen, setDisableOpen] = useState(false);
   const [ruleOpen, setRuleOpen] = useState(false);
@@ -52,29 +52,23 @@ export function FirewallTab({ s }: { s: ServerDetail }) {
     queryFn: () => api<{ id: string; comment: string }[]>(`/api/servers/${s.id}/firewall/rules`),
   });
 
-  async function run(name: string, fn: () => Promise<unknown>) {
-    setBusy(name);
-    setError(null);
-    try {
+  async function run(fn: () => Promise<unknown>) {
+    await op.run(async () => {
       await fn();
       await qc.invalidateQueries({ queryKey: ['servers'] });
       await qc.invalidateQueries({ queryKey: ['fw-rules', s.id] });
-    } catch (e) {
-      setError((e as Error).message);
-    } finally {
-      setBusy(null);
-    }
+    });
   }
 
   async function enable() {
-    await run('enable', async () => {
+    await run(async () => {
       const r = await actions.firewallEnable(s.id);
       setActionId({ id: r.actionId, title: 'Включение firewall' });
     });
   }
   async function disable(restartDocker: boolean) {
     setDisableOpen(false);
-    await run('disable', async () => {
+    await run(async () => {
       const r = await actions.firewallDisable(s.id, restartDocker);
       setActionId({ id: r.actionId, title: 'Выключение firewall' });
     });
@@ -104,11 +98,11 @@ export function FirewallTab({ s }: { s: ServerDetail }) {
         size="sm"
         variant="ghost"
         aria-label="Удалить правило"
-        disabled={!canAct || busy !== null}
+        disabled={!canAct || op.busy}
         title={lock.reason}
         onClick={() => {
           const id = r.manualId;
-          if (id) void run('rule', () => actions.ruleDelete(s.id, id));
+          if (id) void run(() => actions.ruleDelete(s.id, id));
         }}
       >
         <Trash2 className="size-3.5" />
@@ -119,7 +113,7 @@ export function FirewallTab({ s }: { s: ServerDetail }) {
 
   return (
     <>
-      {error && <Alert tone="bad">{error}</Alert>}
+      {op.error && <Alert tone="bad">{op.error}</Alert>}
       <div className="grid gap-3 sm:grid-cols-3 md:gap-4">
         <MetricCard
           label="ufw"
@@ -134,7 +128,7 @@ export function FirewallTab({ s }: { s: ServerDetail }) {
             <Switch
               checked={fw.ufwActive}
               label="Firewall"
-              disabled={!canAct || busy !== null}
+              disabled={!canAct || op.busy}
               onChange={() => (fw.ufwActive ? setDisableOpen(true) : void enable())}
             />
           }
@@ -154,10 +148,10 @@ export function FirewallTab({ s }: { s: ServerDetail }) {
             <Button
               variant="link"
               className="text-xs"
-              disabled={!canAct || !fw.portsyncInstalled || busy !== null}
+              disabled={!canAct || !fw.portsyncInstalled || op.busy}
               title={lock.reason ?? 'Пересчитать правила по слушающим портам'}
               aria-label="Пересчитать"
-              onClick={() => run('portsync', () => actions.portsyncRun(s.id))}
+              onClick={() => run(() => actions.portsyncRun(s.id))}
             >
               <RefreshCw className="size-3.5 md:size-3" />
               <span className="hidden md:inline">пересчитать</span>
@@ -316,18 +310,10 @@ export function FirewallTab({ s }: { s: ServerDetail }) {
         </div>
         <div className="flex justify-end gap-2">
           <Button onClick={() => setDisableOpen(false)}>Отмена</Button>
-          <Button
-            variant="danger"
-            disabled={!canAct || busy !== null}
-            onClick={() => disable(false)}
-          >
+          <Button variant="danger" disabled={!canAct || op.busy} onClick={() => disable(false)}>
             Выключить
           </Button>
-          <Button
-            variant="danger"
-            disabled={!canAct || busy !== null}
-            onClick={() => disable(true)}
-          >
+          <Button variant="danger" disabled={!canAct || op.busy} onClick={() => disable(true)}>
             Выключить и перезапустить docker
           </Button>
         </div>
@@ -365,15 +351,12 @@ function RuleDialog({
     action: 'allow' as RuleInput['action'],
     comment: '',
   });
-  const [error, setError] = useState<string | null>(null);
-  const [busy, setBusy] = useState(false);
+  const save = useAction();
   async function submit(e: FormEvent) {
     e.preventDefault();
     const m = /^(\d+)(?:\s*[-:]\s*(\d+))?$/.exec(f.port.trim());
-    if (!m) return setError('Порт: число или диапазон, например 56000-56003');
-    setBusy(true);
-    setError(null);
-    try {
+    if (!m) return save.setError('Порт: число или диапазон, например 56000-56003');
+    await save.run(async () => {
       const rule: RuleInput = {
         portFrom: Number(m[1]),
         proto: f.proto,
@@ -386,11 +369,7 @@ function RuleDialog({
       await onSaved();
       setF({ port: '', proto: 'tcp', source: '', action: 'allow', comment: '' });
       onClose();
-    } catch (err) {
-      setError((err as Error).message);
-    } finally {
-      setBusy(false);
-    }
+    });
   }
   return (
     <Dialog open={open} onClose={onClose} title="Новое правило">
@@ -442,10 +421,10 @@ function RuleDialog({
             onChange={(e) => setF({ ...f, comment: e.target.value })}
           />
         </Field>
-        {error && <Alert tone="bad">{error}</Alert>}
+        {save.error && <Alert tone="bad">{save.error}</Alert>}
         <div className="flex justify-end gap-2">
           <Button onClick={onClose}>Отмена</Button>
-          <Button type="submit" variant="primary" disabled={busy}>
+          <Button type="submit" variant="primary" disabled={save.busy}>
             Добавить
           </Button>
         </div>
@@ -470,7 +449,7 @@ function PortsyncDialog({
   const [cfg, setCfg] = useState<PortsyncConfig | null>(null);
   const [f, setF] = useState({ admin: '', deny: '', extra: '', known: '' });
   const [error, setError] = useState<string | null>(null);
-  const [busy, setBusy] = useState(false);
+  const save = useAction();
   useEffect(() => {
     if (!open) return;
     setCfg(null);
@@ -491,9 +470,7 @@ function PortsyncDialog({
   async function submit(e: FormEvent) {
     e.preventDefault();
     if (!cfg) return;
-    setBusy(true);
-    setError(null);
-    try {
+    await save.run(async () => {
       await actions.portsyncPut(serverId, {
         ...cfg,
         admin_ips: parseLines(f.admin),
@@ -503,16 +480,12 @@ function PortsyncDialog({
       });
       await onSaved();
       onClose();
-    } catch (err) {
-      setError((err as Error).message);
-    } finally {
-      setBusy(false);
-    }
+    });
   }
   return (
     <Dialog open={open} onClose={onClose} title="Настройки port-sync" wide>
       {!cfg && !error && <div className="text-sm text-muted">Загрузка&hellip;</div>}
-      {error && <Alert tone="bad">{error}</Alert>}
+      {(error ?? save.error) && <Alert tone="bad">{error ?? save.error}</Alert>}
       {cfg && (
         <form onSubmit={submit} className="flex flex-col gap-4">
           <div className="flex items-center gap-1 text-[13px] text-muted">
@@ -591,7 +564,7 @@ function PortsyncDialog({
           </div>
           <div className="flex justify-end gap-2">
             <Button onClick={onClose}>Отмена</Button>
-            <Button type="submit" variant="primary" disabled={busy}>
+            <Button type="submit" variant="primary" disabled={save.busy}>
               Сохранить и применить
             </Button>
           </div>

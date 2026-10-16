@@ -10,6 +10,7 @@ import { api } from '@/lib/api';
 import { cn } from '@/lib/cn';
 import { type ServerDetail, serverLock } from '@/lib/servers';
 import { useUninstall } from '@/lib/uninstall';
+import { useAction } from '@/lib/use-action';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { Plus, RefreshCw } from 'lucide-react';
 import { useEffect, useState } from 'react';
@@ -32,12 +33,14 @@ export function AwgTab({ s }: { s: ServerDetail }) {
   // окно клиента: храним адрес, а клиента берём из свежих данных - после операций он меняется
   const [open, setOpen] = useState<{ container: string; publicKey: string } | null>(null);
   const [adding, setAdding] = useState<string | null>(null);
-  const [busy, setBusy] = useState(false);
-  const [opError, setOpError] = useState<string | null>(null);
+  const act = useAction();
+  // экземпляр, чьи параметры менялись последними: ошибка - в его окне
+  const [paramsFor, setParamsFor] = useState<string | null>(null);
+  const { setError } = act;
   const lock = serverLock(s);
   // ошибка - того окна, где была операция: открыли или закрыли окно клиента - сброс
   // biome-ignore lint/correctness/useExhaustiveDependencies: сброс при смене окна
-  useEffect(() => setOpError(null), [open, adding]);
+  useEffect(() => setError(null), [open, adding, setError]);
 
   /** Операция над клиентом; после неё - свежий статус. null - ошибка (показана в окне). */
   async function exec(
@@ -47,21 +50,15 @@ export function AwgTab({ s }: { s: ServerDetail }) {
     name?: string,
     device?: string,
   ) {
-    setBusy(true);
-    setOpError(null);
-    try {
-      const r = await api<{ ip?: string; publicKey: string }>(`/api/servers/${s.id}/awg/exec`, {
+    let r = null as { ip?: string; publicKey: string } | null;
+    const ok = await act.run(async () => {
+      r = await api<{ ip?: string; publicKey: string }>(`/api/servers/${s.id}/awg/exec`, {
         method: 'POST',
         json: { op, container, publicKey, name, device },
       });
       await qc.invalidateQueries({ queryKey: ['awg', s.id] });
-      return r;
-    } catch (e) {
-      setOpError((e as Error).message);
-      return null;
-    } finally {
-      setBusy(false);
-    }
+    });
+    return ok ? r : null;
   }
 
   if (!online) return <Card className="p-8 text-[13px] text-muted">Сервер не в сети</Card>;
@@ -129,24 +126,20 @@ export function AwgTab({ s }: { s: ServerDetail }) {
           onClient={(c) => setOpen({ container: inst.container, publicKey: c.publicKey })}
           onAdd={() => setAdding(inst.container)}
           onUninstall={() => uninstall(s.id, 'amnezia', { AWG_CONTAINER: inst.container })}
-          addDisabled={busy || lock.busy}
+          addDisabled={act.busy || lock.busy}
           addTitle={lock.reason}
-          onSetParams={async (profile) => {
-            setBusy(true);
-            try {
+          onSetParams={(profile) => {
+            setParamsFor(inst.container);
+            return act.run(async () => {
               await api(`/api/servers/${s.id}/awg/exec`, {
                 method: 'POST',
                 json: { op: 'instance.setparams', container: inst.container, profile },
               });
               await qc.invalidateQueries({ queryKey: ['awg', s.id] });
               await qc.invalidateQueries({ queryKey: ['awg-config'] });
-              return null;
-            } catch (e) {
-              return (e as Error).message;
-            } finally {
-              setBusy(false);
-            }
+            });
           }}
+          paramsError={paramsFor === inst.container ? act.error : null}
         />
       ))}
 
@@ -161,7 +154,7 @@ export function AwgTab({ s }: { s: ServerDetail }) {
             serverId={s.id}
             owner={owner('awg', openClient.publicKey)}
             container={open.container}
-            disabled={busy || lock.busy}
+            disabled={act.busy || lock.busy}
             reason={lock.reason}
             onOp={async (op, name, device) => {
               const r = await exec(op, open.container, openClient.publicKey, name, device);
@@ -169,7 +162,7 @@ export function AwgTab({ s }: { s: ServerDetail }) {
             }}
           />
         )}
-        {opError && <Alert tone="bad">{opError}</Alert>}
+        {act.error && <Alert tone="bad">{act.error}</Alert>}
         <div className="flex justify-end">
           <Button onClick={() => setOpen(null)}>Закрыть</Button>
         </div>
@@ -178,7 +171,7 @@ export function AwgTab({ s }: { s: ServerDetail }) {
       <Dialog open={adding !== null} onClose={() => setAdding(null)} title="Новый клиент AWG">
         <AddClient
           container={adding ?? ''}
-          busy={busy || lock.busy}
+          busy={act.busy || lock.busy}
           onSubmit={async (name, device) => {
             const container = adding ?? '';
             const r = await exec('client.add', container, undefined, name, device);
@@ -188,7 +181,7 @@ export function AwgTab({ s }: { s: ServerDetail }) {
             }
           }}
         />
-        {opError && <Alert tone="bad">{opError}</Alert>}
+        {act.error && <Alert tone="bad">{act.error}</Alert>}
       </Dialog>
     </>
   );

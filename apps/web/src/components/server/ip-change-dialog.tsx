@@ -5,6 +5,7 @@ import { Field } from '@/components/ui/field';
 import { Input } from '@/components/ui/input';
 import { api } from '@/lib/api';
 import { cn } from '@/lib/cn';
+import { useAction } from '@/lib/use-action';
 import { useQueryClient } from '@tanstack/react-query';
 import { Check, CircleAlert, X as XIcon } from 'lucide-react';
 import { type FormEvent, useState } from 'react';
@@ -51,41 +52,28 @@ function IpChangeForm({
   const [ip, setIp] = useState('');
   const [steps, setSteps] = useState<Step[] | null>(null);
   const [canSwitch, setCanSwitch] = useState(false);
-  const [busy, setBusy] = useState(false);
-  const [err, setErr] = useState<string | null>(null);
+  const op = useAction();
   const [done, setDone] = useState(false);
 
   async function check(e?: FormEvent) {
     e?.preventDefault();
-    setBusy(true);
-    setErr(null);
-    try {
+    await op.run(async () => {
       const r = await api<{ steps: Step[]; canSwitch: boolean }>(
         `/api/servers/${serverId}/ip-change/check`,
         { method: 'POST', json: { ip: ip.trim() } },
       );
       setSteps(r.steps);
       setCanSwitch(r.canSwitch);
-    } catch (x) {
-      setErr((x as Error).message);
-    } finally {
-      setBusy(false);
-    }
+    });
   }
 
   async function apply() {
-    setBusy(true);
-    setErr(null);
-    try {
+    await op.run(async () => {
       await api(`/api/servers/${serverId}/ip-change`, { method: 'POST', json: { ip: ip.trim() } });
       setDone(true);
       await qc.invalidateQueries({ queryKey: ['servers'] });
       void qc.invalidateQueries({ queryKey: ['client-host', serverId] });
-    } catch (x) {
-      setErr((x as Error).message);
-    } finally {
-      setBusy(false);
-    }
+    });
   }
 
   if (done)
@@ -147,15 +135,15 @@ function IpChangeForm({
           ))}
         </div>
       )}
-      {err && <Alert tone="bad">{err}</Alert>}
+      {op.error && <Alert tone="bad">{op.error}</Alert>}
       <div className="flex flex-wrap justify-end gap-2">
         <Button onClick={onClose}>Отмена</Button>
-        <Button type="submit" disabled={busy || !ip.trim()}>
+        <Button type="submit" disabled={op.busy || !ip.trim()}>
           Проверить
         </Button>
         <Button
           variant="primary"
-          disabled={busy || !canSwitch}
+          disabled={op.busy || !canSwitch}
           title={canSwitch ? undefined : 'Нужна проверка: имя должно указывать на новый адрес'}
           onClick={() => void apply()}
         >

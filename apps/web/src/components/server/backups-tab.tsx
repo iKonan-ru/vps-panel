@@ -13,8 +13,8 @@ import { Select } from '@/components/ui/select';
 import { TBody, THead, Table } from '@/components/ui/table';
 import { api } from '@/lib/api';
 import { ago, bytes, dateTime } from '@/lib/format';
-import { type ServerDetail, serverLock } from '@/lib/servers';
-import { useServers } from '@/lib/servers';
+import { type ServerDetail, serverLock, useServers } from '@/lib/servers';
+import { useAction } from '@/lib/use-action';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { Archive, ArchiveRestore, Download, Trash2, Upload } from 'lucide-react';
 import { useEffect, useState } from 'react';
@@ -74,7 +74,7 @@ export function BackupsTab({ s }: { s: ServerDetail }) {
     queryFn: () => api<{ passwordSet: boolean }>('/api/panel-backup'),
   });
   const passwordSet = pb?.passwordSet ?? false;
-  const [error, setError] = useState<string | null>(null);
+  const op = useAction();
   const [action, setAction] = useState<{ id: string; title: string } | null>(null);
   const [createOpen, setCreateOpen] = useState(false);
   const [restore, setRestore] = useState<Backup | null>(null);
@@ -86,12 +86,10 @@ export function BackupsTab({ s }: { s: ServerDetail }) {
       danger: true,
     });
     if (!ok) return;
-    try {
+    await op.run(async () => {
       await backupsApi.remove(b.id);
       await qc.invalidateQueries({ queryKey: ['backups'] });
-    } catch (e) {
-      setError((e as Error).message);
-    }
+    });
   }
 
   const components = (b: Backup) =>
@@ -157,7 +155,7 @@ export function BackupsTab({ s }: { s: ServerDetail }) {
 
   return (
     <>
-      {error && <Alert tone="bad">{error}</Alert>}
+      {op.error && <Alert tone="bad">{op.error}</Alert>}
       {action && (
         <ActionPanel
           title={action.title}
@@ -283,7 +281,7 @@ function CreateDialog({
   const [components, setComponents] = useState<Component[] | null>(null);
   const [chosen, setChosen] = useState<string[]>([]);
   const [error, setError] = useState<string | null>(null);
-  const [busy, setBusy] = useState(false);
+  const save = useAction();
   useEffect(() => {
     if (!open) return;
     setComponents(null);
@@ -298,7 +296,7 @@ function CreateDialog({
   }, [open, serverId]);
   return (
     <Dialog open={open} onClose={onClose} title="Новая резервная копия">
-      {error && <Alert tone="bad">{error}</Alert>}
+      {(error ?? save.error) && <Alert tone="bad">{error ?? save.error}</Alert>}
       {!components && !error && <div className="text-sm text-muted">Загрузка&hellip;</div>}
       {components && components.length === 0 && (
         <Alert>На сервере нет сервисов для резервного копирования</Alert>
@@ -328,19 +326,13 @@ function CreateDialog({
         <Button onClick={onClose}>Отмена</Button>
         <Button
           variant="primary"
-          disabled={busy || !components || chosen.length === 0}
-          onClick={async () => {
-            setBusy(true);
-            setError(null);
-            try {
+          disabled={save.busy || !components || chosen.length === 0}
+          onClick={() =>
+            save.run(async () => {
               const r = await backupsApi.create(serverId, chosen);
               onStarted(r.actionId);
-            } catch (e) {
-              setError((e as Error).message);
-            } finally {
-              setBusy(false);
-            }
-          }}
+            })
+          }
         >
           Создать
         </Button>
@@ -364,13 +356,12 @@ function RestoreDialog({
   const [target, setTarget] = useState(defaultServerId);
   const [chosen, setChosen] = useState<string[]>([]);
   const [initFor, setInitFor] = useState('');
-  const [error, setError] = useState<string | null>(null);
-  const [busy, setBusy] = useState(false);
+  const save = useAction();
   if (backup && initFor !== backup.id) {
     setInitFor(backup.id);
     setChosen((backup.manifest.components ?? []).map((c) => c.id));
     setTarget(defaultServerId);
-    setError(null);
+    save.setError(null);
   }
   const comps = backup?.manifest.components ?? [];
   const t = servers?.find((x) => x.id === target);
@@ -460,24 +451,18 @@ function RestoreDialog({
           {target === backup.serverId && (
             <Alert>Конфиги этого сервера вернутся к состоянию на момент создания копии</Alert>
           )}
-          {error && <Alert tone="bad">{error}</Alert>}
+          {save.error && <Alert tone="bad">{save.error}</Alert>}
           <div className="flex justify-end gap-2">
             <Button onClick={onClose}>Отмена</Button>
             <Button
               variant="danger"
-              disabled={busy || chosen.length === 0 || !t || t.status !== 'online'}
-              onClick={async () => {
-                setBusy(true);
-                setError(null);
-                try {
+              disabled={save.busy || chosen.length === 0 || !t || t.status !== 'online'}
+              onClick={() =>
+                save.run(async () => {
                   const r = await backupsApi.restore(backup.id, target, chosen);
                   onStarted(r.actionId, `Восстановление на ${t?.name ?? ''}`);
-                } catch (e) {
-                  setError((e as Error).message);
-                } finally {
-                  setBusy(false);
-                }
-              }}
+                })
+              }
             >
               Восстановить
             </Button>

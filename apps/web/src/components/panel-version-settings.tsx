@@ -9,9 +9,9 @@ import { Select } from '@/components/ui/select';
 import { Switch } from '@/components/ui/switch';
 import { api } from '@/lib/api';
 import { ago } from '@/lib/format';
+import { useAction } from '@/lib/use-action';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { ArrowUpCircle, ExternalLink, RefreshCw } from 'lucide-react';
-import { useState } from 'react';
 
 /** Репозиторий панели: исходники, релизы, документация. */
 const REPO_URL = 'https://github.com/iKonan-ru/vps-panel';
@@ -74,25 +74,16 @@ export function PanelVersionSettings() {
   const { data: cached } = usePanelUpdate();
   // пока обновление запрошено или идёт - чаще: блок узнаёт о конце сам
   const { data: st, isFetching } = usePanelUpdate(cached?.requested || updating ? 5000 : 60_000);
-  const [working, setWorking] = useState(false);
-  const [err, setErr] = useState<string | null>(null);
+  const op = useAction();
   if (!st) return null;
 
   // занято: свой запрос, перечитывание версий, запрошенное или идущее обновление панели -
   // кнопки и переключатели блока недоступны
-  const busy = working || isFetching || Boolean(st.requested) || updating;
-  const run = async (fn: () => Promise<PanelUpdateView>) => {
-    if (working) return;
-    setWorking(true);
-    setErr(null);
-    try {
+  const busy = op.busy || isFetching || Boolean(st.requested) || updating;
+  const run = (fn: () => Promise<PanelUpdateView>) =>
+    op.run(async () => {
       qc.setQueryData(KEY, await fn());
-    } catch (e) {
-      setErr((e as Error).message);
-    } finally {
-      setWorking(false);
-    }
-  };
+    });
   const save = (patch: Partial<PanelUpdateView>) =>
     run(() => api('/api/panel/update/settings', { method: 'PUT', json: patch }));
   const top = st.newer[0];
@@ -146,7 +137,7 @@ export function PanelVersionSettings() {
             label="Проверить"
           >
             <RefreshCw
-              className={working && !st.requested ? 'size-3.5 animate-spin' : 'size-3.5'}
+              className={op.busy && !st.requested ? 'size-3.5 animate-spin' : 'size-3.5'}
             />
           </Button>
         </>
@@ -203,7 +194,7 @@ export function PanelVersionSettings() {
             </div>
           </div>
         )}
-        {err && <Alert tone="bad">{err}</Alert>}
+        {op.error && <Alert tone="bad">{op.error}</Alert>}
         <div className="flex flex-col gap-3 text-[13px]">
           <div className="flex items-center gap-3">
             <label htmlFor="panel-channel" className="grow">

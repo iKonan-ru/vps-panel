@@ -12,6 +12,7 @@ import { LinkButton } from '@/components/ui/link-button';
 import { actions } from '@/lib/actions';
 import { countryLabel } from '@/lib/countries';
 import { dateShort, daysUntil, daysWord, money, paymentSoon, perMonth } from '@/lib/format';
+import { useAction } from '@/lib/use-action';
 import { useQueryClient } from '@tanstack/react-query';
 import type { Hosting } from '@vps/protocol';
 import { Pencil } from 'lucide-react';
@@ -94,33 +95,26 @@ function HostingDialog({
 }: { serverId: string; hosting: Hosting; open: boolean; onClose: () => void }) {
   const qc = useQueryClient();
   const [f, setF] = useState<HostingForm>(() => hostingToForm(hosting));
-  const [error, setError] = useState<string | null>(null);
-  const [busy, setBusy] = useState(false);
+  const save = useAction();
   const set = (patch: Partial<HostingForm>) => setF((s) => ({ ...s, ...patch }));
 
   async function submit(e: FormEvent) {
     e.preventDefault();
-    setBusy(true);
-    setError(null);
-    try {
+    await save.run(async () => {
       await actions.patchServer(serverId, { hosting: formToHosting(f) });
       await qc.invalidateQueries({ queryKey: ['servers'] });
       onClose();
-    } catch (err) {
-      setError((err as Error).message);
-    } finally {
-      setBusy(false);
-    }
+    });
   }
 
   return (
     <Dialog open={open} onClose={onClose} title="Хостинг" wide>
       <form onSubmit={submit} className="flex flex-col gap-4">
         <HostingFields f={f} set={set} />
-        {error && <Alert tone="bad">{error}</Alert>}
+        {save.error && <Alert tone="bad">{save.error}</Alert>}
         <div className="flex justify-end gap-2">
           <Button onClick={onClose}>Отмена</Button>
-          <Button type="submit" variant="primary" disabled={busy}>
+          <Button type="submit" variant="primary" disabled={save.busy}>
             Сохранить
           </Button>
         </div>

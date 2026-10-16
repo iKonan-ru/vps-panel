@@ -184,24 +184,17 @@ function AddClientForm({ onDone }: { onDone: (id: string) => void }) {
     queryKey: ['gclient-servers'],
     queryFn: () => api<GServer[]>('/api/gclients/servers'),
   });
-  const [busy, setBusy] = useState(false);
-  const [err, setErr] = useState<string | null>(null);
+  const op = useAction();
   async function submit(e: FormEvent) {
     e.preventDefault();
-    setBusy(true);
-    setErr(null);
-    try {
+    await op.run(async () => {
       const withDevice = dev.type || dev.name.trim();
       const r = await api<{ id: string }>('/api/gclients', {
         method: 'POST',
         json: { name: name.trim(), note, devices: withDevice ? [dev] : [], access },
       });
       onDone(r.id);
-    } catch (x) {
-      setErr((x as Error).message);
-    } finally {
-      setBusy(false);
-    }
+    });
   }
   return (
     <form className="flex flex-col gap-3" onSubmit={submit}>
@@ -247,9 +240,9 @@ function AddClientForm({ onDone }: { onDone: (id: string) => void }) {
       />
       <div className="text-[13px] font-medium">Доступ</div>
       <AccessEditor value={access} onChange={setAccess} servers={servers ?? []} />
-      {err && <Alert tone="bad">{err}</Alert>}
+      {op.error && <Alert tone="bad">{op.error}</Alert>}
       <div className="flex justify-end">
-        <Button type="submit" variant="primary" disabled={busy || !name.trim()}>
+        <Button type="submit" variant="primary" disabled={op.busy || !name.trim()}>
           Добавить
         </Button>
       </div>

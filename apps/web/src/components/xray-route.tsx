@@ -9,6 +9,7 @@ import { Select } from '@/components/ui/select';
 import { api } from '@/lib/api';
 import { ago } from '@/lib/format';
 import { useServers } from '@/lib/servers';
+import { useAction } from '@/lib/use-action';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { Activity, Power, RefreshCw, Route } from 'lucide-react';
 import { useState } from 'react';
@@ -84,8 +85,11 @@ export function XrayRouteDialog({ open, onClose }: { open: boolean; onClose: () 
   const { data: servers } = useServers();
   const [serverId, setServerId] = useState('');
   const [inboundId, setInboundId] = useState<number | ''>('');
-  const [busy, setBusy] = useState(false);
+  const op = useAction();
   const [msg, setMsg] = useState<{ tone: 'ok' | 'bad'; text: string } | null>(null);
+  const note: { tone: 'ok' | 'bad'; text: string } | null = op.error
+    ? { tone: 'bad', text: op.error }
+    : msg;
 
   const candidates = (servers ?? []).filter(
     (s) => s.status === 'online' && s.services.some((sv) => sv.kind === 'xui'),
@@ -100,17 +104,12 @@ export function XrayRouteDialog({ open, onClose }: { open: boolean; onClose: () 
   if (!st) return null;
 
   async function run(label: string, fn: () => Promise<unknown>) {
-    setBusy(true);
     setMsg(null);
-    try {
+    await op.run(async () => {
       await fn();
       await qc.invalidateQueries({ queryKey: ['xray'] });
       if (label) setMsg({ tone: 'ok', text: label });
-    } catch (err) {
-      setMsg({ tone: 'bad', text: (err as Error).message });
-    } finally {
-      setBusy(false);
-    }
+    });
   }
 
   const setup = () =>
@@ -153,7 +152,7 @@ export function XrayRouteDialog({ open, onClose }: { open: boolean; onClose: () 
 
   const { tone, label } = xrayState(st);
   // пока идёт действие или перечитывается состояние - кнопки окна недоступны
-  const locked = busy || isFetching;
+  const locked = op.busy || isFetching;
 
   return (
     <Dialog open={open} onClose={onClose} title="Маршрут до Telegram" wide>
@@ -309,7 +308,7 @@ export function XrayRouteDialog({ open, onClose }: { open: boolean; onClose: () 
           )}
         </div>
 
-        {msg && <Alert tone={msg.tone}>{msg.text}</Alert>}
+        {note && <Alert tone={note.tone}>{note.text}</Alert>}
       </div>
     </Dialog>
   );

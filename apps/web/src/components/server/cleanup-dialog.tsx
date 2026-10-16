@@ -5,6 +5,7 @@ import { Checkbox } from '@/components/ui/checkbox';
 import { Dialog } from '@/components/ui/dialog';
 import { api } from '@/lib/api';
 import { bytes } from '@/lib/format';
+import { useAction } from '@/lib/use-action';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { Trash2 } from 'lucide-react';
 import { useEffect, useState } from 'react';
@@ -36,8 +37,8 @@ export function CleanupDialog({
   });
   const [chosen, setChosen] = useState<Set<string> | null>(null);
   const [actionId, setActionId] = useState<string | null>(null);
-  const [busy, setBusy] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const op = useAction();
+  const { setError } = op;
 
   // по умолчанию отмечены безопасные категории
   useEffect(() => {
@@ -51,7 +52,7 @@ export function CleanupDialog({
       setActionId(null);
       setError(null);
     }
-  }, [open]);
+  }, [open, setError]);
 
   const items = scan.data?.items ?? [];
   const total = items.filter((i) => chosen?.has(i.id)).reduce((a, i) => a + i.bytes, 0);
@@ -65,19 +66,14 @@ export function CleanupDialog({
 
   async function run() {
     if (!chosen || chosen.size === 0) return;
-    setBusy(true);
-    setError(null);
-    try {
+    const ids = [...chosen];
+    await op.run(async () => {
       const r = await api<{ actionId: string }>(`/api/servers/${serverId}/cleanup`, {
         method: 'POST',
-        json: { ids: [...chosen] },
+        json: { ids },
       });
       setActionId(r.actionId);
-    } catch (e) {
-      setError((e as Error).message);
-    } finally {
-      setBusy(false);
-    }
+    });
   }
 
   return (
@@ -122,7 +118,7 @@ export function CleanupDialog({
               ))}
             </div>
           )}
-          {error && <Alert tone="bad">{error}</Alert>}
+          {op.error && <Alert tone="bad">{op.error}</Alert>}
           <div className="flex items-center gap-3">
             <span className="text-[13px] text-muted">
               {chosen && chosen.size > 0
@@ -134,7 +130,7 @@ export function CleanupDialog({
             <Button
               variant="primary"
               disabled={
-                busy || scan.isFetching || !chosen || chosen.size === 0 || items.length === 0
+                op.busy || scan.isFetching || !chosen || chosen.size === 0 || items.length === 0
               }
               onClick={run}
             >

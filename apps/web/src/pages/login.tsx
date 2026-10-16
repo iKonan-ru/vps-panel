@@ -9,6 +9,7 @@ import { api } from '@/lib/api';
 import type { Me } from '@/lib/auth';
 import { cn } from '@/lib/cn';
 import { codeMask } from '@/lib/masks';
+import { useAction } from '@/lib/use-action';
 import { useQueryClient } from '@tanstack/react-query';
 import { useNavigate } from '@tanstack/react-router';
 import { type FormEvent, useState } from 'react';
@@ -38,16 +39,13 @@ export function LoginPage() {
   const [login, setLogin] = useState('');
   const [password, setPassword] = useState('');
   const [code, setCode] = useState('');
-  const [error, setError] = useState<string | null>(null);
-  const [busy, setBusy] = useState(false);
+  const op = useAction();
   const qc = useQueryClient();
   const navigate = useNavigate();
 
   async function submitPassword(e: FormEvent) {
     e.preventDefault();
-    setBusy(true);
-    setError(null);
-    try {
+    await op.run(async () => {
       const r = await api<{ next: 'totp' } | ({ next: 'enroll' } & TotpSetup)>('/api/auth/login', {
         method: 'POST',
         json: { login, password },
@@ -57,38 +55,22 @@ export function LoginPage() {
         setEnroll(r);
         setStep('enroll');
       } else setStep('totp');
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Ошибка');
-    } finally {
-      setBusy(false);
-    }
+    });
   }
 
   async function submitCode(e: FormEvent) {
     e.preventDefault();
-    setBusy(true);
-    setError(null);
-    try {
+    await op.run(async () => {
       await api('/api/auth/totp', { method: 'POST', json: { code } });
       await finish();
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Ошибка');
-    } finally {
-      setBusy(false);
-    }
+    });
   }
 
   async function confirmEnroll(c: string) {
-    setBusy(true);
-    setError(null);
-    try {
+    await op.run(async () => {
       await api('/api/auth/enroll', { method: 'POST', json: { code: c } });
       await finish();
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Ошибка');
-    } finally {
-      setBusy(false);
-    }
+    });
   }
 
   async function finish() {
@@ -134,14 +116,14 @@ export function LoginPage() {
               setup={enroll}
               onConfirm={(c) => void confirmEnroll(c)}
               label="Включить 2FA и войти"
-              busy={busy}
-              error={error}
+              busy={op.busy}
+              error={op.error}
             />
             <Button
               variant="link"
               className="self-end text-[13px] text-muted hover:text-text"
               onClick={() => {
-                setError(null);
+                op.setError(null);
                 setStep('password');
               }}
             >
@@ -173,12 +155,12 @@ export function LoginPage() {
                 required
               />
             </Field>
-            {error && <Alert tone="bad">{error}</Alert>}
+            {op.error && <Alert tone="bad">{op.error}</Alert>}
             <Button
               type="submit"
               variant="primary"
               className="h-10.5 justify-center"
-              disabled={busy}
+              disabled={op.busy}
             >
               Дальше
             </Button>
@@ -204,12 +186,12 @@ export function LoginPage() {
                 autoFocus
               />
             </Field>
-            {error && <Alert tone="bad">{error}</Alert>}
+            {op.error && <Alert tone="bad">{op.error}</Alert>}
             <Button
               type="submit"
               variant="primary"
               className="h-10.5 justify-center"
-              disabled={busy}
+              disabled={op.busy}
             >
               Войти
             </Button>

@@ -7,7 +7,8 @@ import { Dialog } from '@/components/ui/dialog';
 import { Section } from '@/components/ui/section';
 import { TBody, THead, Table } from '@/components/ui/table';
 import { actions } from '@/lib/actions';
-import { type ServerDetail, serverLock } from '@/lib/servers';
+import { type ServerDetail, serverLock, useServer } from '@/lib/servers';
+import { useAction } from '@/lib/use-action';
 import { useQueryClient } from '@tanstack/react-query';
 import type { Container } from '@vps/protocol';
 import { FileText, Play, RefreshCw, RotateCw, Square, Trash2 } from 'lucide-react';
@@ -34,10 +35,12 @@ export function DockerTab({ s }: { s: ServerDetail }) {
   const qc = useQueryClient();
   const online = s.status === 'online';
   const containers = s.inventory?.containers ?? [];
-  const [error, setError] = useState<string | null>(null);
-  const [busy, setBusy] = useState<string | null>(null);
-  // занято: своё действие с контейнером или другое действие на сервере (логи доступны всегда)
-  const pending = busy ?? serverLock(s).reason ?? null;
+  const op = useAction();
+  // контейнеры - из карточки сервера: пока она перечитывается, кнопки по ним недоступны
+  const { isFetching } = useServer(s.id);
+  // занято: своё действие с контейнером, другое действие на сервере или перечитывание
+  // (логи доступны всегда)
+  const pending = op.busy || isFetching || serverLock(s).busy;
   const [confirm, setConfirm] = useState<{
     c: Container;
     action: 'stop' | 'restart' | 'remove';
@@ -45,16 +48,10 @@ export function DockerTab({ s }: { s: ServerDetail }) {
   const [logs, setLogs] = useState<Container | null>(null);
 
   async function run(c: Container, action: 'start' | 'stop' | 'restart' | 'remove') {
-    setBusy(c.id);
-    setError(null);
-    try {
+    await op.run(async () => {
       await actions.docker(s.id, c.id, action);
-      await qc.invalidateQueries({ queryKey: ['servers'] });
-    } catch (e) {
-      setError((e as Error).message);
-    } finally {
-      setBusy(null);
-    }
+      await qc.invalidateQueries({ queryKey: ['servers', s.id], exact: true });
+    });
   }
 
   function ask(c: Container, action: 'stop' | 'restart' | 'remove') {
@@ -74,7 +71,7 @@ export function DockerTab({ s }: { s: ServerDetail }) {
 
   return (
     <>
-      {error && <Alert tone="bad">{error}</Alert>}
+      {op.error && <Alert tone="bad">{op.error}</Alert>}
       <Section
         title="Контейнеры"
         extra={
@@ -186,7 +183,7 @@ function GroupRows({
   project: string;
   list: Container[];
   online: boolean;
-  busy: string | null;
+  busy: boolean;
   onAction: (c: Container, a: 'start' | 'stop' | 'restart' | 'remove') => unknown;
   onLogs: (c: Container) => void;
 }) {
@@ -249,7 +246,7 @@ function GroupRows({
 
 type ActionProps = {
   online: boolean;
-  busy: string | null;
+  busy: boolean;
   onAction: (c: Container, a: 'start' | 'stop' | 'restart' | 'remove') => unknown;
   onLogs: (c: Container) => void;
 };
@@ -264,7 +261,7 @@ function ContainerActions({
   className,
 }: ActionProps & { c: Container; className?: string }) {
   const running = c.state === 'running';
-  const dis = !online || busy !== null;
+  const dis = !online || busy;
   return (
     <ActionBar
       dense

@@ -7,6 +7,7 @@ import { Input } from '@/components/ui/input';
 import { Section } from '@/components/ui/section';
 import { api } from '@/lib/api';
 import { ago } from '@/lib/format';
+import { useAction } from '@/lib/use-action';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { Power, RefreshCw } from 'lucide-react';
 import { type FormEvent, useState } from 'react';
@@ -37,20 +38,13 @@ export function FirefoxSettings() {
   });
   const [issuer, setIssuer] = useState('');
   const [secret, setSecret] = useState('');
-  const [busy, setBusy] = useState(false);
-  const [err, setErr] = useState<string | null>(null);
+  const op = useAction();
   if (!st) return null;
 
   const run = async (fn: () => Promise<FirefoxView>) => {
-    setBusy(true);
-    setErr(null);
-    try {
+    await op.run(async () => {
       qc.setQueryData(KEY, await fn());
-    } catch (e) {
-      setErr((e as Error).message);
-    } finally {
-      setBusy(false);
-    }
+    });
   };
   const save = (e: FormEvent) => {
     e.preventDefault();
@@ -105,7 +99,7 @@ export function FirefoxSettings() {
           <>
             <Button
               size="sm"
-              disabled={busy || st.busy}
+              disabled={op.busy || st.busy}
               onClick={() => run(() => api('/api/settings/firefox/sign', { method: 'POST' }))}
               label="Подписать"
             >
@@ -114,7 +108,7 @@ export function FirefoxSettings() {
             <Button
               size="sm"
               variant="ghost"
-              disabled={busy || st.busy}
+              disabled={op.busy || st.busy}
               onClick={remove}
               label="Удалить ключ"
             >
@@ -149,12 +143,12 @@ export function FirefoxSettings() {
           </Field>
         </div>
         {st.error && <Alert tone="bad">Подпись: {st.error}</Alert>}
-        {err && <Alert tone="bad">{err}</Alert>}
+        {op.error && <Alert tone="bad">{op.error}</Alert>}
         <div className="flex justify-end">
           <Button
             type="submit"
             variant="primary"
-            disabled={busy || !issuer.trim() || !secret.trim()}
+            disabled={op.busy || !issuer.trim() || !secret.trim()}
           >
             Сохранить ключ
           </Button>

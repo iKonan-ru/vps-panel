@@ -15,6 +15,7 @@ import { Tabs } from '@/components/ui/tabs';
 import { type Check, commandsApi, paramVisible, useCommands } from '@/lib/commands';
 import { cap } from '@/lib/format';
 import { serverLock, useServer, useServers } from '@/lib/servers';
+import { useAction } from '@/lib/use-action';
 import { useQueryClient } from '@tanstack/react-query';
 import { useNavigate, useParams, useSearch } from '@tanstack/react-router';
 import {
@@ -63,8 +64,10 @@ export function CommandRunPage() {
   const [plan, setPlan] = useState<string[]>([]);
   const [errors, setErrors] = useState<string[]>([]);
   const [checks, setChecks] = useState<Check[] | null>(null);
+  // запуск, проверки и остановка - одно действие страницы: ошибка - в op.error
+  const op = useAction();
+  // идёт именно проверка (значок кнопки "Проверить")
   const [checking, setChecking] = useState(false);
-  const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [actionId, setActionId] = useState<string | null>(search.run ?? null);
   // сервер открытого запуска: в форме тем временем могут выбрать другой
@@ -150,21 +153,15 @@ export function CommandRunPage() {
   async function runPreflight() {
     if (!cmd) return;
     setChecking(true);
-    setError(null);
-    try {
+    await op.run(async () => {
       setChecks((await commandsApi.preflight(serverId, cmd.id, answers)).checks);
-    } catch (e) {
-      setError((e as Error).message);
-    } finally {
-      setChecking(false);
-    }
+    });
+    setChecking(false);
   }
 
   async function run() {
-    if (!cmd || busy) return;
-    setBusy(true);
-    setError(null);
-    try {
+    if (!cmd) return;
+    await op.run(async () => {
       const r = await commandsApi.run(serverId, cmd.id, answers);
       setActionId(r.actionId);
       setRunServerId(serverId);
@@ -176,20 +173,12 @@ export function CommandRunPage() {
         replace: true,
       });
       void qc.invalidateQueries({ queryKey: ['actions'] });
-    } catch (e) {
-      setError((e as Error).message);
-    } finally {
-      setBusy(false);
-    }
+    });
   }
 
   async function cancel() {
     if (!actionId) return;
-    try {
-      await commandsApi.cancel(actionId);
-    } catch (e) {
-      setError((e as Error).message);
-    }
+    await op.run(() => commandsApi.cancel(actionId));
   }
 
   if (!cmds || (!cmd && (!retried || cmdsFetching)))
@@ -202,8 +191,7 @@ export function CommandRunPage() {
   const canRun =
     Boolean(serverId) &&
     errors.length === 0 &&
-    !busy &&
-    !checking &&
+    !op.busy &&
     !planPending &&
     Boolean(detail.data) &&
     loadedFor === `${cmd.id}:${serverId}` &&
@@ -232,7 +220,7 @@ export function CommandRunPage() {
         onChange={setTab}
       />
 
-      {error && <Alert tone="bad">{error}</Alert>}
+      {(error ?? op.error) && <Alert tone="bad">{error ?? op.error}</Alert>}
 
       {tab === 'form' && (
         <>
@@ -314,7 +302,7 @@ export function CommandRunPage() {
                   <div className="grow" />
                   <Button
                     size="sm"
-                    disabled={!serverId || checking || busy || errors.length > 0}
+                    disabled={!serverId || op.busy || errors.length > 0}
                     onClick={runPreflight}
                     label="Проверить"
                   >
@@ -383,7 +371,13 @@ export function CommandRunPage() {
                 />
                 <div className="grow" />
                 {finished === null && (
-                  <Button size="sm" variant="danger" onClick={cancel} label="Остановить">
+                  <Button
+                    size="sm"
+                    variant="danger"
+                    disabled={op.busy}
+                    onClick={cancel}
+                    label="Остановить"
+                  >
                     <Square className="size-3.5" />
                   </Button>
                 )}
