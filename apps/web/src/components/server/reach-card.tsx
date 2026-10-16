@@ -20,6 +20,7 @@ import {
   useReachProbes,
   useServerReach,
 } from '@/lib/reach';
+import { useAction } from '@/lib/use-action';
 import { useQueryClient } from '@tanstack/react-query';
 import { Radar } from 'lucide-react';
 import { useEffect, useState } from 'react';
@@ -337,27 +338,20 @@ function Details({
 export function ReachCard({ serverId, online }: { serverId: string; online: boolean }) {
   const qc = useQueryClient();
   const { data } = useServerReach(serverId);
-  const [busy, setBusy] = useState(false);
-  const [err, setErr] = useState<string | null>(null);
+  const op = useAction();
   const [open, setOpen] = useState<string | null>(null);
   const now = useNow();
   const opened = data?.targets.find((t) => t.key === open);
 
   async function check() {
-    setBusy(true);
-    setErr(null);
-    try {
+    await op.run(async () => {
       const r = await api<ServerReach>(`/api/servers/${serverId}/reach/check`, { method: 'POST' });
       qc.setQueryData(['reach', serverId], r);
       await Promise.all([
         qc.invalidateQueries({ queryKey: ['reach'], exact: true }),
         qc.invalidateQueries({ queryKey: ['reach-probes', serverId] }),
       ]);
-    } catch (e) {
-      setErr((e as Error).message);
-    } finally {
-      setBusy(false);
-    }
+    });
   }
 
   return (
@@ -374,18 +368,18 @@ export function ReachCard({ serverId, online }: { serverId: string; online: bool
       actions={
         <Button
           size="sm"
-          disabled={busy || !online}
+          disabled={op.busy || !online}
           onClick={() => void check()}
           label="Проверить сейчас"
           short="Проверить"
         >
-          <Radar className={cn('size-3.5', busy && 'animate-pulse')} />
+          <Radar className={cn('size-3.5', op.busy && 'animate-pulse')} />
         </Button>
       }
     >
-      {err && (
+      {op.error && (
         <div className="px-4 pt-3">
-          <Alert tone="bad">{err}</Alert>
+          <Alert tone="bad">{op.error}</Alert>
         </div>
       )}
       {data?.error && <div className="px-4 pt-3 text-xs text-warn">{data.error}</div>}

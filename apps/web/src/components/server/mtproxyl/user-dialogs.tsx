@@ -8,6 +8,7 @@ import { Field } from '@/components/ui/field';
 import { InfoTip } from '@/components/ui/info-tip';
 import { Input } from '@/components/ui/input';
 import { bytes } from '@/lib/format';
+import { useAction } from '@/lib/use-action';
 import { useQuery } from '@tanstack/react-query';
 import { type GOwner, parseMtLinks } from '@vps/protocol';
 import { Pencil, Power, Trash2 } from 'lucide-react';
@@ -44,8 +45,7 @@ export function UserInfo({
   onRename: (name: string) => Promise<void>;
 }) {
   const [rename, setRename] = useState<string | null>(null);
-  const [renameError, setRenameError] = useState<string | null>(null);
-  const [saving, setSaving] = useState(false);
+  const save = useAction();
   const validName = (v: string) => /^[a-zA-Z0-9_-]{1,32}$/.test(v);
   const rows: [string, string][] = [
     ['Трафик', bytes(traffic?.total ?? u.total_bytes)],
@@ -76,7 +76,7 @@ export function UserInfo({
           title={reason}
           onClick={() => {
             setRename(u.label);
-            setRenameError(null);
+            save.setError(null);
           }}
         >
           <Pencil className="size-3" />
@@ -92,16 +92,7 @@ export function UserInfo({
               setRename(null);
               return;
             }
-            setSaving(true);
-            setRenameError(null);
-            try {
-              await onRename(name);
-              setRename(null);
-            } catch (err) {
-              setRenameError((err as Error).message);
-            } finally {
-              setSaving(false);
-            }
+            if (await save.run(() => onRename(name))) setRename(null);
           }}
         >
           <div className="flex flex-wrap gap-2">
@@ -116,14 +107,14 @@ export function UserInfo({
             <Button
               type="submit"
               variant="primary"
-              disabled={disabled || saving || !validName(rename.trim())}
+              disabled={disabled || save.busy || !validName(rename.trim())}
             >
               Сохранить
             </Button>
             <Button onClick={() => setRename(null)}>Отмена</Button>
             <InfoTip>Латиница, цифры, _ и -, до 32&nbsp;символов. Ссылки не изменятся.</InfoTip>
           </div>
-          {renameError && <Alert tone="bad">{renameError}</Alert>}
+          {save.error && <Alert tone="bad">{save.error}</Alert>}
         </form>
       )}
       <dl className="grid grid-cols-[auto_minmax(0,1fr)] gap-x-4 gap-y-1.5 text-[13px]">

@@ -7,6 +7,7 @@ import { Input } from '@/components/ui/input';
 import { actions } from '@/lib/actions';
 import { api } from '@/lib/api';
 import { cn } from '@/lib/cn';
+import { useAction } from '@/lib/use-action';
 import { useCopy } from '@/lib/use-copy';
 import { useQuery } from '@tanstack/react-query';
 import { Copy, KeyRound, RotateCcw } from 'lucide-react';
@@ -25,8 +26,7 @@ export function InstallAgent({
 }: { serverId: string; host: string; onDone?: (ok: boolean) => void }) {
   const [mode, setMode] = useState<Mode>('password');
   const [password, setPassword] = useState('');
-  const [error, setError] = useState<string | null>(null);
-  const [busy, setBusy] = useState(false);
+  const op = useAction();
   const [actionId, setActionId] = useState<string | null>(null);
   const [command, setCommand] = useState<string | null>(null);
   const [failed, setFailed] = useState(false);
@@ -41,10 +41,7 @@ export function InstallAgent({
 
   async function start(e: FormEvent) {
     e.preventDefault();
-    if (busy) return;
-    setBusy(true);
-    setError(null);
-    try {
+    await op.run(async () => {
       if (mode === 'manual') {
         const r = await actions.registration(serverId);
         setCommand(r.installCommand);
@@ -56,21 +53,15 @@ export function InstallAgent({
         setPassword('');
         setActionId(r.actionId);
       }
-    } catch (err) {
-      setError((err as Error).message);
-    } finally {
-      setBusy(false);
-    }
+    });
   }
 
   /** Сервер переустановлен - ключ SSH-хоста другой, а панель помнит старый отпечаток. */
   async function resetHostKey() {
-    try {
+    await op.run(async () => {
       await api(`/api/servers/${serverId}/host-key`, { method: 'DELETE' });
       setKeyReset(true);
-    } catch (err) {
-      setError((err as Error).message);
-    }
+    });
   }
 
   if (actionId) {
@@ -84,7 +75,7 @@ export function InstallAgent({
             onDone?.(code === 0);
           }}
         />
-        {error && <Alert tone="bad">{error}</Alert>}
+        {op.error && <Alert tone="bad">{op.error}</Alert>}
         {keyReset && (
           <Alert tone="ok">Отпечаток сброшен: при следующей установке запомнится новый ключ</Alert>
         )}
@@ -92,6 +83,7 @@ export function InstallAgent({
           {failed && !keyReset && (
             <Button
               size="sm"
+              disabled={op.busy}
               onClick={resetHostKey}
               label="Сбросить отпечаток SSH"
               short="Сбросить отпечаток"
@@ -102,13 +94,13 @@ export function InstallAgent({
           )}
           <Button
             size="sm"
-            disabled={!finished}
+            disabled={!finished || op.busy}
             onClick={() => {
               setActionId(null);
               setFinished(false);
               setFailed(false);
               setKeyReset(false);
-              setError(null);
+              op.setError(null);
             }}
             label="Повторить"
             short="Повторить"
@@ -183,14 +175,14 @@ export function InstallAgent({
           <CopyButton text={command} />
         </div>
       )}
-      {error && <Alert tone="bad">{error}</Alert>}
+      {op.error && <Alert tone="bad">{op.error}</Alert>}
       <div className="flex items-center gap-3">
         <InfoTip>Агент ставится systemd-службой. Docker, VPN и firewall не затрагиваются.</InfoTip>
         <div className="grow" />
         <Button
           type="submit"
           variant="primary"
-          disabled={busy || (mode === 'password' && !password)}
+          disabled={op.busy || (mode === 'password' && !password)}
         >
           {mode === 'manual'
             ? command

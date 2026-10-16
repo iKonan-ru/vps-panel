@@ -7,9 +7,9 @@ import { api } from '@/lib/api';
 import { type AppsList, useApps } from '@/lib/apps';
 import { cn } from '@/lib/cn';
 import { ago } from '@/lib/format';
+import { useAction } from '@/lib/use-action';
 import { useQueryClient } from '@tanstack/react-query';
 import { RefreshCw } from 'lucide-react';
-import { useState } from 'react';
 
 /**
  * Клиентские приложения по сервисам и ОС: свежие версии с GitHub (раз в 6 часов) и ссылки на
@@ -18,19 +18,12 @@ import { useState } from 'react';
 export function AppsPage() {
   const qc = useQueryClient();
   const { data, error } = useApps();
-  const [busy, setBusy] = useState(false);
-  const [refreshError, setRefreshError] = useState<string | null>(null);
+  const op = useAction();
 
   async function refresh() {
-    setBusy(true);
-    setRefreshError(null);
-    try {
+    await op.run(async () => {
       qc.setQueryData(['apps'], await api<AppsList>('/api/apps/refresh', { method: 'POST' }));
-    } catch (e) {
-      setRefreshError((e as Error).message);
-    } finally {
-      setBusy(false);
-    }
+    });
   }
 
   return (
@@ -43,12 +36,17 @@ export function AppsPage() {
             <span className="text-xs text-muted">версии проверены {ago(data.checkedAt)}</span>
           )}
         </div>
-        <Button size="sm" disabled={busy} onClick={() => void refresh()} label="Проверить версии">
-          <RefreshCw className={cn('size-3.5', busy && 'animate-spin')} />
+        <Button
+          size="sm"
+          disabled={op.busy}
+          onClick={() => void refresh()}
+          label="Проверить версии"
+        >
+          <RefreshCw className={cn('size-3.5', op.busy && 'animate-spin')} />
         </Button>
       </div>
       {error && <Alert tone="bad">{error.message}</Alert>}
-      {refreshError && <Alert tone="bad">{refreshError}</Alert>}
+      {op.error && <Alert tone="bad">{op.error}</Alert>}
       {data?.apps.map((app) => (
         <Section
           key={app.id}

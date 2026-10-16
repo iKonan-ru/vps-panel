@@ -25,6 +25,7 @@ export function Instance({
   addDisabled,
   addTitle,
   onSetParams,
+  paramsError,
   onUninstall,
   owner,
 }: {
@@ -35,8 +36,9 @@ export function Instance({
   onAdd: () => void;
   addDisabled: boolean;
   addTitle: string | undefined;
-  /** Смена параметров экземпляра; ошибка - текстом (показывается в окне параметров). */
-  onSetParams: (profile: string) => Promise<string | null>;
+  /** Смена параметров экземпляра; true - готово, иначе ошибка в paramsError (окно параметров). */
+  onSetParams: (profile: string) => Promise<boolean>;
+  paramsError: string | null;
   /** Удаление экземпляра: команда каталога с этим контейнером (план и подтверждение - там). */
   onUninstall: () => void;
 }) {
@@ -53,7 +55,6 @@ export function Instance({
   );
   const [showParams, setShowParams] = useState(false);
   const [changing, setChanging] = useState(false);
-  const [paramsError, setParamsError] = useState<string | null>(null);
   const legacy = inst.container === 'amnezia-awg';
   const current = inst.version.startsWith('3') ? '3.1' : inst.version === '2.0' ? '2.0' : '1.0';
   const [profile, setProfile] = useState(legacy ? '1.0' : current);
@@ -186,10 +187,7 @@ export function Instance({
                 className="mt-2 text-xs"
                 disabled={addDisabled}
                 title={addTitle}
-                onClick={() => {
-                  setParamsError(null);
-                  setChanging(true);
-                }}
+                onClick={() => setChanging(true)}
               >
                 Сменить версию или перевыпустить параметры
               </Button>
@@ -235,9 +233,7 @@ export function Instance({
                   variant="danger"
                   disabled={addDisabled}
                   onClick={async () => {
-                    const err = await onSetParams(profile);
-                    if (err) setParamsError(err);
-                    else setChanging(false);
+                    if (await onSetParams(profile)) setChanging(false);
                   }}
                 >
                   {profile === current ? 'Перевыпустить параметры' : `Перейти на ${profile}`}

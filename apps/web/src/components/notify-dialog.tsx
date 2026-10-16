@@ -6,6 +6,7 @@ import { Switch } from '@/components/ui/switch';
 import { api } from '@/lib/api';
 import { cn } from '@/lib/cn';
 import { useServers } from '@/lib/servers';
+import { useAction } from '@/lib/use-action';
 import { useQueryClient } from '@tanstack/react-query';
 import {
   NOTIFY_GROUPS,
@@ -45,8 +46,8 @@ export function NotifyDialog({
   const [ev, setEv] = useState<NotifyEvents>(value.events);
   const [params, setParams] = useState<Record<keyof NotifyParams, string>>(() => strParams(value));
   const [muted, setMuted] = useState<string[]>(value.mutedServers);
-  const [busy, setBusy] = useState(false);
-  const [err, setErr] = useState<string | null>(null);
+  const op = useAction();
+  const { setError } = op;
 
   // при каждом открытии - с сохранённого
   useEffect(() => {
@@ -54,8 +55,8 @@ export function NotifyDialog({
     setEv(value.events);
     setParams(strParams(value));
     setMuted(value.mutedServers);
-    setErr(null);
-  }, [open, value]);
+    setError(null);
+  }, [open, value, setError]);
 
   const bad = (Object.keys(params) as (keyof NotifyParams)[]).find((k) => {
     const v = Number(params[k]);
@@ -64,9 +65,7 @@ export function NotifyDialog({
   });
 
   async function save() {
-    setBusy(true);
-    setErr(null);
-    try {
+    await op.run(async () => {
       await api('/api/notify/telegram', {
         method: 'PUT',
         json: {
@@ -79,11 +78,7 @@ export function NotifyDialog({
       });
       await qc.invalidateQueries({ queryKey: ['tg-settings'] });
       onClose();
-    } catch (e) {
-      setErr((e as Error).message);
-    } finally {
-      setBusy(false);
-    }
+    });
   }
 
   const setGroup = (keys: NotifyEvent[], on: boolean) =>
@@ -180,12 +175,12 @@ export function NotifyDialog({
           })}
         </section>
       )}
-      {err && <Alert tone="bad">{err}</Alert>}
+      {op.error && <Alert tone="bad">{op.error}</Alert>}
       <div className="flex justify-end gap-2">
-        <Button variant="ghost" onClick={onClose} disabled={busy}>
+        <Button variant="ghost" onClick={onClose} disabled={op.busy}>
           Отмена
         </Button>
-        <Button variant="primary" onClick={save} disabled={busy || bad !== undefined}>
+        <Button variant="primary" onClick={save} disabled={op.busy || bad !== undefined}>
           Сохранить
         </Button>
       </div>

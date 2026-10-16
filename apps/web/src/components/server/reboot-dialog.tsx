@@ -4,6 +4,7 @@ import { Dialog } from '@/components/ui/dialog';
 import { Field } from '@/components/ui/field';
 import { Input } from '@/components/ui/input';
 import { actions } from '@/lib/actions';
+import { useAction } from '@/lib/use-action';
 import { useState } from 'react';
 
 /** Перезагрузка с подтверждением именем сервера. */
@@ -14,19 +15,9 @@ export function RebootDialog({
   onClose,
 }: { serverId: string; name: string; open: boolean; onClose: () => void }) {
   const [typed, setTyped] = useState('');
-  const [error, setError] = useState<string | null>(null);
-  const [busy, setBusy] = useState(false);
+  const op = useAction();
   async function go() {
-    setBusy(true);
-    setError(null);
-    try {
-      await actions.reboot(serverId, typed);
-      onClose();
-    } catch (e) {
-      setError((e as Error).message);
-    } finally {
-      setBusy(false);
-    }
+    if (await op.run(() => actions.reboot(serverId, typed))) onClose();
   }
   return (
     <Dialog open={open} onClose={onClose} title={`Перезагрузить \u00ab${name}\u00bb?`}>
@@ -48,10 +39,10 @@ export function RebootDialog({
           autoComplete="off"
         />
       </Field>
-      {error && <Alert tone="bad">{error}</Alert>}
+      {op.error && <Alert tone="bad">{op.error}</Alert>}
       <div className="flex justify-end gap-2">
         <Button onClick={onClose}>Отмена</Button>
-        <Button variant="danger" disabled={typed !== name || busy} onClick={go}>
+        <Button variant="danger" disabled={typed !== name || op.busy} onClick={go}>
           Перезагрузить
         </Button>
       </div>

@@ -16,6 +16,7 @@ import { api } from '@/lib/api';
 import { countryName } from '@/lib/countries';
 import { clampInt } from '@/lib/masks';
 import { useServer, useServers } from '@/lib/servers';
+import { useAction } from '@/lib/use-action';
 import { useQueryClient } from '@tanstack/react-query';
 import { useNavigate } from '@tanstack/react-router';
 import { Check, Radar, Wand2, X as XIcon } from 'lucide-react';
@@ -43,8 +44,7 @@ export function ServerNewPage() {
   const setH = (patch: Partial<HostingForm>) => setHosting((h) => ({ ...h, ...patch }));
   const { data: servers } = useServers();
   const name = customName ?? autoName(hosting, servers?.map((x) => x.name) ?? []);
-  const [error, setError] = useState<string | null>(null);
-  const [busy, setBusy] = useState(false);
+  const op = useAction();
   const [created, setCreated] = useState<Created | null>(null);
   const [probe, setProbe] = useState<Probe | null>(null);
   const [probing, setProbing] = useState(false);
@@ -69,9 +69,7 @@ export function ServerNewPage() {
 
   async function submit(e: FormEvent) {
     e.preventDefault();
-    setBusy(true);
-    setError(null);
-    try {
+    await op.run(async () => {
       const res = await api<Created>('/api/servers', {
         method: 'POST',
         json: {
@@ -88,11 +86,7 @@ export function ServerNewPage() {
       setCustomName(name); // список серверов обновится, и автоимя получило бы номер
       setCreated(res);
       await qc.invalidateQueries({ queryKey: ['servers'] });
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Ошибка');
-    } finally {
-      setBusy(false);
-    }
+    });
   }
 
   if (created) {
@@ -207,11 +201,11 @@ export function ServerNewPage() {
         </div>
         <HostingFields f={hosting} set={setH} idPrefix="new" />
       </Card>
-      {error && <Alert tone="bad">{error}</Alert>}
+      {op.error && <Alert tone="bad">{op.error}</Alert>}
       <div className="flex items-center justify-end gap-2.5">
         <InfoTip>Пароль root, если нужен, запрашивается на следующем шаге и не хранится</InfoTip>
         <ButtonLink to="/">Отмена</ButtonLink>
-        <Button type="submit" variant="primary" disabled={busy}>
+        <Button type="submit" variant="primary" disabled={op.busy}>
           Добавить
         </Button>
       </div>

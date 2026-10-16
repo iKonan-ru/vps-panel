@@ -4,9 +4,9 @@ import { Field } from '@/components/ui/field';
 import { Input } from '@/components/ui/input';
 import { Select } from '@/components/ui/select';
 import { api } from '@/lib/api';
+import { useAction } from '@/lib/use-action';
 import { useQuery } from '@tanstack/react-query';
 import { RefreshCw, Shuffle } from 'lucide-react';
-import { useState } from 'react';
 
 /** Поля окон добавления и правки inbound-ов VLESS: порт, цель Reality, fingerprint. */
 
@@ -78,23 +78,15 @@ export function PortField({
   disabled: boolean;
   avoid: number[];
 }) {
-  const [busy, setBusy] = useState(false);
-  const [err, setErr] = useState<string | null>(null);
+  const op = useAction();
   async function pick() {
-    if (busy) return;
-    setBusy(true);
-    setErr(null);
-    try {
+    await op.run(async () => {
       const q = avoid.filter((p) => p > 0).join(',');
       const r = await api<{ port: number }>(
         `/api/servers/${serverId}/xui/free-port${q ? `?not=${q}` : ''}`,
       );
       onChange(String(r.port));
-    } catch (e) {
-      setErr((e as Error).message);
-    } finally {
-      setBusy(false);
-    }
+    });
   }
   return (
     <Field label="Порт" htmlFor={id}>
@@ -105,7 +97,7 @@ export function PortField({
           min={1}
           max={65535}
           value={value}
-          disabled={disabled || busy}
+          disabled={disabled || op.busy}
           onChange={(e) => onChange(e.target.value)}
           className="min-w-0 grow font-mono"
         />
@@ -113,13 +105,13 @@ export function PortField({
           size="icon"
           title="Случайный свободный порт"
           aria-label="Случайный свободный порт"
-          disabled={disabled || busy}
+          disabled={disabled || op.busy}
           onClick={() => void pick()}
         >
           <Shuffle className="size-4" />
         </Button>
       </div>
-      {err && <div className="mt-1 text-xs text-bad">{err}</div>}
+      {op.error && <div className="mt-1 text-xs text-bad">{op.error}</div>}
     </Field>
   );
 }

@@ -10,6 +10,7 @@ import { Section } from '@/components/ui/section';
 import { Select } from '@/components/ui/select';
 import { Textarea } from '@/components/ui/textarea';
 import { api } from '@/lib/api';
+import { useAction } from '@/lib/use-action';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { List, Plus, Trash2 } from 'lucide-react';
 import { type FormEvent, useState } from 'react';
@@ -35,8 +36,11 @@ export function OpenfluxDocsSettings() {
     queryFn: () => api<OfDoc[]>('/api/openflux/docs'),
   });
   const [text, setText] = useState('');
-  const [busy, setBusy] = useState(false);
+  const op = useAction();
   const [msg, setMsg] = useState<{ tone: 'ok' | 'bad'; text: string } | null>(null);
+  const note: { tone: 'ok' | 'bad'; text: string } | null = op.error
+    ? { tone: 'bad', text: op.error }
+    : msg;
   const [showForm, setShowForm] = useState(false);
   const [showList, setShowList] = useState(false);
   const [kind, setKind] = useState<'all' | OfDoc['kind']>('all');
@@ -46,9 +50,8 @@ export function OpenfluxDocsSettings() {
 
   async function add(e: FormEvent) {
     e.preventDefault();
-    setBusy(true);
     setMsg(null);
-    try {
+    await op.run(async () => {
       const r = await api<{ added: number; bad: string[] }>('/api/openflux/docs', {
         method: 'POST',
         json: { text },
@@ -66,11 +69,7 @@ export function OpenfluxDocsSettings() {
               text: `Добавлено: ${r.added}`,
             },
       );
-    } catch (x) {
-      setMsg({ tone: 'bad', text: (x as Error).message });
-    } finally {
-      setBusy(false);
-    }
+    });
   }
 
   const docs = data ?? [];
@@ -105,12 +104,10 @@ export function OpenfluxDocsSettings() {
       danger: Boolean(d.usedBy),
     });
     if (!ok) return;
-    try {
+    await op.run(async () => {
       await api(`/api/openflux/docs/${d.id}`, { method: 'DELETE' });
       await refresh();
-    } catch (x) {
-      setMsg({ tone: 'bad', text: (x as Error).message });
-    }
+    });
   }
 
   return (
@@ -177,15 +174,15 @@ export function OpenfluxDocsSettings() {
             />
           </Field>
           <div className="flex justify-end">
-            <Button type="submit" variant="primary" disabled={busy || !text.trim()}>
+            <Button type="submit" variant="primary" disabled={op.busy || !text.trim()}>
               Добавить
             </Button>
           </div>
         </form>
       )}
-      {msg && (
+      {note && (
         <div className="border-t border-border p-4">
-          <Alert tone={msg.tone}>{msg.text}</Alert>
+          <Alert tone={note.tone}>{note.text}</Alert>
         </div>
       )}
       {showList && docs.length > 0 && (

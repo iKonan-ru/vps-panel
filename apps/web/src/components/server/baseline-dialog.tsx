@@ -5,6 +5,7 @@ import { Checkbox } from '@/components/ui/checkbox';
 import { Chip } from '@/components/ui/chip';
 import { Dialog } from '@/components/ui/dialog';
 import { type BaselinePlan, actions } from '@/lib/actions';
+import { useAction } from '@/lib/use-action';
 import { Check, KeyRound } from 'lucide-react';
 import { useCallback, useEffect, useState } from 'react';
 
@@ -31,7 +32,7 @@ export function BaselineDialog({
   const [chosen, setChosen] = useState<Set<string>>(new Set());
   const [error, setError] = useState<string | null>(null);
   const [actionId, setActionId] = useState<string | null>(null);
-  const [busy, setBusy] = useState(false);
+  const op = useAction();
 
   const loadPlan = useCallback(() => {
     setPlan(null);
@@ -63,16 +64,10 @@ export function BaselineDialog({
   }
 
   async function apply() {
-    setBusy(true);
-    setError(null);
-    try {
+    await op.run(async () => {
       const r = await actions.baselineApply(serverId, [...chosen]);
       setActionId(r.actionId);
-    } catch (e) {
-      setError((e as Error).message);
-    } finally {
-      setBusy(false);
-    }
+    });
   }
 
   const needed = plan?.steps.filter((s) => s.needed) ?? [];
@@ -83,7 +78,7 @@ export function BaselineDialog({
 
   return (
     <Dialog open={open} onClose={onClose} title="Исправление замечаний" wide>
-      {error && <Alert tone="bad">{error}</Alert>}
+      {(error ?? op.error) && <Alert tone="bad">{error ?? op.error}</Alert>}
       {actionId ? (
         <>
           <ActionOutput actionId={actionId} />
@@ -167,7 +162,7 @@ export function BaselineDialog({
           </div>
           <div className="flex justify-end gap-2">
             <Button onClick={onClose}>Отмена</Button>
-            <Button variant="primary" disabled={chosen.size === 0 || busy} onClick={apply}>
+            <Button variant="primary" disabled={chosen.size === 0 || op.busy} onClick={apply}>
               Исправить: {chosen.size + (impliedPortsync ? 1 : 0)}
             </Button>
           </div>

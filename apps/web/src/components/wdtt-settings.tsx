@@ -4,6 +4,7 @@ import { Field } from '@/components/ui/field';
 import { Section } from '@/components/ui/section';
 import { Textarea } from '@/components/ui/textarea';
 import { api } from '@/lib/api';
+import { useAction } from '@/lib/use-action';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { type FormEvent, useEffect, useState } from 'react';
 
@@ -21,17 +22,19 @@ export function WdttSettings() {
     queryFn: () => api<{ hashes: string[] }>('/api/settings/wdtt'),
   });
   const [text, setText] = useState('');
-  const [busy, setBusy] = useState(false);
+  const op = useAction();
   const [msg, setMsg] = useState<{ tone: 'ok' | 'bad'; text: string } | null>(null);
+  const note: { tone: 'ok' | 'bad'; text: string } | null = op.error
+    ? { tone: 'bad', text: op.error }
+    : msg;
   useEffect(() => {
     if (data) setText(data.hashes.join('\n'));
   }, [data]);
 
   async function save(e: FormEvent) {
     e.preventDefault();
-    setBusy(true);
     setMsg(null);
-    try {
+    await op.run(async () => {
       const hashes = text
         .split(/[\s,]+/)
         .map(toHash)
@@ -42,11 +45,7 @@ export function WdttSettings() {
         tone: 'ok',
         text: 'Сохранено. Ссылки клиентов обновятся при синхронизации',
       });
-    } catch (x) {
-      setMsg({ tone: 'bad', text: (x as Error).message });
-    } finally {
-      setBusy(false);
-    }
+    });
   }
 
   return (
@@ -65,9 +64,9 @@ export function WdttSettings() {
             className="font-mono text-xs"
           />
         </Field>
-        {msg && <Alert tone={msg.tone}>{msg.text}</Alert>}
+        {note && <Alert tone={note.tone}>{note.text}</Alert>}
         <div className="flex justify-end">
-          <Button type="submit" variant="primary" disabled={busy || !data}>
+          <Button type="submit" variant="primary" disabled={op.busy || !data}>
             Сохранить
           </Button>
         </div>

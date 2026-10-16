@@ -13,6 +13,7 @@ import { TBody, THead, Table } from '@/components/ui/table';
 import { ApiError, api } from '@/lib/api';
 import { cn } from '@/lib/cn';
 import { bytes } from '@/lib/format';
+import { useAction } from '@/lib/use-action';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { Link } from '@tanstack/react-router';
 import type { XuiClientRow } from '@vps/protocol';
@@ -48,8 +49,7 @@ export function XuiClients({
   const [q, setQ] = useState('');
   const [inb, setInb] = useState('all');
   const [edit, setEdit] = useState<XuiClientRow | null>(null);
-  const [busy, setBusy] = useState(false);
-  const [err, setErr] = useState<string | null>(null);
+  const op = useAction();
   const noToken = error instanceof ApiError && error.code === 'no-token';
   const byId = new Map((inbounds ?? []).map((i) => [i.id, i]));
   const needle = q.trim().toLowerCase();
@@ -59,11 +59,11 @@ export function XuiClients({
       (!needle || `${c.email} ${c.comment} ${c.panel?.name ?? ''}`.toLowerCase().includes(needle)),
   );
   const paged = usePaged(rows, 15);
+  // список перечитывается - кнопки по нему недоступны (решение по старым данным)
+  const locked = disabled || op.busy || isFetching;
 
   async function save(c: XuiClientRow, body: { inboundIds?: number[]; reset?: boolean }) {
-    setBusy(true);
-    setErr(null);
-    try {
+    await op.run(async () => {
       await api(`/api/servers/${serverId}/xui/clients/${encodeURIComponent(c.email)}/inbounds`, {
         method: 'POST',
         json: body,
@@ -71,11 +71,7 @@ export function XuiClients({
       await qc.invalidateQueries({ queryKey: ['xui-clients', serverId] });
       void qc.invalidateQueries({ queryKey: ['xui-inbounds', serverId] });
       setEdit(null);
-    } catch (e) {
-      setErr((e as Error).message);
-    } finally {
-      setBusy(false);
-    }
+    });
   }
 
   async function remove(c: XuiClientRow) {
@@ -86,19 +82,13 @@ export function XuiClients({
       danger: true,
     });
     if (!ok) return;
-    setBusy(true);
-    setErr(null);
-    try {
+    await op.run(async () => {
       await api(`/api/servers/${serverId}/xui/clients/${encodeURIComponent(c.email)}`, {
         method: 'DELETE',
       });
       await qc.invalidateQueries({ queryKey: ['xui-clients', serverId] });
       void qc.invalidateQueries({ queryKey: ['xui-inbounds', serverId] });
-    } catch (e) {
-      setErr((e as Error).message);
-    } finally {
-      setBusy(false);
-    }
+    });
   }
 
   return (
@@ -109,9 +99,9 @@ export function XuiClients({
       }
       extra={data && <Chip>{data.length}</Chip>}
     >
-      {err && !edit && (
+      {op.error && !edit && (
         <div className="p-4 pb-0">
-          <Alert tone="bad">{err}</Alert>
+          <Alert tone="bad">{op.error}</Alert>
         </div>
       )}
       {error && (
@@ -232,9 +222,9 @@ export function XuiClients({
                       variant="ghost"
                       title={reason ?? 'Inbound клиента'}
                       aria-label="Inbound клиента"
-                      disabled={disabled || busy || !inbounds}
+                      disabled={locked || !inbounds}
                       onClick={() => {
-                        setErr(null);
+                        op.setError(null);
                         setEdit(c);
                       }}
                     >
@@ -249,7 +239,7 @@ export function XuiClients({
                           : (reason ?? 'Удалить клиента')
                       }
                       aria-label="Удалить клиента"
-                      disabled={disabled || busy || Boolean(c.panel)}
+                      disabled={locked || Boolean(c.panel)}
                       onClick={() => void remove(c)}
                     >
                       <Trash2 className={cn('size-3.5', !c.panel && 'text-bad')} />
@@ -272,8 +262,8 @@ export function XuiClients({
             key={edit.email}
             client={edit}
             inbounds={inbounds}
-            busy={busy}
-            error={err}
+            busy={op.busy}
+            error={op.error}
             onCancel={() => setEdit(null)}
             onSave={(ids) => void save(edit, { inboundIds: ids })}
             onReset={() => void save(edit, { reset: true })}

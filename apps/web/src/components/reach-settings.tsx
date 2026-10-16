@@ -5,6 +5,7 @@ import { Field } from '@/components/ui/field';
 import { Input } from '@/components/ui/input';
 import { Section } from '@/components/ui/section';
 import { api } from '@/lib/api';
+import { useAction } from '@/lib/use-action';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { type FormEvent, useState } from 'react';
 
@@ -19,23 +20,21 @@ export function ReachSettings() {
     queryFn: () => api<{ tokenSet: boolean }>('/api/reach/settings'),
   });
   const [token, setToken] = useState('');
-  const [busy, setBusy] = useState(false);
+  const op = useAction();
   const [msg, setMsg] = useState<{ tone: 'ok' | 'bad'; text: string } | null>(null);
+  const note: { tone: 'ok' | 'bad'; text: string } | null = op.error
+    ? { tone: 'bad', text: op.error }
+    : msg;
 
   async function save(value: string, e?: FormEvent) {
     e?.preventDefault();
-    setBusy(true);
     setMsg(null);
-    try {
+    await op.run(async () => {
       await api('/api/reach/settings', { method: 'PUT', json: { token: value } });
       setToken('');
       await qc.invalidateQueries({ queryKey: ['reach-settings'] });
       setMsg({ tone: 'ok', text: value ? 'Токен сохранён' : 'Токен удалён' });
-    } catch (x) {
-      setMsg({ tone: 'bad', text: (x as Error).message });
-    } finally {
-      setBusy(false);
-    }
+    });
   }
 
   return (
@@ -66,18 +65,18 @@ export function ReachSettings() {
             placeholder={data?.tokenSet ? 'задан' : 'необязательно'}
           />
         </Field>
-        <Button type="submit" variant="primary" disabled={busy || !token.trim()}>
+        <Button type="submit" variant="primary" disabled={op.busy || !token.trim()}>
           Сохранить
         </Button>
         {data?.tokenSet && (
-          <Button variant="ghost" disabled={busy} onClick={() => void save('')}>
+          <Button variant="ghost" disabled={op.busy} onClick={() => void save('')}>
             Удалить
           </Button>
         )}
       </form>
-      {msg && (
+      {note && (
         <div className="px-4 pb-4">
-          <Alert tone={msg.tone}>{msg.text}</Alert>
+          <Alert tone={note.tone}>{note.text}</Alert>
         </div>
       )}
     </Section>

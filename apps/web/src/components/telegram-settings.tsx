@@ -11,6 +11,7 @@ import { XrayRouteDialog, useXrayStatus, xrayState } from '@/components/xray-rou
 import { api } from '@/lib/api';
 import { ago } from '@/lib/format';
 import { useServers } from '@/lib/servers';
+import { useAction } from '@/lib/use-action';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { Power, Route, Search, Send, SlidersHorizontal } from 'lucide-react';
 import { type FormEvent, useState } from 'react';
@@ -46,17 +47,19 @@ export function TelegramSettings() {
   const [choose, setChoose] = useState(false);
   const [routeOpen, setRouteOpen] = useState(false);
   const { data: route } = useXrayStatus();
-  const [busy, setBusy] = useState(false);
+  const op = useAction();
   const [msg, setMsg] = useState<{ tone: 'ok' | 'bad'; text: string } | null>(null);
+  const note: { tone: 'ok' | 'bad'; text: string } | null = op.error
+    ? { tone: 'bad', text: op.error }
+    : msg;
   const [found, setFound] = useState<{ id: string; title: string; when: string }[] | null>(null);
 
   if (!st) return null;
 
   async function save(e: FormEvent) {
     e.preventDefault();
-    setBusy(true);
     setMsg(null);
-    try {
+    await op.run(async () => {
       await api('/api/notify/telegram', {
         method: 'PUT',
         json: {
@@ -67,34 +70,27 @@ export function TelegramSettings() {
       setToken('');
       await qc.invalidateQueries({ queryKey: ['tg-settings'] });
       setMsg({ tone: 'ok', text: 'Сохранено' });
-    } catch (err) {
-      setMsg({ tone: 'bad', text: (err as Error).message });
-    } finally {
-      setBusy(false);
-    }
+    });
   }
 
   async function test() {
-    setBusy(true);
     setMsg(null);
-    try {
-      await api('/api/notify/telegram/test', { method: 'POST' });
-      setMsg({ tone: 'ok', text: 'Сообщение отправлено' });
-    } catch (err) {
-      setMsg({ tone: 'bad', text: (err as Error).message });
-    } finally {
-      setBusy(false);
-      void qc.invalidateQueries({ queryKey: ['tg-settings'] });
-      void qc.invalidateQueries({ queryKey: ['tg-health'] });
-    }
+    await op.run(async () => {
+      try {
+        await api('/api/notify/telegram/test', { method: 'POST' });
+        setMsg({ tone: 'ok', text: 'Сообщение отправлено' });
+      } finally {
+        void qc.invalidateQueries({ queryKey: ['tg-settings'] });
+        void qc.invalidateQueries({ queryKey: ['tg-health'] });
+      }
+    });
   }
 
   /** Спросить у Telegram, кто писал боту, и предложить их chat id. */
   async function detect() {
-    setBusy(true);
     setMsg(null);
     setFound(null);
-    try {
+    await op.run(async () => {
       const r = await api<{ chats: { id: string; title: string; when: string }[] }>(
         '/api/notify/telegram/detect',
         { method: 'POST', json: { token: token.trim() || undefined } },
@@ -108,11 +104,7 @@ export function TelegramSettings() {
         setFound(r.chats);
         if (r.chats.length === 1) setChatId(r.chats[0]?.id ?? '');
       }
-    } catch (err) {
-      setMsg({ tone: 'bad', text: (err as Error).message });
-    } finally {
-      setBusy(false);
-    }
+    });
   }
 
   async function clear() {
@@ -125,15 +117,10 @@ export function TelegramSettings() {
       }))
     )
       return;
-    setBusy(true);
-    try {
+    await op.run(async () => {
       await api('/api/notify/telegram/clear', { method: 'POST' });
       await qc.invalidateQueries({ queryKey: ['tg-settings'] });
-    } catch (err) {
-      setMsg({ tone: 'bad', text: (err as Error).message });
-    } finally {
-      setBusy(false);
-    }
+    });
   }
 
   return (
@@ -163,7 +150,7 @@ export function TelegramSettings() {
         <>
           <Button
             size="sm"
-            disabled={busy || !st.tokenSet}
+            disabled={op.busy || !st.tokenSet}
             onClick={test}
             title="Отправить тестовое сообщение"
             label="Проверить"
@@ -171,7 +158,7 @@ export function TelegramSettings() {
             <Send className="size-3.5" />
           </Button>
           {st.tokenSet && (
-            <Button size="sm" variant="ghost" disabled={busy} onClick={clear} label="Отключить">
+            <Button size="sm" variant="ghost" disabled={op.busy} onClick={clear} label="Отключить">
               <Power className="size-3.5" />
             </Button>
           )}
@@ -202,7 +189,7 @@ export function TelegramSettings() {
               <Button
                 type="button"
                 className="shrink-0"
-                disabled={busy || (!token.trim() && !st.tokenSet)}
+                disabled={op.busy || (!token.trim() && !st.tokenSet)}
                 onClick={detect}
                 label="Найти chat id"
               >
@@ -252,9 +239,9 @@ export function TelegramSettings() {
             </Button>
           </div>
         </div>
-        {msg && <Alert tone={msg.tone}>{msg.text}</Alert>}
+        {note && <Alert tone={note.tone}>{note.text}</Alert>}
         <div className="flex justify-end">
-          <Button type="submit" variant="primary" disabled={busy}>
+          <Button type="submit" variant="primary" disabled={op.busy}>
             Сохранить
           </Button>
         </div>
