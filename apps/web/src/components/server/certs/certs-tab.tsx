@@ -35,11 +35,7 @@ function daysTone(d: number, autoRenew: boolean): 'ok' | 'warn' | 'bad' {
   return 'ok';
 }
 
-/**
- * Вкладка "Сертификаты" - только просмотр: что есть на сервере и когда истекает. HTTPS панелей
- * сервисов даёт Caddy панели (поддомены), VPN сертификатов не требует; прокси для браузера
- * (naive) - исключение: сертификат выпускает его Caddy сам.
- */
+/** Сертификаты сервера - только просмотр: HTTPS панелей сервисов даёт панель, VPN их не требует. */
 export function CertsTab({ s }: { s: ServerDetail }) {
   const certs = s.inventory?.certs ?? [];
   const expiry = (c: Cert) => (

@@ -36,10 +36,10 @@ export function Instance({
   onAdd: () => void;
   addDisabled: boolean;
   addTitle: string | undefined;
-  /** Смена параметров экземпляра; true - готово, иначе ошибка в paramsError (окно параметров). */
+  /** Смена параметров экземпляра; true - готово, иначе ошибка в paramsError. */
   onSetParams: (profile: string) => Promise<boolean>;
   paramsError: string | null;
-  /** Удаление экземпляра: команда каталога с этим контейнером (план и подтверждение - там). */
+  /** Удаление экземпляра - через команду каталога. */
   onUninstall: () => void;
 }) {
   const uninstall = (

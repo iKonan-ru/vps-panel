@@ -31,11 +31,7 @@ const KINDS: { kind: Kind; title: string; hint: string }[] = [
   { kind: 'xhttp', title: 'XHTTP', hint: 'XHTTP, Reality' },
 ];
 
-/**
- * Окно "Добавить соединения VLESS": RAW и/или XHTTP с Reality. Цель Reality - скан 3X-UI с
- * самого сервера (лучшая по задержке выбрана) или цель уже стоящего inbound-а. Ключи и
- * остальное панель заполняет сама; запуск - действие, ход виден в блоке.
- */
+/** Добавление соединений VLESS (RAW и/или XHTTP с Reality); ключи панель заполняет сама. */
 export function NewInboundsForm({
   serverId,
   disabled,

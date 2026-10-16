@@ -14,9 +14,7 @@ import { type GOwner, parseMtLinks } from '@vps/protocol';
 import { Pencil, Power, Trash2 } from 'lucide-react';
 import { type FormEvent, Fragment, useState } from 'react';
 
-/** Окна пользователя MTProxyL: карточка со ссылками и трафиком, добавление. */
-
-/** Дата создания: mtproxyl отдаёт unix-время в секундах (на всякий случай понимаем и мс). */
+/** mtproxyl отдаёт unix-время в секундах; миллисекунды тоже понимаем. */
 function createdAt(v: number): string {
   if (!v) return '-';
   return dateFull(v > 1e12 ? v : v * 1000);
@@ -40,7 +38,7 @@ export function UserInfo({
   reason: string | undefined;
   onToggle: () => void;
   onRemove: () => void;
-  /** Бросает ошибку, если mtproxyl отказал (имя занято и т.п.); пока идёт - кнопки окна недоступны. */
+  /** Бросает ошибку, если mtproxyl отказал (имя занято и т.п.). */
   onRename: (name: string) => Promise<void>;
 }) {
   const [rename, setRename] = useState<string | null>(null);
@@ -135,11 +133,7 @@ export function UserInfo({
   );
 }
 
-/**
- * Окно пользователя: переключатель TLS (tg://proxy, по умолчанию) и t.me (https://t.me/proxy),
- * QR-код, кнопка "Подключить прокси" (открывает ссылку в Telegram) и копирование выбранной
- * ссылки. Ссылки не кэшируются: в них секрет.
- */
+/** Ссылки пользователя (TLS и t.me) с QR-кодом; не кэшируются - в них секрет. */
 export function UserLinks({ serverId, label }: { serverId: string; label: string }) {
   const { data, error, isLoading } = useQuery({
     queryKey: ['mtproxyl-link', serverId, label],

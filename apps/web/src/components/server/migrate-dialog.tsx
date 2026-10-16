@@ -9,10 +9,7 @@ import { useNavigate } from '@tanstack/react-router';
 import { ArrowRight } from 'lucide-react';
 import { useState } from 'react';
 
-/**
- * Перенос сервера на другой: выбрать новый (уже добавленный в панель) и перейти к его
- * настройке с переносом - там видно, что поставится, что удалится, и что будет со старым.
- */
+/** Перенос на другой сервер панели: выбор нового и переход к его настройке с переносом. */
 export function MigrateDialog({
   serverId,
   open,

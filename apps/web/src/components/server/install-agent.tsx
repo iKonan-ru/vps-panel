@@ -15,10 +15,7 @@ import { type FormEvent, type ReactNode, useState } from 'react';
 
 type Mode = 'password' | 'key' | 'manual';
 
-/**
- * Установка (и переустановка) агента: по SSH паролем root, ключом панели
- * или вручную командой. Вывод установщика показывается живьём.
- */
+/** Установка агента: по SSH паролем root, ключом панели или вручную командой. */
 export function InstallAgent({
   serverId,
   host,
@@ -56,7 +53,7 @@ export function InstallAgent({
     });
   }
 
-  /** Сервер переустановлен - ключ SSH-хоста другой, а панель помнит старый отпечаток. */
+  /** Сервер переустановлен - ключ SSH-хоста другой: забыть старый отпечаток. */
   async function resetHostKey() {
     await op.run(async () => {
       await api(`/api/servers/${serverId}/host-key`, { method: 'DELETE' });

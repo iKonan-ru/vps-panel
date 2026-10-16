@@ -17,10 +17,7 @@ import type { ServerDetail } from '@vps/protocol';
 import { Plus, RefreshCw } from 'lucide-react';
 import { useEffect, useState } from 'react';
 
-/**
- * Вкладка AWG: экземпляры AmneziaWG (контейнеры amnezia-awg*), их версии и клиенты;
- * добавление, выключение, переименование и удаление клиентов.
- */
+/** Вкладка AWG: экземпляры AmneziaWG, их версии и клиенты. */
 export function AwgTab({ s }: { s: ServerDetail }) {
   const owner = useOwners(s.id);
   const uninstall = useUninstall();

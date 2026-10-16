@@ -3,11 +3,7 @@ import { Section } from '@/components/ui/section';
 import { useUninstall } from '@/lib/uninstall';
 import { Trash2 } from 'lucide-react';
 
-/**
- * Блок "Удаление" внизу вкладки сервиса: что пропадёт и кнопка. Кнопка открывает команду
- * удаления из каталога с этим сервером - там план, проверки и подтверждение "да, удалить",
- * так что сама по себе ничего не удаляет.
- */
+/** Блок "Удаление" вкладки сервиса: кнопка ведёт в команду удаления и сама ничего не удаляет. */
 export function UninstallBlock({
   serverId,
   kind,
@@ -17,7 +13,7 @@ export function UninstallBlock({
   reason,
 }: {
   serverId: string;
-  /** Вид сервиса из инвентаря (xui, mtproxyl, wdtt, openflux). */
+  /** Вид сервиса из инвентаря. */
   kind: string;
   title: string;
   /** Что пропадёт с удалением. */

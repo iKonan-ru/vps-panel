@@ -22,10 +22,7 @@ interface Check {
   error?: string;
 }
 
-/**
- * "Адрес для клиентов" в "Обзоре": что стоит в конфигах людей - IP сервера или имя под
- * A-записью. С именем смена IP - правка DNS, у людей ничего не меняется.
- */
+/** Адрес в конфигах клиентов - IP или имя: с именем смена IP не трогает конфиги людей. */
 export function ClientHostCard({ serverId }: { serverId: string }) {
   const { data } = useQuery({
     queryKey: ['client-host', serverId],

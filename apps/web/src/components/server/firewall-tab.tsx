@@ -35,7 +35,6 @@ export function FirewallTab({ s }: { s: ServerDetail }) {
   const qc = useQueryClient();
   const fw = s.inventory?.firewall ?? null;
   const online = s.status === 'online';
-  // пока на сервере идёт другое действие, изменения недоступны
   const lock = serverLock(s);
   const canAct = online && !lock.busy;
   const op = useAction();

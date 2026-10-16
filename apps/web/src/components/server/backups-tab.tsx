@@ -17,12 +17,11 @@ import type { BackupInfo, ServerDetail } from '@vps/protocol';
 import { Archive, ArchiveRestore, Download, Trash2, Upload } from 'lucide-react';
 import { useState } from 'react';
 
-/** Вкладка "Бэкапы": создать (с выбором компонентов), список бэкапов этого сервера, восстановление на любой сервер. */
+/** Вкладка "Бэкапы": создание, копии этого сервера и восстановление на любой сервер. */
 export function BackupsTab({ s }: { s: ServerDetail }) {
   const ask = useConfirm();
   const qc = useQueryClient();
   const online = s.status === 'online';
-  // пока на сервере идёт другое действие, изменения недоступны
   const lock = serverLock(s);
   const canAct = online && !lock.busy;
   const { data: all } = useQuery({

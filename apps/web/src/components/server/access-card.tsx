@@ -85,10 +85,7 @@ function FieldValue({ f }: { f: AccessField }) {
   );
 }
 
-/**
- * Блок "Доступы": логины, пароли и ссылки к панелям сервера. Команды установки
- * записывают их сами (3x-ui, MTProxy, WDTT), остальное добавляется вручную.
- */
+/** Блок "Доступы": логины, пароли и ссылки к панелям сервера; команды установки пишут их сами. */
 export function AccessCard({ serverId }: { serverId: string }) {
   const ask = useConfirm();
   const qc = useQueryClient();

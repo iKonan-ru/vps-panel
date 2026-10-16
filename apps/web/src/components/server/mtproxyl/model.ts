@@ -1,7 +1,5 @@
 import { api } from '@/lib/api';
 
-/** MTProxyL сервера: ответы агента и вызовы API панели. */
-
 interface MtStatus {
   installed: boolean;
   status: {

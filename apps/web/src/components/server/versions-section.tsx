@@ -10,13 +10,7 @@ import type { ReactNode } from 'react';
 
 export type Versions<K extends string> = Partial<Record<K, ComponentVersion>>;
 
-/**
- * Блок "Версии" вкладки сервиса (MTProxyL, 3X-UI): по строке на компонент - установленная и
- * последняя версии с проверки (раз в 6 часов, кнопкой, после обновления), кнопка обновления;
- * вывод идущего обновления - здесь же. Те же обновления видны в "Обзоре" и в списке серверов.
- * current в строке - живая версия с сервера (вкладка знает её точнее проверки); children -
- * свои строки блока (движок MTProxyL).
- */
+/** Блок "Версии" вкладки сервиса: установленная и последняя версии, обновление и его вывод. */
 export function VersionsSection<K extends string>({
   rows,
   data,
@@ -29,6 +23,7 @@ export function VersionsSection<K extends string>({
   onHideAction,
   children,
 }: {
+  /** current - живая версия с сервера, точнее проверки. */
   rows: { kind: K; title: string; current?: string | undefined; hint?: string }[];
   data: Versions<K> | undefined;
   checking: boolean;

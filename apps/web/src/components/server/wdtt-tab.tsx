@@ -40,10 +40,7 @@ interface WdttData {
   passwords: WdttPassword[];
 }
 
-/**
- * Вкладка WDTT: пароли пользователей через admin API сервера.
- * Пароль генерирует сервер, у него срок, лимит устройств и трафик; ссылки - для приложений.
- */
+/** Вкладка WDTT: пароли пользователей через admin API сервера. */
 export function WdttTab({ s }: { s: ServerDetail }) {
   const qc = useQueryClient();
   const ask = useConfirm();

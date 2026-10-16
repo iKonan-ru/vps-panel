@@ -40,16 +40,13 @@ import {
 } from 'lucide-react';
 import { useState } from 'react';
 
-/**
- * Вкладка MTProxyL: состояние прокси, обновление и перезапуск, пользователи со ссылками,
- * переход в веб-панель. Тонкие настройки (лимиты, nft, ротация) - в самой панели MTProxyL.
- */
+/** Вкладка MTProxyL; тонкие настройки (лимиты, nft, ротация) - в самой панели MTProxyL. */
 export function MtproxylTab({ s }: { s: ServerDetail }) {
   const owner = useOwners(s.id);
   const ask = useConfirm();
   const qc = useQueryClient();
   const online = s.status === 'online';
-  // пока на сервере идёт другое действие, изменения недоступны (ссылки копировать можно)
+  // занятый сервер блокирует изменения, копировать ссылки можно
   const lock = serverLock(s);
   const {
     data,
@@ -68,14 +65,13 @@ export function MtproxylTab({ s }: { s: ServerDetail }) {
     inVersions?: boolean;
   } | null>(null);
   const op = useAction();
-  // пользователь, чьё окно со ссылками и QR открыто
-  const [user, setUser] = useState<string | null>(null);
+  const [openLabel, setOpenLabel] = useState<string | null>(null);
   const [addOpen, setAddOpen] = useState(false);
   const [engineOpen, setEngineOpen] = useState(false);
   // через поддомен панели, если агент умеет туннель; иначе прямой адрес
   const panelUrl =
     s.panelLinks.mtproxyl ?? s.inventory?.services.find((sv) => sv.kind === 'mtproxyl')?.panelUrl;
-  // версии с последней проверки обновлений (раз в 6 часов, кнопкой, после обновления)
+  // версии с последней проверки обновлений
   const versions = useQuery({
     queryKey: ['mtproxyl-versions', s.id],
     queryFn: () => api<MtVersions>(`/api/servers/${s.id}/mtproxyl/versions`),
@@ -83,7 +79,7 @@ export function MtproxylTab({ s }: { s: ServerDetail }) {
   });
 
   const refresh = () => qc.invalidateQueries({ queryKey: ['mtproxyl', s.id] });
-  // после обновления версии перепроверяются сами (lib/live.ts)
+  // после обновления версии перепроверяются сами
   const updates = useUpdatesCheck(s.id);
   // проверка версий идёт - обновлять и менять версию нельзя (решение по старым данным)
   const versionsBusy = updates.checking || versions.isFetching;
@@ -123,7 +119,6 @@ export function MtproxylTab({ s }: { s: ServerDetail }) {
     return run('Обновление панели MTProxyL', 'panel.update', {}, true);
   }
 
-  /** Включить или выключить пользователя. */
   function toggleUser(u: MtUser) {
     return run('', u.enabled ? 'secret.disable' : 'secret.enable', { label: u.label });
   }
@@ -145,13 +140,12 @@ export function MtproxylTab({ s }: { s: ServerDetail }) {
     return <Placeholder>MTProxyL не установлен: установка через каталог команд</Placeholder>;
 
   const st = data.status;
-  // "Доступность из России" - проверка самого MTProxyL (зонды Globalping), агент кладёт её итог
-  // в снимок
+  // доступность из России проверяет сам MTProxyL (зонды Globalping), итог агент кладёт в снимок
   const reach = s.services.find((x) => x.kind === 'mtproxyl')?.details?.ruReach as
     | { percent: number; ok: number; total: number; checkedAt: string; error?: string }
     | undefined;
   const trafficByUser = new Map((data.traffic?.users ?? []).map((u) => [u.user, u]));
-  const openUser = data.secrets?.find((u) => u.label === user);
+  const openUser = data.secrets?.find((u) => u.label === openLabel);
   const panelInstalled = Boolean(panelUrl) || /running|active|работает/i.test(data.panel);
   const proxyNote = `v${st?.version ?? '?'}, режим ${st?.mode ?? '?'}${
     st?.uptime ? `, аптайм ${uptime(st.uptime)}` : ''
@@ -206,8 +200,7 @@ export function MtproxylTab({ s }: { s: ServerDetail }) {
         />
       </div>
 
-      {/* панель действий: на узком экране - "Панель MTProxyL" и меню "Ещё" с подписями;
-          обновления версий - в блоке "Версии" */}
+      {/* обновления версий - не здесь, а в блоке "Версии" */}
       <ActionBar
         actions={[
           {
@@ -312,7 +305,7 @@ export function MtproxylTab({ s }: { s: ServerDetail }) {
                   key={u.label}
                   type="button"
                   title={`${u.enabled ? 'включён' : 'выключен'}${panel ? `, клиент панели ${panel.client}` : ''}`}
-                  onClick={() => setUser(u.label)}
+                  onClick={() => setOpenLabel(u.label)}
                   className="flex min-w-0 items-center gap-2 rounded-lg border border-border bg-surface-2 px-3 py-2 text-left hover:border-accent"
                 >
                   <span
@@ -350,7 +343,7 @@ export function MtproxylTab({ s }: { s: ServerDetail }) {
         action={action?.inVersions ? action : null}
         onHideAction={() => setAction(null)}
       >
-        {/* движок telemt - не обновление: версия меняется по желанию (EngineForm) */}
+        {/* движок telemt - не обновление: версия меняется по желанию */}
         <div className="flex items-center gap-3 px-4 py-3">
           <div className="min-w-0 grow">
             <div className="font-medium">Движок telemt</div>
@@ -389,9 +382,9 @@ export function MtproxylTab({ s }: { s: ServerDetail }) {
       </Dialog>
 
       <Dialog
-        open={user !== null}
-        onClose={() => setUser(null)}
-        title={`Пользователь ${user ?? ''}`}
+        open={openLabel !== null}
+        onClose={() => setOpenLabel(null)}
+        title={`Пользователь ${openLabel ?? ''}`}
       >
         {openUser && (
           <UserInfo
@@ -401,18 +394,20 @@ export function MtproxylTab({ s }: { s: ServerDetail }) {
             disabled={op.busy || lock.busy}
             reason={lock.reason}
             onToggle={() => void toggleUser(openUser)}
-            onRemove={() => void removeUser(openUser).then((removed) => removed && setUser(null))}
+            onRemove={() =>
+              void removeUser(openUser).then((removed) => removed && setOpenLabel(null))
+            }
             onRename={async (name) => {
               // секрет тот же - ссылки пользователя не меняются; окно переходит на новое имя
               await mtApi.exec(s.id, 'secret.rename', { label: openUser.label, new: name });
-              setUser(name);
+              setOpenLabel(name);
               await refresh();
             }}
           />
         )}
-        {user && <UserLinks serverId={s.id} label={user} />}
+        {openLabel && <UserLinks serverId={s.id} label={openLabel} />}
         <div className="flex justify-end">
-          <Button onClick={() => setUser(null)}>Закрыть</Button>
+          <Button onClick={() => setOpenLabel(null)}>Закрыть</Button>
         </div>
       </Dialog>
 

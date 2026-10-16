@@ -28,11 +28,7 @@ export const wipeOf = (q: SetupSearch) =>
 
 type SourceMode = 'empty' | 'copy' | 'migrate';
 
-/**
- * Откуда настройка: пустой сервер, резервная копия этого же сервера (из панели или скачанный
- * раньше файл - например, после переустановки) или перенос с другого сервера панели: его
- * копия (свежая, если он в сети) и его клиенты переходят сюда.
- */
+/** Откуда настройка: пустой сервер, копия этого сервера или перенос с другого (копия и клиенты). */
 export function SourceCard({
   serverId,
   q,
@@ -68,9 +64,8 @@ export function SourceCard({
     });
   const off = disabled || upload.busy;
   const wipe = wipeOf(q);
-  // старый сервер не в сети: свежую копию не снять - берётся последняя его копия в панели.
-  // Адрес меняется от текущего, а не от снятого при рендере: выбор, сделанный за это время,
-  // не затирается; для одного старого сервера - один раз
+  // старый сервер не в сети - свежую копию не снять, берётся его последняя копия в панели. Адрес
+  // меняется от текущего, а не снятого при рендере: выбор за это время не затирается
   const latest = copies[0]?.id;
   const needCopy = mode === 'migrate' && Boolean(old) && old?.status !== 'online' && !q.backup;
   const autoFor = useRef<string | null>(null);
@@ -97,7 +92,7 @@ export function SourceCard({
       const r = await api<{ id: string }>(`/api/servers/${owner}/backups/upload`, {
         method: 'POST',
         body: file,
-        // скачанная копия зашифрована (.tar.gz.enc), старая - просто .tar.gz
+        // копия бывает зашифрованной (.tar.gz.enc) и простой (.tar.gz)
         headers: { 'content-type': 'application/octet-stream' },
       });
       await qc.invalidateQueries({ queryKey: ['backups'] });

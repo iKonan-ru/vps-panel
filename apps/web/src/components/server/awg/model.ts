@@ -1,5 +1,3 @@
-/** Экземпляры AmneziaWG сервера и их клиенты: ответ агента (awg.status) и подписи. */
-
 interface AwgParam {
   key: string;
   value: string;
@@ -41,6 +39,7 @@ export interface AwgInstance {
   error?: string;
 }
 
+/** Ответ агента на awg.status. */
 export interface AwgStatus {
   instances: AwgInstance[];
   hostModule: string;
@@ -58,7 +57,7 @@ export const versionTitles: Record<string, string> = {
   wg: 'WireGuard',
 };
 
-/** Имя клиента для списка: из clientsTable, иначе IP ("внешний" пир без записи). */
+/** Имя клиента: из clientsTable, иначе IP пира, иначе начало ключа. */
 export function clientTitle(c: AwgClient): string {
   return c.name || c.allowedIps.split(',')[0]?.replace('/32', '') || c.publicKey.slice(0, 8);
 }
