@@ -46,7 +46,7 @@ export const ServerSummarySchema = z.object({
   panelHost: z.boolean().default(false),
   /**
    * Вход в панели сервисов через поддомены панели (вид сервиса -> адрес): есть, когда агент
-   * умеет туннель (0.3.0+). Иначе - прямой panelUrl сервиса.
+   * умеет туннель, иначе - прямой panelUrl сервиса.
    */
   panelLinks: z.record(z.string(), z.string()).default({}),
 });

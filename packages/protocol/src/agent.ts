@@ -2,7 +2,7 @@ import { z } from 'zod';
 
 /**
  * Список из отчёта агента: пустой срез Go приходит как null - это пустой список, а не повод
- * выбросить весь снимок сервера. Отсутствующее поле (старый агент) - тоже пустой список.
+ * выбросить весь снимок сервера. Отсутствующее поле - тоже пустой список.
  */
 const list = <T extends z.ZodTypeAny>(item: T) =>
   z
@@ -126,14 +126,13 @@ export const AuditSchema = z.object({
   sshPermitRootLogin: z.string(),
   fail2banRunning: z.boolean(),
   fail2banJails: list(z.string()),
-  /** Статистика jail-ов fail2ban; у старых агентов поля нет. */
   jails: list(
     z.object({
       name: z.string(),
       banned: z.number().int(),
       totalBanned: z.number().int(),
       failed: z.number().int(),
-      /** Кто в бане сейчас; у старых агентов поля нет. */
+      /** Кто в бане сейчас. */
       bannedIps: list(z.string()),
     }),
   ),
@@ -151,7 +150,6 @@ export const HostInfoSchema = z.object({
   arch: z.string(),
   agentVersion: z.string(),
   dockerVersion: z.string().optional(),
-  /** Число vCPU; у старых агентов поля нет. */
   cpuCores: z.number().int().positive().optional().catch(undefined),
   /** model name из /proc/cpuinfo как есть (для показа - cpuModelLabel). */
   cpuModel: z.string().max(200).optional().catch(undefined),
@@ -177,7 +175,6 @@ export function cpuModelLabel(raw: string | undefined): string {
   return s;
 }
 
-/** TLS-сертификат на сервере. */
 export const CertSchema = z.object({
   name: z.string(),
   // неизвестный источник от другой версии агента - "other", а не отказ от всего снимка

@@ -55,7 +55,7 @@ export const actionTitles: Record<string, string> = {
   'awg:client.enable': 'AWG: включение клиента',
   'awg:client.rename': 'AWG: переименование клиента',
   'awg:instance.setparams': 'AWG: смена версии и параметров',
-  // действий больше нет (переход с Amnezia Web Panel), названия - для истории журнала
+  // панель их не запускает, названия - для записей журнала
   'awg:import': 'AWG: перенос ключей клиентов AWP в панель',
   'awg:table.stripkeys': 'AWG: удаление ключей клиентов AWP с сервера',
   'awp:key.remove': 'Снятие ключа Amnezia Web Panel',
@@ -91,7 +91,6 @@ export function isBlockingAction(kind: string): boolean {
   return !NON_BLOCKING.has(kind);
 }
 
-/** Название действия для человека; у команд каталога - её заголовок из параметров. */
 /** Строка журнала действий в списках (без вывода: он - в /api/actions/:id). */
 export interface ActionListRow {
   id: string;
@@ -103,6 +102,7 @@ export interface ActionListRow {
   exitCode: number | null;
 }
 
+/** Название действия для человека; у команд каталога - её заголовок из параметров. */
 export function actionTitle(kind: string, params?: Record<string, unknown>): string {
   if (kind.startsWith('command:') && typeof params?.title === 'string')
     return `команда \u00ab${params.title}\u00bb`;
