@@ -5,7 +5,7 @@ import type { Db } from '../db/index.js';
 import { servers } from '../db/schema.js';
 import { schedule } from './schedule.js';
 import type { SecretBox } from './secret-box.js';
-import { getJsonSetting, getSetting, putSetting } from './settings.js';
+import { deleteSetting, getJsonSetting, getSetting, putSetting } from './settings.js';
 import { parseJson, unwrap, xuiApi } from './xui-api.js';
 import { savedXuiToken } from './xui-token.js';
 
@@ -386,6 +386,16 @@ export class RuReach {
 
   private save(store: Store) {
     putSetting(this.db, KEY, JSON.stringify(store));
+  }
+
+  forget(serverId: string) {
+    this.running.delete(serverId);
+    this.manualAt.delete(serverId);
+    deleteSetting(this.db, `ru_reach_probes:${serverId}`);
+    const store = getJsonSetting<Store>(this.db, KEY, {});
+    if (!(serverId in store)) return;
+    delete store[serverId];
+    this.save(store);
   }
 
   /** Зонды проверок цели за последние 13 часов (для окна подробностей). */

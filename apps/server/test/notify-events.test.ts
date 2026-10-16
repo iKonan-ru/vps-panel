@@ -1,9 +1,14 @@
 import { EventEmitter } from 'node:events';
+import { mkdtempSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { readNotifyEvents } from '@vps/protocol';
+import Database from 'better-sqlite3';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { createDb } from '../src/db/index.js';
 import { Notifier, reachEvent } from '../src/lib/notify.js';
 import { SecretBox } from '../src/lib/secret-box.js';
+import { getSetting, putSetting } from '../src/lib/settings.js';
 import { Telegram } from '../src/lib/telegram.js';
 
 async function make() {
@@ -43,9 +48,21 @@ afterEach(() => {
 });
 
 describe('события уведомлений', () => {
-  it('старые группы раскладываются на события, новые ключи важнее', () => {
-    const ev = readNotifyEvents({ offline: false, audit: true, updates: false, payment: true });
-    expect(ev).toMatchObject({
+  it('прежние группы событий раскладывает шаг базы, новые ключи важнее', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'vps-ev-'));
+    const db = createDb(dir);
+    putSetting(
+      db,
+      'tg_events',
+      JSON.stringify({ offline: false, audit: true, updates: false, payment: true }),
+    );
+    const raw = new Database(join(dir, 'panel.db'));
+    raw.pragma('user_version = 20');
+    raw.close();
+    const again = createDb(dir);
+    const saved = JSON.parse(getSetting(again, 'tg_events') ?? '{}') as Record<string, unknown>;
+    expect(saved.audit).toBeUndefined();
+    expect(readNotifyEvents(saved)).toMatchObject({
       offline: false,
       online: false,
       auditNew: true,

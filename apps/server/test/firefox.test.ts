@@ -4,24 +4,18 @@ import { join, resolve } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { createDb } from '../src/db/index.js';
 import { firefoxXpi } from '../src/lib/extension.js';
-import { FirefoxSigner, firefoxDirs } from '../src/lib/firefox.js';
+import { FirefoxSigner, firefoxDir } from '../src/lib/firefox.js';
 import { SecretBox } from '../src/lib/secret-box.js';
 
 describe('расширение Firefox', () => {
-  it('архив - самый новый из каталогов панели и прежней раскладки', () => {
+  it('архив - самый новый по версии', () => {
     const root = mkdtempSync(join(tmpdir(), 'vps-ff-'));
-    const env = { DATA_DIR: join(root, 'data'), FILES_DIR: join(root, 'files') };
-    expect(firefoxXpi(firefoxDirs(env))).toBeNull();
-    mkdirSync(join(env.FILES_DIR, 'firefox'), { recursive: true });
-    writeFileSync(join(env.FILES_DIR, 'firefox', 'vps-panel-proxy-1.5.0.xpi'), 'old');
-    expect(firefoxXpi(firefoxDirs(env))).toBe(
-      join(env.FILES_DIR, 'firefox', 'vps-panel-proxy-1.5.0.xpi'),
-    );
-    mkdirSync(join(env.DATA_DIR, 'firefox'), { recursive: true });
-    writeFileSync(join(env.DATA_DIR, 'firefox', 'vps-panel-proxy-1.10.0.xpi'), 'new');
-    expect(firefoxXpi(firefoxDirs(env))).toBe(
-      join(env.DATA_DIR, 'firefox', 'vps-panel-proxy-1.10.0.xpi'),
-    );
+    const env = { DATA_DIR: root };
+    expect(firefoxXpi(firefoxDir(env))).toBeNull();
+    mkdirSync(firefoxDir(env), { recursive: true });
+    writeFileSync(join(firefoxDir(env), 'vps-panel-proxy-1.5.0.xpi'), 'old');
+    writeFileSync(join(firefoxDir(env), 'vps-panel-proxy-1.10.0.xpi'), 'new');
+    expect(firefoxXpi(firefoxDir(env))).toBe(join(firefoxDir(env), 'vps-panel-proxy-1.10.0.xpi'));
   });
 
   it('ID и ключ: свой у панели, ключ хранится зашифрованным, без ключа подписи нет', async () => {

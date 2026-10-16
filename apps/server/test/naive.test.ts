@@ -151,7 +151,7 @@ describe('личная страница: Браузер Chrome', () => {
         PANEL_PUBLIC_URL: 'https://panel.example',
         SUB_PUBLIC_URL: 'https://sub.example',
         EXTENSION_DIR: ext,
-        FILES_DIR: join(dir, 'nofiles'),
+        DATA_DIR: join(dir, 'nodata'),
       } as never,
       apps: { list: () => ({ apps: [] }) } as never,
     });
@@ -243,7 +243,7 @@ describe('расширение Firefox', () => {
     writeFileSync(join(files, 'firefox', 'other.txt'), 'secret');
     const env = {
       EXTENSION_DIR: join(dir, 'none'),
-      FILES_DIR: files,
+      DATA_DIR: files,
       SUB_PUBLIC_URL: 'https://sub.example',
       PANEL_PUBLIC_URL: 'https://p',
       NODE_ENV: 'test',

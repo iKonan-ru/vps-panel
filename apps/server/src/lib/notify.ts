@@ -130,7 +130,30 @@ export class Notifier {
     return Date.now() - this.startedAt < STARTUP_QUIET_MS;
   }
 
+  async forget(id: string) {
+    const st = await this.tg.settings();
+    if (st.mutedServers.includes(id))
+      await this.tg.save({ mutedServers: st.mutedServers.filter((x) => x !== id) });
+    const t = this.offlineTimers.get(id);
+    if (t) clearTimeout(t);
+    this.offlineTimers.delete(id);
+    this.notifiedOffline.delete(id);
+    this.highFindings.delete(id);
+    this.bans.delete(id);
+    this.pendingUpdates.delete(id);
+    this.updatesNotifiedAt.delete(id);
+    this.paymentNotified.delete(id);
+    this.downs.delete(id);
+  }
+
+  private exists(id: string): boolean {
+    return Boolean(
+      this.db.select({ id: servers.id }).from(servers).where(eq(servers.id, id)).get(),
+    );
+  }
+
   private async onOffline(id: string) {
+    if (!this.exists(id)) return;
     const st = await this.tg.settings();
     const old = this.offlineTimers.get(id);
     if (old) clearTimeout(old);
@@ -143,6 +166,7 @@ export class Notifier {
 
   private async onStillOffline(id: string, minutes: number) {
     this.offlineTimers.delete(id);
+    if (!this.exists(id)) return;
     if (this.registry.isOnline(id) || this.registry.isUpdating(id)) return;
     if (!(await this.tg.wants('offline', id))) return;
     this.notifiedOffline.add(id);

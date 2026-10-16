@@ -11,7 +11,7 @@ import { Input } from '@/components/ui/input';
 import { PageTitle } from '@/components/ui/page-title';
 import { Select } from '@/components/ui/select';
 import { api } from '@/lib/api';
-import { type CommandInfo, commandsApi, paramVisible } from '@/lib/commands';
+import { type CommandInfo, paramVisible, useCommands } from '@/lib/commands';
 import { dateTime } from '@/lib/format';
 import { clampInt } from '@/lib/masks';
 import { serverLock, useServer, useServers } from '@/lib/servers';
@@ -449,7 +449,7 @@ export function ServerSetupPage() {
   const source = `${backup ?? ''}|${migrate ?? ''}|${wipe ? 1 : 0}`;
   const qc = useQueryClient();
   const { data: s } = useServer(id);
-  const cmds = useQuery({ queryKey: ['commands'], queryFn: commandsApi.list });
+  const cmds = useCommands();
   const plan = useQuery({
     queryKey: ['setup-plan', id, source],
     queryFn: () => {

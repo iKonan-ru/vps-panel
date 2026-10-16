@@ -188,6 +188,16 @@ export class GClients {
     putSetting(this.db, ABSENT_KEY, JSON.stringify(Object.fromEntries(this.absentSince)));
   }
 
+  forget(serverId: string) {
+    this.loadAbsent();
+    let changed = false;
+    for (const key of [...this.absentSince.keys()])
+      if (key.startsWith(`${serverId}:`)) changed = this.absentSince.delete(key) || changed;
+    if (changed) this.saveAbsent();
+    this.awgAsked.delete(serverId);
+    this.waiting.delete(serverId);
+  }
+
   private get deps(): ServiceDeps {
     return { db: this.db, box: this.box, registry: this.registry };
   }

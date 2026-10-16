@@ -1,28 +1,19 @@
 #!/bin/bash
-# Проверки -> коммит -> GitHub. Выкладка на бой - релизом (tools/release.sh): сервер панели
-# ставит образы из ghcr.io. Старая выкладка исходников (deploy/push.sh) - только для установки
-# из исходников и только явно: tools/ship.sh <сообщение> deploy.
-# Использование: tools/ship.sh <файл с сообщением коммита> [deploy]
+# Проверки -> коммит -> GitHub. Выкладка на бой - релизом (tools/release.sh).
+# Использование: tools/ship.sh <файл с сообщением коммита>
 #
-# Настройки - файл .ship.env в корне репозитория (в git и на сервер не попадает; другой путь -
-# SHIP_ENV), читается как shell:
-#   PANEL_HOST=root@<адрес>   сервер панели (для выкладки обязательно)
-#   PANEL_DOMAIN=<домен>      домен панели: проверка /api/health (для выкладки обязательно)
-#   SUB_DOMAIN=<имя>          имя подписок для проверки после выкладки (пусто - не проверять)
-#   PANEL_SSH_KEY=<файл>      ключ ssh к серверу панели (копируется во временный файл 0600)
-#   KNOWN_HOSTS=<файл>        ключи хоста сервера панели (иначе ~/.ssh/known_hosts)
+# Настройки - файл .ship.env в корне репозитория (в git не попадает; другой путь - SHIP_ENV),
+# читается как shell:
 #   GITHUB_TOKEN_FILE=<файл>  токен GitHub для git push (иначе обычные учётные данные git)
 #   LEAK_PATTERNS=<файл>      строки (ERE, по одной), которым не место в репозитории и в
 #                             сообщениях коммитов: проверяют tools/check.sh и этот скрипт
-#   AMO_KEY_FILE=<файл>       ключ API addons.mozilla.org: подпись расширения Firefox новой
-#                             версии (tools/sign-firefox.mjs); пусто - не подписывать
 set -euo pipefail
 cd "$(dirname "$0")/.."
 msg="${1:?файл с сообщением коммита}"
 env_file="${SHIP_ENV:-.ship.env}"
 # shellcheck disable=SC1090
 [ -f "$env_file" ] && . "$env_file"
-export KNOWN_HOSTS LEAK_PATTERNS SHIP_ENV="$env_file"
+export LEAK_PATTERNS SHIP_ENV="$env_file"
 
 if [ -n "${LEAK_PATTERNS:-}" ] && grep -qE -f "$LEAK_PATTERNS" "$msg"; then
   echo "в сообщении коммита закрытые сведения (LEAK_PATTERNS):"
@@ -31,12 +22,6 @@ if [ -n "${LEAK_PATTERNS:-}" ] && grep -qE -f "$LEAK_PATTERNS" "$msg"; then
 fi
 
 tools/check.sh
-# расширение Firefox: подписанная сборка текущей версии, если её ещё нет (подпись - у Mozilla,
-# минута-две). Сбой выкладку не держит: у клиентов остаётся прежняя версия.
-if [ -n "${AMO_KEY_FILE:-}" ]; then
-  AMO_KEY_FILE="$AMO_KEY_FILE" SUB_DOMAIN="${SUB_DOMAIN:-}" PANEL_DOMAIN="${PANEL_DOMAIN:-}" \
-    node tools/sign-firefox.mjs || echo "Firefox: подпись не удалась - у клиентов прежняя версия"
-fi
 # В коммит: изменения отслеживаемых файлов и новые файлы исходников. Случайные файлы (заметки,
 # файлы в корне) не попадают - их добавляют руками.
 git add -u
@@ -56,30 +41,6 @@ else
   GIT_TERMINAL_PROMPT=0 git push -q origin HEAD || github=fail
 fi
 [ "$github" = fail ] || echo "GitHub: отправлено"
-
-if [ "${2:-}" = "deploy" ]; then
-  host="${PANEL_HOST:?PANEL_HOST не задан (.ship.env)}"
-  domain="${PANEL_DOMAIN:?PANEL_DOMAIN не задан (.ship.env)}"
-  key="$(mktemp)"
-  trap 'rm -f "$key"' EXIT
-  cp "${PANEL_SSH_KEY:?PANEL_SSH_KEY не задан (.ship.env)}" "$key"
-  chmod 600 "$key"
-  WAIT=0 bash deploy/push.sh "$key" "$host" | tail -2
-  bash deploy/wait.sh "$key" "$host" | tail -2
-  sleep 15
-  curl -s -m 15 "https://$domain/api/health"
-  echo
-  # подписки и личные страницы на SUB_DOMAIN: TLS жив и отвечает сама панель (зелёный
-  # /api/health этого не гарантирует - имя подписок может отдавать ошибку TLS)
-  subdomain="${SUB_DOMAIN:-}"
-  if [ -n "$subdomain" ]; then
-    sub="$(curl -s -m 15 -w '|%{http_code}' "https://$subdomain/c/00000000000000000000000000000000" || true)"
-    case "$sub" in
-      *'|404') case "$sub" in *'Панель не найдена'*) echo "$subdomain: ответ прокси поддоменов, а не панели"; exit 1;; *) echo "$subdomain: ок";; esac ;;
-      *) echo "$subdomain НЕ ОТВЕЧАЕТ (${sub##*|}): подписки и личные страницы клиентов недоступны"; exit 1 ;;
-    esac
-  fi
-fi
 
 if [ "$github" = fail ]; then
   echo "GitHub: коммит НЕ отправлен - отправить позже: git push"

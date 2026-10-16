@@ -19,8 +19,6 @@
 #                                                        --full - всё, что ставила панель,
 #                                                        включая агент и VPN-сервисы
 #   vps-panel serve-request                              запрос обновления из панели (служба)
-#   vps-panel migrate [--beta] [--version X.Y.Z]         переезд со сборки из исходников
-#                                                        (<каталог>/deploy) на релизы
 #
 # Каталог - /opt/vps-panel (VPS_PANEL_ROOT): compose.yml, Caddyfile, .env, data. Образы -
 # ghcr.io/ikonan-ru/vps-panel и vps-panel-caddy, файлы релиза - с GitHub. Ход обновления
@@ -526,78 +524,6 @@ cmd_serve_request() {
   cmd_update "$v"
 }
 
-# ---------------------------------------------------------------- migrate
-# Переезд установки из исходников (git clone + deploy/install.sh или выкладка rsync): данные
-# deploy/data -> data, .env -> .env (+ версия, канал, прежние имена томов Caddy - сертификаты
-# не выпускаются заново), подписанный Firefox -> data/firefox. Образы скачиваются до
-# остановки старой панели: перерыв - только перезапуск. Не поднялась - всё назад.
-cmd_migrate() {
-  need_root
-  local VERSION="" CHANNEL=stable legacy="$ROOT/deploy"
-  while [ $# -gt 0 ]; do
-    case "$1" in
-      -y) YES=1 ;;
-      --beta) CHANNEL=beta ;;
-      --version) VERSION="${2:-}"; shift ;;
-      *) die "migrate: неизвестный ключ $1" ;;
-    esac
-    shift
-  done
-  [ -f "$legacy/.env" ] && [ -d "$legacy/data" ] || die "нет установки из исходников в $legacy (.env и data)"
-  [ -f "$ENV_FILE" ] && die "в $ROOT уже есть .env релизной установки"
-  [ -e "$DATA" ] && die "в $ROOT уже есть data"
-  [ -n "$VERSION" ] || VERSION="$(latest_version "$CHANNEL")"
-  echo "$VERSION" | grep -qE "$SEMVER" || die "версия $VERSION: нужна вида X.Y.Z или X.Y.Z-beta.N"
-  local proj
-  proj="$(docker compose -f "$legacy/docker-compose.yml" --project-directory "$legacy" config --format json 2>/dev/null | python3 -c 'import json,sys; print(json.load(sys.stdin)["name"])' || echo deploy)"
-  say "переезд $legacy -> $ROOT, версия $VERSION (тома Caddy: ${proj}_caddy_data)"
-  confirm "Продолжить? Панель перезапустится (около минуты), VPN на серверах это не затрагивает" || exit 1
-
-  TMPD="$(mktemp -d)"
-  local tmp="$TMPD"
-  fetch_release "$VERSION" "$tmp"
-  install -m 644 "$tmp/compose.yml" "$tmp/Caddyfile" "$tmp/fail2ban-panel.conf" "$tmp/fail2ban-panel.jail" "$ROOT/"
-  install -m 755 "$tmp/vps-panel" "$CLI_PATH"
-  umask 077
-  cp "$legacy/.env" "$ENV_FILE"
-  umask 022
-  chmod 600 "$ENV_FILE"
-  env_set PANEL_VERSION "$VERSION"
-  env_set PANEL_CHANNEL "$CHANNEL"
-  env_set CADDY_DATA_VOLUME "${proj}_caddy_data"
-  env_set CADDY_CONFIG_VOLUME "${proj}_caddy_config"
-
-  say "образы $VERSION (старая панель пока работает)"
-  compose pull || { rm -f "$ENV_FILE"; die "образы не скачались - ничего не менял"; }
-
-  say "останавливаю старую панель, переношу данные"
-  docker compose -f "$legacy/docker-compose.yml" --project-directory "$legacy" down
-  mv "$legacy/data" "$DATA"
-  if [ -d "$legacy/files/firefox" ]; then
-    mkdir -p "$DATA/firefox"
-    cp -n "$legacy/files/firefox/"* "$DATA/firefox/" 2>/dev/null || true
-  fi
-  mkdir -p "$DATA/update"
-  chown -R 1000:1000 "$DATA"
-  chmod 700 "$DATA"
-
-  say "запуск $VERSION"
-  compose up -d
-  if ! wait_health "$VERSION" 240; then
-    warn "новая панель не ответила - возвращаю старую"
-    compose down || true
-    mv "$DATA" "$legacy/data"
-    rm -f "$ENV_FILE"
-    docker compose -f "$legacy/docker-compose.yml" --project-directory "$legacy" up -d
-    die "переезд не удался, работает прежняя установка (журнал: docker compose -f $ROOT/compose.yml logs)"
-  fi
-  install_fail2ban
-  install_units
-  say "готово: $VERSION из релиза, канал $(channel_name "$CHANNEL")"
-  echo "Старые файлы установки из исходников ($legacy и исходники рядом) больше не нужны:"
-  echo "их можно удалить, когда всё заработает. Обновления: Настройки -> Версия панели."
-}
-
 cmd_status() {
   [ -f "$ENV_FILE" ] || die "панель не установлена в $ROOT"
   echo "версия: $(env_get PANEL_VERSION), канал: $(channel_name "$(env_get PANEL_CHANNEL)")"
@@ -942,7 +868,6 @@ case "${1:-}" in
   update) shift; cmd_update "$@" ;;
   rollback) cmd_rollback ;;
   serve-request) cmd_serve_request ;;
-  migrate) shift; cmd_migrate "$@" ;;
   status) cmd_status ;;
   version) env_get PANEL_VERSION ;;
   channel) shift; cmd_channel "$@" ;;
@@ -950,6 +875,6 @@ case "${1:-}" in
   restart) need_root; compose restart ;;
   fail2ban) need_root; install_fail2ban ;;
   uninstall) shift; cmd_uninstall "$@" ;;
-  help | -h | --help) sed -n '2,27p' "$0" | sed 's/^# \{0,1\}//' ;;
-  *) sed -n '2,27p' "$0" | sed 's/^# \{0,1\}//'; exit 1 ;;
+  help | -h | --help) sed -n '2,25p' "$0" | sed 's/^# \{0,1\}//' ;;
+  *) sed -n '2,25p' "$0" | sed 's/^# \{0,1\}//'; exit 1 ;;
 esac

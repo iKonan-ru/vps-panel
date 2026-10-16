@@ -21,7 +21,7 @@ describe('ссылки от агента', () => {
   it('действия замечаний аудита', () => {
     const f = (url: unknown) =>
       FindingSchema.parse({ severity: 'high', text: 't', fix: 'f', url }).url;
-    for (const ok of ['fix:sshd', 'cmd:panels-local', 'tab:firewall', 'cleanup:', 'https://a.b/']) {
+    for (const ok of ['fix:sshd', 'cmd:xui', 'tab:firewall', 'cleanup:', 'https://a.b/']) {
       expect(f(ok)).toBe(ok);
     }
     expect(f('javascript:alert(1)')).toBeUndefined();

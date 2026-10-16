@@ -28,26 +28,17 @@ export function extensionVersion(dir: string): string | null {
   return version;
 }
 
-/**
- * Подписанное расширение Firefox в FILES_DIR/firefox (кладёт tools/sign-firefox.mjs):
- * updates.json - адрес обновлений в манифесте расширения, архивы vps-panel-proxy-<версия>.xpi.
- */
+/** Подписанное расширение Firefox: updates.json и архивы vps-panel-proxy-<версия>.xpi. */
 export const FIREFOX_FILE = /^(updates\.json|vps-panel-proxy-\d+(\.\d+){1,3}\.xpi)$/;
 
-/**
- * Последний по версии подписанный архив Firefox в каталогах (lib/firefox.ts firefoxDirs: сначала
- * подписанные панелью, потом прежние): путь к файлу; нет - null.
- */
-export function firefoxXpi(dirs: string[]): string | null {
-  const all: { dir: string; name: string }[] = [];
-  for (const dir of dirs) {
-    try {
-      for (const n of readdirSync(dir))
-        if (n.endsWith('.xpi') && FIREFOX_FILE.test(n) && !all.some((x) => x.name === n))
-          all.push({ dir, name: n });
-    } catch {}
+/** Самый новый по версии подписанный архив Firefox в каталоге; нет - null. */
+export function firefoxXpi(dir: string): string | null {
+  let names: string[] = [];
+  try {
+    names = readdirSync(dir).filter((n) => n.endsWith('.xpi') && FIREFOX_FILE.test(n));
+  } catch {
+    return null;
   }
-  const names = all.map((x) => x.name);
   const ver = (n: string) =>
     n
       .replace(/^vps-panel-proxy-|\.xpi$/g, '')
@@ -62,6 +53,5 @@ export function firefoxXpi(dirs: string[]): string | null {
     }
     return 0;
   });
-  const top = all.find((x) => x.name === names[0]);
-  return top ? join(top.dir, top.name) : null;
+  return names[0] ? join(dir, names[0]) : null;
 }

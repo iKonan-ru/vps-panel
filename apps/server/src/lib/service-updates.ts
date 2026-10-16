@@ -150,6 +150,16 @@ export class ServiceUpdates {
     return res;
   }
 
+  forget(serverId: string) {
+    this.staleAt.delete(serverId);
+    return this.exclusive(async () => {
+      const store = await this.load();
+      if (!(serverId in store)) return;
+      delete store[serverId];
+      await this.save(store);
+    });
+  }
+
   private recheckStale(serverId: string) {
     const now = Date.now();
     if (now - (this.staleAt.get(serverId) ?? 0) < 5 * 60_000) return;

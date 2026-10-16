@@ -2,6 +2,7 @@ import type { Inventory, Metrics, ServerSummary } from '@vps/protocol';
 import { eq } from 'drizzle-orm';
 import type { Db } from '../db/index.js';
 import { servers } from '../db/schema.js';
+import { isPanelHost } from '../lib/panel-host.js';
 import type { AgentRegistry } from './registry.js';
 
 /** Что лежит в server.status_cache: последние метрики и inventory. */
@@ -115,9 +116,7 @@ export function toSummary(
       ? { ufwActive: inv.firewall.ufwActive, dockerFiltered: inv.firewall.dockerFiltered }
       : null,
     dockerVersion: inv?.host.dockerVersion ?? null,
-    // jail vps-panel ставит только выкладка панели; адрес - на случай старого агента
-    panelHost:
-      Boolean(inv?.audit.fail2banJails.includes('vps-panel')) || panelIps.includes(row.host),
+    panelHost: isPanelHost(row.host, inv, panelIps),
     // заполняет маршрут серверов (lib/panel-proxy.ts, links)
     panelLinks: {},
   };

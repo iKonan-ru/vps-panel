@@ -62,11 +62,8 @@ export async function checkClientHost(
   };
 }
 
-/**
- * Ссылка openflux:// канала: direct - на адрес для клиентов. Агент до 12.10 принимал только
- * IP ("нужен IP-адрес сервера для direct") - тогда та же ссылка на IP сервера.
- */
-export async function openfluxLink(
+/** Ссылка openflux:// канала: direct - на адрес для клиентов. */
+export function openfluxLink(
   registry: {
     request<T>(id: string, op: string, payload: unknown, o?: { timeoutMs?: number }): Promise<T>;
   },
@@ -74,18 +71,10 @@ export async function openfluxLink(
   channel: string,
   name: string,
 ): Promise<{ link: string }> {
-  const ask = (host: string) =>
-    registry.request<{ link: string }>(
-      row.id,
-      'openflux.link',
-      { channel, name, host },
-      { timeoutMs: 60_000 },
-    );
-  const host = clientHost(row);
-  try {
-    return await ask(host);
-  } catch (e) {
-    if (host !== row.host && /нужен IP-адрес/.test((e as Error).message)) return ask(row.host);
-    throw e;
-  }
+  return registry.request<{ link: string }>(
+    row.id,
+    'openflux.link',
+    { channel, name, host: clientHost(row) },
+    { timeoutMs: 60_000 },
+  );
 }

@@ -29,9 +29,8 @@ RUN apk add --no-cache curl unzip && \
     echo "$H  /tmp/xray.zip" | sha256sum -c - && \
     unzip -q /tmp/xray.zip xray -d /out && chmod 755 /out/xray
 
-# Агент (vps-agent-linux-*) и сборки naive и wdtt для раздачи серверам. Релиз (release.yml)
-# подставляет их вместо этой стадии (--build-context artifacts=<каталог>); при сборке из
-# исходников она пустая - их дают тома deploy/agent-dist и deploy/files.
+# Агент (vps-agent-linux-*) и сборки naive и wdtt для раздачи серверам: релиз (release.yml)
+# подставляет их вместо этой стадии (--build-context artifacts=<каталог>).
 FROM alpine:3 AS artifacts
 RUN mkdir -p /agent-dist /files
 

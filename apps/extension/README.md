@@ -3,7 +3,7 @@
 Выход в интернет через серверы VPS Panel только из браузера, без установки программ:
 расширение настраивает браузер на HTTPS-прокси (Caddy с forwardproxy NaiveProxy на наших
 серверах). Один код на оба браузера; MV3 для Chrome, MV2 для Firefox (манифест Firefox
-собирает `tools/sign-firefox.mjs`). Чистый JS без сборки.
+собирает панель при подписи, `apps/server/src/lib/firefox.ts`). Чистый JS без сборки.
 
 ## Файлы
 
@@ -37,10 +37,10 @@
 
 ## Firefox
 
-Обычный Firefox ставит только подписанные Mozilla расширения. `tools/sign-firefox.mjs`
-собирает расширение, подписывает его на addons.mozilla.org (канал unlisted: в каталоге
-не появляется) и кладёт в `deploy/files/firefox` архив `vps-panel-proxy-<версия>.xpi` и
-`updates.json`; `tools/ship.sh` зовёт его сам, если задан `AMO_KEY_FILE`. ID расширения -
+Обычный Firefox ставит только подписанные Mozilla расширения. Панель собирает расширение,
+подписывает его на addons.mozilla.org ключом API из "Настроек" (канал unlisted: в каталоге не
+появляется) и кладёт в `data/firefox` архив `vps-panel-proxy-<версия>.xpi` и `updates.json`;
+новую версию после обновления панели подписывает сама. ID расширения -
 `vps-panel-proxy@<PANEL_DOMAIN>`, менять его нельзя.
 
 - Установка: кнопка "Установить в Firefox" на личной странице (`/c/<токен>/firefox.xpi`).

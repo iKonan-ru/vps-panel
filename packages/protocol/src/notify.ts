@@ -163,21 +163,9 @@ export const NOTIFY_DEFAULTS: NotifyEvents = Object.fromEntries(
   NOTIFY_EVENTS.map((k) => [k, true]),
 ) as NotifyEvents;
 
-/**
- * События из сохранённого JSON: новые ключи как есть, старые группы (offline, audit, bans,
- * updates, reach - до 12.10) раскладываются на события, которых в сохранённом ещё нет.
- */
+/** События из сохранённого JSON: чего нет - по умолчанию. */
 export function readNotifyEvents(saved: Record<string, unknown>): NotifyEvents {
   const out: NotifyEvents = { ...NOTIFY_DEFAULTS };
-  const legacy: Record<string, NotifyEvent[]> = {
-    offline: ['offline', 'online'],
-    audit: ['auditNew', 'auditClosed'],
-    updates: ['pkgUpdates', 'updXui', 'updXray', 'updMtproxyl', 'updMtproxylPanel', 'payment'],
-    reach: ['reachAddr', 'reachInbound', 'reachMtproxy', 'reachBack'],
-  };
-  for (const [old, keys] of Object.entries(legacy))
-    if (typeof saved[old] === 'boolean')
-      for (const k of keys) if (!(k in saved)) out[k] = saved[old] as boolean;
   for (const k of NOTIFY_EVENTS) if (typeof saved[k] === 'boolean') out[k] = saved[k] as boolean;
   return out;
 }

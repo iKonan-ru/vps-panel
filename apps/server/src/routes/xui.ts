@@ -190,66 +190,30 @@ export async function xuiRoutes(
   });
 
   /**
-   * Правка inbound-а: вкл/выкл (setEnable), подпись и порт (get -> update целиком: настройки и
-   * клиенты как были). Порт проверяется: не занят другим inbound-ом и другим процессом (по отчёту
-   * агента) - inbound на занятом порту роняет весь xray. Действие - в журнале.
+   * Включение и выключение inbound-а. Подпись, порт и Reality правит окно правки
+   * (routes/xui-inbounds.ts): там же проверка Xray и откат.
    */
   app.post('/api/servers/:id/xui/inbounds/:iid', async (req) => {
     const { id, iid } = z
       .object({ id: z.string(), iid: z.coerce.number().int().positive() })
       .parse(req.params);
-    const body = z
-      .object({
-        enable: z.boolean().optional(),
-        remark: z.string().trim().max(100).optional(),
-        port: z.number().int().min(1).max(65535).optional(),
-      })
-      .parse(req.body ?? {});
+    const { enable } = z.object({ enable: z.boolean() }).parse(req.body ?? {});
     const api = apiFor(id);
-    const actionId = await journal.start(id, 'xui:inbound', { inbound: iid, ...body });
+    const actionId = await journal.start(id, 'xui:inbound', { inbound: iid, enable });
     try {
       const got = unwrap(await api('GET', `inbounds/get/${iid}`), 'inbounds/get') as Record<
         string,
         unknown
-      >;
+      > | null;
       if (!got) throw Object.assign(new Error('inbound не найден'), { statusCode: 404 });
-      const done: string[] = [];
-      if (
-        body.remark !== undefined ||
-        (body.port !== undefined && body.port !== Number(got.port))
-      ) {
-        if (body.port !== undefined && body.port !== Number(got.port)) {
-          const list =
-            (unwrap(await api('GET', 'inbounds/list'), 'inbounds/list') as Record<
-              string,
-              unknown
-            >[]) ?? [];
-          const other = list.find((x) => Number(x.id) !== iid && Number(x.port) === body.port);
-          if (other)
-            throw Object.assign(
-              new Error(
-                `порт ${body.port} уже занят inbound \u00ab${String(other.remark ?? other.id)}\u00bb`,
-              ),
-              { statusCode: 409 },
-            );
-          const row = db.select().from(servers).where(eq(servers.id, id)).get();
-          const inv = (row?.statusCache as StatusCache | null)?.inventory;
-          const busy = inv?.firewall.listeners.find(
-            (l) => l.proto === 'tcp' && l.port === body.port && !/xray/i.test(l.process),
-          );
-          if (busy)
-            throw Object.assign(new Error(`порт ${body.port} занят: ${busy.process}`), {
-              statusCode: 409,
-            });
-        }
-        const next = { ...got, remark: body.remark ?? got.remark, port: body.port ?? got.port };
-        unwrap(await api('POST', `inbounds/update/${iid}`, next), 'inbounds/update');
-        if (body.remark !== undefined) done.push('подпись');
-        if (body.port !== undefined) done.push(`порт ${got.port} -> ${body.port}`);
+      const was = got.enable !== false;
+      if (enable === was) {
+        await journal.finish(actionId, id, 0, 'без изменений');
+        return { ok: true };
       }
-      if (body.enable === true && got.enable === false) {
-        // пока inbound был выключен, его порт мог занять другой процесс: включение на занятом
-        // порту останавливает весь Xray
+      if (enable) {
+        // включение на занятом порту останавливает весь Xray; сам Xray в снимке не считается -
+        // только что выключенный inbound он ещё может слушать
         const others = (
           (unwrap(await api('GET', 'inbounds/list'), 'inbounds/list') as Record<
             string,
@@ -257,29 +221,18 @@ export async function xuiRoutes(
           >[]) ?? []
         ).filter((x) => Number(x.id) !== iid && x.enable !== false);
         const row = db.select().from(servers).where(eq(servers.id, id)).get();
-        // xray в снимке не считаем: только что выключенный inbound он ещё может слушать
         const ls = (
           (row?.statusCache as StatusCache | null)?.inventory?.firewall.listeners ?? []
         ).filter((l) => !/xray/i.test(l.process));
         const busy = portBusy(Number(got.port), others, ls);
         if (busy) throw Object.assign(new Error(busy), { statusCode: 409 });
       }
-      if (body.enable !== undefined && body.enable !== (got.enable !== false)) {
-        unwrap(
-          await api('POST', `inbounds/setEnable/${iid}`, { enable: body.enable }),
-          'inbounds/setEnable',
-        );
-        done.push(body.enable ? 'включён' : 'выключен');
-      }
-      // выходы в Telegram за inbound-ом: выключен - как удалён, порт сменился - снимок заново,
-      // включён - мог стать запасным
-      const moved = body.port !== undefined && body.port !== Number(got.port);
-      const off = body.enable === false && got.enable !== false;
-      if (off || moved) done.push(...(await exitsAfter(id, iid, off)));
-      else if (body.enable === true && got.enable === false) syncSpares();
-      await journal.finish(actionId, id, 0, done.length ? done.join(', ') : 'без изменений');
-      // подпись, порт и вкл/выкл видны в ссылках клиентов панели - синхронизация сразу
-      if (done.length) resyncXui(db, gc, id);
+      unwrap(await api('POST', `inbounds/setEnable/${iid}`, { enable }), 'inbounds/setEnable');
+      const done = [enable ? 'включён' : 'выключен'];
+      if (enable) syncSpares();
+      else done.push(...(await exitsAfter(id, iid, true)));
+      await journal.finish(actionId, id, 0, done.join(', '));
+      resyncXui(db, gc, id);
       return { ok: true };
     } catch (e) {
       await journal.finish(actionId, id, 1, (e as Error).message);

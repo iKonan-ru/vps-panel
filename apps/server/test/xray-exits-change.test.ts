@@ -2,7 +2,11 @@ import { describe, expect, it } from 'vitest';
 import { createDb } from '../src/db/index.js';
 import { servers } from '../src/db/schema.js';
 import { SecretBox } from '../src/lib/secret-box.js';
-import { exitsAfterInboundChange, telegramExitOf } from '../src/lib/xray-exits.js';
+import {
+  exitsAfterInboundChange,
+  exitsAfterServerRemoved,
+  telegramExitOf,
+} from '../src/lib/xray-exits.js';
 import type { XrayOutbound } from '../src/lib/xray.js';
 import { saveXuiToken } from '../src/lib/xui-token.js';
 
@@ -144,6 +148,15 @@ describe('выходы в Telegram за inbound-ами', () => {
     await exitsAfterInboundChange(t.deps, t.spareSync, 's1', 77, true);
     expect(t.saved).toHaveLength(1);
     expect(t.syncs()).toBe(2);
+  });
+
+  it('сервер основного выхода удалён из панели - на запасной, чья проверка прошла', async () => {
+    const t = await setup([], [exit('s2', 3, 15262), exit('s3', 9, 28512)]);
+    await exitsAfterServerRemoved(t.deps, t.spareSync, 's1');
+    expect(t.saved[0]).toMatchObject({ serverId: 's3', inboundId: 9 });
+    expect(t.syncs()).toBe(1);
+    await exitsAfterServerRemoved(t.deps, t.spareSync, 's2');
+    expect(t.saved).toHaveLength(1);
   });
 
   it('метка выхода в списке inbound-ов', () => {

@@ -34,28 +34,16 @@ describe('адрес для клиентов', () => {
 });
 
 describe('ссылка OpenFlux', () => {
-  it('direct - на адрес для клиентов; старый агент (только IP) - на IP сервера', async () => {
+  it('direct - на адрес для клиентов, без имени - на IP', async () => {
     const { openfluxLink } = await import('../src/lib/client-host.js');
-    const asked: string[] = [];
-    const reg = (ipOnly: boolean) => ({
-      request: async <T>(_id: string, _op: string, p: unknown) => {
-        const host = (p as { host: string }).host;
-        asked.push(host);
-        if (ipOnly && !/^\d+\.\d+\.\d+\.\d+$/.test(host))
-          throw new Error('нужен IP-адрес сервера для direct');
-        return { link: `openflux://${host}` } as T;
-      },
-    });
+    const reg = {
+      request: async <T>(_id: string, _op: string, p: unknown) =>
+        ({ link: `openflux://${(p as { host: string }).host}` }) as T,
+    };
     const row = { id: 's', host: '203.0.113.1', clientHost: 'srv.example.com' };
-    expect((await openfluxLink(reg(false), row, 'main', 'x')).link).toBe(
-      'openflux://srv.example.com',
+    expect((await openfluxLink(reg, row, 'main', 'x')).link).toBe('openflux://srv.example.com');
+    expect((await openfluxLink(reg, { ...row, clientHost: null }, 'main', 'x')).link).toBe(
+      'openflux://203.0.113.1',
     );
-    asked.length = 0;
-    expect((await openfluxLink(reg(true), row, 'main', 'x')).link).toBe('openflux://203.0.113.1');
-    expect(asked).toEqual(['srv.example.com', '203.0.113.1']);
-    // без имени - сразу IP, повтора нет
-    asked.length = 0;
-    await openfluxLink(reg(true), { ...row, clientHost: null }, 'main', 'x');
-    expect(asked).toEqual(['203.0.113.1']);
   });
 });

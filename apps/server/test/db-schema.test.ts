@@ -42,7 +42,7 @@ describe('database schema', () => {
       createDb(dir);
       createDb(dir);
       const db = new Database(join(dir, 'panel.db'), { readonly: true });
-      expect(db.pragma('user_version', { simple: true })).toBe(20);
+      expect(db.pragma('user_version', { simple: true })).toBe(21);
       db.close();
     } finally {
       rmSync(dir, { recursive: true, force: true });
@@ -61,7 +61,7 @@ describe('database schema', () => {
       raw.close();
       createDb(dir);
       const db = new Database(join(dir, 'panel.db'), { readonly: true });
-      expect(db.pragma('user_version', { simple: true })).toBe(20);
+      expect(db.pragma('user_version', { simple: true })).toBe(21);
       expect(db.prepare('select host, client_host from server').get()).toEqual({
         host: '203.0.113.1',
         client_host: null,

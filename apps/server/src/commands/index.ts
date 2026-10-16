@@ -2,7 +2,6 @@ import { awgCmd } from './catalog-awg.js';
 import { mtproxylCmd } from './catalog-mtproxyl.js';
 import { naiveCmd, naiveUninstallCmd } from './catalog-naive.js';
 import { openfluxCmd, openfluxUninstallCmd } from './catalog-openflux.js';
-import { legacyCertsCmd, panelsLocalCmd } from './catalog-panels.js';
 import {
   awgUninstallCmd,
   mtproxylUninstallCmd,
@@ -27,8 +26,6 @@ export const CATALOG: CommandDef[] = [
   awgUninstallCmd,
   openfluxUninstallCmd,
   naiveUninstallCmd,
-  panelsLocalCmd,
-  legacyCertsCmd,
 ];
 
 export function findCommand(id: string): CommandDef | undefined {

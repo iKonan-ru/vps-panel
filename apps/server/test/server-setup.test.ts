@@ -3,7 +3,7 @@ import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { eq } from 'drizzle-orm';
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { AgentRegistry } from '../src/agents/registry.js';
 import { CATALOG } from '../src/commands/index.js';
 import type { Env } from '../src/config.js';
@@ -26,6 +26,11 @@ import { keyFingerprint, loadPanelKey } from '../src/lib/ssh.js';
 import { savedXuiToken } from '../src/lib/xui-token.js';
 
 /** Вид сервиса в отчёте агента после команды установки. */
+vi.mock('../src/lib/client-host.js', async (orig) => ({
+  ...(await orig<typeof import('../src/lib/client-host.js')>()),
+  checkClientHost: async () => ({ ok: true, addresses: ['203.0.113.10'] }),
+}));
+
 const KIND: Record<string, string> = {
   xui: 'xui',
   mtproxyl: 'mtproxyl',
@@ -82,6 +87,8 @@ const registry = {
       // проверки перед запуском: script - preflight команды; снятие агента - свой скрипт
       if (!c) {
         if (String(p.script).includes('vps-agent-remove')) calls.push(`agent-remove:${id}`);
+        const env = (p.env ?? {}) as Record<string, string>;
+        if ('MT_HOST' in env) calls.push(`mt-host:${env.MT_HOST}`);
         return { exitCode: 0, tail: 'OK|порт свободен' };
       }
       const e = p.env as Record<string, string>;
@@ -291,6 +298,46 @@ describe('настройка сервера', () => {
       note: 'проблем не найдено',
     });
     expect(p.steps.find((x) => x.state === 'failed')).toBeUndefined();
+  });
+
+  it('адрес для клиентов: стоящий MTProxyL получает его в ссылки, клиенты - в очередь', async () => {
+    installed = ['mtproxyl'];
+    await registry.refreshInventory('s1');
+    db.insert(gclients)
+      .values({
+        id: 'c1',
+        name: 'Ann',
+        slug: 'ann',
+        token: 't'.repeat(32),
+        xuiSubId: 'sub',
+      } as never)
+      .run();
+    db.insert(gclientBindings)
+      .values({
+        id: 'b1',
+        clientId: 'c1',
+        serverId: 's1',
+        service: 'mtproxyl',
+        ref: 'ann',
+        state: 'ok',
+        updatedAt: '2026-01-01T00:00:00.000Z',
+      } as never)
+      .run();
+    const s = make();
+    const plan = await s.plan('s1');
+    const steps = plan.steps.map((x) => ({
+      id: x.id,
+      enabled: x.id === 'client-host',
+      answers: x.id === 'client-host' ? { NAME: 'vpn.example.com' } : (x.answers ?? {}),
+    }));
+    const r = await s.run('s1', { steps });
+    for (let i = 0; i < 200 && !s.progress('s1')?.finishedAt; i++)
+      await new Promise((res) => setTimeout(res, 10));
+    expect(s.progress('s1')?.actionId).toBe(r.actionId);
+    expect(calls).toContain('mt-host:vpn.example.com');
+    expect(db.select().from(servers).get()?.clientHost).toBe('vpn.example.com');
+    expect(db.select().from(gclientBindings).get()?.state).toBe('pending');
+    expect(kicks).toBe(1);
   });
 
   it('без пароля запуск не начинается', async () => {

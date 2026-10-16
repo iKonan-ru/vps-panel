@@ -81,7 +81,7 @@ export function useLiveUpdates() {
     const refresh = () => {
       flush = null;
       void qc.invalidateQueries({ queryKey: ['servers'], exact: true });
-      for (const id of dirty) void qc.invalidateQueries({ queryKey: ['servers', id] });
+      for (const id of dirty) void qc.invalidateQueries({ queryKey: ['servers', id], exact: true });
       dirty.clear();
     };
     const un = subscribe((ev) => {
@@ -113,6 +113,8 @@ export function useLiveUpdates() {
         flush ??= setTimeout(refresh, 5000);
         return;
       }
+      // вывод действия читает только его консоль (subscribe), карточке и списку он не нужен
+      if (ev.type === 'action.stream') return;
       if (ev.type.startsWith('server.') || ev.type.startsWith('action.')) {
         // change без serverId (добавили или удалили сервер) - весь список
         if (ev.serverId) void qc.invalidateQueries({ queryKey: ['servers', ev.serverId] });

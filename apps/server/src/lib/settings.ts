@@ -14,6 +14,10 @@ export function putSetting(db: Db, key: string, value: string) {
     .run();
 }
 
+export function deleteSetting(db: Db, key: string) {
+  db.delete(settings).where(eq(settings.key, key)).run();
+}
+
 /** Настройка в JSON; нет или не разбирается - fallback. */
 export function getJsonSetting<T>(db: Db, key: string, fallback: T): T {
   const raw = getSetting(db, key);

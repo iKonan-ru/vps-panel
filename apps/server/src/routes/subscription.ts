@@ -5,7 +5,7 @@ import type { Env } from '../config.js';
 import type { Db } from '../db/index.js';
 import { ExtReportSchema, recordLegacyFetch, recordReport } from '../lib/browser-ext.js';
 import { FIREFOX_FILE, extensionVersion } from '../lib/extension.js';
-import { firefoxDirs } from '../lib/firefox.js';
+import { firefoxDir } from '../lib/firefox.js';
 import {
   buildBrowserSubscription,
   buildSubscription,
@@ -83,14 +83,10 @@ export async function subscriptionRoutes(
     const { file } = req.params as { file: string };
     if (!opts.env || !FIREFOX_FILE.test(file))
       return reply.code(404).type('text/plain').send('not found');
-    // сначала подписанное самой панелью (data/firefox), потом прежняя раскладка (files/firefox)
     let data: Buffer | null = null;
-    for (const dir of firefoxDirs(opts.env)) {
-      try {
-        data = readFileSync(join(dir, file));
-        break;
-      } catch {}
-    }
+    try {
+      data = readFileSync(join(firefoxDir(opts.env), file));
+    } catch {}
     if (!data) return reply.code(404).type('text/plain').send('not found');
     const json = file === 'updates.json';
     reply.header('Cache-Control', json ? 'no-cache' : 'public, max-age=86400');

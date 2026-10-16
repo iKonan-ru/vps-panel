@@ -3,7 +3,6 @@ dist/
 build/
 .env
 .env.*
-!.env.example
 *.log
 .DS_Store
 __pycache__/
@@ -16,14 +15,9 @@ data/
 *.db-shm
 apps/web/dist/
 apps/server/dist/
-deploy/data/
-deploy/.env
 dist/
 packages/protocol/dist/
-# файлы WDTT и Caddy naive собирают tools/build-wdtt.sh и tools/build-naive.sh (их зовёт
-# deploy/install.sh): бинарники, SHA256SUMS, версии - в git не хранятся
+# сборки WDTT и Caddy naive (tools/build-wdtt.sh, tools/build-naive.sh) - в образ релиза
 deploy/files/
 # настройки выкладки (tools/ship.sh), в репозиторий не попадают
 .ship.env
-# бинарники агента для панели (deploy/install.sh, push.sh)
-deploy/agent-dist/

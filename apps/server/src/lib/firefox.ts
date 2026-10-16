@@ -32,9 +32,8 @@ export interface FirefoxView extends FirefoxState {
  * Расширение Firefox: подпись у Mozilla (addons.mozilla.org, канал unlisted - в каталоге не
  * появляется) ключом API из Настроек - у каждой панели свой. ID - vps-panel-proxy@<домен
  * панели>, адрес обновлений и имя личных страниц - этой панели. Подписанные архивы и
- * updates.json - в DATA_DIR/firefox (раньше - FILES_DIR/firefox от tools/sign-firefox.mjs,
- * их панель тоже раздаёт). Новая версия расширения (после обновления панели) подписывается
- * сама; без ключа Firefox на личных страницах не показывается.
+ * updates.json - в DATA_DIR/firefox. Новая версия расширения (после обновления панели)
+ * подписывается сама; без ключа Firefox на личных страницах не показывается.
  */
 export class FirefoxSigner {
   private busy = false;
@@ -297,9 +296,6 @@ export class FirefoxSigner {
   }
 }
 
-/** Каталоги с подписанным Firefox: панель (DATA_DIR) и прежняя раскладка (FILES_DIR). */
-export function firefoxDirs(env: { DATA_DIR?: string; FILES_DIR?: string }): string[] {
-  return [env.DATA_DIR, env.FILES_DIR]
-    .filter((d): d is string => Boolean(d))
-    .map((d) => join(d, 'firefox'));
+export function firefoxDir(env: { DATA_DIR: string }): string {
+  return join(env.DATA_DIR, 'firefox');
 }
