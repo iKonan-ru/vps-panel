@@ -31,7 +31,7 @@ func RemoveKey(keysLeft int, passwordLogin bool) error {
 var vpnProcesses = []struct{ known, hint string }{
 	{"xray*", "xray"}, {"x-ui", "x-ui"}, {"telemt", "telemt"}, {"mtproxyl*", "mtproxy"},
 	{"wdtt*", "wdtt"}, {"amnezia*", "amnezia"}, {"awg*", "awg"}, {"wg*", "wg"},
-	{"sing-box", "sing-box"}, {"hysteria*", "hysteria"}, {"tuic*", "tuic"},
+	{"sing-box", "sing-box"}, {"hysteria*", "hysteria"}, {"tuic*", "tuic"}, {"openflux*", "openflux"},
 	{"", "openvpn"}, {"", "cloak"},
 }
 

@@ -9,14 +9,14 @@ import (
 )
 
 func TestKnownProcessesDefault(t *testing.T) {
-	want := []string{"sshd", "xray*", "x-ui", "telemt", "mtproxyl*", "wdtt*", "amnezia*", "awg*", "wg*", "sing-box", "hysteria*", "tuic*", "vps-agent", "caddy", "docker-proxy"}
+	want := []string{"sshd", "xray*", "x-ui", "telemt", "mtproxyl*", "wdtt*", "amnezia*", "awg*", "wg*", "sing-box", "hysteria*", "tuic*", "openflux*", "vps-agent", "caddy", "docker-proxy"}
 	if got := KnownProcesses(); !slices.Equal(got, want) {
 		t.Fatalf("known_processes по умолчанию: %v", got)
 	}
 }
 
 func TestIsVPNProcess(t *testing.T) {
-	for _, p := range []string{"xray-linux-amd64", "x-ui", "telemt", "mtproxyl-panel", "wdtt-server", "amneziawg-go", "awg", "wg-crypt-wg0", "sing-box", "hysteria", "tuic-server", "openvpn", "ck-server-cloak"} {
+	for _, p := range []string{"xray-linux-amd64", "x-ui", "telemt", "mtproxyl-panel", "wdtt-server", "amneziawg-go", "awg", "wg-crypt-wg0", "sing-box", "hysteria", "tuic-server", "openflux", "openvpn", "ck-server-cloak"} {
 		if !IsVPNProcess(p) {
 			t.Errorf("%s - VPN", p)
 		}
