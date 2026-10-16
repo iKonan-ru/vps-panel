@@ -9,7 +9,7 @@ interface AwgParam {
 export interface AwgClient {
   publicKey: string;
   name: string;
-  /** Код из DEVICES; у старых агентов и клиентов приложения Amnezia - нет. */
+  /** Код из DEVICES; у клиентов из приложения Amnezia - нет. */
   device?: string;
   created: string;
   allowedIps: string;
