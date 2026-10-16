@@ -36,6 +36,23 @@ const slowMetrics = 30 * time.Second
 // (операция metrics.interval).
 var metricsEvery = make(chan time.Duration, 1)
 
+// coalesced - fn в одном исполнителе: вызов во время работы не запускает вторую копию, но и не
+// теряется - после текущей fn выполняется ещё раз.
+type coalesced struct {
+	busy, again atomic.Bool
+	fn          func()
+}
+
+func (c *coalesced) run() {
+	c.again.Store(true)
+	for c.again.Load() && c.busy.CompareAndSwap(false, true) {
+		for c.again.Swap(false) {
+			c.fn()
+		}
+		c.busy.Store(false)
+	}
+}
+
 // setMetricsEvery передаёт частоту циклу отправки; прежнее непрочитанное значение заменяется.
 func setMetricsEvery(d time.Duration) {
 	select {
@@ -108,13 +125,7 @@ func main() {
 			services.MarkReported(s.Health())
 		}
 	}
-	// pushing - снимок по своей инициативе собирается или отправляется
-	var pushing atomic.Bool
-	pushInventory := func() {
-		if !pushing.CompareAndSwap(false, true) {
-			return
-		}
-		defer pushing.Store(false)
+	push := func() {
 		snap, err := inventory.Collect(ctx, Version)
 		if err != nil {
 			if ctx.Err() == nil {
@@ -126,6 +137,7 @@ func main() {
 			services.MarkReported(snap.Health())
 		}
 	}
+	pushInventory := (&coalesced{fn: push}).run
 	client.OnDisconnect = func() {
 		terminal.CloseAll()
 		tunnel.CloseAll()
@@ -199,7 +211,7 @@ func main() {
 			case h := <-healthCh:
 				checking = false
 				// без связи снимок не уйдёт, а после подключения он отправится и так
-				if h != services.Reported() && client.Connected() && !pushing.Load() {
+				if h != services.Reported() && client.Connected() {
 					log.Info("сервисы: состояние сменилось", "down", h)
 					go pushInventory()
 				}
