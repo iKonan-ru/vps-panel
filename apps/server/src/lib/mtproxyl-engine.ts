@@ -1,5 +1,5 @@
 import type { AgentRegistry } from '../agents/registry.js';
-import { githubError } from './github.js';
+import { githubReleases } from './github.js';
 
 /**
  * Версии движка telemt MTProxyL. Готовые образы docker MTProxyL кладёт в
@@ -10,7 +10,6 @@ import { githubError } from './github.js';
  * лежащий на сервере, от сборки не спасает: engine update удаляет его и тянет из реестра.
  */
 const IMAGE = 'liafanx/mtproxyl-telemt';
-const RELEASES = 'https://api.github.com/repos/telemt/telemt/releases?per_page=30';
 
 export interface EngineVersion {
   tag: string;
@@ -53,11 +52,7 @@ export class EngineCatalog {
     });
     if (!l.ok) throw new Error(`ghcr.io: ${l.status}`);
     const tags = new Set(((await l.json()) as { tags?: string[] }).tags ?? []);
-    const r = await this.fetchOut(RELEASES, {
-      headers: { Accept: 'application/vnd.github+json', 'User-Agent': 'vps-panel' },
-    });
-    if (!r.ok) throw githubError(r);
-    const rel = (await r.json()) as { tag_name: string; target_commitish: string }[];
+    const rel = await githubReleases(this.fetchOut, 'telemt/telemt', 30);
     const commits = new Map(rel.map((x) => [x.tag_name, x.target_commitish]));
     this.cache = { at: Date.now(), tags, commits };
     return this.cache;

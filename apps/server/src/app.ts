@@ -132,6 +132,8 @@ export async function buildApp(opts: AppOptions) {
     })
     .where(isNull(actionLog.finishedAt));
   const secure = env.PANEL_PUBLIC_URL.startsWith('https://');
+  const sessionSecret = env.SESSION_SECRET ?? 'dev-only-secret-change-me-please-32b';
+  const journal = actionJournal(db, hub, registry);
   useHostCookies(secure);
 
   // Поддомены панелей сервисов (lib/panel-proxy.ts): запросы к ним разбираются до Fastify,
@@ -159,14 +161,14 @@ export async function buildApp(opts: AppOptions) {
     registry,
     // без домена (панель по IP) поддоменов нет: панели сервисов - напрямую, без прокси
     secure ? panelDomain(env) : '',
-    env.SESSION_SECRET ?? 'dev-only-secret-change-me-please-32b',
+    sessionSecret,
     app.log,
   );
   const panelProxy = proxy;
   app.addHook('onReady', async () => panelProxy.attachUpgrade(app.server));
 
   await app.register(fastifyCookie, {
-    secret: env.SESSION_SECRET ?? 'dev-only-secret-change-me-please-32b',
+    secret: sessionSecret,
   });
   await app.register(fastifyRateLimit, { global: false });
   await app.register(fastifyWebsocket);
@@ -203,17 +205,18 @@ export async function buildApp(opts: AppOptions) {
     now: new Date().toISOString(),
   }));
   await app.register(authRoutes, { db, secure });
-  const sessionSecret = env.SESSION_SECRET ?? 'dev-only-secret-change-me-please-32b';
   const box = new SecretBox(sessionSecret);
   // xray-клиент для выхода в Telegram: дочерний процесс панели
   const xray = new XrayManager(db, env.DATA_DIR, app.log);
+  /** Запросы панели наружу (GitHub, реестр образов): через выход xray, если он задан. */
+  const outFetch: typeof xray.fetch = (url, init) => xray.fetch(url, init);
   await xray.load();
   await xray.start();
   app.addHook('onClose', async () => {
     await xray.stop();
   });
   // версии движка MTProxyL: готовые образы в реестре (ghcr.io), чтобы не собирать на сервере
-  const engines = new EngineCatalog(registry, (url, init) => xray.fetch(url, init));
+  const engines = new EngineCatalog(registry, outFetch);
   await app.register(serverRoutes, { db, registry, env, hub, proxy: panelProxy });
   // действия над сервером через агента - по файлу на область
   const serverRouteOpts = { db, env, registry, hub, box, engines };
@@ -223,7 +226,7 @@ export async function buildApp(opts: AppOptions) {
   const panelUpdates = new PanelUpdates(
     db,
     env.DATA_DIR,
-    (url, init) => xray.fetch(url, init),
+    outFetch,
     app.log,
     (r) => onPanelRelease(r),
     PANEL_VERSION,
@@ -275,6 +278,7 @@ export async function buildApp(opts: AppOptions) {
   // запасные выходы xray: клиент vps-panel на каждом сервере с 3X-UI (lib/xray-exits.ts)
   const exitDeps = { db, registry, box, xray, log: app.log, panelUrl: env.PANEL_PUBLIC_URL };
   const xraySpares = new XraySpares(exitDeps);
+  const syncSpares = () => void xraySpares.sync().catch(() => undefined);
   await app.register(xrayRoutes, { db, registry, box, xray, spares: xraySpares, deps: exitDeps });
   // inbound-ы 3X-UI меняются из панели - выходы в Telegram за ними (основной хранит снимок)
   const exitsAfter = (serverId: string, inboundId: number, gone: boolean) =>
@@ -284,7 +288,7 @@ export async function buildApp(opts: AppOptions) {
     db,
     box,
     registry,
-    actionJournal(db, hub, registry),
+    journal,
     () => panelAddresses(env.PANEL_PUBLIC_URL),
     app.log,
   );
@@ -294,7 +298,7 @@ export async function buildApp(opts: AppOptions) {
     gc,
     xray,
     exitsAfter,
-    syncSpares: () => void xraySpares.sync().catch(() => undefined),
+    syncSpares,
   });
   const telegram = new Telegram(
     db,
@@ -348,7 +352,7 @@ export async function buildApp(opts: AppOptions) {
     registry,
     app.log,
     (id, u) => notifier.serviceUpdate(id, u),
-    (url, init) => xray.fetch(url, init),
+    outFetch,
   );
   stops.push(serviceUpdates.start());
   await app.register(standardRoutes, { db, registry, env, updates: serviceUpdates });
@@ -366,7 +370,7 @@ export async function buildApp(opts: AppOptions) {
     reach: ruReach,
     xray,
     exitsAfter,
-    syncSpares: () => void xraySpares.sync().catch(() => undefined),
+    syncSpares,
   });
   // настройка сервера в один клик: команды каталога, inbound-ы, синхронизация - одним действием
   const setup = serverSetup({
@@ -375,12 +379,12 @@ export async function buildApp(opts: AppOptions) {
     registry,
     box,
     hub,
-    journal: actionJournal(db, hub, registry),
+    journal,
     runner: catalogRunner({ db, env, registry, box, certs: panelCerts, log: app.log }),
     restorer,
     gc,
     reach: ruReach,
-    syncSpares: () => void xraySpares.sync().catch(() => undefined),
+    syncSpares,
   });
   await app.register(setupRoutes, { setup });
   stops.push(
@@ -399,7 +403,7 @@ export async function buildApp(opts: AppOptions) {
     hub,
     panelUrl: env.PANEL_PUBLIC_URL,
     registry,
-    journal: actionJournal(db, hub, registry),
+    journal,
   });
   await app.register(ipChangeRoutes, {
     db,
@@ -408,7 +412,7 @@ export async function buildApp(opts: AppOptions) {
     gc,
     xray,
     reach: ruReach,
-    journal: actionJournal(db, hub, registry),
+    journal,
   });
   await app.register(wdttRoutes, { db, registry, hub, gc });
   await app.register(subscriptionRoutes, { db, env });
@@ -430,7 +434,7 @@ export async function buildApp(opts: AppOptions) {
   stops.push(firefox.start());
   await app.register(firefoxRoutes, { firefox });
   // ссылки на клиентские приложения: релизы GitHub раз в 6 часов
-  const appReleases = new AppReleases(db, (url, init) => xray.fetch(url, init), app.log);
+  const appReleases = new AppReleases(db, outFetch, app.log);
   stops.push(appReleases.start());
   await app.register(appRoutes, { apps: appReleases });
   // личная страница клиента (подписка, MTProxy, AWG, приложения) - без входа

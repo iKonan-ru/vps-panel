@@ -2,7 +2,7 @@ import { existsSync } from 'node:fs';
 import { mkdir, rename, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import type { Db } from '../db/index.js';
-import { githubError } from './github.js';
+import { githubReleases } from './github.js';
 import { schedule } from './schedule.js';
 import { getJsonSetting, getSetting, putSetting } from './settings.js';
 import { PANEL_VERSION } from './version.js';
@@ -149,21 +149,7 @@ export class PanelUpdates {
   async refresh(): Promise<void> {
     const c = this.cache();
     try {
-      const r = await this.fetchOut(
-        `https://api.github.com/repos/${PANEL_REPO}/releases?per_page=100`,
-        {
-          headers: { Accept: 'application/vnd.github+json', 'User-Agent': 'vps-panel' },
-        },
-      );
-      if (!r.ok) throw githubError(r);
-      const list = (await r.json()) as {
-        tag_name: string;
-        html_url: string;
-        published_at: string;
-        draft: boolean;
-        prerelease: boolean;
-        body: string | null;
-      }[];
+      const list = await githubReleases(this.fetchOut, PANEL_REPO, 100);
       c.releases = list
         .map((x) => ({
           version: x.tag_name.replace(/^v/, ''),
