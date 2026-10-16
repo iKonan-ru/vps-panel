@@ -178,6 +178,8 @@ func Create(ctx context.Context, p CreateParams, stream func(channel, chunk stri
 				}
 			}
 		}
+		// в манифест - только то, что действительно легло в архив
+		var copied []string
 		for _, cn := range c.Containers {
 			dst := filepath.Join(tmpDir, "containers", cn)
 			if err := os.MkdirAll(dst, 0o700); err != nil {
@@ -191,8 +193,19 @@ func Create(ctx context.Context, p CreateParams, stream func(channel, chunk stri
 			if err := addPath(tw, dst, filepath.Join("containers", cn)); err != nil {
 				return nil, err
 			}
+			copied = append(copied, cn)
+		}
+		if len(c.Containers) > 0 {
+			if len(copied) == 0 {
+				log("  ни один контейнер не скопирован, компонент не сохранён")
+				continue
+			}
+			c.Containers = copied
 		}
 		man.Components = append(man.Components, c)
+	}
+	if len(man.Components) == 0 {
+		return nil, errors.New("не удалось сохранить ни одного компонента")
 	}
 	mj, _ := json.MarshalIndent(man, "", "  ")
 	if err := tw.WriteHeader(&tar.Header{Name: "manifest.json", Mode: 0o600, Size: int64(len(mj)), ModTime: time.Now()}); err != nil {
