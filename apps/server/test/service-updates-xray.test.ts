@@ -100,18 +100,13 @@ describe('ServiceUpdates: Xray в 3X-UI', () => {
     expect(sent.map((x) => x.title)).toEqual(['Xray']);
 
     const log: string[] = [];
-    let code = -1;
     const action = {
       id: 'a',
       output: '',
       stream: (_c: string, t: string) => log.push(t),
-      finish: async (c: number) => {
-        code = c;
-      },
-    } as Action;
+    } as unknown as Action;
     await u.installXray('s1', action);
     expect(state.installs).toEqual(['v26.10.10']);
-    expect(code).toBe(0);
     expect(await u.list('s1')).toEqual([]);
   });
 

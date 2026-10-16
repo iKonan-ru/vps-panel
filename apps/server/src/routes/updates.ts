@@ -37,8 +37,8 @@ export async function updateRoutes(
   app.post('/api/servers/:id/xray/update', async (req) => {
     const { id } = req.params as { id: string };
     requireOnline(registry, id);
-    const action = journal.open(id, 'xui:xray');
-    void updates.installXray(id, action);
-    return { actionId: action.id };
+    return {
+      actionId: journal.background(id, 'xui:xray', {}, (action) => updates.installXray(id, action)),
+    };
   });
 }
