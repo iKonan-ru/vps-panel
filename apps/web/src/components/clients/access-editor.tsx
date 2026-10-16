@@ -4,7 +4,7 @@ import { cn } from '@/lib/cn';
 import type { GBinding, GClientAccess, GServer, GService } from '@vps/protocol';
 import { Check } from 'lucide-react';
 
-const SERVICES: { id: GService; title: string }[] = [
+export const SERVICES: { id: GService; title: string }[] = [
   { id: 'xui', title: 'VLESS' },
   { id: 'mtproxyl', title: 'MTProxy' },
   { id: 'awg', title: 'AWG' },

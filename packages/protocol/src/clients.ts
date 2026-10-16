@@ -32,6 +32,8 @@ export interface GClientRow {
   servers: string[];
   /** доступ выборочный (не все серверы и сервисы) */
   limited: boolean;
+  /** выборочный доступ: серверы и сервисы (null - все); для фильтров списка */
+  access: GClientAccess;
 }
 
 /**

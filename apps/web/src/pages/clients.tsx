@@ -1,5 +1,11 @@
 import { AccessEditor } from '@/components/clients/access-editor';
 import { BindingStates, deviceTitle } from '@/components/clients/binding-states';
+import {
+  ClientsFilter,
+  applyView,
+  filtered,
+  useClientsView,
+} from '@/components/clients/clients-filter';
 import { SyncPanel, useSyncState } from '@/components/clients/sync-panel';
 import { DeviceSelect } from '@/components/device-select';
 import { ActionBar } from '@/components/ui/action-bar';
@@ -43,6 +49,12 @@ export function ClientsPage() {
     queryFn: () => api<GClientRow[]>('/api/gclients'),
     refetchInterval: 15_000,
   });
+  const servers = useQuery({
+    queryKey: ['gclient-servers'],
+    queryFn: () => api<GServer[]>('/api/gclients/servers'),
+  });
+  const [view, setView] = useClientsView();
+  const shown = data ? applyView(data, servers.data ?? [], view) : undefined;
   const [adding, setAdding] = useState(false);
   const [serversOpen, setServersOpen] = useState(false);
   // полная сверка всех клиентов: кнопка крутится, пока сверка идёт (опрос раз в 2 с)
@@ -55,7 +67,9 @@ export function ClientsPage() {
     <>
       <div className="flex flex-wrap items-center gap-3">
         <PageTitle>Клиенты</PageTitle>
-        {data && <Chip>{data.length}</Chip>}
+        {data && (
+          <Chip>{shown && filtered(view) ? `${shown.length} из ${data.length}` : data.length}</Chip>
+        )}
         <div className="grow" />
         <ActionBar
           topbar
@@ -107,12 +121,18 @@ export function ClientsPage() {
       {error && <Alert tone="bad">{error.message}</Alert>}
       {sync.error && <Alert tone="bad">{sync.error}</Alert>}
       <SyncPanel />
+      {data && data.length > 0 && (
+        <ClientsFilter view={view} set={setView} servers={servers.data ?? []} />
+      )}
       {data && data.length === 0 && (
         <Card className="p-8 text-[13px] text-muted">Клиентов пока нет</Card>
       )}
+      {data && data.length > 0 && shown?.length === 0 && (
+        <Card className="p-8 text-[13px] text-muted">Под фильтры не подходит ни один клиент</Card>
+      )}
       {/* колонок - сколько влезает карточек от 300px: на телефоне одна, на широком экране 3-5 */}
       <div className="grid grid-cols-[repeat(auto-fill,minmax(min(300px,100%),1fr))] gap-2">
-        {data?.map((c) => (
+        {shown?.map((c) => (
           <Link key={c.id} to="/clients/$id" params={{ id: c.id }} className="min-w-0">
             {/* плашки состояний - строкой под именем, внизу карточки: в ряду они на одной линии */}
             <Card className="flex h-full flex-col gap-2 p-3.5 hover:border-accent">
