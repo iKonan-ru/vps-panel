@@ -112,8 +112,35 @@ func AwgStatusAll(ctx context.Context) AwgStatus {
 	return out
 }
 
+// awgSlots - одновременных docker exec в контейнеры AWG: вкладка опрашивает все контейнеры
+// параллельно по десятку команд, а каждый docker exec - процессы docker и runc.
+var awgSlots = make(chan struct{}, 4)
+
+// awgSlot занимает место под docker exec; release - освободить.
+func awgSlot(ctx context.Context) (release func(), err error) {
+	select {
+	case awgSlots <- struct{}{}:
+		return func() { <-awgSlots }, nil
+	case <-ctx.Done():
+		return nil, ctx.Err()
+	}
+}
+
+// awgDocker - docker с аргументами (exec в контейнер AWG) в пределах awgSlots; input - stdin.
+func awgDocker(ctx context.Context, timeout time.Duration, input *string, args ...string) (shell.Result, error) {
+	release, err := awgSlot(ctx)
+	if err != nil {
+		return shell.Result{ExitCode: -1}, err
+	}
+	defer release()
+	if input != nil {
+		return shell.ExecInput(ctx, timeout, *input, "docker", args...)
+	}
+	return shell.Exec(ctx, timeout, nil, "docker", args...)
+}
+
 func dexec(ctx context.Context, container string, args ...string) (string, bool) {
-	res, err := shell.Exec(ctx, 20*time.Second, nil, "docker", append([]string{"exec", container}, args...)...)
+	res, err := awgDocker(ctx, 20*time.Second, nil, append([]string{"exec", container}, args...)...)
 	if err != nil || res.ExitCode != 0 {
 		return strings.TrimSpace(res.Stderr + res.Stdout), false
 	}
@@ -133,10 +160,19 @@ func readAwgConf(ctx context.Context, container string) (confPath, text string) 
 
 // awgTool - утилита интерфейса: в новых образах awg, в легаси amnezia-wg - wg.
 func awgTool(ctx context.Context, container string) string {
-	if _, ok := dexec(ctx, container, "awg", "--version"); ok {
-		return "awg"
+	tool, _ := awgToolVersion(ctx, container)
+	return tool
+}
+
+// awgToolVersion - утилита интерфейса и её версия ("" - не ответила ни одна).
+func awgToolVersion(ctx context.Context, container string) (tool, version string) {
+	if v, ok := dexec(ctx, container, "awg", "--version"); ok {
+		return "awg", strings.TrimSpace(v)
 	}
-	return "wg"
+	if v, ok := dexec(ctx, container, "wg", "--version"); ok {
+		return "wg", strings.TrimSpace(v)
+	}
+	return "wg", ""
 }
 
 // awgPSK - общий PresharedKey экземпляра (файл приложения), пусто - если файла нет.
@@ -175,13 +211,8 @@ func awgInstance(ctx context.Context, name, state string) AwgInstance {
 	}
 	inst.Version = awgVersion(inst.Params)
 
-	// утилиты: в новых образах awg, в легаси amnezia-wg - wg
-	tool := "awg"
-	if v, ok := dexec(ctx, name, "awg", "--version"); ok {
-		inst.Tools = strings.TrimSpace(v)
-	} else if v, ok := dexec(ctx, name, "wg", "--version"); ok {
-		tool, inst.Tools = "wg", strings.TrimSpace(v)
-	}
+	var tool string
+	tool, inst.Tools = awgToolVersion(ctx, name)
 	// userspace amneziawg-go работает через tun: у такого интерфейса есть tun_flags
 	if _, ok := dexec(ctx, name, "test", "-e", "/sys/class/net/"+inst.Iface+"/tun_flags"); ok {
 		inst.Impl = "go"
@@ -294,26 +325,32 @@ type awgPeerStats struct {
 	rx, tx     int64
 }
 
-// parseAwgDump берёт строки пиров "awg show <if> dump": 8 полей через TAB во всех версиях
-// (pub, psk, endpoint, allowed_ips, handshake, rx, tx, keepalive). Строка интерфейса -
-// другой длины и пропускается.
+// parseAwgDump берёт строки пиров "awg show <if> dump". Строка интерфейса - другой длины и
+// пропускается.
 func parseAwgDump(text string) map[string]awgPeerStats {
 	out := map[string]awgPeerStats{}
 	for _, line := range strings.Split(strings.TrimRight(text, "\n"), "\n") {
-		f := strings.Split(line, "\t")
-		if len(f) != 8 {
-			continue
+		if pub, s, ok := awgPeerFields(strings.Split(line, "\t")); ok {
+			out[pub] = s
 		}
-		hs, _ := strconv.ParseInt(f[4], 10, 64)
-		rx, _ := strconv.ParseInt(f[5], 10, 64)
-		tx, _ := strconv.ParseInt(f[6], 10, 64)
-		ep := f[2]
-		if ep == "(none)" {
-			ep = ""
-		}
-		out[f[0]] = awgPeerStats{endpoint: ep, allowedIPs: f[3], handshake: hs, rx: rx, tx: tx}
 	}
 	return out
+}
+
+// awgPeerFields - строка пира из dump: 8 полей через TAB во всех версиях (pub, psk, endpoint,
+// allowed_ips, handshake, rx, tx, keepalive).
+func awgPeerFields(f []string) (pub string, s awgPeerStats, ok bool) {
+	if len(f) != 8 {
+		return "", s, false
+	}
+	s.handshake, _ = strconv.ParseInt(f[4], 10, 64)
+	s.rx, _ = strconv.ParseInt(f[5], 10, 64)
+	s.tx, _ = strconv.ParseInt(f[6], 10, 64)
+	if s.endpoint = f[2]; s.endpoint == "(none)" {
+		s.endpoint = ""
+	}
+	s.allowedIPs = f[3]
+	return f[0], s, true
 }
 
 type awgTableEntry struct {

@@ -312,7 +312,7 @@ func awgStatsAll(ctx context.Context) (map[string]map[string]AwgPeerStat, error)
 		go func(name string) {
 			defer wg.Done()
 			// amneziawg-go - awg, легаси amnezia-wg - wg; один exec на контейнер
-			res, err := shell.Exec(ctx, statsTimeout, nil, "docker", "exec", name, "sh", "-c",
+			res, err := awgDocker(ctx, statsTimeout, nil, "exec", name, "sh", "-c",
 				"awg show all dump 2>/dev/null || wg show all dump")
 			mu.Lock()
 			defer mu.Unlock()
@@ -333,20 +333,18 @@ func awgStatsAll(ctx context.Context) (map[string]map[string]AwgPeerStat, error)
 	return out, nil
 }
 
-// parseAwgDumpAll - строки пиров "awg show all dump": интерфейс и 8 полей пира через TAB
-// (pub, psk, endpoint, allowed_ips, handshake, rx, tx, keepalive). Строки интерфейсов -
-// другой длины. Endpoint (адрес клиента) не берётся.
+// parseAwgDumpAll - строки пиров "awg show all dump": имя интерфейса и поля пира, как в
+// parseAwgDump. Endpoint (адрес клиента) не берётся.
 func parseAwgDumpAll(text string) map[string]AwgPeerStat {
 	out := map[string]AwgPeerStat{}
 	for _, line := range strings.Split(strings.TrimRight(text, "\n"), "\n") {
 		f := strings.Split(line, "\t")
-		if len(f) != 9 {
+		if len(f) < 2 {
 			continue
 		}
-		hs, _ := strconv.ParseInt(f[5], 10, 64)
-		rx, _ := strconv.ParseInt(f[6], 10, 64)
-		tx, _ := strconv.ParseInt(f[7], 10, 64)
-		out[f[1]] = AwgPeerStat{Handshake: hs, Rx: rx, Tx: tx}
+		if pub, s, ok := awgPeerFields(f[1:]); ok {
+			out[pub] = AwgPeerStat{Handshake: s.handshake, Rx: s.rx, Tx: s.tx}
+		}
 	}
 	return out
 }

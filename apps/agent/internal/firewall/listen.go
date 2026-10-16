@@ -54,7 +54,7 @@ func Listeners(ctx context.Context) []proto.Listener {
 	seen := map[string]bool{}
 	res := []proto.Listener{}
 	for _, s := range sockets(ctx) {
-		if strings.HasPrefix(s.addr, "127.") || s.addr == "[::1]" || s.addr == "::1" || strings.HasPrefix(s.addr, "[::ffff:127.") {
+		if IsLoopback(s.addr) {
 			continue
 		}
 		if s.proto == "udp" && (s.port == 68 || s.port == 546) {
@@ -74,8 +74,8 @@ func Listeners(ctx context.Context) []proto.Listener {
 	return res
 }
 
-// isLoopback - адрес сокета только для этой машины.
-func isLoopback(addr string) bool {
+// IsLoopback - адрес (сокета или listen в настройках) только для этой машины.
+func IsLoopback(addr string) bool {
 	return strings.HasPrefix(addr, "127.") || addr == "[::1]" || addr == "::1" || strings.HasPrefix(addr, "[::ffff:127.")
 }
 
@@ -83,7 +83,7 @@ func isLoopback(addr string) bool {
 func PublicPortsOf(ctx context.Context, procName string) []int {
 	var out []int
 	for _, s := range sockets(ctx) {
-		if !isLoopback(s.addr) && slices.Contains(s.procs, procName) && !slices.Contains(out, s.port) {
+		if !IsLoopback(s.addr) && slices.Contains(s.procs, procName) && !slices.Contains(out, s.port) {
 			out = append(out, s.port)
 		}
 	}
