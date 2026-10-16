@@ -95,10 +95,8 @@ export function ServerPage() {
   const id = params.id;
   const navigate = useNavigate();
   const { data: s, isLoading, error } = useServer(id);
-  // вкладка живёт в адресе: /servers/<id>/<tab>; неизвестная или недоступная (сервиса на
-  // сервере нет) - обзор
-  // вкладка OpenFlux открывается и без OpenFlux на сервере (из обзора: "Новый канал" ставит его),
-  // но в ряду вкладок её тогда нет
+  // вкладка - в адресе; неизвестная или без сервиса на сервере - обзор. OpenFlux открывается и
+  // без него ("Новый канал" из обзора ставит его), но в ряду вкладок его тогда нет
   const available = s
     ? tabs.filter(
         (t) =>

@@ -5,12 +5,7 @@ import { useQuery } from '@tanstack/react-query';
 import type { GBinding, GClientLive, GLiveBinding, GLiveServer } from '@vps/protocol';
 import { useEffect, useRef, useState } from 'react';
 
-/**
- * Живая статистика клиента: GET /api/gclients/:id/live раз в 3 с, пока страница открыта и
- * вкладка видна (в фоне TanStack Query опрос не ведёт). Карточка клиента берёт отсюда точки на
- * плашках и сводку, страница сервера клиента - всё по сервисам и графики. История для графиков -
- * последние HISTORY_MS, только в памяти страницы.
- */
+/** Живая статистика клиента: опрос, пока вкладка видна; история для графиков - только в памяти. */
 
 const POLL_MS = 3_000;
 /** Окно графиков: последние 5 минут. */

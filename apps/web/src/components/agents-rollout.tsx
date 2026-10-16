@@ -43,7 +43,7 @@ function useRollout() {
 /**
  * Обновление агентов на всех серверах с устаревшей версией: кнопка (для шапки страницы) и
  * карточка хода раскатки. Панель обновляет серверы по очереди и останавливается на первой
- * ошибке (см. routes/agent-update.ts).
+ * ошибке.
  */
 export function useAgentsRollout(outdated: number) {
   const ask = useConfirm();
