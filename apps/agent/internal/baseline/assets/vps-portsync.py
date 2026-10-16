@@ -88,7 +88,7 @@ def _port_list(v, name):
     out = []
     for p in v:
         if (not isinstance(p, list) or len(p) != 2 or p[0] not in ("tcp", "udp")
-                or not isinstance(p[1], int) or isinstance(p[1], bool) or not 0 <= p[1] <= 65535):
+                or not isinstance(p[1], int) or isinstance(p[1], bool) or not 0 < p[1] <= 65535):
             raise StateError("%s: порт %r" % (name, p))
         out.append((p[0], p[1]))
     return out

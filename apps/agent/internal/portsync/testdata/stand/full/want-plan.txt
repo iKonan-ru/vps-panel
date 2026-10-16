@@ -1,5 +1,5 @@
 ssh: 2222  wan: ens3
-host allow: 22/tcp, 80/tcp, 443/tcp, 2053/tcp, 2096/tcp, 2222/tcp, 2443/tcp, 6666/tcp, 7000/tcp, 7200/tcp, 8443/tcp, 8444/tcp, 9100/tcp, 12443/tcp, 13443/tcp, 0/udp, 2443/udp, 3443/udp, 4443/udp, 5555/udp, 11443/udp, 51821/udp, 51830/udp, 56000/udp
+host allow: 22/tcp, 80/tcp, 443/tcp, 2053/tcp, 2096/tcp, 2222/tcp, 2443/tcp, 6666/tcp, 7000/tcp, 7200/tcp, 8443/tcp, 8444/tcp, 9100/tcp, 12443/tcp, 13443/tcp, 2443/udp, 3443/udp, 4443/udp, 5555/udp, 11443/udp, 51821/udp, 51830/udp, 56000/udp
 docker allow: 6666/tcp, 51820/tcp, 5555/udp, 51820/udp, 51825/udp
 закрыто (процесс не в known_processes): 7100/tcp openflux
 закрыто (процесс не в known_processes): 3000/tcp node
@@ -24,7 +24,6 @@ ufw allow from any to any port 8444 proto tcp comment vps-portsync: MTProxyL
 ufw allow from any to any port 9100 proto tcp comment vps-portsync: VPS Panel агент
 ufw allow from any to any port 12443 proto tcp comment vps-portsync: 3X-UI внутренний адрес
 ufw allow from any to any port 13443 proto tcp comment vps-portsync: 3X-UI Очень длинное имя inbound-а
-ufw allow from any to any port 0 proto udp comment vps-portsync: WireGuard awg1
 ufw allow from any to any port 2443 proto udp comment vps-portsync: 3X-UI SS
 ufw allow from any to any port 3443 proto udp comment vps-portsync: 3X-UI mKCP
 ufw allow from any to any port 4443 proto udp comment vps-portsync: 3X-UI hysteria

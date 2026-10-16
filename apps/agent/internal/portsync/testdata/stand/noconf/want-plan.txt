@@ -1,5 +1,5 @@
 ssh: 22  wan: eth0
-host allow: 22/tcp, 443/tcp, 2053/tcp, 7000/tcp, 8088/tcp, 443/udp, 8443/udp, 56002/udp
+host allow: 22/tcp, 443/tcp, 2053/tcp, 7000/tcp, 8088/tcp, 9091/tcp, 443/udp, 8443/udp, 56002/udp
 docker allow: 8444/tcp, 1194/udp
 [high] 3x-ui: панель открыта в интернет БЕЗ HTTPS (webCertFile пуст)
 [medium] 3x-ui: панель открыта в интернет с webBasePath '/', нужен длинный путь
@@ -9,6 +9,7 @@ ufw allow from any to any port 443 proto tcp comment vps-portsync: 3X-UI Docker 
 ufw allow from any to any port 2053 proto tcp comment vps-portsync: 3X-UI панель
 ufw allow from any to any port 7000 proto tcp comment vps-portsync: OpenFlux
 ufw allow from any to any port 8088 proto tcp comment vps-portsync: sing-box
+ufw allow from any to any port 9091 proto tcp comment vps-portsync: MTProxyL
 ufw allow from any to any port 443 proto udp comment vps-portsync: WDTT
 ufw allow from any to any port 8443 proto udp comment vps-portsync: 3X-UI Docker TUIC
 ufw allow from any to any port 56002 proto udp comment vps-portsync: WDTT

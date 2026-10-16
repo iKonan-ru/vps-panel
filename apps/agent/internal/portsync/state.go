@@ -11,7 +11,6 @@ import (
 	"sort"
 	"strconv"
 	"strings"
-	"time"
 
 	"github.com/iKonan-ru/vps-panel/apps/agent/internal/dockerapi"
 	"github.com/iKonan-ru/vps-panel/apps/agent/internal/firewall"
@@ -180,15 +179,29 @@ func Compute(ctx context.Context, cfg Config) (*State, error) {
 	}
 	sshp := cfg.SSHPort
 	if sshp <= 0 {
-		sshp = sshd.FirstPort(ctx)
+		// sshd нет - 22; есть, но sshd -T не отработал вовремя - порт неизвестен
+		sshp = 22
+		if shell.Has("sshd") {
+			out, _, err := shell.Output(ctx, "sshd", "-T")
+			if err != nil {
+				return nil, err
+			}
+			sshp = sshd.ParseFirstPort(out)
+		}
 	}
-	containers := runningContainers(ctx)
+	containers, err := runningContainers(ctx)
+	if err != nil {
+		return nil, err
+	}
 
 	xr, err := readXui(ctx, containers, &findings)
 	if err != nil {
 		return nil, err
 	}
-	mtPorts, mtInfo := mtproxyPorts(ctx)
+	mtPorts, mtInfo, err := mtproxyPorts(ctx)
+	if err != nil {
+		return nil, err
+	}
 	ssh := Port{"tcp", sshp}
 	labels := labelMap{ssh: "SSH"}
 	for k, v := range xr.labels {
@@ -197,10 +210,17 @@ func Compute(ctx context.Context, cfg Config) (*State, error) {
 	for k := range mtPorts {
 		labels.setDefault(k, "MTProxyL")
 	}
-	wg := wireguardPorts(ctx, labels)
+	wg, err := wireguardPorts(ctx, labels)
+	if err != nil {
+		return nil, err
+	}
 	of := openfluxPorts(labels)
 	published := dockerPublished(containers)
-	procPorts, unknown := processPorts(cfg.KnownProcesses, firewall.Listeners(ctx), labels)
+	listeners, err := firewall.ListenersStrict(ctx)
+	if err != nil {
+		return nil, err
+	}
+	procPorts, unknown := processPorts(cfg.KnownProcesses, listeners, labels)
 	procPorts.sub(wdttInternalPorts())
 	for k := range extra {
 		labels.setDefault(k, "вручную (extra_allow)")
@@ -211,6 +231,7 @@ func Compute(ctx context.Context, cfg Config) (*State, error) {
 		host.add(s)
 	}
 	host.sub(deny)
+	dropInvalid(host, labels, &findings)
 	unknownLeft := []Unknown{}
 	for _, u := range unknown {
 		if !host[Port{u.Proto, u.Port}] {
@@ -235,6 +256,8 @@ func Compute(ctx context.Context, cfg Config) (*State, error) {
 	}
 	dock.add(extra)
 	dock.sub(deny)
+	dropInvalid(dock, dockLabels, &findings)
+	dropInvalid(deny, nil, &findings)
 
 	if len(xr.panel) > 0 {
 		if https, _ := xr.info["panel_https"].(bool); !https {
@@ -259,6 +282,11 @@ func Compute(ctx context.Context, cfg Config) (*State, error) {
 	if findings == nil {
 		findings = [][2]string{}
 	}
+	wan := wanInterface(ctx, cfg)
+	// дедлайн истёк по ходу: часть команд могла не отработать, и состояние неполное
+	if err := ctx.Err(); err != nil {
+		return nil, fmt.Errorf("port-sync: расчёт не уложился во время: %w", err)
+	}
 	return &State{
 		SSHPort:               sshp,
 		HostAllow:             host.sorted(),
@@ -275,18 +303,38 @@ func Compute(ctx context.Context, cfg Config) (*State, error) {
 		Mtproxy:               mtInfo,
 		WireguardPorts:        wgList,
 		Findings:              findings,
-		WanInterface:          wanInterface(ctx, cfg),
+		WanInterface:          wan,
 		XuiFP:                 xr.fp,
 	}, nil
 }
 
-func runningContainers(ctx context.Context) []dockerapi.Running {
+// runningContainers - запущенные контейнеры; docker есть, но не ответил - ошибка: иначе цепочка
+// VPS-PORTSYNC закрыла бы порты контейнеров.
+func runningContainers(ctx context.Context) ([]dockerapi.Running, error) {
 	if !dockerapi.Available() {
-		return nil
+		return nil, nil
 	}
-	// docker не отвечает - контейнеров не видно, как и у docker ps
-	list, _ := dockerapi.New().RunningContainers(ctx)
-	return list
+	list, err := dockerapi.New().RunningContainers(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("контейнеры docker не прочитаны: %w", err)
+	}
+	return list, nil
+}
+
+// dropInvalid убирает порты, которые ufw и iptables не примут (вне 1-65535, протокол не tcp и не
+// udp), с замечанием: остальное применяется.
+func dropInvalid(set portSet, labels labelMap, findings *[][2]string) {
+	for _, p := range set.sorted() {
+		if p.Num >= 1 && p.Num <= 65535 && (p.Proto == "tcp" || p.Proto == "udp") {
+			continue
+		}
+		delete(set, p)
+		what := p.Key()
+		if l := labels[p]; l != "" {
+			what += " (" + l + ")"
+		}
+		*findings = append(*findings, [2]string{"medium", "port-sync: порт " + what + " пропущен: нужен номер 1-65535 и протокол tcp или udp"})
+	}
 }
 
 var anyAddr = map[string]bool{"": true, "0.0.0.0": true, "::": true}
@@ -374,16 +422,20 @@ func findXuiDB(containers []dockerapi.Running) string {
 }
 
 // mtproxyPorts - порт MTProxyL: из config.toml (telemt.toml), иначе из mtproxyl status --json.
-func mtproxyPorts(ctx context.Context) (portSet, map[string]any) {
+// mtproxyl не завершился вовремя - ошибка; вышел с ошибкой - порта нет.
+func mtproxyPorts(ctx context.Context) (portSet, map[string]any, error) {
 	ports := portSet{}
 	info := map[string]any{}
 	if port, path := services.MtproxyConfig(); path != "" {
 		ports[Port{"tcp", port}] = true
 		info["config"] = path
 	} else if shell.Has("mtproxyl") {
-		res, err := shell.Exec(ctx, time.Minute, nil, "mtproxyl", "status", "--json")
-		if err == nil && res.ExitCode == 0 && strings.TrimSpace(res.Stdout) != "" {
-			if n, ok := statusPort(res.Stdout); ok {
+		out, code, err := shell.Output(ctx, "mtproxyl", "status", "--json")
+		if err != nil {
+			return nil, nil, err
+		}
+		if code == 0 && strings.TrimSpace(out) != "" {
+			if n, ok := statusPort(out); ok {
 				ports[Port{"tcp", n}] = true
 				info["source"] = "mtproxyl status --json"
 			}
@@ -396,13 +448,17 @@ func mtproxyPorts(ctx context.Context) (portSet, map[string]any) {
 		}
 		info["ports"] = list
 	}
-	return ports, info
+	return ports, info, nil
 }
 
 // wireguardPorts - WireGuard и AmneziaWG в ядре (не в контейнерах).
-func wireguardPorts(ctx context.Context, labels labelMap) portSet {
+func wireguardPorts(ctx context.Context, labels labelMap) (portSet, error) {
 	ports := portSet{}
-	for _, w := range services.WgListenPorts(ctx) {
+	list, err := services.WgListenPorts(ctx)
+	if err != nil {
+		return nil, err
+	}
+	for _, w := range list {
 		p := Port{"udp", w.Port}
 		ports[p] = true
 		switch {
@@ -415,7 +471,7 @@ func wireguardPorts(ctx context.Context, labels labelMap) portSet {
 			labels.setDefault(p, "WireGuard "+w.Iface)
 		}
 	}
-	return ports
+	return ports, nil
 }
 
 // wdttUnits - где может лежать служба wdtt.

@@ -34,8 +34,17 @@ const (
 	portsyncBin  = "/usr/local/sbin/vps-portsync"
 )
 
-// ReadPortsyncConfig читает конфиг с диска или отдаёт дефолт.
-func ReadPortsyncConfig() PortsyncConfig { return portsync.ReadConfig() }
+// ReadPortsyncConfig читает конфиг с диска (portsync.ReadConfig).
+func ReadPortsyncConfig() (PortsyncConfig, error) { return portsync.ReadConfig() }
+
+// planConfig - конфиг, с которым port-sync будет работать после эталона: нет файла - тот, что
+// запишет InstallPortsync.
+func planConfig() (PortsyncConfig, error) {
+	if _, err := os.Stat(hostfs.Path(portsyncConf)); err != nil {
+		return DefaultPortsyncConfig(), nil
+	}
+	return ReadPortsyncConfig()
+}
 
 var (
 	rePortSpec = regexp.MustCompile(`^[0-9]{1,5}(/(tcp|udp))?$`)

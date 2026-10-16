@@ -68,10 +68,11 @@ func setMetricsEvery(d time.Duration) {
 // portsyncCmd - команды port-sync без демона: состояние для vps-portsync (state) или быстрая
 // проверка после записи в базу 3x-ui.
 func portsyncCmd(state bool) int {
-	ctx, cancel := context.WithTimeout(context.Background(), 100*time.Second)
+	// меньше, чем vps-portsync ждёт агента (150 с): истечь должен расчёт, с ошибкой, а не скрипт
+	ctx, cancel := context.WithTimeout(context.Background(), 140*time.Second)
 	defer cancel()
 	if !state {
-		if !portsync.XuiChanged(ctx, time.Now()) {
+		if !portsync.StartFull(ctx, time.Now()) {
 			return 0
 		}
 		res, err := shell.Exec(ctx, time.Minute, nil, "systemctl", "start", "--no-block", "vps-portsync.service")
@@ -81,7 +82,11 @@ func portsyncCmd(state bool) int {
 		}
 		return 0
 	}
-	st, err := portsync.Compute(ctx, portsync.ReadConfig())
+	cfg, err := portsync.ReadConfig()
+	var st *portsync.State
+	if err == nil {
+		st, err = portsync.Compute(ctx, cfg)
+	}
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "vps-agent: port-sync:", err)
 		return 1
