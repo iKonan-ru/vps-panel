@@ -120,11 +120,19 @@ export async function baselineFirewallRoutes(app: FastifyInstance, opts: ServerR
   app.put('/api/servers/:id/firewall/portsync', async (req) => {
     const { id } = Id.parse(req.params);
     const config = PortsyncConfig.parse(req.body);
+    // в базу - только принятое агентом: он отказывает, если настройки закроют работающий VPN
+    const r = await quickAction(
+      id,
+      'portsync.config',
+      'firewall.portsync.config',
+      { config },
+      120_000,
+    );
     await db
       .insert(portsyncConfigs)
       .values({ serverId: id, config })
       .onConflictDoUpdate({ target: portsyncConfigs.serverId, set: { config } });
-    return quickAction(id, 'portsync.config', 'firewall.portsync.config', { config }, 120_000);
+    return r;
   });
 
   app.get('/api/servers/:id/firewall/rules', async (req) => {

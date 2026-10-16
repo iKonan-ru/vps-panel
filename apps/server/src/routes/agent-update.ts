@@ -10,6 +10,9 @@ import { agentChecksums, latestAgentVersion } from '../lib/agent-dist.js';
 
 const Id = z.object({ id: z.string() });
 
+/** Агент без ключа панели в agent.json не запускается: такой сервер не обновлять. */
+const PANEL_KEY_CHECK = `grep -Eq '"panelKey"[[:space:]]*:[[:space:]]*"[A-Za-z0-9+/=]{20,}"' /etc/vps-agent/agent.json`;
+
 /** Обновление агента: на одном сервере (с ожиданием возвращения) и раскатка по всем по очереди. */
 export async function agentUpdateRoutes(
   app: FastifyInstance,
@@ -72,7 +75,18 @@ export async function agentUpdateRoutes(
 
     const done = (async (): Promise<number> => {
       try {
-        // агенты 0.1.x без самообновления (переустановка через exec.run) остались в прошлом
+        const key = await registry.request<{ exitCode: number }>(
+          id,
+          'command.run',
+          { script: PANEL_KEY_CHECK, timeoutSec: 30 },
+          { timeoutMs: 60_000 },
+        );
+        if (key.exitCode !== 0) {
+          say(
+            'ОШИБКА: в /etc/vps-agent/agent.json нет ключа панели (panelKey), а новый агент без него не запускается. Нужна переустановка: меню сервера, \u00abПереустановить агент\u00bb',
+          );
+          return finish(1);
+        }
         const r = await registry.request<{ restarting?: boolean; message?: string }>(
           id,
           'agent.update',
