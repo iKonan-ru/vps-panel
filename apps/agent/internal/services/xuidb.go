@@ -63,8 +63,7 @@ func pgQuery(ctx context.Context, dsn, query string) ([][]string, error) {
 	if err != nil {
 		return nil, err
 	}
-	res, err := shell.RunEnv(ctx, `psql -At -F "$(printf '\x1f')" -R "$(printf '\x1e')" -c "$XUI_QUERY"`,
-		append(env, "XUI_QUERY="+query), 30*time.Second, nil)
+	res, err := shell.ExecEnv(ctx, 30*time.Second, nil, env, "psql", "-At", "-F", pgFieldSep, "-R", pgRecordSep, "-c", query)
 	if err != nil {
 		return nil, err
 	}
