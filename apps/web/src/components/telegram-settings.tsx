@@ -25,7 +25,7 @@ interface TgSettings extends NotifyChoice {
   health: TgHealthView;
 }
 
-/** Путь доставки (lib/telegram.ts): proxy:<id> - выход xray, agent:<id> - агент сервера. */
+/** Путь доставки: proxy:<id> - выход xray, agent:<id> - агент сервера. */
 function routeTitle(via: string, servers: { id: string; name: string }[] | undefined): string {
   const name = (id: string) => servers?.find((x) => x.id === id)?.name ?? id;
   if (via === 'direct') return 'напрямую';

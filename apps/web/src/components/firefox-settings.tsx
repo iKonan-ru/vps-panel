@@ -15,10 +15,7 @@ import { type FormEvent, useState } from 'react';
 
 const KEY = ['firefox-settings'];
 
-/**
- * Расширение Firefox: Mozilla подписывает его ключом API этой панели (addons.mozilla.org,
- * unlisted), новая версия после обновления панели подписывается сама.
- */
+/** Расширение Firefox: Mozilla подписывает его ключом API этой панели, новые версии - сами. */
 export function FirefoxSettings() {
   const ask = useConfirm();
   const qc = useQueryClient();

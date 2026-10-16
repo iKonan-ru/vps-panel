@@ -3,7 +3,7 @@ import { useApps } from '@/lib/apps';
 import { Link } from '@tanstack/react-router';
 import type { AppLink, AppOs } from '@vps/protocol';
 
-/** Ссылка на файл или магазин: кнопка-переход и копирование (ссылку можно переслать клиенту). */
+/** Ссылка на файл или магазин: переход и копирование, чтобы переслать клиенту. */
 export function AppLinkButton({ link }: { link: AppLink }) {
   const title = [link.version, link.note].filter(Boolean).join(', ');
   return (
@@ -18,10 +18,7 @@ export function AppLinkButton({ link }: { link: AppLink }) {
   );
 }
 
-/**
- * Где скачать приложение под устройство клиента (окна клиентов). ОС неизвестна (устройство не
- * указано или роутер) - ссылка на страницу "Приложения".
- */
+/** Где скачать приложение под устройство клиента; ОС неизвестна - ссылка на "Приложения". */
 export function AppLinks({ appId, os }: { appId: string; os: AppOs | null | undefined }) {
   const { data } = useApps();
   const app = data?.apps.find((a) => a.id === appId);

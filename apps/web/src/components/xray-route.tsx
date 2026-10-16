@@ -23,7 +23,7 @@ interface Inbound {
   tcp: boolean;
 }
 
-/** Состояние маршрута (xray-клиент панели): и для строки в блоке уведомлений, и для окна. */
+/** Состояние маршрута до Telegram (xray-клиент панели). */
 export function useXrayStatus() {
   return useQuery({
     queryKey: ['xray'],
@@ -43,11 +43,7 @@ export function xrayState(st: XrayStatus): {
   return { tone: 'ok', label: 'работает' };
 }
 
-/**
- * Окно "Маршрут до Telegram" (из блока уведомлений): выход панели в Telegram через xray
- * (VLESS-Reality к 3x-ui на заграничных серверах) - основной выход - выбор сервера и
- * инбаунда, запасные панель готовит сама; статус каждого выхода, проверка, отключение.
- */
+/** Окно "Маршрут до Telegram": основной выход через xray (сервер и inbound), запасные - сами. */
 export function XrayRouteDialog({ open, onClose }: { open: boolean; onClose: () => void }) {
   const ask = useConfirm();
   const qc = useQueryClient();

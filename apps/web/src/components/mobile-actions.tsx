@@ -3,10 +3,7 @@ import { createPortal } from 'react-dom';
 
 export const MOBILE_ACTIONS_ID = 'mobile-actions';
 
-/**
- * Кнопки страницы в правой части верхней плашки на мобиле (лупа, плюс). На широком экране
- * плашки нет, и портал ничего не рисует - там кнопки стоят в самой странице.
- */
+/** Кнопки страницы в верхней плашке на узком экране; на широком портал ничего не рисует. */
 export function MobileActions({ children }: { children: ReactNode }) {
   const [el, setEl] = useState<HTMLElement | null>(null);
   useEffect(() => {

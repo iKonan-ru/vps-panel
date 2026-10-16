@@ -5,10 +5,7 @@ import type { GOwner, GService } from '@vps/protocol';
 import { UserRound } from 'lucide-react';
 import { useCallback } from 'react';
 
-/**
- * Чьи записи в сервисах сервера (GOwner): owner(сервис, ключ) - клиент панели или undefined
- * (запись заведена руками). Ключи - как у сервера: email/метка/ключ пира/имя канала.
- */
+/** Чьи записи в сервисах сервера: owner(сервис, ключ) - клиент панели или undefined (вручную). */
 export function useOwners(serverId: string) {
   const { data } = useQuery({
     queryKey: ['gclient-owners', serverId],
@@ -22,7 +19,7 @@ export function useOwners(serverId: string) {
   );
 }
 
-/** Ключ пароля WDTT как у сервера (wdttKey): 16 hex sha256 - сам пароль в список не уходит. */
+/** Ключи паролей WDTT, как у сервера: 16 hex от sha256 - сам пароль в список не уходит. */
 export function useWdttKeys(passwords: string[]) {
   const { data } = useQuery({
     queryKey: ['wdtt-keys', passwords],

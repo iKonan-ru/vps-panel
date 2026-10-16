@@ -14,15 +14,11 @@ import { useQuery, useQueryClient } from '@tanstack/react-query';
 import type { PanelUpdateView } from '@vps/protocol';
 import { ArrowUpCircle, ExternalLink, RefreshCw } from 'lucide-react';
 
-/** Репозиторий панели: исходники, релизы, документация. */
 const REPO_URL = 'https://github.com/iKonan-ru/vps-panel';
 
 const KEY = ['panel-update'];
 
-/**
- * Версия панели и новые релизы канала (без запросов к GitHub: панель отдаёт свою проверку) -
- * блок "Версия панели" и плашка у логотипа в меню (panel-version-badge.tsx), общий кэш.
- */
+/** Версия панели и новые релизы канала - по проверке панели, без запросов к GitHub. */
 export function usePanelUpdate(refetchMs = 10 * 60_000) {
   return useQuery({
     queryKey: KEY,
@@ -35,10 +31,7 @@ const HOURS = [...Array(24).keys()]
   .map((h) => ({ h, label: utcHourLocal(h) }))
   .sort((a, b) => a.label.localeCompare(b.label));
 
-/**
- * Версия панели: новые релизы в своём канале со списком изменений, обновление по кнопке (его
- * ставит служба на хосте, vps-panel), канал, автообновление и обновление агентов за панелью.
- */
+/** Блок "Версия панели": релизы канала, обновление по кнопке, канал и автообновление. */
 export function PanelVersionSettings() {
   const ask = useConfirm();
   const qc = useQueryClient();
@@ -75,8 +68,8 @@ export function PanelVersionSettings() {
         method: 'POST',
         json: { version: v },
       });
-      // полоса хода - сразу, не дожидаясь первого шага службы на хосте и опроса плашки (раз
-      // в 30 с): со статусом "идёт" она опрашивается раз в 3 с и сменится настоящим ходом
+      // полоса хода - сразу, не дожидаясь службы на хосте и опроса: со статусом "идёт" опрос -
+      // раз в 3 с, и её сменит настоящий ход
       const status = markPanelUpdate(v, st?.current ?? null);
       qc.setQueryData<DeployInfo>(['deploy'], (d) => (d ? { ...d, status } : d));
       return view;

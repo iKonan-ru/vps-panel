@@ -1,4 +1,4 @@
-/** Логотип панели (та же иконка, что у приложения); compact - только знак, без подписи. */
+/** Логотип панели; compact - только знак, без подписи. */
 export function Logo({ size = 28, compact = false }: { size?: number; compact?: boolean }) {
   return (
     <div className="flex items-center gap-2.5">

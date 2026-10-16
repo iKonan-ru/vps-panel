@@ -19,10 +19,7 @@ export function failingFor(since: string | null): string {
   return a && a !== 'только что' ? ` уже ${a.replace(' назад', '')}` : '';
 }
 
-/**
- * Плашка над страницей, пока уведомления в Telegram не доходят: с какого времени, почему,
- * сколько отложено; ведёт в настройки (тест, выход через xray).
- */
+/** Плашка, пока уведомления в Telegram не доходят: с какого времени и почему; ведёт в настройки. */
 export function TelegramBanner() {
   const { data } = useTgHealth();
   if (!data?.configured || data.ok !== false) return null;

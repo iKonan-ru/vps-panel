@@ -40,11 +40,7 @@ function useRollout() {
   });
 }
 
-/**
- * Обновление агентов на всех серверах с устаревшей версией: кнопка (для шапки страницы) и
- * карточка хода раскатки. Панель обновляет серверы по очереди и останавливается на первой
- * ошибке.
- */
+/** Обновление устаревших агентов: кнопка для шапки и полоса хода; по очереди до первой ошибки. */
 export function useAgentsRollout(outdated: number) {
   const ask = useConfirm();
   const qc = useQueryClient();
@@ -119,10 +115,7 @@ export function useAgentsRollout(outdated: number) {
   };
 }
 
-/**
- * Ход обновления агентов - полосой, как обновление панели: шкала по серверам и только тот,
- * что обновляется сейчас; итог - успех или сервер, на котором обновление остановилось.
- */
+/** Ход обновления агентов полосой: шкала по серверам, текущий сервер и итог. */
 function RolloutBar({ rollout, onClose }: { rollout: Rollout; onClose: () => void }) {
   const total = rollout.items.length;
   const done = rollout.items.filter((i) => i.status !== 'pending' && i.status !== 'running').length;

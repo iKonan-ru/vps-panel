@@ -1,9 +1,6 @@
 import type { ServerSummary } from '@vps/protocol';
 
-/**
- * Варианты выбора сервера для Select: имя (withHost - и адрес), сервер не в сети - с пометкой;
- * onlineOnly - его нельзя выбрать.
- */
+/** Серверы для Select: не в сети - с пометкой (onlineOnly - недоступны); withHost - с адресом. */
 export function ServerOptions({
   servers,
   withHost,
