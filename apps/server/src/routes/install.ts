@@ -39,15 +39,12 @@ export async function installRoutes(
     const registrationToken = (await issueRegistration(db, id)) ?? '';
 
     // без проверки занятости: переустановкой чинят и зависшего агента
-    const action = journal.open(id, 'agent.install', { mode: auth.mode }, true);
-    const out = (chunk: string) => action.stream('log', chunk);
-    const finish = async (exitCode: number) => {
-      await action.finish(exitCode);
-      hub.broadcast({ type: 'server.changed', serverId: id });
-    };
-
-    void (async () => {
-      try {
+    const actionId = journal.background(
+      id,
+      'agent.install',
+      { mode: auth.mode },
+      async (action) => {
+        const out = (chunk: string) => action.stream('log', chunk);
         out(
           `Подключаюсь к root@${row.host}:${row.sshPort} (${auth.mode === 'password' ? 'пароль' : 'ключ панели'})...\n`,
         );
@@ -70,7 +67,7 @@ export async function installRoutes(
         }
         if (res.exitCode !== 0) {
           out(`\nУстановщик завершился с кодом ${res.exitCode}\n`);
-          return finish(res.exitCode);
+          return res.exitCode;
         }
         out('Жду, пока агент подключится к панели...\n');
         const okOnline = await waitOnline(registry, id, 60_000);
@@ -79,14 +76,12 @@ export async function installRoutes(
             ? 'Агент на связи.\n'
             : 'Агент не подключился за минуту: возможно, адрес панели недоступен с этого сервера.\n',
         );
-        await finish(okOnline ? 0 : 2);
-      } catch (e) {
-        out(`\nОШИБКА: ${e instanceof Error ? e.message : String(e)}\n`);
-        await finish(1);
-      }
-    })();
+        return okOnline ? 0 : 2;
+      },
+      { force: true, after: () => hub.broadcast({ type: 'server.changed', serverId: id }) },
+    );
 
-    return { actionId: action.id };
+    return { actionId };
   });
 
   /** Сброс отпечатка хоста: после переустановки ОС ключ сервера меняется. */

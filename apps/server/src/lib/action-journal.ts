@@ -123,28 +123,29 @@ export function actionJournal(db: Db, hub: UiHub, registry: AgentRegistry) {
   }
 
   /**
-   * Длинное действие со стримом: id сразу, fn - в фоне. fn бросила - текст ошибки в вывод и код
-   * 1. after - когда действие закрыто и сервер свободен (синхронизация после него не пропустит
+   * Длинное действие со стримом: id сразу, fn - в фоне; fn вернула число - это код итога. fn
+   * бросила - текст ошибки в вывод и код 1. after - когда действие закрыто и сервер свободен (синхронизация после него не пропустит
    * сервер как занятый).
    */
   function background(
     serverId: string,
     kind: string,
     params: Record<string, unknown>,
-    fn: (action: Action) => Promise<void>,
+    fn: (action: Action) => Promise<unknown>,
     opts: { after?: (ok: boolean) => void; force?: boolean } = {},
   ): string {
     const action = open(serverId, kind, params, opts.force);
     void (async () => {
-      let ok = true;
+      let code = 0;
       try {
-        await fn(action);
+        const r = await fn(action);
+        code = typeof r === 'number' ? r : 0;
       } catch (e) {
-        ok = false;
+        code = 1;
         action.stream('stderr', `\nОШИБКА: ${e instanceof Error ? e.message : String(e)}\n`);
       }
-      await action.finish(ok ? 0 : 1);
-      opts.after?.(ok);
+      await action.finish(code);
+      opts.after?.(code === 0);
     })();
     return action.id;
   }

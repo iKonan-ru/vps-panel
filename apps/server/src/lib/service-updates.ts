@@ -349,12 +349,8 @@ export class ServiceUpdates {
           `Xray не обновился: сейчас ${now || 'не отвечает'}, ждали ${target.latest}`,
         );
       say(`Xray ${now} работает.`);
-      await this.recheck(serverId);
-      await action.finish(0);
-    } catch (e) {
-      say(`ОШИБКА: ${(e as Error).message}`);
+    } finally {
       await this.recheck(serverId).catch(() => undefined);
-      await action.finish(1);
     }
   }
 
