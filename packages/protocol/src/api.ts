@@ -246,7 +246,6 @@ export interface CommandParamInfo {
   required?: boolean;
   hint?: string;
   options?: { value: string; label: string }[];
-  /** Регулярное выражение для проверки. */
   pattern?: string;
   min?: number;
   max?: number;
