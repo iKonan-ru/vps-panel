@@ -107,12 +107,22 @@ const serverRoute = createRoute({
   path: '/servers/$id',
   component: ServerPage,
 });
-/** Настройка сервера в один клик; backup - восстановление из этой копии. */
+/**
+ * Настройка сервера в один клик; backup - копия, migrate - перенос с этого сервера, wipe -
+ * очистка ("1"/"0", без него - по умолчанию).
+ */
 const serverSetupRoute = createRoute({
   getParentRoute: () => appRoute,
   path: '/servers/$id/setup',
   validateSearch: (raw: Record<string, unknown>) => ({
     backup: typeof raw.backup === 'string' ? raw.backup : undefined,
+    migrate: typeof raw.migrate === 'string' ? raw.migrate : undefined,
+    wipe:
+      raw.wipe === '1' || raw.wipe === 1
+        ? '1'
+        : raw.wipe === '0' || raw.wipe === 0
+          ? '0'
+          : undefined,
   }),
   component: ServerSetupPage,
 });

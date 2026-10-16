@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto';
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -7,7 +8,14 @@ import type { AgentRegistry } from '../src/agents/registry.js';
 import { CATALOG } from '../src/commands/index.js';
 import type { Env } from '../src/config.js';
 import { type Db, createDb } from '../src/db/index.js';
-import { access, backups, servers } from '../src/db/schema.js';
+import {
+  access,
+  awgClients,
+  backups,
+  gclientBindings,
+  gclients,
+  servers,
+} from '../src/db/schema.js';
 import { upsertAccess } from '../src/lib/access.js';
 import { actionJournal } from '../src/lib/action-journal.js';
 import { BackupRestorer } from '../src/lib/backup-restore.js';
@@ -41,11 +49,16 @@ let restoreParams: Record<string, unknown>[];
 let rootKeys: string[] | null;
 let baselineNeeded: string[] | null;
 let baselineNothing: boolean;
+/** Восстановитель этого теста: фейковый агент "загружает" в него архив свежей копии. */
+let restorerRef: BackupRestorer;
+/** На каком сервере выполнялась команда каталога (для снятия сервисов со старого). */
+let cmdServers: string[];
 
 const ok = (obj: unknown) => ({ status: 200, data: { success: true, obj } });
 const registry = {
-  isOnline: () => true,
+  isOnline: (_id: string) => true,
   isUpdating: () => false,
+  get: () => undefined,
   latestMetrics: () => undefined,
   // снимок агента: сервисы, которые "поставили" команды
   refreshInventory: async (id: string) => {
@@ -63,15 +76,25 @@ const registry = {
       .where(eq(servers.id, id))
       .run();
   },
-  request: async (_id: string, method: string, p: Record<string, unknown>) => {
+  request: async (id: string, method: string, p: Record<string, unknown>) => {
     if (method === 'command.run') {
       const c = CATALOG.find((x) => x.script === p.script);
-      // проверки перед запуском: script - preflight команды
-      if (!c) return { exitCode: 0, tail: 'OK|порт свободен' };
+      // проверки перед запуском: script - preflight команды; снятие агента - свой скрипт
+      if (!c) {
+        if (String(p.script).includes('vps-agent-remove')) calls.push(`agent-remove:${id}`);
+        return { exitCode: 0, tail: 'OK|порт свободен' };
+      }
       const e = p.env as Record<string, string>;
       if (c.id === 'awg') awgEnv.push(e);
       calls.push(`cmd:${c.id}${e.AWG_INSTANCE === 'extra' ? ':extra' : ''}`);
+      cmdServers.push(`${id}:${c.id}`);
       if (c.id === failCommand) return { exitCode: 1, killed: false };
+      // удаление: сервиса больше нет в отчёте
+      const gone = KIND[c.id.replace(/-uninstall$/, '')];
+      if (c.id.endsWith('-uninstall') && gone) {
+        installed = installed.filter((x) => x !== gone);
+        return { exitCode: 0, killed: false };
+      }
       const k = KIND[c.id];
       if (k && !installed.includes(k)) installed.push(k);
       return { exitCode: 0, killed: false };
@@ -88,6 +111,15 @@ const registry = {
     if (method === 'baseline.plan' && baselineNeeded)
       return { steps: baselineNeeded.map((title) => ({ id: title, title, needed: true })) };
     if (method === 'baseline.apply' && baselineNothing) throw new Error('исправлять нечего');
+    // свежая копия: агент "загружает" архив по токену и отвечает манифестом
+    if (method === 'backup.create') {
+      const u = restorerRef.upload(String(p.token));
+      if (!u) throw new Error('нет загрузки');
+      mkdirSync(join(dir, 'backups'), { recursive: true });
+      writeFileSync(join(dir, 'backups', `${u.backupId}.tar.gz`), 'fresh');
+      u.sha256 = createHash('sha256').update('fresh').digest('hex');
+      return { sha256: u.sha256, archiveSize: 5, hostname: 'old', components: [{ id: 'xui' }] };
+    }
     if (method === 'awg.status') return { instances: awgHere, docker: true };
     if (method === 'xui.token') return { token: 'tok' };
     if (method === 'xui.api') {
@@ -124,6 +156,7 @@ function make() {
     PANEL_PUBLIC_URL: 'https://panel.example.com',
   } as unknown as Env;
   const journal = actionJournal(db, hub as never, registry);
+  restorerRef = new BackupRestorer(db, env, registry);
   return serverSetup({
     db,
     env,
@@ -132,7 +165,7 @@ function make() {
     hub: hub as never,
     journal,
     runner: catalogRunner({ db, env, registry, box, log: { warn: () => {} } }),
-    restorer: new BackupRestorer(db, env, registry),
+    restorer: restorerRef,
     gc: { kick: () => void kicks++ },
     reach: { check: async () => ({}) },
     timing: { rebootDownMs: 10, rebootUpMs: 10, pollMs: 1, xrayChecks: [1] },
@@ -175,6 +208,7 @@ beforeEach(() => {
   rootKeys = null;
   baselineNeeded = null;
   baselineNothing = false;
+  cmdServers = [];
   db.insert(servers)
     .values({ id: 's1', name: 'Hoster', host: '203.0.113.10', agentTokenHash: 'x' } as never)
     .run();
@@ -341,7 +375,7 @@ describe('настройка сервера', () => {
     await expect(s.run('s1', { steps })).rejects.toThrow(/порт 8443/);
   });
 
-  it('восстановление из копии: сервисы как на старом сервере, AWG из копии, данные, доступы', async () => {
+  it('перенос из копии старого сервера: сервисы как на нём, AWG из копии, данные, доступы', async () => {
     db.insert(servers)
       .values({ id: 's0', name: 'Old', host: '198.51.100.7', agentTokenHash: 'x' } as never)
       .run();
@@ -377,7 +411,9 @@ describe('настройка сервера', () => {
       } as never)
       .run();
     const s = make();
-    const plan = await s.plan('s1', 'b1');
+    // копия чужого сервера без переноса не разворачивается
+    await expect(s.plan('s1', 'b1')).rejects.toThrow(/копия другого сервера/);
+    const plan = await s.plan('s1', { migrateFrom: 's0', backupId: 'b1' });
     const on = plan.steps.filter((x) => x.enabled).map((x) => x.id);
     expect(on).toEqual([
       'key',
@@ -391,10 +427,13 @@ describe('настройка сервера', () => {
       'naive',
       'restore',
       'inbounds',
+      'migrate',
       'gclients',
       'reboot',
+      'retire',
       'reach',
     ]);
+    expect(plan.migrate).toMatchObject({ id: 's0', name: 'Old' });
     const xui = plan.steps.find((x) => x.id === 'xui');
     expect(xui?.fromBackup).toBe(true);
     expect(xui?.answers?.XUI_PANEL_PORT).toBe('20530');
@@ -408,9 +447,9 @@ describe('настройка сервера', () => {
     const steps = plan.steps.map((x) => ({
       id: x.id,
       enabled: x.id === 'awg-extra:51820' ? false : x.enabled,
-      answers: x.answers ?? {},
+      answers: { ...(x.answers ?? {}), ...(x.id === 'retire' ? { MODE: 'keep' } : {}) },
     }));
-    const r = await s.run('s1', { backupId: 'b1', steps });
+    const r = await s.run('s1', { migrateFrom: 's0', backupId: 'b1', steps });
     for (let i = 0; i < 200 && !s.progress('s1')?.finishedAt; i++)
       await new Promise((res) => setTimeout(res, 10));
     const p = s.progress('s1');
@@ -562,5 +601,209 @@ describe('настройка сервера', () => {
       'cmd:xui-uninstall',
       'cmd:xui',
     ]);
+  });
+  /** Старый сервер с клиентом: привязки 3X-UI и AWG, ключ AWG, доступ клиента по списку. */
+  function oldServerWithClient() {
+    db.insert(servers)
+      .values({
+        id: 's0',
+        name: 'Old',
+        host: '198.51.100.7',
+        agentTokenHash: 'x',
+        xuiExcluded: [7],
+      } as never)
+      .run();
+    db.insert(gclients)
+      .values({
+        id: 'c1',
+        name: 'Оля',
+        token: 'd'.repeat(32),
+        slug: 'olya',
+        access: [{ serverId: 's0', services: ['xui', 'awg'] }],
+      } as never)
+      .run();
+    db.insert(gclientBindings)
+      .values([
+        {
+          id: 'b-old-xui',
+          clientId: 'c1',
+          serverId: 's0',
+          service: 'xui',
+          ref: 'olya',
+          state: 'ok',
+        },
+        {
+          id: 'b-old-awg',
+          clientId: 'c1',
+          serverId: 's0',
+          service: 'awg',
+          ref: '3|amnezia-awg2|PUBOLD',
+          state: 'ok',
+        },
+        // на новом сервере синхронизация уже успела завести клиенту свою запись
+        {
+          id: 'b-new-xui',
+          clientId: 'c1',
+          serverId: 's1',
+          service: 'xui',
+          ref: 'olya',
+          state: 'ok',
+        },
+      ] as never)
+      .run();
+    db.insert(awgClients)
+      .values({ serverId: 's0', container: 'amnezia-awg2', publicKey: 'PUBOLD', privateKey: 'k' })
+      .run();
+  }
+
+  it('перенос со свежей копией: копия снимается, клиенты переходят, старый сервер снимается', async () => {
+    oldServerWithClient();
+    installed = ['xui'];
+    await registry.refreshInventory('s0');
+    installed = [];
+    await registry.refreshInventory('s1');
+    const s = make();
+    const plan = await s.plan('s1', { migrateFrom: 's0' });
+    expect(plan.steps.map((x) => x.id).slice(0, 3)).toEqual(['key', 'snapshot', 'baseline']);
+    const retire = plan.steps.find((x) => x.id === 'retire');
+    expect(retire?.modes).toEqual(['remove', 'delete', 'keep']);
+    const steps = plan.steps.map((x) => ({
+      id: x.id,
+      enabled: x.enabled,
+      answers: { ...(x.answers ?? {}), ...(PASSWORDS[x.id] ?? {}) },
+    }));
+    const r = await s.run('s1', { migrateFrom: 's0', steps });
+    const p = await finished(s, r.actionId);
+    expect(p?.steps.find((x) => x.state === 'failed')).toBeUndefined();
+    // копия снята и разложена именно она
+    expect(p?.backupId).toBeTruthy();
+    expect(calls.indexOf('backup.create')).toBeLessThan(calls.indexOf('backup.restore'));
+    // привязки старого - у нового, в очереди; своя запись нового убрана
+    const bs = db.select().from(gclientBindings).all();
+    expect(bs.map((b) => [b.id, b.serverId, b.state]).sort()).toEqual([
+      ['b-old-awg', 's1', 'pending'],
+      ['b-old-xui', 's1', 'pending'],
+    ]);
+    expect(
+      db
+        .select()
+        .from(awgClients)
+        .all()
+        .map((k) => k.serverId),
+    ).toEqual(['s1']);
+    expect(db.select().from(gclients).get()?.access).toEqual([
+      { serverId: 's1', services: ['xui', 'awg'] },
+    ]);
+    expect(db.select().from(servers).where(eq(servers.id, 's1')).get()?.xuiExcluded).toEqual([7]);
+    // старый: сервисы сняты на нём, агент снят, из панели удалён
+    expect(cmdServers).toContain('s0:xui-uninstall');
+    expect(calls).toContain('agent-remove:s0');
+    expect(db.select().from(servers).where(eq(servers.id, 's0')).get()).toBeUndefined();
+  });
+
+  it('перенос: старый не в сети - только удалить из панели или оставить', async () => {
+    oldServerWithClient();
+    const s = make();
+    const online = registry.isOnline;
+    registry.isOnline = (id: string) => id !== 's0';
+    try {
+      // свежую копию не снять
+      await expect(s.plan('s1', { migrateFrom: 's0' })).rejects.toThrow(/не в сети/);
+      copyB0();
+      const plan = await s.plan('s1', { migrateFrom: 's0', backupId: 'b0' });
+      expect(plan.steps.find((x) => x.id === 'retire')).toMatchObject({
+        modes: ['delete', 'keep'],
+        answers: { MODE: 'delete' },
+      });
+      const steps = plan.steps.map((x) => ({
+        id: x.id,
+        enabled: x.enabled,
+        answers: {
+          ...(x.answers ?? {}),
+          ...(PASSWORDS[x.id] ?? {}),
+          ...(x.id === 'retire' ? { MODE: 'remove' } : {}),
+        },
+      }));
+      const pf = await s.preflight('s1', { migrateFrom: 's0', backupId: 'b0', steps });
+      expect(pf.checks.find((c) => c.step === 'retire')?.text).toMatch(/не в сети/);
+      const keep = steps.map((x) => (x.id === 'retire' ? { ...x, answers: { MODE: 'keep' } } : x));
+      const r = await s.run('s1', { migrateFrom: 's0', backupId: 'b0', steps: keep });
+      const p = await finished(s, r.actionId);
+      expect(p?.steps.find((x) => x.state === 'failed')).toBeUndefined();
+      // оставлен в панели, но клиентов на нём больше нет
+      const old = db.select().from(servers).where(eq(servers.id, 's0')).get();
+      expect(old?.gclients).toBe(false);
+      expect(
+        db
+          .select()
+          .from(gclientBindings)
+          .all()
+          .every((b) => b.serverId === 's1'),
+      ).toBe(true);
+    } finally {
+      registry.isOnline = online;
+    }
+  });
+
+  function copyB0() {
+    mkdirSync(join(dir, 'backups'), { recursive: true });
+    writeFileSync(join(dir, 'backups', 'b0.tar.gz'), 'x');
+    db.insert(backups)
+      .values({
+        id: 'b0',
+        serverId: 's0',
+        serverName: 'Old',
+        sha256: 'a'.repeat(64),
+        manifest: {
+          components: [{ id: 'xui' }],
+          setup: { services: ['xui'], answers: {}, awg: [], clientHost: null },
+        },
+      } as never)
+      .run();
+  }
+
+  it('очистка при восстановлении: стоящее удаляется, привязки к записям из копии остаются', async () => {
+    copyB3();
+    installed = ['xui', 'mtproxyl', 'amnezia'];
+    await registry.refreshInventory('s1');
+    awgHere = [{ container: 'amnezia-awg2', port: 55424, address: '10.8.1.1/24' }];
+    db.insert(gclients)
+      .values({ id: 'c1', name: 'Оля', token: 'd'.repeat(32), slug: 'olya' } as never)
+      .run();
+    db.insert(gclientBindings)
+      .values([
+        { id: 'bx', clientId: 'c1', serverId: 's1', service: 'xui', ref: 'olya', state: 'ok' },
+        { id: 'bm', clientId: 'c1', serverId: 's1', service: 'mtproxyl', ref: 'olya', state: 'ok' },
+      ] as never)
+      .run();
+    const s = make();
+    const plan = await s.plan('s1', { backupId: 'b3', wipe: true });
+    expect(plan.installed).toEqual(['3X-UI', 'MTProxyL']);
+    const w = plan.steps.find((x) => x.id === 'wipe');
+    expect(w?.note).toMatch(/3X-UI, MTProxyL/);
+    // всё ставится как на пустой: выбора "оставить" нет
+    expect(plan.steps.some((x) => x.modes)).toBe(false);
+    const steps = plan.steps.map((x) => ({
+      id: x.id,
+      enabled: x.enabled,
+      answers: x.answers ?? {},
+    }));
+    const r = await s.run('s1', { backupId: 'b3', wipe: true, steps });
+    const p = await finished(s, r.actionId);
+    expect(p?.steps.find((x) => x.state === 'failed')).toBeUndefined();
+    const cmds = calls.filter((c) => c.startsWith('cmd:'));
+    expect(cmds.slice(0, 3)).toEqual([
+      'cmd:xui-uninstall',
+      'cmd:mtproxyl-uninstall',
+      'cmd:awg-uninstall',
+    ]);
+    expect(cmds).toContain('cmd:xui');
+    // 3X-UI вернулся с данными копии - привязка осталась; MTProxyL в копии нет - снята
+    const ids = db
+      .select()
+      .from(gclientBindings)
+      .all()
+      .map((b) => b.id);
+    expect(ids).toEqual(['bx']);
   });
 });

@@ -5,6 +5,7 @@ import type {
   SetupPlan,
   SetupProgress,
   SetupRunRequest,
+  SetupSource,
   SetupStep,
   SetupStepState,
 } from '@vps/protocol';
@@ -18,13 +19,15 @@ import { access, gclientBindings, servers } from '../db/schema.js';
 import { upsertAccess } from './access.js';
 import { type actionJournal, liveOutput } from './action-journal.js';
 import type { BackupRestorer } from './backup-restore.js';
-import { AWG_MAIN, type BackupSetup } from './backup-setup.js';
+import { AWG_MAIN, type BackupSetup, backupSnapshot } from './backup-setup.js';
 import type { CatalogRunner } from './catalog-runner.js';
 import { checkClientHost } from './client-host.js';
 import { type GClients, queued } from './gclients.js';
 import { MT_HOST_SCRIPT } from './mtproxyl-host.js';
 import { redactOutput } from './redact.js';
 import type { SecretBox } from './secret-box.js';
+import { transferClients } from './server-migrate.js';
+import { removeServer } from './server-remove.js';
 import { getJsonSetting, putSetting } from './settings.js';
 import { keyFingerprint, loadPanelKey } from './ssh.js';
 import type { UiHub } from './ui-hub.js';
@@ -57,6 +60,27 @@ const UNINSTALL: Record<string, string> = {
   openflux: 'openflux-uninstall',
   naive: 'naive-uninstall',
 };
+
+/** Компоненты архива копии - по виду сервиса в отчёте агента (у остальных данных в копии нет). */
+const KIND_COMPONENT: Record<string, string> = {
+  xui: 'xui',
+  mtproxyl: 'mtproxyl',
+  wdtt: 'wdtt',
+  amnezia: 'amnezia',
+};
+
+/**
+ * Снятие агента со старого сервера после переноса: служба выключается и удаляется чуть позже
+ * (systemd-run), чтобы агент успел ответить панели, что команда выполнена.
+ */
+const AGENT_REMOVE_SCRIPT = `set -e
+systemd-run --on-active=20 --unit=vps-agent-remove --collect /bin/sh -c '
+systemctl disable --now vps-agent.service
+rm -f /etc/systemd/system/vps-agent.service /usr/local/bin/vps-agent
+rm -rf /etc/vps-agent
+systemctl daemon-reload'
+echo "Агент удалится через 20 секунд"
+`;
 
 /** Компонент архива копии по команде сервиса. */
 const COMPONENT: Record<string, string> = {
@@ -220,8 +244,21 @@ export function serverSetup(deps: SetupDeps) {
     return { bk, snap, comps };
   }
 
-  async function plan(id: string, backupId?: string): Promise<SetupPlan> {
-    if (backupId) return backupPlan(id, backupId);
+  /**
+   * План: пустой сервер, копия этого сервера (backupId) или перенос с другого (migrateFrom);
+   * строка - id копии (как раньше).
+   */
+  async function plan(id: string, source: SetupSource | string = {}): Promise<SetupPlan> {
+    const src = typeof source === 'string' ? { backupId: source } : source;
+    if (src.backupId || src.migrateFrom) return copyPlan(id, src);
+    return { steps: await freshSteps(id, false), progress: progress(id) };
+  }
+
+  /**
+   * Шаги для пустого сервера; asEmpty - как будто наших сервисов на нём нет (их удалит очистка
+   * перед установкой).
+   */
+  async function freshSteps(id: string, asEmpty: boolean): Promise<SetupStep[]> {
     const r = row(id);
     const pr = await probe(id);
     const pending = inventory(id)?.audit.pendingUpdates;
@@ -262,9 +299,10 @@ export function serverSetup(deps: SetupDeps) {
     for (const s of SERVICES) {
       // AWG: "уже стоит" - основной контейнер; дополнительные основному не мешают
       const installed =
-        s.command === 'awg'
+        !asEmpty &&
+        (s.command === 'awg'
           ? (inventory(id)?.containers ?? []).some((c) => c.name === AWG_MAIN)
-          : has(id, s.kind);
+          : has(id, s.kind));
       const answers = await screenAnswers(id, s.command);
       steps.push({
         id: s.command,
@@ -290,7 +328,7 @@ export function serverSetup(deps: SetupDeps) {
       // порт и подсеть подбираются при запуске, когда основной контейнер уже стоит
       answers: { AWG_VERSION: '2.0' },
     });
-    const xuiThere = has(id, 'xui');
+    const xuiThere = !asEmpty && has(id, 'xui');
     steps.push({
       id: 'inbounds',
       kind: 'inbounds',
@@ -303,14 +341,63 @@ export function serverSetup(deps: SetupDeps) {
         XHTTP_PORT: String(XHTTP_PORT),
       },
       ...(xuiThere && pr.ownVless === null ? { note: 'если своих inbound VLESS ещё нет' } : {}),
-      ...off(Boolean(pr.ownVless), 'свои inbound VLESS уже есть'),
+      ...(asEmpty ? {} : off(Boolean(pr.ownVless), 'свои inbound VLESS уже есть')),
     });
     steps.push(
       { id: 'gclients', kind: 'gclients', title: 'Синхронизация клиентов', enabled: true },
       { id: 'reboot', kind: 'reboot', title: 'Перезагрузка, если нужна', enabled: true },
       { id: 'reach', kind: 'reach', title: 'Проверка доступности из России', enabled: true },
     );
-    return { steps, progress: progress(id) };
+    return steps;
+  }
+
+  /** Наши сервисы на сервере по отчёту агента: что удалит очистка. */
+  function installedHere(id: string): string[] {
+    const inv = inventory(id);
+    const out: string[] = [];
+    for (const s of SERVICES) {
+      if (s.command === 'awg') {
+        for (const c of inv?.containers ?? [])
+          if (c.name.startsWith(AWG_MAIN)) out.push(`AmneziaWG (${c.name})`);
+        continue;
+      }
+      if (has(id, s.kind)) out.push(s.title);
+    }
+    return out;
+  }
+
+  /**
+   * Откуда копия: этого сервера (восстановление), старого сервера при переносе - его копия в
+   * панели или свежая (снимок состава - живым опросом, архив снимет шаг snapshot).
+   */
+  async function copySource(id: string, src: SetupSource) {
+    if (!src.migrateFrom) {
+      const b = backupSource(src.backupId ?? '');
+      if (b.bk.serverId && b.bk.serverId !== id)
+        throw err(
+          'это копия другого сервера: её разворачивает перенос (\u00abПеренос с другого сервера\u00bb)',
+          400,
+        );
+      return { ...b, from: null, fresh: false };
+    }
+    if (src.migrateFrom === id) throw err('перенос на тот же сервер невозможен', 400);
+    const from = db.select().from(servers).where(eq(servers.id, src.migrateFrom)).get();
+    if (!from) throw err('старый сервер не найден', 404);
+    if (src.backupId) {
+      const b = backupSource(src.backupId);
+      if (b.bk.serverId !== from.id) throw err('копия не этого старого сервера', 400);
+      return { ...b, from, fresh: false };
+    }
+    if (!registry.isOnline(from.id))
+      throw err(
+        'старый сервер не в сети: свежую копию не снять, нужна его копия в панели или файл',
+        409,
+      );
+    const snap = await backupSnapshot(db, registry, from.id);
+    const comps = new Set<string | undefined>(
+      snap.services.map((k) => KIND_COMPONENT[k]).filter(Boolean),
+    );
+    return { bk: null, snap, comps, from, fresh: true };
   }
 
   /** Контейнеры AWG на сервере живым опросом; агент не ответил - null (проверят команды). */
@@ -398,12 +485,38 @@ export function serverSetup(deps: SetupDeps) {
    * контейнеры AWG из копии - обязательно; затем раскладка данных архива. Пароли сервисов,
    * чьи данные в архиве, не спрашиваются: их заменит копия.
    */
-  async function backupPlan(id: string, bid: string): Promise<SetupPlan> {
-    const { bk, snap, comps } = backupSource(bid);
-    const base = (await plan(id)).steps;
-    const here = await awgHere(id);
+  async function copyPlan(id: string, src: SetupSource): Promise<SetupPlan> {
+    const { bk, snap, comps, from, fresh } = await copySource(id, src);
+    const bid = bk?.id ?? '';
+    const installed = installedHere(id);
+    // очистка: наши сервисы удаляются, всё ставится как на пустой сервер
+    const wipe = Boolean(src.wipe) && installed.length > 0;
+    const base = await freshSteps(id, wipe);
+    const here = wipe ? [] : await awgHere(id);
     const steps: SetupStep[] = [];
     for (const s of base) {
+      if (s.id === 'key') {
+        steps.push(s);
+        if (fresh && from)
+          steps.push({
+            id: 'snapshot',
+            kind: 'snapshot',
+            title: `Свежая копия сервера ${from.name}`,
+            enabled: true,
+            locked: true,
+            note: 'данные старого сервера на момент переноса',
+          });
+        if (wipe)
+          steps.push({
+            id: 'wipe',
+            kind: 'wipe',
+            title: 'Очистка сервера',
+            enabled: true,
+            locked: true,
+            note: `удалит: ${installed.join(', ')}`,
+          });
+        continue;
+      }
       if (s.id === 'client-host') {
         const name = snap.clientHost ?? s.answers?.NAME ?? '';
         steps.push({
@@ -459,18 +572,59 @@ export function serverSetup(deps: SetupDeps) {
         steps.push({ ...s, enabled: true, note: 'если в копии нет своих inbound VLESS' });
         continue;
       }
+      if (s.id === 'gclients' && from) {
+        steps.push({
+          id: 'migrate',
+          kind: 'migrate',
+          title: `Клиенты с сервера ${from.name}`,
+          enabled: true,
+          locked: true,
+          note: 'привязки клиентов, их доступы и настройки синхронизации переходят этому серверу; записи в сервисах - из копии, с теми же ключами',
+        });
+        steps.push({ ...s, enabled: true, locked: true });
+        continue;
+      }
+      if (s.id === 'reboot' && from) {
+        steps.push(s);
+        const online = registry.isOnline(from.id);
+        const modes: SetupMode[] = online ? ['remove', 'delete', 'keep'] : ['delete', 'keep'];
+        steps.push({
+          id: 'retire',
+          kind: 'retire',
+          title: `Старый сервер ${from.name}`,
+          enabled: true,
+          modes,
+          ...(online ? {} : { note: 'не в сети: снять с него сервисы панель не может' }),
+          answers: { MODE: modes[0] as string },
+        });
+        continue;
+      }
       steps.push(s);
     }
     return {
       steps,
       progress: progress(id),
-      backup: { id: bk.id, serverName: bk.serverName, createdAt: bk.createdAt },
+      installed,
+      ...(bk
+        ? { backup: { id: bk.id, serverName: bk.serverName, createdAt: bk.createdAt } }
+        : from
+          ? { backup: { id: '', serverName: from.name, createdAt: new Date().toISOString() } }
+          : {}),
+      ...(from
+        ? { migrate: { id: from.id, name: from.name, online: registry.isOnline(from.id) } }
+        : {}),
     };
   }
 
+  const sourceOf = (r: SetupSource): SetupSource => ({
+    ...(r.backupId ? { backupId: r.backupId } : {}),
+    ...(r.migrateFrom ? { migrateFrom: r.migrateFrom } : {}),
+    ...(r.wipe ? { wipe: true } : {}),
+  });
+
   /** Шаги запуска: план, поверх - выбор и ответы из запроса (неизвестные id не берутся). */
   async function resolve(id: string, req: SetupRunRequest): Promise<SetupStep[]> {
-    const base = (await plan(id, req.backupId)).steps;
+    const base = (await plan(id, sourceOf(req))).steps;
     return base.map((s) => {
       const q = req.steps.find((x) => x.id === s.id);
       // шаг из копии, который нельзя выключить, идёт и без явного выбора
@@ -478,9 +632,13 @@ export function serverSetup(deps: SetupDeps) {
       const answers = { ...(s.answers ?? {}), ...(q.answers ?? {}) };
       // уже стоящий сервис: идёт, если выбрано не "не трогать"
       if (s.modes) {
-        const mode = (s.modes as string[]).includes(answers.MODE ?? '')
-          ? (answers.MODE as string)
-          : (s.modes[0] as string);
+        // "снять сервисы" со старого, который ушёл из сети после показа плана, - не подменять
+        // молча на "только удалить": проверки скажут, что так нельзя
+        const asked = answers.MODE ?? '';
+        const mode =
+          (s.modes as string[]).includes(asked) || (s.kind === 'retire' && asked === 'remove')
+            ? asked
+            : (s.modes[0] as string);
         return { ...s, enabled: mode !== 'skip', answers: { ...answers, MODE: mode } };
       }
       return { ...s, enabled: s.locked ? true : q.enabled, answers };
@@ -557,8 +715,11 @@ export function serverSetup(deps: SetupDeps) {
     // проверки команд - для того, что поставится на нынешнее состояние; переустановку и AWG
     // из копии (порты и подсети уже сверены с контейнерами сервера) команды проверили бы против
     // того, что сейчас удалится
-    const awgChecked = Boolean(req.backupId);
-    for (const s of steps.filter((x) => willInstall(x) && x.command)) {
+    const awgChecked = Boolean(req.backupId || req.migrateFrom);
+    // очистка: проверки команд видели бы занятыми порты сервисов, которые сейчас удалятся;
+    // порты между собой сверены выше
+    const wiping = steps.some((x) => x.kind === 'wipe' && x.enabled);
+    for (const s of steps.filter((x) => willInstall(x) && x.command && !wiping)) {
       if (s.id.startsWith('awg-extra') || modeOf(s) === 'reinstall') continue;
       if (awgChecked && isAwgStep(s)) continue;
       try {
@@ -569,6 +730,22 @@ export function serverSetup(deps: SetupDeps) {
       } catch (e) {
         checks.push({ step: s.id, level: 'fail', text: (e as Error).message });
       }
+    }
+    // перенос: старый сервер должен быть в сети для свежей копии и для снятия с него сервисов
+    if (req.migrateFrom && !registry.isOnline(req.migrateFrom)) {
+      if (steps.some((x) => x.kind === 'snapshot' && x.enabled))
+        checks.push({
+          step: 'snapshot',
+          level: 'fail',
+          text: 'старый сервер не в сети: нужна его копия в панели или файл',
+        });
+      const r = steps.find((x) => x.kind === 'retire');
+      if (r && modeOf(r) === 'remove')
+        checks.push({
+          step: 'retire',
+          level: 'fail',
+          text: 'старый сервер не в сети: снять с него сервисы нельзя',
+        });
     }
     const name = steps.find((s) => s.id === 'client-host' && s.enabled)?.answers?.NAME?.trim();
     if (name) {
@@ -593,8 +770,15 @@ export function serverSetup(deps: SetupDeps) {
     if (!registry.isOnline(id)) throw err('сервер не в сети', 409);
     let req = request;
     const prev = progress(id);
-    // продолжение восстановления - с той же копией
-    if (req.from && prev?.backupId) req = { ...req, backupId: prev.backupId };
+    // продолжение - с тем же источником: копия (при переносе - уже снятая свежая), старый
+    // сервер, очистка
+    if (req.from && prev)
+      req = {
+        ...req,
+        backupId: prev.backupId,
+        migrateFrom: prev.migrateFrom,
+        wipe: prev.wipe,
+      };
     if (req.from && !prev?.steps.some((s) => s.id === req.from))
       throw err('нечего продолжать: шага нет в прошлом запуске', 400);
     // продолжение - те же шаги, что в прошлом запуске (план мог измениться: сервис уже стоит)
@@ -626,6 +810,8 @@ export function serverSetup(deps: SetupDeps) {
     const state: SetupProgress = {
       actionId: action.id,
       ...(req.backupId ? { backupId: req.backupId } : {}),
+      ...(req.migrateFrom ? { migrateFrom: req.migrateFrom } : {}),
+      ...(req.wipe ? { wipe: true } : {}),
       startedAt: new Date().toISOString(),
       finishedAt: null,
       steps: steps.map((s) => ({
@@ -641,11 +827,30 @@ export function serverSetup(deps: SetupDeps) {
     };
     save();
     const secrets: string[] = [];
+    // доступы к панелям сервисов до запуска: при восстановлении копии этого же сервера после
+    // переустановки сервисов вернуть их (логины и пароли снова из копии)
+    const accessBefore = db.select().from(access).where(eq(access.serverId, id)).all();
     // компоненты копии, которые не раскладываются: "не трогать" у их сервиса
     const exclude = new Set<string>();
     for (const x of all)
       if (x.modes && modeOf(x) === 'skip' && x.command && COMPONENT[x.command])
         exclude.add(COMPONENT[x.command] as string);
+    const ctx: Ctx = {
+      action,
+      say,
+      secrets,
+      exclude,
+      all,
+      migrateFrom: req.migrateFrom,
+      accessBefore,
+      backupId: req.backupId,
+      // свежая копия снята: восстановление и продолжение после сбоя - с неё
+      onBackup: (bid) => {
+        ctx.backupId = bid;
+        state.backupId = bid;
+        save();
+      },
+    };
     void (async () => {
       let exit = 0;
       for (const [i, s] of steps.entries()) {
@@ -655,7 +860,7 @@ export function serverSetup(deps: SetupDeps) {
         save();
         say(`\n== ${s.title}`);
         try {
-          const note = await exec(id, s, { action, say, secrets, exclude });
+          const note = await exec(id, s, ctx);
           st.state = note === null ? 'skipped' : 'done';
           if (note) st.note = note;
           if (note) say(note);
@@ -674,7 +879,10 @@ export function serverSetup(deps: SetupDeps) {
       save();
       await action.finish(exit, redactOutput(action.output, secrets));
       // синхронизация - после окончания: пока шло действие, сервер был занят
-      if (state.steps.some((s) => s.id === 'gclients' && s.state === 'done')) gc.kick();
+      if (
+        state.steps.some((s) => (s.id === 'gclients' || s.id === 'migrate') && s.state === 'done')
+      )
+        gc.kick();
     })();
     return { actionId: action.id };
   }
@@ -685,6 +893,15 @@ export function serverSetup(deps: SetupDeps) {
     secrets: string[];
     /** Компоненты копии, которые не раскладывать. */
     exclude: Set<string>;
+    /** Все шаги плана с выбором (и невыбранные): что вернётся после очистки. */
+    all: SetupStep[];
+    /** Перенос: старый сервер. */
+    migrateFrom?: string | undefined;
+    /** Доступы к панелям сервисов этого сервера до запуска. */
+    accessBefore: (typeof access.$inferSelect)[];
+    /** Копия для раскладки (свежая при переносе - когда снята). */
+    backupId?: string | undefined;
+    onBackup: (bid: string) => void;
   };
 
   /**
@@ -714,15 +931,18 @@ export function serverSetup(deps: SetupDeps) {
       ctx.secrets.push(r.token);
       notes.push('токен API 3X-UI выпущен заново');
     }
-    if (bk.serverId && bk.serverId !== id) {
-      const kinds = ['xui', 'mtproxyl', 'wdtt'].filter((k) => comps.has(k));
-      const rows = kinds.length
-        ? db
-            .select()
-            .from(access)
-            .where(and(eq(access.serverId, bk.serverId), inArray(access.kind, kinds)))
-            .all()
-        : [];
+    // доступы к панелям сервисов из копии: логины и пароли теперь как в копии - у старого
+    // сервера при переносе, у этого же сервера до переустановки сервисов
+    const kinds = ['xui', 'mtproxyl', 'wdtt'].filter((k) => comps.has(k) && !ctx.exclude.has(k));
+    if (kinds.length) {
+      const rows =
+        bk.serverId && bk.serverId !== id
+          ? db
+              .select()
+              .from(access)
+              .where(and(eq(access.serverId, bk.serverId), inArray(access.kind, kinds)))
+              .all()
+          : ctx.accessBefore.filter((r) => kinds.includes(r.kind));
       for (const r of rows)
         await upsertAccess(db, box, id, {
           kind: r.kind,
@@ -730,7 +950,7 @@ export function serverSetup(deps: SetupDeps) {
           fields: r.fields.map((f) => ({ ...f, value: box.open(f.value) })),
           note: r.note,
         });
-      if (rows.length) notes.push('доступы к панелям - как у старого сервера');
+      if (rows.length) notes.push('доступы к панелям - как в копии');
     }
     if (comps.has('mtproxyl') && has(id, 'mtproxyl')) {
       const res = await registry.request<{ exitCode: number }>(
@@ -751,14 +971,24 @@ export function serverSetup(deps: SetupDeps) {
     return notes.join(', ');
   }
 
-  /** Команда каталога в выводе настройки; код не 0 - исключение. */
-  async function runCommand(id: string, cmd: string, answers: Record<string, string>, ctx: Ctx) {
+  /**
+   * Команда каталога в выводе настройки; код не 0 - исключение. keepBindings - удаление сервиса,
+   * который вернётся с данными копии: привязки клиентов к его записям остаются.
+   */
+  async function runCommand(
+    id: string,
+    cmd: string,
+    answers: Record<string, string>,
+    ctx: Ctx,
+    keepBindings = false,
+  ) {
     const p = await runner.prepare(id, cmd, answers);
     const from = ctx.action.output.length;
     const r = await runner.execute(id, p, {
       runId: ctx.action.id,
       stream: ctx.action.stream,
       output: () => ctx.action.output.slice(from),
+      keepBindings,
     });
     ctx.secrets.push(...r.secrets);
     if (r.exitCode !== 0) throw new Error(`${cmd}: команда завершилась с кодом ${r.exitCode}`);
@@ -788,6 +1018,130 @@ export function serverSetup(deps: SetupDeps) {
     };
     await runCommand(id, 'awg', answers, ctx);
     return `контейнер ${name} пересоздан с портом и подсетью копии`;
+  }
+
+  /**
+   * Сервис удаляется и ставится снова в этом же запуске: привязки клиентов к его записям
+   * остаются, если записи вернутся - данные из копии, или их заведёт заново синхронизация с
+   * теми же паролями (прокси для браузера, каналы OpenFlux). Иначе привязки снимаются вместе с
+   * сервисом, и синхронизация заведёт клиентов заново.
+   */
+  function keepsBindings(s: SetupStep, ctx: Ctx): boolean {
+    const cmd = s.command ?? '';
+    if (cmd === 'naive' || cmd === 'openflux') return true;
+    return Boolean(s.fromBackup) && !ctx.exclude.has(COMPONENT[cmd] ?? cmd);
+  }
+
+  /** Очистка: удалить наши сервисы, что стоят сейчас (контейнеры AWG - каждый). */
+  async function wipe(id: string, ctx: Ctx): Promise<string> {
+    const back = (cmd: string) =>
+      ctx.all.find((x) => x.command === cmd && x.kind === 'service' && willInstall(x));
+    // контейнеры AWG, которые поставятся снова (из копии), - их пиры вернёт копия
+    const awgBack = new Set(
+      ctx.all
+        .filter((x) => isAwgStep(x) && willInstall(x) && !ctx.exclude.has('amnezia'))
+        .map((x) =>
+          x.id === 'awg' ? AWG_MAIN : `${AWG_MAIN}-${x.answers?.AWG_SERVER_PORT ?? ''}`,
+        ),
+    );
+    const done: string[] = [];
+    for (const svc of SERVICES) {
+      if (svc.command === 'awg') {
+        if (!has(id, 'amnezia')) continue;
+        const here = await awgHere(id);
+        if (!here) throw new Error('агент не ответил, какие контейнеры AWG стоят');
+        for (const t of here) {
+          ctx.say(`Удаление: контейнер ${t.container}`);
+          await runCommand(
+            id,
+            'awg-uninstall',
+            { AWG_CONTAINER: t.container, CONFIRM: 'yes' },
+            ctx,
+            awgBack.has(t.container),
+          );
+          done.push(t.container);
+        }
+        continue;
+      }
+      const un = UNINSTALL[svc.command];
+      if (!un || !has(id, svc.kind)) continue;
+      ctx.say(`Удаление: ${svc.title}`);
+      const step = back(svc.command);
+      await runCommand(id, un, { CONFIRM: 'yes' }, ctx, step ? keepsBindings(step, ctx) : false);
+      done.push(svc.title);
+    }
+    return done.length ? `удалено: ${done.join(', ')}` : 'удалять нечего';
+  }
+
+  /**
+   * Старый сервер после переноса: remove - снять наши сервисы, ключ панели и агента, затем
+   * удалить из панели; delete - только удалить из панели; keep - оставить без клиентов.
+   */
+  async function retire(fromId: string, mode: string, ctx: Ctx): Promise<string> {
+    const from = db.select().from(servers).where(eq(servers.id, fromId)).get();
+    if (!from) return 'старого сервера в панели уже нет';
+    if (mode === 'keep') {
+      db.update(servers).set({ gclients: false }).where(eq(servers.id, fromId)).run();
+      hub.broadcast({ type: 'server.changed', serverId: fromId });
+      return `${from.name} оставлен в панели, клиентов на нём больше нет`;
+    }
+    if (mode === 'remove') {
+      if (!registry.isOnline(fromId))
+        throw new Error(
+          `${from.name} не в сети: снять с него сервисы нельзя \u2014 можно выбрать \u00abТолько удалить из панели\u00bb`,
+        );
+      await registry.refreshInventory(fromId);
+      for (const svc of SERVICES) {
+        if (svc.command === 'awg') {
+          if (!has(fromId, 'amnezia')) continue;
+          for (const t of (await awgHere(fromId)) ?? []) {
+            ctx.say(`${from.name}: удаление контейнера ${t.container}`);
+            await runCommand(
+              fromId,
+              'awg-uninstall',
+              { AWG_CONTAINER: t.container, CONFIRM: 'yes' },
+              ctx,
+            );
+          }
+          continue;
+        }
+        const un = UNINSTALL[svc.command];
+        if (!un || !has(fromId, svc.kind)) continue;
+        ctx.say(`${from.name}: удаление ${svc.title}`);
+        await runCommand(fromId, un, { CONFIRM: 'yes' }, ctx);
+      }
+      // ключ панели в root: доступ к серверу больше не нужен (последний ключ агент не удалит)
+      try {
+        const fp = keyFingerprint(loadPanelKey(env.DATA_DIR).publicKey);
+        await registry.request(
+          fromId,
+          'ssh.keys.remove',
+          { fingerprint: fp },
+          { timeoutMs: 30_000 },
+        );
+        ctx.say(`${from.name}: ключ панели убран из root`);
+      } catch (e) {
+        ctx.say(`${from.name}: ключ панели не убран: ${(e as Error).message}`);
+      }
+      const res = await registry.request<{ exitCode: number }>(
+        fromId,
+        'command.run',
+        {
+          runId: ctx.action.id,
+          script: AGENT_REMOVE_SCRIPT,
+          env: {},
+          files: {},
+          cleanup: [],
+          timeoutSec: 60,
+        },
+        { timeoutMs: 120_000, onStream: ctx.action.stream },
+      );
+      if (res.exitCode !== 0) throw new Error(`${from.name}: агент не удалился`);
+    }
+    removeServer({ db, env, registry, hub }, fromId);
+    return mode === 'remove'
+      ? `${from.name}: сервисы и агент сняты, сервер удалён из панели`
+      : `${from.name} удалён из панели`;
   }
 
   /** Один шаг; итог для журнала, null - шаг пропущен (делать было нечего). */
@@ -852,7 +1206,13 @@ export function serverSetup(deps: SetupDeps) {
         }
         if (mode === 'reinstall' && cmd !== 'awg' && UNINSTALL[cmd]) {
           say(`Удаление: ${s.title}`);
-          await runCommand(id, UNINSTALL[cmd] as string, { CONFIRM: 'yes' }, ctx);
+          await runCommand(
+            id,
+            UNINSTALL[cmd] as string,
+            { CONFIRM: 'yes' },
+            ctx,
+            keepsBindings(s, ctx),
+          );
         }
         if (mode === 'install' && !extra && svc && cmd !== 'awg' && has(id, svc.kind)) return null;
         // дополнительный AWG: порт и подсеть - из копии или свободные сейчас, когда основной
@@ -940,7 +1300,34 @@ export function serverSetup(deps: SetupDeps) {
         void reach.check(id).catch(() => undefined);
         return 'запущена, итог - в блоке \u00abДоступность из России\u00bb';
       case 'restore':
-        return restoreStep(id, a.BACKUP ?? '', ctx);
+        return restoreStep(id, ctx.backupId ?? a.BACKUP ?? '', ctx);
+      case 'snapshot': {
+        if (!ctx.migrateFrom) return null;
+        say('Свежая копия старого сервера');
+        const bid = await restorer.create(ctx.migrateFrom, [], action.stream);
+        ctx.onBackup(bid);
+        return 'копия снята';
+      }
+      case 'wipe':
+        return wipe(id, ctx);
+      case 'migrate': {
+        if (!ctx.migrateFrom) return null;
+        // контейнеры AWG, чьи данные заменила копия: ключи их прежних пиров не нужны
+        const replaced = ctx.exclude.has('amnezia')
+          ? []
+          : ctx.all
+              .filter((x) => isAwgStep(x) && x.enabled)
+              .map((x) =>
+                x.id === 'awg' ? AWG_MAIN : `${AWG_MAIN}-${x.answers?.AWG_SERVER_PORT ?? ''}`,
+              );
+        const r = transferClients(db, ctx.migrateFrom, id, replaced);
+        hub.broadcast({ type: 'server.changed', serverId: id });
+        hub.broadcast({ type: 'server.changed', serverId: ctx.migrateFrom });
+        return `привязок клиентов перешло: ${r.moved}${r.dropped ? `, своих убрано: ${r.dropped}` : ''}${r.access ? `, списков доступа поправлено: ${r.access}` : ''}`;
+      }
+      case 'retire':
+        if (!ctx.migrateFrom) return null;
+        return retire(ctx.migrateFrom, a.MODE ?? 'delete', ctx);
     }
   }
 

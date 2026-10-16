@@ -10,6 +10,7 @@ import { FirewallTab } from '@/components/server/firewall-tab';
 import { InstallAgent } from '@/components/server/install-agent';
 import { IpChangeDialog } from '@/components/server/ip-change-dialog';
 import { LogTab } from '@/components/server/log-tab';
+import { MigrateDialog } from '@/components/server/migrate-dialog';
 import { MtproxylTab } from '@/components/server/mtproxyl/mtproxyl-tab';
 import { OpenfluxTab } from '@/components/server/openflux-tab';
 import { OverviewTab } from '@/components/server/overview-tab';
@@ -45,6 +46,7 @@ import {
   Power,
   RefreshCw,
   Trash2,
+  Truck,
   Wand2,
   Wrench,
   X,
@@ -112,6 +114,7 @@ export function ServerPage() {
     void navigate({ to: '/servers/$id/$tab', params: { id, tab: t }, replace: false });
   const [reboot, setReboot] = useState(false);
   const [ipChange, setIpChange] = useState(false);
+  const [migrate, setMigrate] = useState(false);
   const [rename, setRename] = useState(false);
   const [reinstall, setReinstall] = useState(false);
   const [remove, setRemove] = useState(false);
@@ -225,10 +228,19 @@ export function ServerPage() {
                 void navigate({
                   to: '/servers/$id/setup',
                   params: { id },
-                  search: { backup: undefined },
+                  search: { backup: undefined, migrate: undefined, wipe: undefined },
                 }),
               disabled: !online || lock.busy || agentBusy || s.agentUpdating || agentRunning,
               title: lock.reason ?? 'Ключ панели, безопасность, сервисы и клиенты одним действием',
+            },
+            {
+              key: 'migrate',
+              label: 'Перенести на другой сервер',
+              icon: <Truck className="size-4" />,
+              onClick: () => setMigrate(true),
+              // старый сервер может быть уже недоступен: перенос - из его копии
+              disabled: lock.busy || agentBusy || agentRunning || s.agentUpdating,
+              title: lock.reason ?? 'Сервисы, данные и клиенты\u00a0\u2014 на другой сервер панели',
             },
             {
               key: 'reinstall',
@@ -343,6 +355,7 @@ export function ServerPage() {
       </div>
 
       <RebootDialog serverId={s.id} name={s.name} open={reboot} onClose={() => setReboot(false)} />
+      <MigrateDialog serverId={id} open={migrate} onClose={() => setMigrate(false)} />
       <IpChangeDialog
         serverId={s.id}
         host={s.host}

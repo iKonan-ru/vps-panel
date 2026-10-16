@@ -14,7 +14,7 @@ import { api } from '@/lib/api';
 import { type CommandInfo, commandsApi, paramVisible } from '@/lib/commands';
 import { dateTime } from '@/lib/format';
 import { clampInt } from '@/lib/masks';
-import { serverLock, useServer } from '@/lib/servers';
+import { serverLock, useServer, useServers } from '@/lib/servers';
 import { useAction } from '@/lib/use-action';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useNavigate, useParams, useSearch } from '@tanstack/react-router';
@@ -174,6 +174,15 @@ const MODE_LABEL: Record<SetupMode, string> = {
   keep: 'Оставить, данные заменит копия',
   reinstall: 'Переустановить',
   skip: 'Не трогать',
+  remove: '',
+  delete: '',
+};
+
+/** Что делать со старым сервером после переноса. */
+const RETIRE_LABEL: Partial<Record<SetupMode, string>> = {
+  remove: 'Снять с него сервисы и агента, удалить из панели',
+  delete: 'Только удалить из панели (сервер не трогать)',
+  keep: 'Оставить в панели, без клиентов',
 };
 
 /** Уже стоящий сервис (контейнер AWG): вместо галочки - выбор, что с ним делать. */
@@ -203,7 +212,7 @@ function ModeChoice({
               disabled={disabled}
               onChange={() => onChange(m)}
             />
-            {MODE_LABEL[m]}
+            {(step.kind === 'retire' ? RETIRE_LABEL[m] : undefined) ?? MODE_LABEL[m]}
           </label>
         ))}
       </div>
@@ -220,109 +229,207 @@ interface BackupRow {
   manifest: { setup?: unknown };
 }
 
+/** Источник настройки в адресе: копия, старый сервер при переносе, очистка ("1"/"0"). */
+export interface SetupSearch {
+  backup?: string | undefined;
+  migrate?: string | undefined;
+  wipe?: string | undefined;
+}
+
+/** Очистка по умолчанию: при переносе - да (сервер под старый), при восстановлении - нет. */
+export const wipeOf = (q: SetupSearch) =>
+  q.wipe === undefined ? Boolean(q.migrate) : q.wipe === '1';
+
+type SourceMode = 'empty' | 'copy' | 'migrate';
+
 /**
- * Откуда настройка: пустой сервер или резервная копия - любого сервера панели или файл,
- * скачанный раньше (загружается и становится копией этого сервера).
+ * Откуда настройка: пустой сервер, резервная копия этого же сервера (из панели или скачанный
+ * раньше файл - например, после переустановки) или перенос с другого сервера панели: его
+ * копия (свежая, если он в сети) и его клиенты переходят сюда.
  */
 function SourceCard({
   serverId,
-  backup,
+  q,
+  installed,
   disabled,
 }: {
   serverId: string;
-  backup: string | undefined;
+  q: SetupSearch;
+  installed: string[] | undefined;
   disabled: boolean;
 }) {
   const navigate = useNavigate();
   const qc = useQueryClient();
-  const [fromCopy, setFromCopy] = useState(Boolean(backup));
+  const [mode, setMode] = useState<SourceMode>(q.migrate ? 'migrate' : q.backup ? 'copy' : 'empty');
   const upload = useAction();
   const fileRef = useRef<HTMLInputElement>(null);
   const list = useQuery({
     queryKey: ['backups'],
     queryFn: () => api<BackupRow[]>('/api/backups'),
-    enabled: fromCopy,
+    enabled: mode !== 'empty',
   });
-  const copies = (list.data ?? []).filter((b) => b.serverId && b.manifest.setup);
-  const go = (b: string | undefined) =>
-    void navigate({ to: '/servers/$id/setup', params: { id: serverId }, search: { backup: b } });
+  const servers = useServers();
+  const others = (servers.data ?? []).filter((x) => x.id !== serverId);
+  const old = others.find((x) => x.id === q.migrate);
+  // копии с составом сервисов: свои - для восстановления, старого сервера - для переноса
+  const owner = mode === 'migrate' ? q.migrate : serverId;
+  const copies = (list.data ?? []).filter((b) => b.serverId === owner && b.manifest.setup);
+  const go = (next: SetupSearch) =>
+    void navigate({
+      to: '/servers/$id/setup',
+      params: { id: serverId },
+      search: { backup: next.backup, migrate: next.migrate, wipe: next.wipe },
+    });
   const off = disabled || upload.busy;
+  const wipe = wipeOf(q);
+  // старый сервер не в сети: свежую копию не снять - берётся последняя его копия в панели
+  const latest = copies[0]?.id;
+  const needCopy = mode === 'migrate' && Boolean(old) && old?.status !== 'online' && !q.backup;
+  useEffect(() => {
+    if (needCopy && latest)
+      void navigate({
+        to: '/servers/$id/setup',
+        params: { id: serverId },
+        search: { backup: latest, migrate: q.migrate, wipe: q.wipe },
+        replace: true,
+      });
+  }, [needCopy, latest, navigate, serverId, q.migrate, q.wipe]);
 
   function send(file: File) {
+    if (!owner) return;
     void upload.run(async () => {
-      const r = await api<{ id: string }>(`/api/servers/${serverId}/backups/upload`, {
+      // файл становится копией того сервера, чья она: этого или старого при переносе
+      const r = await api<{ id: string }>(`/api/servers/${owner}/backups/upload`, {
         method: 'POST',
         body: file,
         // скачанная копия зашифрована (.tar.gz.enc), старая - просто .tar.gz
         headers: { 'content-type': 'application/octet-stream' },
       });
       await qc.invalidateQueries({ queryKey: ['backups'] });
-      go(r.id);
+      go({ ...q, backup: r.id });
     });
   }
+
+  const radio = (m: SourceMode, label: string) => (
+    <label className="flex items-center gap-2 text-sm">
+      <input
+        type="radio"
+        name="setup-source"
+        checked={mode === m}
+        disabled={off}
+        onChange={() => {
+          setMode(m);
+          go({});
+        }}
+      />
+      {label}
+    </label>
+  );
+
+  const fileButton = (
+    <>
+      <input
+        ref={fileRef}
+        type="file"
+        accept=".enc,.gz,.tgz,application/gzip,application/octet-stream"
+        className="hidden"
+        onChange={(e) => {
+          const f = e.target.files?.[0];
+          e.target.value = '';
+          if (f) send(f);
+        }}
+      />
+      <Button disabled={off || !owner} onClick={() => fileRef.current?.click()}>
+        <Upload className={upload.busy ? 'size-4 animate-pulse' : 'size-4'} />
+        {upload.busy ? 'Загрузка\u2026' : 'Загрузить файл'}
+      </Button>
+    </>
+  );
 
   return (
     <Card className="flex flex-col gap-3 p-4">
       <div className="flex flex-wrap gap-x-5 gap-y-2">
-        <label className="flex items-center gap-2 text-sm">
-          <input
-            type="radio"
-            name="setup-source"
-            checked={!fromCopy}
-            disabled={off}
-            onChange={() => {
-              setFromCopy(false);
-              go(undefined);
-            }}
-          />
-          Пустой сервер
-        </label>
-        <label className="flex items-center gap-2 text-sm">
-          <input
-            type="radio"
-            name="setup-source"
-            checked={fromCopy}
-            disabled={off}
-            onChange={() => setFromCopy(true)}
-          />
-          Из резервной копии
-        </label>
+        {radio('empty', 'Пустой сервер')}
+        {radio('copy', 'Резервная копия этого сервера')}
+        {radio('migrate', 'Перенос с другого сервера')}
       </div>
-      {fromCopy && (
+      {mode === 'copy' && (
         <div className="flex flex-col gap-2 sm:flex-row sm:items-end">
           <Field label="Копия" htmlFor="setup-backup" className="grow">
             <Select
               id="setup-backup"
-              value={backup ?? ''}
+              value={q.backup ?? ''}
               disabled={off || list.isFetching}
-              onChange={(e) => go(e.target.value || undefined)}
+              onChange={(e) => go({ ...q, backup: e.target.value || undefined })}
             >
-              <option value="">
-                {copies.length ? 'не выбрана' : 'копий с составом сервисов нет'}
-              </option>
+              <option value="">{copies.length ? 'не выбрана' : 'копий этого сервера нет'}</option>
               {copies.map((b) => (
                 <option key={b.id} value={b.id}>
-                  {b.serverName}, {dateTime(b.createdAt)}
+                  {dateTime(b.createdAt)}
                 </option>
               ))}
             </Select>
           </Field>
-          <input
-            ref={fileRef}
-            type="file"
-            accept=".enc,.gz,.tgz,application/gzip,application/octet-stream"
-            className="hidden"
-            onChange={(e) => {
-              const f = e.target.files?.[0];
-              e.target.value = '';
-              if (f) send(f);
-            }}
-          />
-          <Button disabled={off} onClick={() => fileRef.current?.click()}>
-            <Upload className={upload.busy ? 'size-4 animate-pulse' : 'size-4'} />
-            {upload.busy ? 'Загрузка\u2026' : 'Загрузить файл'}
-          </Button>
+          {fileButton}
         </div>
+      )}
+      {mode === 'migrate' && (
+        <div className="flex flex-col gap-2">
+          <div className="flex flex-col gap-2 sm:flex-row sm:items-end">
+            <Field label="Старый сервер" htmlFor="setup-migrate" className="grow">
+              <Select
+                id="setup-migrate"
+                value={q.migrate ?? ''}
+                disabled={off}
+                onChange={(e) => go({ migrate: e.target.value || undefined, wipe: q.wipe })}
+              >
+                <option value="">не выбран</option>
+                {others.map((x) => (
+                  <option key={x.id} value={x.id}>
+                    {x.name}
+                    {x.status === 'online' ? '' : ' (не в сети)'}
+                  </option>
+                ))}
+              </Select>
+            </Field>
+            {q.migrate && (
+              <Field label="Данные" htmlFor="setup-migrate-copy" className="grow">
+                <Select
+                  id="setup-migrate-copy"
+                  value={q.backup ?? ''}
+                  disabled={off || list.isFetching}
+                  onChange={(e) => go({ ...q, backup: e.target.value || undefined })}
+                >
+                  <option value="">
+                    {old?.status === 'online'
+                      ? 'свежая копия при переносе'
+                      : 'не в сети: выберите его копию'}
+                  </option>
+                  {copies.map((b) => (
+                    <option key={b.id} value={b.id}>
+                      копия от {dateTime(b.createdAt)}
+                    </option>
+                  ))}
+                </Select>
+              </Field>
+            )}
+            {q.migrate && fileButton}
+          </div>
+          <div className="text-xs text-muted">
+            Сервисы ставятся как на старом сервере, данные&nbsp;&mdash; из копии, клиенты панели
+            переходят сюда с теми же ключами. Если клиенты подключаются по имени (адрес для
+            клиентов), его A-запись нужно перевести на IP этого сервера до запуска.
+          </div>
+        </div>
+      )}
+      {mode !== 'empty' && Boolean(installed?.length) && (
+        <Checkbox
+          label="Удалить то, что уже стоит на сервере"
+          hint={`${installed?.join(', ')}: удаляются перед установкой, всё ставится заново`}
+          checked={wipe}
+          disabled={off}
+          onChange={(e) => go({ ...q, wipe: e.target.checked ? '1' : '0' })}
+        />
       )}
       {upload.error && <Alert tone="bad">{upload.error}</Alert>}
     </Card>
@@ -336,16 +443,23 @@ function SourceCard({
  */
 export function ServerSetupPage() {
   const { id } = useParams({ strict: false }) as { id: string };
-  const { backup } = useSearch({ strict: false }) as { backup?: string };
+  const q = useSearch({ strict: false }) as SetupSearch;
+  const { backup, migrate } = q;
+  const wipe = wipeOf(q);
+  const source = `${backup ?? ''}|${migrate ?? ''}|${wipe ? 1 : 0}`;
   const qc = useQueryClient();
   const { data: s } = useServer(id);
   const cmds = useQuery({ queryKey: ['commands'], queryFn: commandsApi.list });
   const plan = useQuery({
-    queryKey: ['setup-plan', id, backup ?? ''],
-    queryFn: () =>
-      api<SetupPlan>(
-        `/api/servers/${id}/setup${backup ? `?backup=${encodeURIComponent(backup)}` : ''}`,
-      ),
+    queryKey: ['setup-plan', id, source],
+    queryFn: () => {
+      const p = new URLSearchParams();
+      if (backup) p.set('backup', backup);
+      if (migrate) p.set('migrate', migrate);
+      if (wipe) p.set('wipe', '1');
+      const qs = p.toString();
+      return api<SetupPlan>(`/api/servers/${id}/setup${qs ? `?${qs}` : ''}`);
+    },
     staleTime: Number.POSITIVE_INFINITY,
     refetchOnWindowFocus: false,
   });
@@ -362,9 +476,9 @@ export function ServerSetupPage() {
   }
   const [checks, setChecks] = useState<SetupCheck[] | null>(null);
   // другой источник (копия или пустой сервер) - шаги прежнего плана не показываем
-  const [stepsKey, setStepsKey] = useState(backup ?? '');
-  if ((backup ?? '') !== stepsKey) {
-    setStepsKey(backup ?? '');
+  const [stepsKey, setStepsKey] = useState(source);
+  if (source !== stepsKey) {
+    setStepsKey(source);
     setSteps(null);
     setPlanFor(null);
     setChecks(null);
@@ -400,6 +514,8 @@ export function ServerSetupPage() {
     );
   const body = (from?: string) => ({
     ...(backup ? { backupId: backup } : {}),
+    ...(migrate ? { migrateFrom: migrate } : {}),
+    ...(wipe ? { wipe: true } : {}),
     ...(from ? { from } : {}),
     steps: (steps ?? []).map((st) => ({
       id: st.id,
@@ -454,15 +570,25 @@ export function ServerSetupPage() {
       <PageTitle hero>Настройка сервера</PageTitle>
       <SourceCard
         serverId={id}
-        backup={backup}
+        q={q}
+        installed={plan.data?.installed}
         disabled={!online || lock.busy || running || act.busy}
       />
-      {plan.data?.backup && (
+      {plan.data?.migrate ? (
         <Alert>
-          Восстановление копии <b>{plan.data.backup.serverName}</b> от{' '}
-          {dateTime(plan.data.backup.createdAt)}: сервисы&nbsp;&mdash; как на старом сервере, затем
-          данные из копии
+          Перенос с сервера <b>{plan.data.migrate.name}</b>
+          {plan.data.backup?.id
+            ? ` из копии от ${dateTime(plan.data.backup.createdAt)}`
+            : ' со свежей копией'}
+          : сервисы&nbsp;&mdash; как на нём, затем данные копии и его клиенты
         </Alert>
+      ) : (
+        plan.data?.backup && (
+          <Alert>
+            Восстановление копии от {dateTime(plan.data.backup.createdAt)}: сервисы&nbsp;&mdash; как
+            были, затем данные из копии
+          </Alert>
+        )
       )}
       {!online && s && <Alert tone="bad">Сервер не в сети</Alert>}
       {plan.error && <Alert tone="bad">{plan.error.message}</Alert>}

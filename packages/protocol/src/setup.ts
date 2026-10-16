@@ -13,7 +13,15 @@ export type SetupStepKind =
   | 'restore'
   | 'gclients'
   | 'reboot'
-  | 'reach';
+  | 'reach'
+  /** Очистка: удалить наши сервисы, что уже стоят (перед установкой из копии). */
+  | 'wipe'
+  /** Перенос: свежая копия старого сервера в момент переноса. */
+  | 'snapshot'
+  /** Перенос: клиенты, доступы и настройки старого сервера - этому. */
+  | 'migrate'
+  /** Перенос: что сделать со старым сервером (answers.MODE: remove, delete, keep). */
+  | 'retire';
 
 export type SetupStepState = 'pending' | 'running' | 'done' | 'failed' | 'skipped';
 
@@ -40,13 +48,32 @@ export interface SetupStep {
   modes?: SetupMode[];
 }
 
-export type SetupMode = 'keep' | 'reinstall' | 'skip';
+/**
+ * keep, reinstall, skip - уже стоящий сервис; у шага retire (старый сервер после переноса):
+ * remove - снять сервисы и агента, удалить из панели; delete - только удалить из панели;
+ * keep - оставить в панели без клиентов.
+ */
+export type SetupMode = 'keep' | 'reinstall' | 'skip' | 'remove' | 'delete';
+
+/**
+ * Откуда настройка: пустой сервер (ничего), копия этого же сервера (backupId) или перенос с
+ * другого сервера панели (migrateFrom: его копия backupId, без неё - свежая копия при переносе).
+ * wipe - удалить наши сервисы, что уже стоят, и ставить как на пустой.
+ */
+export interface SetupSource {
+  backupId?: string | undefined;
+  migrateFrom?: string | undefined;
+  wipe?: boolean | undefined;
+}
 
 /** Ход последнего запуска настройки сервера. */
 export interface SetupProgress {
   actionId: string;
-  /** Запуск с восстановлением из этой копии. */
+  /** Запуск с восстановлением из этой копии (при переносе со свежей копией - когда она снята). */
   backupId?: string | undefined;
+  /** Перенос: с какого сервера; очистка - была ли выбрана (для продолжения). */
+  migrateFrom?: string | undefined;
+  wipe?: boolean | undefined;
   startedAt: string;
   finishedAt: string | null;
   /** Шаги запуска с состоянием; note - итог или причина ошибки. */
@@ -56,14 +83,16 @@ export interface SetupProgress {
 export interface SetupPlan {
   steps: SetupStep[];
   progress: SetupProgress | null;
-  /** План восстановления: копия, с какого сервера и когда. */
+  /** План восстановления: копия, с какого сервера и когда (свежая при переносе - без id). */
   backup?: { id: string; serverName: string; createdAt: string };
+  /** План переноса: старый сервер. */
+  migrate?: { id: string; name: string; online: boolean };
+  /** Что из наших сервисов уже стоит на сервере (для галочки очистки). */
+  installed?: string[];
 }
 
 /** Запуск: отмеченные шаги с ответами; from - продолжить с этого шага (сделанное пропускается). */
-export interface SetupRunRequest {
-  /** Восстановить из копии: сервисы - как были на старом сервере, затем данные архива. */
-  backupId?: string | undefined;
+export interface SetupRunRequest extends SetupSource {
   steps: { id: string; enabled: boolean; answers?: Record<string, string> | undefined }[];
   from?: string | undefined;
 }

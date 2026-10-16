@@ -416,19 +416,40 @@ function RestoreDialog({
               );
             })}
           </div>
-          {t && target !== backup.serverId && comps.some((c) => serviceMissing(c.id, t)) && (
+          {t && target !== backup.serverId && backup.serverId && (
             <Alert>
               <div className="flex flex-col gap-2">
                 <span>
-                  На сервере нет сервисов из копии: настройка сервера поставит их сама, с портами
-                  старого сервера, и разложит данные
+                  Это копия другого сервера: восстановление разложит её данные без клиентов
+                  панели&nbsp;&mdash; их записи окажутся чужими. Перенос ставит сервисы со старыми
+                  портами, раскладывает данные и переводит сюда клиентов с теми же ключами.
                 </span>
                 <div>
                   <ButtonLink
                     size="sm"
                     to="/servers/$id/setup"
                     params={{ id: target }}
-                    search={{ backup: backup.id }}
+                    search={{ backup: backup.id, migrate: backup.serverId, wipe: undefined }}
+                  >
+                    Перенос на этот сервер
+                  </ButtonLink>
+                </div>
+              </div>
+            </Alert>
+          )}
+          {t && target === backup.serverId && comps.some((c) => serviceMissing(c.id, t)) && (
+            <Alert>
+              <div className="flex flex-col gap-2">
+                <span>
+                  На сервере нет сервисов из копии: настройка сервера поставит их сама, с прежними
+                  портами, и разложит данные
+                </span>
+                <div>
+                  <ButtonLink
+                    size="sm"
+                    to="/servers/$id/setup"
+                    params={{ id: target }}
+                    search={{ backup: backup.id, migrate: undefined, wipe: undefined }}
                   >
                     Восстановить с установкой сервисов
                   </ButtonLink>
