@@ -1,0 +1,2 @@
+XUI_DB_TYPE=postgres
+export XUI_DB_DSN="postgres://xui:pw@127.0.0.1:5432/xui?sslmode=disable"

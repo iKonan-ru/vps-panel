@@ -1,0 +1,32 @@
+{
+  "ssh_port": 22,
+  "host_allow": [],
+  "docker_allow": [],
+  "labels": {},
+  "docker_labels": {},
+  "docker_published": [],
+  "host_network_containers": [],
+  "deny": [
+    [
+      "tcp",
+      22
+    ]
+  ],
+  "unknown_listeners": [
+    {
+      "proto": "tcp",
+      "port": 22,
+      "process": "sshd"
+    }
+  ],
+  "admin_ips": [
+    "10.1.1.1"
+  ],
+  "allow_ping": true,
+  "xui": {},
+  "mtproxy": {},
+  "wireguard_ports": [],
+  "findings": [],
+  "wan_interface": "eth0",
+  "xui_fp": ""
+}

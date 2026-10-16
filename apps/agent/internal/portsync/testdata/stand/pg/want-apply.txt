@@ -1,0 +1,119 @@
+ssh: 2222  wan: eth1
+host allow: 80/tcp, 443/tcp, 1080/tcp, 2222/tcp, 8443/tcp, 1080/udp, 8443/udp
+docker allow: 
+закрыто (процесс не в known_processes): 3128/tcp squid
+ufw allow from any to any port 80 proto tcp comment vps-portsync: nginx
+ufw allow from any to any port 443 proto tcp comment vps-portsync: 3X-UI PG Reality
+ufw allow from any to any port 1080 proto tcp comment vps-portsync: 3X-UI PG mixed
+ufw allow from any to any port 2222 proto tcp comment vps-portsync: SSH
+ufw allow from any to any port 8443 proto tcp comment vps-portsync: MTProxyL
+ufw allow from any to any port 1080 proto udp comment vps-portsync: 3X-UI PG mixed
+ufw allow from any to any port 8443 proto udp comment vps-portsync: 3X-UI PG quic
+ufw: уже стоят 0 из 7 правил
+DOCKER-USER отсутствует (docker не запущен?) - пропускаю цепочку контейнеров
+--- calls
+iptables [-w] [5] [-nL] [DOCKER-USER]
+ufw [allow] [from] [any] [to] [any] [port] [80] [proto] [tcp] [comment] [vps-portsync: nginx]
+ufw [allow] [from] [any] [to] [any] [port] [443] [proto] [tcp] [comment] [vps-portsync: 3X-UI PG Reality]
+ufw [allow] [from] [any] [to] [any] [port] [1080] [proto] [tcp] [comment] [vps-portsync: 3X-UI PG mixed]
+ufw [allow] [from] [any] [to] [any] [port] [2222] [proto] [tcp] [comment] [vps-portsync: SSH]
+ufw [allow] [from] [any] [to] [any] [port] [8443] [proto] [tcp] [comment] [vps-portsync: MTProxyL]
+ufw [allow] [from] [any] [to] [any] [port] [1080] [proto] [udp] [comment] [vps-portsync: 3X-UI PG mixed]
+ufw [allow] [from] [any] [to] [any] [port] [8443] [proto] [udp] [comment] [vps-portsync: 3X-UI PG quic]
+iptables [-w] [5] [-nL] [DOCKER-USER]
+--- state.json
+{
+  "ufw_rules": [
+    [
+      "allow",
+      "from",
+      "any",
+      "to",
+      "any",
+      "port",
+      "80",
+      "proto",
+      "tcp",
+      "comment",
+      "vps-portsync: nginx"
+    ],
+    [
+      "allow",
+      "from",
+      "any",
+      "to",
+      "any",
+      "port",
+      "443",
+      "proto",
+      "tcp",
+      "comment",
+      "vps-portsync: 3X-UI PG Reality"
+    ],
+    [
+      "allow",
+      "from",
+      "any",
+      "to",
+      "any",
+      "port",
+      "1080",
+      "proto",
+      "tcp",
+      "comment",
+      "vps-portsync: 3X-UI PG mixed"
+    ],
+    [
+      "allow",
+      "from",
+      "any",
+      "to",
+      "any",
+      "port",
+      "2222",
+      "proto",
+      "tcp",
+      "comment",
+      "vps-portsync: SSH"
+    ],
+    [
+      "allow",
+      "from",
+      "any",
+      "to",
+      "any",
+      "port",
+      "8443",
+      "proto",
+      "tcp",
+      "comment",
+      "vps-portsync: MTProxyL"
+    ],
+    [
+      "allow",
+      "from",
+      "any",
+      "to",
+      "any",
+      "port",
+      "1080",
+      "proto",
+      "udp",
+      "comment",
+      "vps-portsync: 3X-UI PG mixed"
+    ],
+    [
+      "allow",
+      "from",
+      "any",
+      "to",
+      "any",
+      "port",
+      "8443",
+      "proto",
+      "udp",
+      "comment",
+      "vps-portsync: 3X-UI PG quic"
+    ]
+  ]
+}

@@ -1,0 +1,7 @@
+{
+  "psql": true,
+  "docker_user": false,
+  "chain": false,
+  "jump": false,
+  "no_comment": false
+}

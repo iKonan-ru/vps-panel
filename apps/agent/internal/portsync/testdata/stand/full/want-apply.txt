@@ -1,0 +1,551 @@
+ssh: 2222  wan: ens3
+host allow: 22/tcp, 80/tcp, 443/tcp, 2053/tcp, 2096/tcp, 2222/tcp, 2443/tcp, 6666/tcp, 7000/tcp, 7200/tcp, 8443/tcp, 8444/tcp, 9100/tcp, 12443/tcp, 13443/tcp, 0/udp, 2443/udp, 3443/udp, 4443/udp, 5555/udp, 11443/udp, 51821/udp, 51830/udp, 56000/udp
+docker allow: 6666/tcp, 51820/tcp, 5555/udp, 51820/udp, 51825/udp
+закрыто (процесс не в known_processes): 7100/tcp openflux
+закрыто (процесс не в known_processes): 3000/tcp node
+закрыто (процесс не в known_processes): 8080/tcp nginx
+закрыто (процесс не в known_processes): 5353/udp 
+[high] 3x-ui: панель открыта в интернет БЕЗ HTTPS (webCertFile пуст)
+[medium] 3x-ui: панель открыта в интернет с webBasePath '/', нужен длинный путь
+[info] 3x-ui: 2FA в панели выключена (Settings -> Security)
+ufw delete allow from any to any port 1234 proto tcp comment vps-portsync: 3X-UI old
+ufw delete allow from 1.2.3.4 to any port 22 proto tcp comment vps-portsync: SSH admin
+ufw allow from any to any port 80 proto tcp comment vps-portsync: Caddy
+ufw allow from any to any port 443 proto tcp comment vps-portsync: 3X-UI Германия: Reality
+ufw allow from any to any port 2053 proto tcp comment vps-portsync: 3X-UI панель
+ufw allow from any to any port 2096 proto tcp comment vps-portsync: 3X-UI порт подписок
+ufw allow from any to any port 2222 proto tcp comment vps-portsync: SSH
+ufw allow from any to any port 2443 proto tcp comment vps-portsync: 3X-UI SS
+ufw allow from any to any port 6666 proto tcp comment vps-portsync: вручную extra_allow
+ufw allow from any to any port 7000 proto tcp comment vps-portsync: OpenFlux ru1
+ufw allow from any to any port 7200 proto tcp comment vps-portsync: OpenFlux ru2
+ufw allow from any to any port 8443 proto tcp comment vps-portsync: 3X-UI XHTTP
+ufw allow from any to any port 8444 proto tcp comment vps-portsync: MTProxyL
+ufw allow from any to any port 9100 proto tcp comment vps-portsync: VPS Panel агент
+ufw allow from any to any port 12443 proto tcp comment vps-portsync: 3X-UI внутренний адрес
+ufw allow from any to any port 13443 proto tcp comment vps-portsync: 3X-UI Очень длинное имя inbound-а
+ufw allow from any to any port 0 proto udp comment vps-portsync: WireGuard awg1
+ufw allow from any to any port 2443 proto udp comment vps-portsync: 3X-UI SS
+ufw allow from any to any port 3443 proto udp comment vps-portsync: 3X-UI mKCP
+ufw allow from any to any port 4443 proto udp comment vps-portsync: 3X-UI hysteria
+ufw allow from any to any port 5555 proto udp comment vps-portsync: вручную extra_allow
+ufw allow from any to any port 11443 proto udp comment vps-portsync: 3X-UI wireguard
+ufw allow from any to any port 51821 proto udp comment vps-portsync: WireGuard awg0
+ufw allow from any to any port 51830 proto udp comment vps-portsync: WireGuard wg0
+ufw allow from any to any port 56000 proto udp comment vps-portsync: WDTT
+ufw allow from 1.2.3.4 to any port 2222 proto tcp comment vps-portsync: SSH admin
+ufw allow from 2001:db8::1 to any port 2222 proto tcp comment vps-portsync: SSH admin
+ufw: уже стоят 1 из 26 правил
+iptables -F VPS-PORTSYNC
+iptables -A VPS-PORTSYNC ! -i ens3 -j RETURN
+iptables -A VPS-PORTSYNC -m conntrack --ctstate RELATED,ESTABLISHED -j RETURN
+iptables -A VPS-PORTSYNC -p tcp -m conntrack --ctdir ORIGINAL --ctorigdstport 6666 -m comment --comment вручную extra_allow -j RETURN
+iptables -A VPS-PORTSYNC -p tcp -m conntrack --ctdir ORIGINAL --ctorigdstport 51820 -m comment --comment amnezia-awg2 -j RETURN
+iptables -A VPS-PORTSYNC -p udp -m conntrack --ctdir ORIGINAL --ctorigdstport 5555 -m comment --comment вручную extra_allow -j RETURN
+iptables -A VPS-PORTSYNC -p udp -m conntrack --ctdir ORIGINAL --ctorigdstport 51820 -m comment --comment amnezia-awg2 -j RETURN
+iptables -A VPS-PORTSYNC -p udp -m conntrack --ctdir ORIGINAL --ctorigdstport 51825 -m comment --comment wg-easy -j RETURN
+iptables -A VPS-PORTSYNC -m limit --limit 3/min --limit-burst 10 -j LOG --log-prefix [VPS-PORTSYNC DROP] 
+iptables -A VPS-PORTSYNC -j DROP
+iptables -I DOCKER-USER 1 -j VPS-PORTSYNC
+--- calls
+iptables [-w] [5] [-nL] [DOCKER-USER]
+iptables [-w] [5] [-S] [VPS-PORTSYNC]
+iptables [-w] [5] [-C] [DOCKER-USER] [-j] [VPS-PORTSYNC]
+ufw [delete] [allow] [from] [any] [to] [any] [port] [1234] [proto] [tcp] [comment] [vps-portsync: 3X-UI old]
+ufw [delete] [allow] [from] [1.2.3.4] [to] [any] [port] [22] [proto] [tcp] [comment] [vps-portsync: SSH admin]
+ufw [allow] [from] [any] [to] [any] [port] [80] [proto] [tcp] [comment] [vps-portsync: Caddy]
+ufw [allow] [from] [any] [to] [any] [port] [443] [proto] [tcp] [comment] [vps-portsync: 3X-UI Германия: Reality]
+ufw [allow] [from] [any] [to] [any] [port] [2053] [proto] [tcp] [comment] [vps-portsync: 3X-UI панель]
+ufw [allow] [from] [any] [to] [any] [port] [2096] [proto] [tcp] [comment] [vps-portsync: 3X-UI порт подписок]
+ufw [allow] [from] [any] [to] [any] [port] [2222] [proto] [tcp] [comment] [vps-portsync: SSH]
+ufw [allow] [from] [any] [to] [any] [port] [2443] [proto] [tcp] [comment] [vps-portsync: 3X-UI SS]
+ufw [allow] [from] [any] [to] [any] [port] [6666] [proto] [tcp] [comment] [vps-portsync: вручную extra_allow]
+ufw [allow] [from] [any] [to] [any] [port] [7000] [proto] [tcp] [comment] [vps-portsync: OpenFlux ru1]
+ufw [allow] [from] [any] [to] [any] [port] [7200] [proto] [tcp] [comment] [vps-portsync: OpenFlux ru2]
+ufw [allow] [from] [any] [to] [any] [port] [8443] [proto] [tcp] [comment] [vps-portsync: 3X-UI XHTTP]
+ufw [allow] [from] [any] [to] [any] [port] [8444] [proto] [tcp] [comment] [vps-portsync: MTProxyL]
+ufw [allow] [from] [any] [to] [any] [port] [9100] [proto] [tcp] [comment] [vps-portsync: VPS Panel агент]
+ufw [allow] [from] [any] [to] [any] [port] [12443] [proto] [tcp] [comment] [vps-portsync: 3X-UI внутренний адрес]
+ufw [allow] [from] [any] [to] [any] [port] [13443] [proto] [tcp] [comment] [vps-portsync: 3X-UI Очень длинное имя inbound-а]
+ufw [allow] [from] [any] [to] [any] [port] [0] [proto] [udp] [comment] [vps-portsync: WireGuard awg1]
+ufw [allow] [from] [any] [to] [any] [port] [2443] [proto] [udp] [comment] [vps-portsync: 3X-UI SS]
+ufw [allow] [from] [any] [to] [any] [port] [3443] [proto] [udp] [comment] [vps-portsync: 3X-UI mKCP]
+ufw [allow] [from] [any] [to] [any] [port] [4443] [proto] [udp] [comment] [vps-portsync: 3X-UI hysteria]
+ufw [allow] [from] [any] [to] [any] [port] [5555] [proto] [udp] [comment] [vps-portsync: вручную extra_allow]
+ufw [allow] [from] [any] [to] [any] [port] [11443] [proto] [udp] [comment] [vps-portsync: 3X-UI wireguard]
+ufw [allow] [from] [any] [to] [any] [port] [51821] [proto] [udp] [comment] [vps-portsync: WireGuard awg0]
+ufw [allow] [from] [any] [to] [any] [port] [51830] [proto] [udp] [comment] [vps-portsync: WireGuard wg0]
+ufw [allow] [from] [any] [to] [any] [port] [56000] [proto] [udp] [comment] [vps-portsync: WDTT]
+ufw [allow] [from] [1.2.3.4] [to] [any] [port] [2222] [proto] [tcp] [comment] [vps-portsync: SSH admin]
+ufw [allow] [from] [2001:db8::1] [to] [any] [port] [2222] [proto] [tcp] [comment] [vps-portsync: SSH admin]
+iptables [-w] [5] [-nL] [DOCKER-USER]
+iptables [-w] [5] [-S] [VPS-PORTSYNC]
+iptables [-w] [5] [-F] [VPS-PORTSYNC]
+iptables [-w] [5] [-A] [VPS-PORTSYNC] [!] [-i] [ens3] [-j] [RETURN]
+iptables [-w] [5] [-A] [VPS-PORTSYNC] [-m] [conntrack] [--ctstate] [RELATED,ESTABLISHED] [-j] [RETURN]
+iptables [-w] [5] [-A] [VPS-PORTSYNC] [-p] [tcp] [-m] [conntrack] [--ctdir] [ORIGINAL] [--ctorigdstport] [6666] [-m] [comment] [--comment] [вручную extra_allow] [-j] [RETURN]
+iptables [-w] [5] [-A] [VPS-PORTSYNC] [-p] [tcp] [-m] [conntrack] [--ctdir] [ORIGINAL] [--ctorigdstport] [51820] [-m] [comment] [--comment] [amnezia-awg2] [-j] [RETURN]
+iptables [-w] [5] [-A] [VPS-PORTSYNC] [-p] [udp] [-m] [conntrack] [--ctdir] [ORIGINAL] [--ctorigdstport] [5555] [-m] [comment] [--comment] [вручную extra_allow] [-j] [RETURN]
+iptables [-w] [5] [-A] [VPS-PORTSYNC] [-p] [udp] [-m] [conntrack] [--ctdir] [ORIGINAL] [--ctorigdstport] [51820] [-m] [comment] [--comment] [amnezia-awg2] [-j] [RETURN]
+iptables [-w] [5] [-A] [VPS-PORTSYNC] [-p] [udp] [-m] [conntrack] [--ctdir] [ORIGINAL] [--ctorigdstport] [51825] [-m] [comment] [--comment] [wg-easy] [-j] [RETURN]
+iptables [-w] [5] [-A] [VPS-PORTSYNC] [-m] [limit] [--limit] [3/min] [--limit-burst] [10] [-j] [LOG] [--log-prefix] [[VPS-PORTSYNC DROP] ]
+iptables [-w] [5] [-A] [VPS-PORTSYNC] [-j] [DROP]
+iptables [-w] [5] [-C] [DOCKER-USER] [-j] [VPS-PORTSYNC]
+iptables [-w] [5] [-I] [DOCKER-USER] [1] [-j] [VPS-PORTSYNC]
+--- state.json
+{
+  "docker_chain": [
+    "ens3",
+    [
+      "!",
+      "-i",
+      "ens3",
+      "-j",
+      "RETURN"
+    ],
+    [
+      "-m",
+      "conntrack",
+      "--ctstate",
+      "RELATED,ESTABLISHED",
+      "-j",
+      "RETURN"
+    ],
+    [
+      "-p",
+      "tcp",
+      "-m",
+      "conntrack",
+      "--ctdir",
+      "ORIGINAL",
+      "--ctorigdstport",
+      "6666",
+      "-m",
+      "comment",
+      "--comment",
+      "вручную extra_allow",
+      "-j",
+      "RETURN"
+    ],
+    [
+      "-p",
+      "tcp",
+      "-m",
+      "conntrack",
+      "--ctdir",
+      "ORIGINAL",
+      "--ctorigdstport",
+      "51820",
+      "-m",
+      "comment",
+      "--comment",
+      "amnezia-awg2",
+      "-j",
+      "RETURN"
+    ],
+    [
+      "-p",
+      "udp",
+      "-m",
+      "conntrack",
+      "--ctdir",
+      "ORIGINAL",
+      "--ctorigdstport",
+      "5555",
+      "-m",
+      "comment",
+      "--comment",
+      "вручную extra_allow",
+      "-j",
+      "RETURN"
+    ],
+    [
+      "-p",
+      "udp",
+      "-m",
+      "conntrack",
+      "--ctdir",
+      "ORIGINAL",
+      "--ctorigdstport",
+      "51820",
+      "-m",
+      "comment",
+      "--comment",
+      "amnezia-awg2",
+      "-j",
+      "RETURN"
+    ],
+    [
+      "-p",
+      "udp",
+      "-m",
+      "conntrack",
+      "--ctdir",
+      "ORIGINAL",
+      "--ctorigdstport",
+      "51825",
+      "-m",
+      "comment",
+      "--comment",
+      "wg-easy",
+      "-j",
+      "RETURN"
+    ],
+    [
+      "-m",
+      "limit",
+      "--limit",
+      "3/min",
+      "--limit-burst",
+      "10",
+      "-j",
+      "LOG",
+      "--log-prefix",
+      "[VPS-PORTSYNC DROP] "
+    ],
+    [
+      "-j",
+      "DROP"
+    ]
+  ],
+  "ufw_rules": [
+    [
+      "allow",
+      "from",
+      "any",
+      "to",
+      "any",
+      "port",
+      "22",
+      "proto",
+      "tcp",
+      "comment",
+      "vps-portsync: SSH"
+    ],
+    [
+      "allow",
+      "from",
+      "any",
+      "to",
+      "any",
+      "port",
+      "80",
+      "proto",
+      "tcp",
+      "comment",
+      "vps-portsync: Caddy"
+    ],
+    [
+      "allow",
+      "from",
+      "any",
+      "to",
+      "any",
+      "port",
+      "443",
+      "proto",
+      "tcp",
+      "comment",
+      "vps-portsync: 3X-UI Германия: Reality"
+    ],
+    [
+      "allow",
+      "from",
+      "any",
+      "to",
+      "any",
+      "port",
+      "2053",
+      "proto",
+      "tcp",
+      "comment",
+      "vps-portsync: 3X-UI панель"
+    ],
+    [
+      "allow",
+      "from",
+      "any",
+      "to",
+      "any",
+      "port",
+      "2096",
+      "proto",
+      "tcp",
+      "comment",
+      "vps-portsync: 3X-UI порт подписок"
+    ],
+    [
+      "allow",
+      "from",
+      "any",
+      "to",
+      "any",
+      "port",
+      "2222",
+      "proto",
+      "tcp",
+      "comment",
+      "vps-portsync: SSH"
+    ],
+    [
+      "allow",
+      "from",
+      "any",
+      "to",
+      "any",
+      "port",
+      "2443",
+      "proto",
+      "tcp",
+      "comment",
+      "vps-portsync: 3X-UI SS"
+    ],
+    [
+      "allow",
+      "from",
+      "any",
+      "to",
+      "any",
+      "port",
+      "6666",
+      "proto",
+      "tcp",
+      "comment",
+      "vps-portsync: вручную extra_allow"
+    ],
+    [
+      "allow",
+      "from",
+      "any",
+      "to",
+      "any",
+      "port",
+      "7000",
+      "proto",
+      "tcp",
+      "comment",
+      "vps-portsync: OpenFlux ru1"
+    ],
+    [
+      "allow",
+      "from",
+      "any",
+      "to",
+      "any",
+      "port",
+      "7200",
+      "proto",
+      "tcp",
+      "comment",
+      "vps-portsync: OpenFlux ru2"
+    ],
+    [
+      "allow",
+      "from",
+      "any",
+      "to",
+      "any",
+      "port",
+      "8443",
+      "proto",
+      "tcp",
+      "comment",
+      "vps-portsync: 3X-UI XHTTP"
+    ],
+    [
+      "allow",
+      "from",
+      "any",
+      "to",
+      "any",
+      "port",
+      "8444",
+      "proto",
+      "tcp",
+      "comment",
+      "vps-portsync: MTProxyL"
+    ],
+    [
+      "allow",
+      "from",
+      "any",
+      "to",
+      "any",
+      "port",
+      "9100",
+      "proto",
+      "tcp",
+      "comment",
+      "vps-portsync: VPS Panel агент"
+    ],
+    [
+      "allow",
+      "from",
+      "any",
+      "to",
+      "any",
+      "port",
+      "12443",
+      "proto",
+      "tcp",
+      "comment",
+      "vps-portsync: 3X-UI внутренний адрес"
+    ],
+    [
+      "allow",
+      "from",
+      "any",
+      "to",
+      "any",
+      "port",
+      "13443",
+      "proto",
+      "tcp",
+      "comment",
+      "vps-portsync: 3X-UI Очень длинное имя inbound-а"
+    ],
+    [
+      "allow",
+      "from",
+      "any",
+      "to",
+      "any",
+      "port",
+      "0",
+      "proto",
+      "udp",
+      "comment",
+      "vps-portsync: WireGuard awg1"
+    ],
+    [
+      "allow",
+      "from",
+      "any",
+      "to",
+      "any",
+      "port",
+      "2443",
+      "proto",
+      "udp",
+      "comment",
+      "vps-portsync: 3X-UI SS"
+    ],
+    [
+      "allow",
+      "from",
+      "any",
+      "to",
+      "any",
+      "port",
+      "3443",
+      "proto",
+      "udp",
+      "comment",
+      "vps-portsync: 3X-UI mKCP"
+    ],
+    [
+      "allow",
+      "from",
+      "any",
+      "to",
+      "any",
+      "port",
+      "4443",
+      "proto",
+      "udp",
+      "comment",
+      "vps-portsync: 3X-UI hysteria"
+    ],
+    [
+      "allow",
+      "from",
+      "any",
+      "to",
+      "any",
+      "port",
+      "5555",
+      "proto",
+      "udp",
+      "comment",
+      "vps-portsync: вручную extra_allow"
+    ],
+    [
+      "allow",
+      "from",
+      "any",
+      "to",
+      "any",
+      "port",
+      "11443",
+      "proto",
+      "udp",
+      "comment",
+      "vps-portsync: 3X-UI wireguard"
+    ],
+    [
+      "allow",
+      "from",
+      "any",
+      "to",
+      "any",
+      "port",
+      "51821",
+      "proto",
+      "udp",
+      "comment",
+      "vps-portsync: WireGuard awg0"
+    ],
+    [
+      "allow",
+      "from",
+      "any",
+      "to",
+      "any",
+      "port",
+      "51830",
+      "proto",
+      "udp",
+      "comment",
+      "vps-portsync: WireGuard wg0"
+    ],
+    [
+      "allow",
+      "from",
+      "any",
+      "to",
+      "any",
+      "port",
+      "56000",
+      "proto",
+      "udp",
+      "comment",
+      "vps-portsync: WDTT"
+    ],
+    [
+      "allow",
+      "from",
+      "1.2.3.4",
+      "to",
+      "any",
+      "port",
+      "2222",
+      "proto",
+      "tcp",
+      "comment",
+      "vps-portsync: SSH admin"
+    ],
+    [
+      "allow",
+      "from",
+      "2001:db8::1",
+      "to",
+      "any",
+      "port",
+      "2222",
+      "proto",
+      "tcp",
+      "comment",
+      "vps-portsync: SSH admin"
+    ]
+  ]
+}

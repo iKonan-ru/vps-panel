@@ -1,0 +1,7 @@
+{
+  "xui_db": "etc/x-ui/x-ui.db",
+  "docker_user": true,
+  "chain": true,
+  "jump": false,
+  "no_comment": false
+}

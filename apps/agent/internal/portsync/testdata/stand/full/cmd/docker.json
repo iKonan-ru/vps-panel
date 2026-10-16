@@ -1,0 +1,18 @@
+[
+  {"Id": "c3", "Name": "/wg-easy", "State": {"Running": true},
+   "HostConfig": {"NetworkMode": "bridge", "PortBindings": {
+     "51821/tcp": [{"HostIp": "127.0.0.1", "HostPort": "51821"}],
+     "51825/udp": [{"HostIp": "", "HostPort": "51825"}, {"HostIp": "::", "HostPort": "51825"}]}},
+   "Mounts": []},
+  {"Id": "c2", "Name": "/stopped", "State": {"Running": false},
+   "HostConfig": {"NetworkMode": "bridge", "PortBindings": {"7777/tcp": [{"HostIp": "", "HostPort": "7777"}]}},
+   "Mounts": []},
+  {"Id": "c1", "Name": "/amnezia-awg2", "State": {"Running": true},
+   "HostConfig": {"NetworkMode": "amnezia-dns-net", "PortBindings": {
+     "51820/tcp": [{"HostIp": "0.0.0.0", "HostPort": "51820"}],
+     "51820/udp": [{"HostIp": "", "HostPort": "51820"}],
+     "9090/tcp": [{"HostIp": "", "HostPort": "9090"}]}},
+   "Mounts": [{"Source": "/opt/amnezia", "Destination": "/opt/amnezia"}]},
+  {"Id": "c0", "Name": "/monitor", "State": {"Running": true},
+   "HostConfig": {"NetworkMode": "host", "PortBindings": {}}, "Mounts": []}
+]

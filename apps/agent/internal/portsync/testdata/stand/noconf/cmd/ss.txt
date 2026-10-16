@@ -1,0 +1,8 @@
+tcp   LISTEN 0      4096         0.0.0.0:22         0.0.0.0:*    users:(("sshd",pid=801,fd=3))
+tcp   LISTEN 0      4096               *:443              *:*    users:(("xray-linux-amd6",pid=900,fd=7))
+udp   UNCONN 0      0            0.0.0.0:443        0.0.0.0:*    users:(("wdtt-server",pid=1200,fd=3))
+udp   UNCONN 0      0            0.0.0.0:56001      0.0.0.0:*    users:(("wdtt-server",pid=1200,fd=4))
+udp   UNCONN 0      0            0.0.0.0:56002      0.0.0.0:*    users:(("wdtt-server",pid=1200,fd=5))
+tcp   LISTEN 0      4096               *:7000             *:*    users:(("openflux",pid=1300,fd=3))
+tcp   LISTEN 0      4096               *:9091             *:*    users:(("telemt",pid=1000,fd=4))
+tcp   LISTEN 0      4096               *:8088             *:*    users:(("sing-box",pid=1000,fd=4))

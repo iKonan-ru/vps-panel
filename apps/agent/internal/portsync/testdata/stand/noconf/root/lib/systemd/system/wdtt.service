@@ -1,0 +1,2 @@
+[Service]
+ExecStart=/usr/local/bin/wdtt-server -listen 0.0.0.0:443 -wg-port=56001

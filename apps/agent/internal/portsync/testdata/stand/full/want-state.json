@@ -1,0 +1,329 @@
+{
+  "ssh_port": 2222,
+  "host_allow": [
+    [
+      "tcp",
+      22
+    ],
+    [
+      "tcp",
+      80
+    ],
+    [
+      "tcp",
+      443
+    ],
+    [
+      "tcp",
+      2053
+    ],
+    [
+      "tcp",
+      2096
+    ],
+    [
+      "tcp",
+      2222
+    ],
+    [
+      "tcp",
+      2443
+    ],
+    [
+      "tcp",
+      6666
+    ],
+    [
+      "tcp",
+      7000
+    ],
+    [
+      "tcp",
+      7200
+    ],
+    [
+      "tcp",
+      8443
+    ],
+    [
+      "tcp",
+      8444
+    ],
+    [
+      "tcp",
+      9100
+    ],
+    [
+      "tcp",
+      12443
+    ],
+    [
+      "tcp",
+      13443
+    ],
+    [
+      "udp",
+      0
+    ],
+    [
+      "udp",
+      2443
+    ],
+    [
+      "udp",
+      3443
+    ],
+    [
+      "udp",
+      4443
+    ],
+    [
+      "udp",
+      5555
+    ],
+    [
+      "udp",
+      11443
+    ],
+    [
+      "udp",
+      51821
+    ],
+    [
+      "udp",
+      51830
+    ],
+    [
+      "udp",
+      56000
+    ]
+  ],
+  "docker_allow": [
+    [
+      "tcp",
+      6666
+    ],
+    [
+      "tcp",
+      51820
+    ],
+    [
+      "udp",
+      5555
+    ],
+    [
+      "udp",
+      51820
+    ],
+    [
+      "udp",
+      51825
+    ]
+  ],
+  "labels": {
+    "0/udp": "WireGuard awg1",
+    "11443/udp": "3X-UI wireguard",
+    "12443/tcp": "3X-UI внутренний адрес",
+    "13443/tcp": "3X-UI Очень длинное имя inbound-а",
+    "2053/tcp": "3X-UI панель",
+    "2096/tcp": "3X-UI порт подписок",
+    "22/tcp": "SSH",
+    "2222/tcp": "SSH",
+    "2443/tcp": "3X-UI SS",
+    "2443/udp": "3X-UI SS",
+    "3443/udp": "3X-UI mKCP",
+    "443/tcp": "3X-UI Германия: Reality",
+    "4443/udp": "3X-UI hysteria",
+    "51821/udp": "WireGuard awg0",
+    "51830/udp": "WireGuard wg0",
+    "5555/udp": "вручную (extra_allow)",
+    "56000/udp": "WDTT",
+    "6666/tcp": "вручную (extra_allow)",
+    "7000/tcp": "OpenFlux ru1",
+    "7200/tcp": "OpenFlux ru2",
+    "80/tcp": "Caddy",
+    "8443/tcp": "3X-UI XHTTP",
+    "8444/tcp": "MTProxyL",
+    "9100/tcp": "VPS Panel агент"
+  },
+  "docker_labels": {
+    "51820/tcp": "amnezia-awg2",
+    "51820/udp": "amnezia-awg2",
+    "51825/udp": "wg-easy",
+    "5555/udp": "вручную (extra_allow)",
+    "6666/tcp": "вручную (extra_allow)"
+  },
+  "docker_published": [
+    {
+      "container": "wg-easy",
+      "proto": "udp",
+      "port": 51825,
+      "host_ip": "",
+      "network_mode": "bridge"
+    },
+    {
+      "container": "wg-easy",
+      "proto": "udp",
+      "port": 51825,
+      "host_ip": "::",
+      "network_mode": "bridge"
+    },
+    {
+      "container": "amnezia-awg2",
+      "proto": "tcp",
+      "port": 51820,
+      "host_ip": "0.0.0.0",
+      "network_mode": "amnezia-dns-net"
+    },
+    {
+      "container": "amnezia-awg2",
+      "proto": "udp",
+      "port": 51820,
+      "host_ip": "",
+      "network_mode": "amnezia-dns-net"
+    },
+    {
+      "container": "amnezia-awg2",
+      "proto": "tcp",
+      "port": 9090,
+      "host_ip": "",
+      "network_mode": "amnezia-dns-net"
+    }
+  ],
+  "host_network_containers": [
+    "monitor"
+  ],
+  "deny": [
+    [
+      "tcp",
+      9090
+    ],
+    [
+      "tcp",
+      9091
+    ],
+    [
+      "tcp",
+      62789
+    ]
+  ],
+  "unknown_listeners": [
+    {
+      "proto": "tcp",
+      "port": 7100,
+      "process": "openflux"
+    },
+    {
+      "proto": "tcp",
+      "port": 3000,
+      "process": "node"
+    },
+    {
+      "proto": "tcp",
+      "port": 8080,
+      "process": "nginx"
+    },
+    {
+      "proto": "udp",
+      "port": 5353,
+      "process": ""
+    }
+  ],
+  "admin_ips": [
+    "1.2.3.4",
+    "2001:db8::1"
+  ],
+  "allow_ping": true,
+  "xui": {
+    "db": "@ROOT@/etc/x-ui/x-ui.db",
+    "inbounds": [
+      {
+        "network": "tcp",
+        "port": 443,
+        "protocol": "vless",
+        "remark": "\ud83c\udde9\ud83c\uddea Германия: \"Reality\""
+      },
+      {
+        "network": "xhttp",
+        "port": 8443,
+        "protocol": "vless",
+        "remark": "XHTTP"
+      },
+      {
+        "network": "tcp",
+        "port": 2443,
+        "protocol": "shadowsocks",
+        "remark": "SS"
+      },
+      {
+        "network": "kcp",
+        "port": 3443,
+        "protocol": "vless",
+        "remark": "mKCP"
+      },
+      {
+        "network": "",
+        "port": 4443,
+        "protocol": "hysteria",
+        "remark": ""
+      },
+      {
+        "network": "",
+        "port": 11443,
+        "protocol": "wireguard",
+        "remark": ""
+      },
+      {
+        "network": "grpc",
+        "port": 12443,
+        "protocol": "vless",
+        "remark": "внутренний адрес"
+      },
+      {
+        "network": "",
+        "port": 13443,
+        "protocol": "trojan",
+        "remark": "Очень длинное имя inbound-а для проверки обрезки подписи"
+      },
+      {
+        "network": "tcp",
+        "port": 2096,
+        "protocol": "vless",
+        "remark": "порт подписок"
+      }
+    ],
+    "panel_2fa": false,
+    "panel_base_path": "/",
+    "panel_https": false,
+    "panel_listen": "0.0.0.0",
+    "panel_port": 2053,
+    "sub_port": 2096
+  },
+  "mtproxy": {
+    "config": "@ROOT@/opt/mtproxyl/mtproxy/config.toml",
+    "ports": [
+      8444
+    ]
+  },
+  "wireguard_ports": [
+    0,
+    51821,
+    51830
+  ],
+  "findings": [
+    [
+      "high",
+      "3x-ui: панель открыта в интернет БЕЗ HTTPS (webCertFile пуст)"
+    ],
+    [
+      "medium",
+      "3x-ui: панель открыта в интернет с webBasePath '/', нужен длинный путь"
+    ],
+    [
+      "info",
+      "3x-ui: 2FA в панели выключена (Settings -\u003e Security)"
+    ]
+  ],
+  "wan_interface": "ens3",
+  "xui_fp": "8faaf9c57509c4e8da58fb4d70012d93dfe3465fcce38f907a6b0acafa69fc57"
+}

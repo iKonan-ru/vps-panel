@@ -1,0 +1,139 @@
+{
+  "ssh_port": 22,
+  "host_allow": [
+    [
+      "tcp",
+      22
+    ],
+    [
+      "tcp",
+      443
+    ],
+    [
+      "tcp",
+      2053
+    ],
+    [
+      "tcp",
+      7000
+    ],
+    [
+      "tcp",
+      8088
+    ],
+    [
+      "udp",
+      443
+    ],
+    [
+      "udp",
+      8443
+    ],
+    [
+      "udp",
+      56002
+    ]
+  ],
+  "docker_allow": [
+    [
+      "tcp",
+      8444
+    ],
+    [
+      "udp",
+      1194
+    ]
+  ],
+  "labels": {
+    "2053/tcp": "3X-UI панель",
+    "22/tcp": "SSH",
+    "443/tcp": "3X-UI Docker VLESS",
+    "443/udp": "WDTT",
+    "56002/udp": "WDTT",
+    "7000/tcp": "OpenFlux",
+    "8088/tcp": "sing-box",
+    "8443/udp": "3X-UI Docker TUIC"
+  },
+  "docker_labels": {
+    "1194/udp": "amnezia-xray",
+    "8444/tcp": "amnezia-xray"
+  },
+  "docker_published": [
+    {
+      "container": "amnezia-xray",
+      "proto": "udp",
+      "port": 1194,
+      "host_ip": "",
+      "network_mode": "bridge"
+    },
+    {
+      "container": "amnezia-xray",
+      "proto": "tcp",
+      "port": 8444,
+      "host_ip": "",
+      "network_mode": "bridge"
+    }
+  ],
+  "host_network_containers": [
+    "3x-ui"
+  ],
+  "deny": [
+    [
+      "tcp",
+      9090
+    ],
+    [
+      "tcp",
+      9091
+    ],
+    [
+      "tcp",
+      62789
+    ]
+  ],
+  "unknown_listeners": [],
+  "admin_ips": [],
+  "allow_ping": true,
+  "xui": {
+    "db": "@ROOT@/srv/xui/x-ui.db",
+    "inbounds": [
+      {
+        "network": "tcp",
+        "port": 443,
+        "protocol": "vless",
+        "remark": "Docker VLESS"
+      },
+      {
+        "network": "",
+        "port": 8443,
+        "protocol": "tuic",
+        "remark": "Docker TUIC"
+      }
+    ],
+    "panel_2fa": false,
+    "panel_base_path": "/",
+    "panel_https": false,
+    "panel_listen": "::",
+    "panel_port": 2053
+  },
+  "mtproxy": {},
+  "wireguard_ports": [
+    56002
+  ],
+  "findings": [
+    [
+      "high",
+      "3x-ui: панель открыта в интернет БЕЗ HTTPS (webCertFile пуст)"
+    ],
+    [
+      "medium",
+      "3x-ui: панель открыта в интернет с webBasePath '/', нужен длинный путь"
+    ],
+    [
+      "info",
+      "3x-ui: 2FA в панели выключена (Settings -\u003e Security)"
+    ]
+  ],
+  "wan_interface": "eth0",
+  "xui_fp": "72ce592b38488ec68f1fcb30b55dc082cf3e8eb9c8b2e5eab9c792107b4da1ef"
+}
