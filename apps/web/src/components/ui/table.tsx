@@ -1,11 +1,7 @@
 import { cn } from '@/lib/cn';
 import type { HTMLAttributes, TableHTMLAttributes } from 'react';
 
-/**
- * Таблица в стиле макетов: узкие строки, подписи серым, линии между строками.
- * Всегда обёрнута в блок с горизонтальной прокруткой: на узком экране широкая таблица
- * прокручивается внутри карточки, а не раздвигает страницу.
- */
+/** Таблица в своём блоке прокрутки: на узком экране она не раздвигает страницу. */
 export function Table({ className, ...rest }: TableHTMLAttributes<HTMLTableElement>) {
   return (
     <div className="w-full min-w-0 overflow-x-auto">

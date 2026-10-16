@@ -1,6 +1,6 @@
 import { useTween } from '@/lib/use-tween';
 
-/** Число, которое плавно доходит до нового значения (useTween); format - как показать. */
+/** Число, плавно доходящее до нового значения; format - как показать. */
 export function Num({
   value,
   format = (v) => String(Math.round(v)),

@@ -1,6 +1,5 @@
 import { cn } from '@/lib/cn';
 
-/** Переключатель вкл/выкл (роль switch). */
 export function Switch({
   checked,
   onChange,

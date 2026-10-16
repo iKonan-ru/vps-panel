@@ -15,7 +15,7 @@ type Ask = (opts: ConfirmOptions | string) => Promise<boolean>;
 
 const Ctx = createContext<Ask | null>(null);
 
-/** Диалог подтверждения вместо window.confirm: единый вид, Esc и клик мимо = отмена. */
+/** Подтверждение вместо window.confirm; Esc и клик мимо - отмена. */
 export function ConfirmProvider({ children }: { children: ReactNode }) {
   const [state, setState] = useState<{
     opts: ConfirmOptions;

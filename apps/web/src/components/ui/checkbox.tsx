@@ -1,10 +1,7 @@
 import { cn } from '@/lib/cn';
 import type { InputHTMLAttributes, ReactNode } from 'react';
 
-/**
- * Чекбокс с подписью: единый вид по всему проекту. hint - вторая строка серым;
- * с hint или многострочной подписью квадратик прижат к первой строке.
- */
+/** Чекбокс с подписью; hint - вторая строка серым, квадратик - у первой строки. */
 export function Checkbox({
   label,
   hint,
