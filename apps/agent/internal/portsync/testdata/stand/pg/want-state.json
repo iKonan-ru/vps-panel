@@ -1,0 +1,95 @@
+{
+  "ssh_port": 2222,
+  "host_allow": [
+    [
+      "tcp",
+      80
+    ],
+    [
+      "tcp",
+      443
+    ],
+    [
+      "tcp",
+      1080
+    ],
+    [
+      "tcp",
+      2222
+    ],
+    [
+      "tcp",
+      8443
+    ],
+    [
+      "udp",
+      1080
+    ],
+    [
+      "udp",
+      8443
+    ]
+  ],
+  "docker_allow": [],
+  "labels": {
+    "1080/tcp": "3X-UI PG mixed",
+    "1080/udp": "3X-UI PG mixed",
+    "2222/tcp": "SSH",
+    "443/tcp": "3X-UI PG Reality",
+    "80/tcp": "nginx",
+    "8443/tcp": "MTProxyL",
+    "8443/udp": "3X-UI PG quic"
+  },
+  "docker_labels": {},
+  "docker_published": [],
+  "host_network_containers": [],
+  "deny": [],
+  "unknown_listeners": [
+    {
+      "proto": "tcp",
+      "port": 3128,
+      "process": "squid"
+    }
+  ],
+  "admin_ips": [],
+  "allow_ping": false,
+  "xui": {
+    "db": "postgres",
+    "inbounds": [
+      {
+        "network": "tcp",
+        "port": 443,
+        "protocol": "vless",
+        "remark": "PG Reality"
+      },
+      {
+        "network": "tcp",
+        "port": 1080,
+        "protocol": "mixed",
+        "remark": "PG mixed"
+      },
+      {
+        "network": "quic",
+        "port": 8443,
+        "protocol": "vmess",
+        "remark": "PG quic"
+      }
+    ],
+    "panel_2fa": true,
+    "panel_base_path": "/secret/",
+    "panel_https": true,
+    "panel_listen": "127.0.0.1",
+    "panel_port": 54321,
+    "sub_port": 2097
+  },
+  "mtproxy": {
+    "ports": [
+      8443
+    ],
+    "source": "mtproxyl status --json"
+  },
+  "wireguard_ports": [],
+  "findings": [],
+  "wan_interface": "eth1",
+  "xui_fp": "2c835bd682dd092a2210d97c80124a38e85ff7a36cbe8c4afcf805318f5bc9ed"
+}

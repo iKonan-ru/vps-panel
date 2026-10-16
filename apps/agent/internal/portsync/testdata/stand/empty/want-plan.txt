@@ -1,0 +1,6 @@
+ssh: 22  wan: eth0
+host allow: 
+docker allow: 
+закрыто (процесс не в known_processes): 22/tcp sshd
+ufw allow from 10.1.1.1 to any port 22 proto tcp comment vps-portsync: SSH admin
+DOCKER-USER отсутствует (docker не запущен?) - пропускаю цепочку контейнеров

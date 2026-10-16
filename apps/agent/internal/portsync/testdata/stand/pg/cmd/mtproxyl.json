@@ -1,0 +1,2 @@
+{"version": "1.4.0", "proxy": {"port": 0, "running": true}, "panel": {"listen": "127.0.0.1"},
+ "network": [{"name": "x"}, {"proxy_port": " 8443 "}], "PROXY_PORT": 9999}

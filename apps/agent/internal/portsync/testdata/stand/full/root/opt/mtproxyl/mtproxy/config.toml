@@ -1,0 +1,6 @@
+[server]
+port = 8444
+metrics_port = 9090
+
+[server.api]
+listen = "127.0.0.1:9091"

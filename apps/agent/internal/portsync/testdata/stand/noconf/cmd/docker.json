@@ -1,0 +1,9 @@
+[
+  {"Id": "x1", "Name": "/3x-ui", "State": {"Running": true},
+   "HostConfig": {"NetworkMode": "host", "PortBindings": null},
+   "Mounts": [{"Source": "@ROOT@/srv/xui/", "Destination": "/etc/x-ui/"}]},
+  {"Id": "a1", "Name": "/amnezia-xray", "State": {"Running": true},
+   "HostConfig": {"NetworkMode": "bridge", "PortBindings": {
+     "1194/udp": [{"HostIp": "", "HostPort": "1194"}], "443/tcp": [{"HostIp": "", "HostPort": "8444"}]}},
+   "Mounts": []}
+]

@@ -1,0 +1,2 @@
+-N VPS-PORTSYNC
+-A VPS-PORTSYNC ! -i ens3 -j RETURN

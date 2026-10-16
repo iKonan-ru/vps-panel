@@ -1,0 +1,8 @@
+{
+  "xui_db": "srv/xui/x-ui.db",
+  "docker_user": true,
+  "chain": false,
+  "jump": true,
+  "no_comment": true,
+  "legacy_default_conf": true
+}

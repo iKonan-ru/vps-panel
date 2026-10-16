@@ -1,0 +1,225 @@
+ssh: 22  wan: eth0
+host allow: 22/tcp, 443/tcp, 2053/tcp, 7000/tcp, 8088/tcp, 443/udp, 8443/udp, 56002/udp
+docker allow: 8444/tcp, 1194/udp
+[high] 3x-ui: панель открыта в интернет БЕЗ HTTPS (webCertFile пуст)
+[medium] 3x-ui: панель открыта в интернет с webBasePath '/', нужен длинный путь
+[info] 3x-ui: 2FA в панели выключена (Settings -> Security)
+ufw allow from any to any port 22 proto tcp comment vps-portsync: SSH
+ufw allow from any to any port 443 proto tcp comment vps-portsync: 3X-UI Docker VLESS
+ufw allow from any to any port 2053 proto tcp comment vps-portsync: 3X-UI панель
+ufw allow from any to any port 7000 proto tcp comment vps-portsync: OpenFlux
+ufw allow from any to any port 8088 proto tcp comment vps-portsync: sing-box
+ufw allow from any to any port 443 proto udp comment vps-portsync: WDTT
+ufw allow from any to any port 8443 proto udp comment vps-portsync: 3X-UI Docker TUIC
+ufw allow from any to any port 56002 proto udp comment vps-portsync: WDTT
+ufw: уже стоят 0 из 8 правил
+iptables -N VPS-PORTSYNC
+iptables -F VPS-PORTSYNC
+iptables -A VPS-PORTSYNC ! -i eth0 -j RETURN
+iptables -A VPS-PORTSYNC -m conntrack --ctstate RELATED,ESTABLISHED -j RETURN
+iptables -A VPS-PORTSYNC -p tcp -m conntrack --ctdir ORIGINAL --ctorigdstport 8444 -m comment --comment amnezia-xray -j RETURN
+iptables -A VPS-PORTSYNC -p tcp -m conntrack --ctdir ORIGINAL --ctorigdstport 8444 -j RETURN
+iptables -A VPS-PORTSYNC -p udp -m conntrack --ctdir ORIGINAL --ctorigdstport 1194 -m comment --comment amnezia-xray -j RETURN
+iptables -A VPS-PORTSYNC -p udp -m conntrack --ctdir ORIGINAL --ctorigdstport 1194 -j RETURN
+iptables -A VPS-PORTSYNC -m limit --limit 3/min --limit-burst 10 -j LOG --log-prefix [VPS-PORTSYNC DROP] 
+iptables -A VPS-PORTSYNC -j DROP
+--- calls
+iptables [-w] [5] [-nL] [DOCKER-USER]
+iptables [-w] [5] [-S] [VPS-PORTSYNC]
+iptables [-w] [5] [-C] [DOCKER-USER] [-j] [VPS-PORTSYNC]
+ufw [allow] [from] [any] [to] [any] [port] [22] [proto] [tcp] [comment] [vps-portsync: SSH]
+ufw [allow] [from] [any] [to] [any] [port] [443] [proto] [tcp] [comment] [vps-portsync: 3X-UI Docker VLESS]
+ufw [allow] [from] [any] [to] [any] [port] [2053] [proto] [tcp] [comment] [vps-portsync: 3X-UI панель]
+ufw [allow] [from] [any] [to] [any] [port] [7000] [proto] [tcp] [comment] [vps-portsync: OpenFlux]
+ufw [allow] [from] [any] [to] [any] [port] [8088] [proto] [tcp] [comment] [vps-portsync: sing-box]
+ufw [allow] [from] [any] [to] [any] [port] [443] [proto] [udp] [comment] [vps-portsync: WDTT]
+ufw [allow] [from] [any] [to] [any] [port] [8443] [proto] [udp] [comment] [vps-portsync: 3X-UI Docker TUIC]
+ufw [allow] [from] [any] [to] [any] [port] [56002] [proto] [udp] [comment] [vps-portsync: WDTT]
+iptables [-w] [5] [-nL] [DOCKER-USER]
+iptables [-w] [5] [-S] [VPS-PORTSYNC]
+iptables [-w] [5] [-N] [VPS-PORTSYNC]
+iptables [-w] [5] [-F] [VPS-PORTSYNC]
+iptables [-w] [5] [-A] [VPS-PORTSYNC] [!] [-i] [eth0] [-j] [RETURN]
+iptables [-w] [5] [-A] [VPS-PORTSYNC] [-m] [conntrack] [--ctstate] [RELATED,ESTABLISHED] [-j] [RETURN]
+iptables [-w] [5] [-A] [VPS-PORTSYNC] [-p] [tcp] [-m] [conntrack] [--ctdir] [ORIGINAL] [--ctorigdstport] [8444] [-m] [comment] [--comment] [amnezia-xray] [-j] [RETURN]
+iptables [-w] [5] [-A] [VPS-PORTSYNC] [-p] [tcp] [-m] [conntrack] [--ctdir] [ORIGINAL] [--ctorigdstport] [8444] [-j] [RETURN]
+iptables [-w] [5] [-A] [VPS-PORTSYNC] [-p] [udp] [-m] [conntrack] [--ctdir] [ORIGINAL] [--ctorigdstport] [1194] [-m] [comment] [--comment] [amnezia-xray] [-j] [RETURN]
+iptables [-w] [5] [-A] [VPS-PORTSYNC] [-p] [udp] [-m] [conntrack] [--ctdir] [ORIGINAL] [--ctorigdstport] [1194] [-j] [RETURN]
+iptables [-w] [5] [-A] [VPS-PORTSYNC] [-m] [limit] [--limit] [3/min] [--limit-burst] [10] [-j] [LOG] [--log-prefix] [[VPS-PORTSYNC DROP] ]
+iptables [-w] [5] [-A] [VPS-PORTSYNC] [-j] [DROP]
+iptables [-w] [5] [-C] [DOCKER-USER] [-j] [VPS-PORTSYNC]
+--- state.json
+{
+  "docker_chain": [
+    "eth0",
+    [
+      "!",
+      "-i",
+      "eth0",
+      "-j",
+      "RETURN"
+    ],
+    [
+      "-m",
+      "conntrack",
+      "--ctstate",
+      "RELATED,ESTABLISHED",
+      "-j",
+      "RETURN"
+    ],
+    [
+      "-p",
+      "tcp",
+      "-m",
+      "conntrack",
+      "--ctdir",
+      "ORIGINAL",
+      "--ctorigdstport",
+      "8444",
+      "-m",
+      "comment",
+      "--comment",
+      "amnezia-xray",
+      "-j",
+      "RETURN"
+    ],
+    [
+      "-p",
+      "udp",
+      "-m",
+      "conntrack",
+      "--ctdir",
+      "ORIGINAL",
+      "--ctorigdstport",
+      "1194",
+      "-m",
+      "comment",
+      "--comment",
+      "amnezia-xray",
+      "-j",
+      "RETURN"
+    ],
+    [
+      "-m",
+      "limit",
+      "--limit",
+      "3/min",
+      "--limit-burst",
+      "10",
+      "-j",
+      "LOG",
+      "--log-prefix",
+      "[VPS-PORTSYNC DROP] "
+    ],
+    [
+      "-j",
+      "DROP"
+    ]
+  ],
+  "ufw_rules": [
+    [
+      "allow",
+      "from",
+      "any",
+      "to",
+      "any",
+      "port",
+      "22",
+      "proto",
+      "tcp",
+      "comment",
+      "vps-portsync: SSH"
+    ],
+    [
+      "allow",
+      "from",
+      "any",
+      "to",
+      "any",
+      "port",
+      "443",
+      "proto",
+      "tcp",
+      "comment",
+      "vps-portsync: 3X-UI Docker VLESS"
+    ],
+    [
+      "allow",
+      "from",
+      "any",
+      "to",
+      "any",
+      "port",
+      "2053",
+      "proto",
+      "tcp",
+      "comment",
+      "vps-portsync: 3X-UI панель"
+    ],
+    [
+      "allow",
+      "from",
+      "any",
+      "to",
+      "any",
+      "port",
+      "7000",
+      "proto",
+      "tcp",
+      "comment",
+      "vps-portsync: OpenFlux"
+    ],
+    [
+      "allow",
+      "from",
+      "any",
+      "to",
+      "any",
+      "port",
+      "8088",
+      "proto",
+      "tcp",
+      "comment",
+      "vps-portsync: sing-box"
+    ],
+    [
+      "allow",
+      "from",
+      "any",
+      "to",
+      "any",
+      "port",
+      "443",
+      "proto",
+      "udp",
+      "comment",
+      "vps-portsync: WDTT"
+    ],
+    [
+      "allow",
+      "from",
+      "any",
+      "to",
+      "any",
+      "port",
+      "8443",
+      "proto",
+      "udp",
+      "comment",
+      "vps-portsync: 3X-UI Docker TUIC"
+    ],
+    [
+      "allow",
+      "from",
+      "any",
+      "to",
+      "any",
+      "port",
+      "56002",
+      "proto",
+      "udp",
+      "comment",
+      "vps-portsync: WDTT"
+    ]
+  ]
+}

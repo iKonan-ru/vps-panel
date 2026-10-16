@@ -1,0 +1,4 @@
+port 2222
+port 22
+addressfamily any
+permitrootlogin prohibit-password

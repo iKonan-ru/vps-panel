@@ -1,0 +1,68 @@
+{
+  "ufw_rules": [
+    [
+      "allow",
+      "from",
+      "any",
+      "to",
+      "any",
+      "port",
+      "22",
+      "proto",
+      "tcp",
+      "comment",
+      "vps-portsync: SSH"
+    ],
+    [
+      "allow",
+      "from",
+      "any",
+      "to",
+      "any",
+      "port",
+      "1234",
+      "proto",
+      "tcp",
+      "comment",
+      "vps-portsync: 3X-UI old"
+    ],
+    [
+      "allow",
+      "from",
+      "any",
+      "to",
+      "any",
+      "port",
+      "443",
+      "proto",
+      "tcp",
+      "comment",
+      "vps-portsync: 3X-UI Reality"
+    ],
+    [
+      "allow",
+      "from",
+      "1.2.3.4",
+      "to",
+      "any",
+      "port",
+      "22",
+      "proto",
+      "tcp",
+      "comment",
+      "vps-portsync: SSH admin"
+    ]
+  ],
+  "docker_chain": [
+    "ens3",
+    [
+      "!",
+      "-i",
+      "ens3",
+      "-j",
+      "RETURN"
+    ]
+  ],
+  "xui_fp": "old",
+  "full_at": 1
+}

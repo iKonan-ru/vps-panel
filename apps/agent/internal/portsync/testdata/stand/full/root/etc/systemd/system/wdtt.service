@@ -1,0 +1,5 @@
+[Unit]
+Description=WDTT
+
+[Service]
+ExecStart=/usr/local/bin/wdtt-server -listen 0.0.0.0:56000 -wg-port 56001 -admin-listen 127.0.0.1:56010

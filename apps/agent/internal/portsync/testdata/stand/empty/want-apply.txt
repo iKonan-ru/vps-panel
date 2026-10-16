@@ -1,0 +1,29 @@
+ssh: 22  wan: eth0
+host allow: 
+docker allow: 
+закрыто (процесс не в known_processes): 22/tcp sshd
+ufw allow from 10.1.1.1 to any port 22 proto tcp comment vps-portsync: SSH admin
+ufw: уже стоят 0 из 1 правил
+DOCKER-USER отсутствует (docker не запущен?) - пропускаю цепочку контейнеров
+--- calls
+iptables [-w] [5] [-nL] [DOCKER-USER]
+ufw [allow] [from] [10.1.1.1] [to] [any] [port] [22] [proto] [tcp] [comment] [vps-portsync: SSH admin]
+iptables [-w] [5] [-nL] [DOCKER-USER]
+--- state.json
+{
+  "ufw_rules": [
+    [
+      "allow",
+      "from",
+      "10.1.1.1",
+      "to",
+      "any",
+      "port",
+      "22",
+      "proto",
+      "tcp",
+      "comment",
+      "vps-portsync: SSH admin"
+    ]
+  ]
+}
