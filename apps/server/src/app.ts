@@ -282,6 +282,7 @@ export async function buildApp(opts: AppOptions) {
     () => panelAddresses(env.PANEL_PUBLIC_URL),
     app.log,
   );
+  gc.onSyncChange = (syncing) => hub.broadcast({ type: 'gclients.sync', syncing });
   await app.register(xuiRoutes, {
     ...serverRouteOpts,
     gc,

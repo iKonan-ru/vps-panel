@@ -12,12 +12,15 @@ import type { GSyncState } from '@vps/protocol';
 import { Square } from 'lucide-react';
 import { useState } from 'react';
 
-/** Состояние сверки: опрос раз в 2 с, пока идёт, иначе раз в 15 с (общий кэш для кнопок). */
+/**
+ * Состояние сверки: опрос раз в 2 с, пока идёт, иначе раз в минуту - начало и конец приходят
+ * событием gclients.sync (общий кэш для кнопок и полосы сверху).
+ */
 export function useSyncState() {
   return useQuery({
     queryKey: ['gclients-syncing'],
     queryFn: () => api<GSyncState>('/api/gclients/syncing'),
-    refetchInterval: (q) => (q.state.data?.syncing ? 2_000 : 15_000),
+    refetchInterval: (q) => (q.state.data?.syncing ? 2_000 : 60_000),
   });
 }
 

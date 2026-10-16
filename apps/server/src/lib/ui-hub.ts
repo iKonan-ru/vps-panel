@@ -11,7 +11,8 @@ export type UiEvent =
   | { type: 'action.started'; serverId: string; actionId: string; kind: string }
   | { type: 'action.stream'; serverId: string; actionId: string; channel: string; chunk: string }
   | { type: 'action.finished'; serverId: string; actionId: string; exitCode: number }
-  | { type: 'agents.rollout' };
+  | { type: 'agents.rollout' }
+  | { type: 'gclients.sync'; syncing: boolean };
 
 export class UiHub {
   private clients = new Set<WebSocket>();

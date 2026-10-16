@@ -13,6 +13,8 @@ export type LiveEvent = {
   chunk?: string;
   exitCode?: number;
   kind?: string;
+  /** gclients.sync: началась (true) или закончилась синхронизация клиентов */
+  syncing?: boolean;
 };
 
 type Listener = (ev: LiveEvent) => void;
@@ -87,6 +89,13 @@ export function useLiveUpdates() {
       if (ev.type === 'hello') {
         void qc.invalidateQueries({ queryKey: ['servers'] });
         void qc.invalidateQueries({ queryKey: ['actions'] });
+        void qc.invalidateQueries({ queryKey: ['gclients-syncing'] });
+        return;
+      }
+      // синхронизация клиентов началась или закончилась: полоса сверху и списки клиентов
+      if (ev.type === 'gclients.sync') {
+        void qc.invalidateQueries({ queryKey: ['gclients-syncing'] });
+        if (!ev.syncing) void qc.invalidateQueries({ queryKey: ['gclients'] });
         return;
       }
       if (ev.type === 'server.metrics' && ev.serverId && ev.metrics) {

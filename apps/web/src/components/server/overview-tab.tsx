@@ -366,7 +366,15 @@ export function OverviewTab({ s, onTab }: { s: ServerDetail; onTab?: (tab: strin
                     <ButtonLink
                       to="/commands/$id"
                       params={{ id: uninstallCommand[sv.kind] ?? '' }}
-                      search={{ server: s.id, run: undefined, tab: undefined }}
+                      search={{
+                        server: s.id,
+                        run: undefined,
+                        tab: undefined,
+                        // AWG: удаляется именно этот контейнер, а не выбранный в форме по умолчанию
+                        ...(sv.kind === 'amnezia' && typeof sv.details?.container === 'string'
+                          ? { preset: { AWG_CONTAINER: sv.details.container } }
+                          : {}),
+                      }}
                       size="icon-sm"
                       variant="ghost"
                       title="Удалить с сервера"
