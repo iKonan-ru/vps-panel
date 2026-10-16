@@ -49,6 +49,8 @@ type Client struct {
 	// Inline - операции, которые выполняются прямо в цикле чтения, по порядку прихода (запись в
 	// туннель): в отдельных горутинах куски потока могли бы переставиться.
 	Inline map[string]bool
+	// AfterResult - успешный результат операции ушёл панели.
+	AfterResult func(method string, data any)
 }
 
 // New - клиент панели. panelKey - ключ панели из конфига: другой панели агент не поверит.
@@ -271,7 +273,16 @@ func (c *Client) handle(ctx context.Context, req request) {
 	} else {
 		msg["data"] = data
 	}
-	_ = c.Send(msg)
+	if c.Send(msg) == nil && err == nil && c.AfterResult != nil {
+		c.AfterResult(req.Method, data)
+	}
+}
+
+// Connected - есть ли сейчас соединение с панелью.
+func (c *Client) Connected() bool {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return c.conn != nil && c.ch != nil
 }
 
 // call - вызов обработчика с перехватом паники: разбор вывода CLI с [0] и т.п. в одной

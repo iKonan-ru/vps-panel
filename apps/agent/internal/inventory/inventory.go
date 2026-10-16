@@ -17,10 +17,20 @@ import (
 	"github.com/iKonan-ru/vps-panel/apps/agent/internal/services"
 )
 
+// Snapshot - снимок для панели (в JSON - ровно proto.Inventory) и состояние упавших сервисов на
+// момент снимка (services.Health): после отправки его запоминает services.MarkReported.
+type Snapshot struct {
+	proto.Inventory
+	health string
+}
+
+// Health - упавшие сервисы на момент снимка.
+func (s Snapshot) Health() string { return s.health }
+
 // Collect - услуги, контейнеры, firewall, аудит. Только чтение.
 // Независимые части идут параллельно: docker stats ждёт секунду на каждый контейнер,
 // apt-get -s upgrade - ещё около секунды; последовательно снимок занимал 6-7 с.
-func Collect(ctx context.Context, agentVersion string) proto.Inventory {
+func Collect(ctx context.Context, agentVersion string) Snapshot {
 	inv := proto.Inventory{Host: metrics.Host(agentVersion), Containers: []proto.Container{}}
 	var wg sync.WaitGroup
 	var pending int
@@ -68,7 +78,7 @@ func Collect(ctx context.Context, agentVersion string) proto.Inventory {
 	wg.Wait()
 	// до сбора сервисов: упавшее, что поднимется во время сбора, проверка раз в 30 с заметит
 	// и пришлёт новый снимок (services.Reported)
-	services.MarkReported(services.Health(ctx, inv.Containers))
+	health := services.Health(ctx, inv.Containers)
 	// 3x-ui читается один раз и со списком контейнеров (база может лежать в томе docker): её
 	// настройки нужны и сертификатам, и сервисам
 	xui, xuiErr := services.ReadXui(ctx, inv.Containers)
@@ -86,7 +96,7 @@ func Collect(ctx context.Context, agentVersion string) proto.Inventory {
 	cw.Wait()
 	inv.Audit = audit.Run(ctx, inv.Firewall, inv.Containers, inv.Services, inv.Certs, pending)
 	inv.CollectedAt = time.Now().UTC().Format(time.RFC3339)
-	return inv
+	return Snapshot{Inventory: inv, health: health}
 }
 
 // uncheckedKinds - виды сервисов, которых может не быть в снимке из-за сбоя чтения, а не потому,
