@@ -42,14 +42,10 @@ function saveSid(serverId: string, sid: string | null) {
   } catch {}
 }
 
-/** Код закрытия сокета "закрыть сессию сразу" (routes/terminal.ts). */
+/** Код закрытия сокета "закрыть сессию сразу" - тот же, что у сервера. */
 const CLOSE_EXPLICIT = 4000;
 
-/**
- * Вкладка "Терминал": bash от root через агента. Ушли со вкладки, закрыли страницу или PWA -
- * сессия ждёт на панели 3 минуты и при возврате подхватывается с последним выводом; "Закрыть"
- * закрывает сразу. Каждая сессия пишется в журнал.
- */
+/** Терминал root через агента; ушли со вкладки - сессия ждёт на панели 3 минуты. */
 export function TerminalTab({ s }: { s: ServerDetail }) {
   const online = s.status === 'online';
   const box = useRef<HTMLDivElement>(null);
@@ -80,9 +76,8 @@ export function TerminalTab({ s }: { s: ServerDetail }) {
       fontFamily: '"JetBrains Mono", ui-monospace, monospace',
       theme: { background: '#0b0f14' },
       scrollback: 5000,
-      // Ссылки OSC 8 в выводе: вывод - root-shell недоверенного сервера, а текст
-      // ссылки может не совпадать с адресом. Только http(s), адрес показывается до перехода,
-      // новая вкладка без доступа к окну панели.
+      // ссылки OSC 8 - из root-shell недоверенного сервера, текст может не совпадать с адресом:
+      // только http(s), адрес - до перехода, новая вкладка без доступа к окну панели
       linkHandler: {
         activate: async (_e, uri) => {
           if (!/^https?:\/\//i.test(uri)) return;

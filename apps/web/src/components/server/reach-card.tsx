@@ -97,8 +97,8 @@ function Bar({ s, className }: { s: ReachSlot; className?: string }) {
 }
 
 /**
- * История: столбик на получасовой интервал (высота - худшая проверка за него), 12 часов. Шкала
- * общая для всех целей: пустой столбик - в этот интервал проверки не было. Нажатие - подробности.
+ * История за 12 часов: столбик на получасовой интервал, высота - худшая проверка; пустой - проверки
+ * не было. Шкала общая для всех целей.
  */
 function History({ t, now, onOpen }: { t: ReachTarget; now: number; onOpen: () => void }) {
   if (t.history.length === 0) return null;
@@ -129,7 +129,7 @@ function what(t: ReachTarget): string {
 function Row({ t, now, onOpen }: { t: ReachTarget; now: number; onOpen: () => void }) {
   const lv = reachLevel(t.percent);
   // плашка всегда справа у названия: строка не переносится, длинное описание обрезается, история
-  // - под описанием (на узком экране плашка иначе уезжала вниз то у одной строки, то у другой)
+  // - под описанием; иначе на узком экране плашка прыгала бы вниз у разных строк
   return (
     <div className="flex items-start gap-3 border-b border-border px-4 py-2.5 text-[13px] last:border-b-0">
       <span className="min-w-0 grow">
@@ -328,10 +328,7 @@ function Details({
   );
 }
 
-/**
- * Блок "Доступность из России" во вкладке "Обзор": адрес, inbound-ы 3X-UI, MTProxyL - видны ли
- * они из домашних сетей РФ (зонды Globalping), с историей и проверкой сейчас.
- */
+/** Доступность из России: видны ли адрес и сервисы сервера из домашних сетей РФ (Globalping). */
 export function ReachCard({ serverId, online }: { serverId: string; online: boolean }) {
   const qc = useQueryClient();
   const { data } = useServerReach(serverId);

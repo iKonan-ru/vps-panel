@@ -30,10 +30,8 @@ interface EditData {
 const KIND_TITLE = { raw: 'RAW (TCP, Reality, Vision)', xhttp: 'XHTTP (Reality)' };
 
 /**
- * Окно правки inbound-а: те же поля, что при добавлении (порт, подпись, цель Reality,
- * fingerprint). Тип не меняется: другой транспорт - это новый inbound. У inbound-ов не VLESS
- * Reality - только порт и подпись. Сохранение - действие: при смене порта или Reality панель
- * проверяет Xray и при остановке возвращает inbound как был.
+ * Правка inbound-а: порт, подпись, у VLESS Reality - цель и fingerprint; тип не меняется. При смене
+ * порта или Reality панель проверяет Xray и при сбое возвращает inbound как был.
  */
 export function EditInboundForm({
   serverId,

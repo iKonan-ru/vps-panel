@@ -4,10 +4,7 @@ import { Card } from '@/components/ui/card';
 import { actions } from '@/lib/actions';
 import { useQuery } from '@tanstack/react-query';
 
-/**
- * Вкладка "Журнал": действия панели на этом сервере. Без опроса: список сбрасывается по
- * событию конца любого действия (lib/live.ts).
- */
+/** Журнал действий сервера. Без опроса: перечитывается по концу любого действия. */
 export function LogTab({ serverId }: { serverId: string }) {
   const { data, isLoading, error } = useQuery({
     queryKey: ['actions', serverId],

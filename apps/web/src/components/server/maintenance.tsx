@@ -35,10 +35,7 @@ function SeverityChip({ severity }: { severity: Finding['severity'] }) {
   );
 }
 
-/**
- * Блок "Обслуживание" вкладки "Обзор": обновления сервисов и пакетов, замечания аудита с
- * исправлением, баны fail2ban.
- */
+/** Блок "Обслуживание": обновления, замечания аудита с исправлением, баны fail2ban. */
 export function Maintenance({
   s,
   onTab,
@@ -52,9 +49,8 @@ export function Maintenance({
   const commands = useCommands();
   // диалог исправления: null - закрыт, '' - все шаги, иначе - шаг из замечания
   const [baseline, setBaseline] = useState<string | null>(null);
-  // запущенное из блока "Обслуживание" действие с выводом: обновление пакетов или сервиса
-  // done - действие завершилось: вывод остаётся на экране, но кнопки снова доступны (повтор
-  // после ошибки, например apt был занят автообновлениями)
+  // действие с выводом, запущенное отсюда; done - закончилось: вывод остаётся, а кнопки снова
+  // доступны (повтор после ошибки, например apt был занят автообновлениями)
   const [upgrade, setUpgrade] = useState<{
     id: string;
     title: string;
@@ -62,8 +58,7 @@ export function Maintenance({
   } | null>(null);
   const pending = s.audit?.pendingUpdates ?? 0;
 
-  // запуск из "Обслуживания": пока идёт запрос, все кнопки блока заблокированы (двойной тап,
-  // соседняя строка)
+  // пока идёт запрос, все кнопки блока заблокированы (двойной тап, соседняя строка)
   const starting = useAction();
   async function startUpgrade() {
     await starting.run(async () => {
@@ -78,7 +73,7 @@ export function Maintenance({
     queryFn: () => api<ServiceUpdate[]>(`/api/servers/${s.id}/updates`),
     refetchInterval: 10 * 60_000,
   });
-  // после обновления сервиса версии перепроверяются (lib/live.ts)
+  // после обновления сервиса версии перепроверяются сами
   const updatesCheck = useUpdatesCheck(s.id);
   async function updateService(u: ServiceUpdate) {
     await starting.run(async () => {
@@ -90,13 +85,11 @@ export function Maintenance({
   const high = findings.filter((f) => f.severity === 'high').length;
   const medium = findings.filter((f) => f.severity === 'medium').length;
   const online = s.status === 'online';
-  // пока на сервере идёт другое действие, изменения недоступны
   const lock = serverLock(s);
   const canAct = online && !lock.busy;
-  // есть ли замечания, которые чинит агент (url вида fix:<шаг>)
+  // замечания, которые чинит агент (url вида fix:<шаг>)
   const fixable = findings.filter((f) => f.url?.startsWith('fix:')).length;
 
-  // Строки блока "Обслуживание": у каждой одна кнопка действия справа
   // идёт запуск, своё действие с выводом или перепроверка версий - кнопки блока недоступны
   const busy =
     !canAct ||

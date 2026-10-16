@@ -8,8 +8,6 @@ import { useAction } from '@/lib/use-action';
 import { useQuery } from '@tanstack/react-query';
 import { RefreshCw, Shuffle } from 'lucide-react';
 
-/** Поля окон добавления и правки inbound-ов VLESS: порт, цель Reality, fingerprint. */
-
 const FINGERPRINTS = ['firefox', 'chrome', 'safari', 'edge', 'ios', 'android'];
 
 /** GET /xui/reality-scan: подходящие цели с сервера (без имён YouTube). */
@@ -59,10 +57,7 @@ export function sameOptions(
   }));
 }
 
-/**
- * Порт с кнопкой "Случайный свободный порт": панель подбирает его по inbound-ам и процессам
- * сервера; avoid - порты, уже выбранные в окне; pick={false} - без кнопки (подбирать нечем).
- */
+/** Порт с кнопкой случайного свободного; avoid - уже выбранные в окне; pick - есть ли кнопка. */
 export function PortField({
   id,
   serverId,

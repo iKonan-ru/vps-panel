@@ -49,7 +49,6 @@ interface OfStatus {
   channels: OfChannel[];
 }
 
-/** Транспорты OpenFlux по-человечески. */
 const transportTitle: Record<string, string> = {
   vyandex: 'Яндекс Документ',
   yandex: 'Яндекс Документ',
@@ -59,11 +58,7 @@ const transportTitle: Record<string, string> = {
   direct: 'напрямую',
 };
 
-/**
- * Вкладка OpenFlux: каналы выходной ноды. Пользователей у OpenFlux нет:
- * канал - ключ и набор транспортов, ссылка openflux:// - профиль для приложения (в ней ключ).
- * Статистики у ноды нет, только журнал.
- */
+/** Вкладка OpenFlux: каналы ноды (ключ и транспорты); пользователей и статистики у ноды нет. */
 export function OpenfluxTab({ s }: { s: ServerDetail }) {
   const owner = useOwners(s.id);
   const qc = useQueryClient();

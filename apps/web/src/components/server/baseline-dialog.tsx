@@ -10,11 +10,7 @@ import type { BaselinePlan } from '@vps/protocol';
 import { Check, KeyRound } from 'lucide-react';
 import { useCallback, useEffect, useState } from 'react';
 
-/**
- * "Исправить проблемы": агент собирает план (что не так и что изменится), пользователь
- * отмечает, какие шаги применить, затем применение с живым выводом.
- * preselect - шаг, с которого пришли (замечание в блоке "Обслуживание"): отмечен только он.
- */
+/** "Исправить проблемы": план агента, выбор шагов и применение с живым выводом. */
 export function BaselineDialog({
   serverId,
   open,
@@ -24,6 +20,7 @@ export function BaselineDialog({
 }: {
   serverId: string;
   open: boolean;
+  /** Шаг, с которого пришли (замечание "Обслуживания"): отмечен только он. */
   preselect?: string | null;
   onClose: () => void;
   /** Перейти во вкладку "Ключи" (у root нет ключа - SSH без паролей не закрыть). */

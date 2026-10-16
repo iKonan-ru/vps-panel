@@ -18,10 +18,7 @@ interface CleanupItem {
   safe: boolean;
 }
 
-/**
- * Очистка диска: агент считает, сколько занимает каждая категория мусора (кэш docker, apt,
- * старые логи, /tmp), безопасные отмечены сразу, остальные - по выбору. Ход в консоли.
- */
+/** Очистка диска: агент считает размер категорий мусора, безопасные отмечены сразу. */
 export function CleanupDialog({
   serverId,
   open,
@@ -39,7 +36,6 @@ export function CleanupDialog({
   const op = useAction();
   const { setError } = op;
 
-  // по умолчанию отмечены безопасные категории
   useEffect(() => {
     if (scan.data && chosen === null) {
       setChosen(new Set(scan.data.items.filter((i) => i.safe).map((i) => i.id)));

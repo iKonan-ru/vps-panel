@@ -27,10 +27,7 @@ function exitNote(i: XuiInboundRow): string {
 
 const securityTitle: Record<string, string> = { reality: 'Reality', tls: 'TLS', none: '' };
 
-/**
- * Блок "Inbound-ы" вкладки 3X-UI: что слушает xray, клиенты и трафик; правка - подпись, порт,
- * вкл/выкл (остальное - в панели 3X-UI). Данные - по API-токену; нет токена - подсказка.
- */
+/** Inbound-ы 3X-UI: правка подписи, порта и вкл/выкл; данные - по API-токену. */
 export function XuiInbounds({
   serverId,
   disabled,
@@ -54,7 +51,7 @@ export function XuiInbounds({
   const [run, setRun] = useState<{ id: string; title: string } | null>(null);
   const noToken = error instanceof ApiError && error.code === 'no-token';
 
-  /** Включение и выключение (переключатель в строке); остальное - окно правки. */
+  /** Включение и выключение из строки; остальное - окно правки. */
   async function save(i: XuiInboundRow, body: { enable: boolean }) {
     if (!body.enable) {
       const ok = await ask({

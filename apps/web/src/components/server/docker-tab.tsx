@@ -30,7 +30,7 @@ function isVpn(c: Container): boolean {
   );
 }
 
-/** Вкладка Docker: контейнеры, старт/стоп/рестарт/удалить, логи. */
+/** Вкладка Docker: контейнеры, управление ими и логи. */
 export function DockerTab({ s }: { s: ServerDetail }) {
   const qc = useQueryClient();
   const online = s.status === 'online';
@@ -362,7 +362,7 @@ function LogsDialog({
   const [text, setText] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [tail, setTail] = useState(500);
-  // "Обновить" - тот же запрос заново (setTail(t => t) состояние не меняет и эффект не будит)
+  // счётчик "Обновить": setTail(t => t) состояние не меняет и эффект не будит
   const [reload, setReload] = useState(0);
   // biome-ignore lint/correctness/useExhaustiveDependencies: reload - счётчик нажатий "Обновить"
   useEffect(() => {

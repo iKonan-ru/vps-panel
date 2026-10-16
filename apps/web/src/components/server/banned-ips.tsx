@@ -11,20 +11,13 @@ import { useState } from 'react';
 
 type Audit = NonNullable<ServerSummary['audit']>;
 
-/**
- * Jail-ы, которые не показываются: 3x-ipl (ограничение адресов 3X-UI) и xui-panel (вход в
- * панель 3X-UI) - панели 3X-UI открыты только на 127.0.0.1, снаружи в них не ломятся.
- */
+/** Jail-ы 3X-UI не показываем: его панели слушают только 127.0.0.1, снаружи в них не ломятся. */
 const HIDDEN = new Set(['3x-ipl', 'xui-panel']);
 
-/** Название jail для человека. */
 const TITLES: Record<string, string> = { sshd: 'SSH', 'vps-panel': 'Вход в панель' };
 const jailTitle = (name: string) => TITLES[name] ?? name;
 
-/**
- * Строка fail2ban в блоке "Обслуживание": плашки по jail со счётчиком банов. Клик открывает
- * окно с адресами в бане; бан снимается кнопкой у адреса.
- */
+/** Баны fail2ban по jail в блоке "Обслуживание"; бан снимается кнопкой у адреса. */
 export function BannedIps({
   audit,
   serverId,

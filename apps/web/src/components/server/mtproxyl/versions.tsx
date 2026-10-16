@@ -10,16 +10,13 @@ import type { EngineInfo } from '@vps/protocol';
 import { Download } from 'lucide-react';
 import { useState } from 'react';
 
-/** Версии MTProxyL и его веб-панели (блок - versions-section.tsx), выбор версии движка telemt. */
-
 export type MtVersionKind = 'mtproxyl' | 'mtproxyl-panel';
 
 export type MtVersions = Versions<MtVersionKind>;
 
 /**
- * Выбор версии движка telemt (lib/mtproxyl-engine.ts на сервере): ставятся только версии с
- * готовым образом в реестре или любые при носителе-бинарнике. Без готового образа MTProxyL
- * собирал бы движок из исходников на сервере - слабый сервер от этого может повиснуть.
+ * Выбор версии движка telemt: только с готовым образом или любые при бинарнике - сборка из
+ * исходников может повесить слабый сервер.
  */
 export function EngineForm({
   serverId,

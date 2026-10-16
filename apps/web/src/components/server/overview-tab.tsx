@@ -21,19 +21,17 @@ function mbps(bps: number): string {
   return m >= 10 ? String(Math.round(m)) : m.toFixed(1).replace('.', ',');
 }
 
-/** Вкладка "Обзор": метрики, сервисы, хостинг, обслуживание (обновления и проверки безопасности). */
 export function OverviewTab({ s, onTab }: { s: ServerDetail; onTab?: (tab: string) => void }) {
   const m = s.metrics;
   const cores = s.inventory?.host.cpuCores;
   const online = s.status === 'online';
-  // пока на сервере идёт другое действие, изменения недоступны
   const lock = serverLock(s);
   const canAct = online && !lock.busy;
   const [cleanup, setCleanup] = useState(false);
 
   return (
     <>
-      {/* на мобиле по две в ряд даже на узком экране */}
+      {/* по две в ряд и на узком экране */}
       <div className="grid grid-cols-2 gap-3 md:gap-4 lg:grid-cols-4">
         <MetricCard
           label="CPU"

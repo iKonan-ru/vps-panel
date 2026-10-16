@@ -23,10 +23,7 @@ import { useState } from 'react';
 const isDefault = (i: XuiInboundRow) =>
   i.protocol === 'vless' && !i.node && i.enable && !i.excluded;
 
-/**
- * Блок "Клиенты" вкладки 3X-UI: клиенты и их inbound-ы, правка привязки к inbound-ам. У клиента
- * панели набор запоминается в панели (сверка держит его), "Как у всех" - снова общий набор.
- */
+/** Клиенты 3X-UI и их inbound-ы; набор клиента панели держит сверка, "Как у всех" - общий. */
 export function XuiClients({
   serverId,
   inbounds,

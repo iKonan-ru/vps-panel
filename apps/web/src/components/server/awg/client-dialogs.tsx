@@ -13,8 +13,6 @@ import { type GOwner, deviceOf } from '@vps/protocol';
 import { Pencil, Power, Trash2 } from 'lucide-react';
 import { Fragment, useState } from 'react';
 
-/** Окна клиента AWG: карточка с конфигом, переименование, добавление. */
-
 /** Окно клиента: состояние, управление, адрес, трафик, откуда взялся. */
 export function ClientInfo({
   c,

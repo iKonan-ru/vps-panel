@@ -8,19 +8,11 @@ import type { ServerDetail } from '@vps/protocol';
 import { X } from 'lucide-react';
 import { useEffect, useRef, useState } from 'react';
 
-/**
- * Действия, которые панель запускает сама, а не вкладка этой страницы: синхронизация клиентов,
- * адрес в ссылках MTProxyL после смены адреса для клиентов, команды каталога. Их вывод - здесь,
- * даже если они начались после открытия страницы.
- */
+/** Действия, которые запускает панель, а не вкладка: их вывод - здесь, когда бы они ни начались. */
 const SHOWN_ALWAYS = (kind: string) =>
   kind === 'gclients.sync' || kind === 'mtproxyl:host' || kind.startsWith('command:');
 
-/**
- * Действия на сервере, которые не показывает своя вкладка: шедшие ещё до открытия этой страницы
- * (перезагрузка, другая вкладка) и запущенные панелью (SHOWN_ALWAYS). То, что запущено
- * с этой страницы, показывает свой блок сама вкладка - дублировать не нужно.
- */
+/** Действия, которых не показывает своя вкладка: начатые до открытия страницы и панелью. */
 export function ActiveActions({ s }: { s: ServerDetail }) {
   const openedAt = useRef(Date.now());
   const [closed, setClosed] = useState<Set<string>>(new Set());

@@ -34,7 +34,7 @@ import {
 } from 'lucide-react';
 import { useState } from 'react';
 
-/** Вкладка 3X-UI: служба, Xray по API, inbound-ы и клиенты, настройки панели, обновление; журнал - по кнопке. */
+/** Вкладка 3X-UI: служба, Xray, inbound-ы и клиенты, настройки панели и обновление. */
 export function XuiTab({ s }: { s: ServerDetail }) {
   const qc = useQueryClient();
   const online = s.status === 'online';
@@ -63,14 +63,13 @@ export function XuiTab({ s }: { s: ServerDetail }) {
     staleTime: 20_000,
     retry: false,
   });
-  // версии 3X-UI и Xray с последней проверки (раз в 6 часов, кнопкой, после обновления) - те же
-  // обновления, что в "Обслуживании"
+  // версии с последней проверки обновлений - те же, что в "Обслуживании"
   const versions = useQuery({
     queryKey: ['xui-versions', s.id],
     queryFn: () => api<Versions<XuiVersionKind>>(`/api/servers/${s.id}/xui/versions`),
     enabled: online,
   });
-  // после обновления версии перепроверяются сами (lib/live.ts)
+  // после обновления версии перепроверяются сами
   const updates = useUpdatesCheck(s.id);
   // проверка версий идёт - обновлять нельзя (решение по старым данным)
   const versionsBusy = updates.checking || versions.isFetching;
@@ -82,7 +81,7 @@ export function XuiTab({ s }: { s: ServerDetail }) {
   } | null>(null);
   const [showLog, setShowLog] = useState(false);
   const op = useAction();
-  // пока на сервере идёт другое действие, изменения недоступны (выпуск токена - можно)
+  // выпуск токена занятостью сервера не блокируется
   const lock = serverLock(s);
 
   const refresh = () =>
@@ -202,7 +201,6 @@ export function XuiTab({ s }: { s: ServerDetail }) {
         />
       </div>
 
-      {/* панель действий: на узком экране - "Панель 3X-UI" и меню "Ещё" с подписями */}
       <ActionBar
         actions={[
           {

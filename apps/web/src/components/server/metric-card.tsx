@@ -4,10 +4,7 @@ import { Num } from '@/components/ui/num';
 import { cn } from '@/lib/cn';
 import type { ReactNode } from 'react';
 
-/**
- * Плашка показателя: подпись с action справа, значение (tone красит состояние словом),
- * подстрочник и шкала pct внизу (зелёная до 70%, жёлтая до 90%, красная выше).
- */
+/** Плашка показателя: значение, подстрочник и шкала pct (от 70% жёлтая, от 90% красная). */
 export function MetricCard({
   label,
   value,
