@@ -7,10 +7,7 @@ import { api } from '@/lib/api';
 import { useServers } from '@/lib/servers';
 import { useQuery } from '@tanstack/react-query';
 
-/**
- * Общий журнал: действия панели по всем серверам. Без опроса: список сбрасывается по событию
- * конца любого действия (lib/live.ts).
- */
+/** Журнал действий по всем серверам. Без опроса: перечитывается по концу любого действия. */
 export function LogPage() {
   const { data, isLoading, error } = useQuery({
     queryKey: ['actions', 'all'],

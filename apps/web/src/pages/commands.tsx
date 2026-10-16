@@ -270,7 +270,7 @@ function CommandCard({
         <div className="grow" />
       </div>
       <div className="grow text-[13px] leading-relaxed text-muted">{description}</div>
-      {/* последний запуск - целиком, своей строкой (рядом с кнопками он обрезался), кнопки - ниже */}
+      {/* последний запуск - своей строкой, чтобы не обрезался рядом с кнопками */}
       <div className="text-xs leading-6 text-muted">
         {r &&
           (r.finishedAt === null ? (

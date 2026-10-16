@@ -57,13 +57,10 @@ export function ClientPage() {
   const [rename, setRename] = useState(false);
   const [accessOpen, setAccessOpen] = useState(false);
   const [device, setDevice] = useState<GDevice | 'new' | null>(null);
-  // окно конфига AWG: привязка устройства к экземпляру на сервере
-  const [config, setConfig] = useState<GBinding | null>(null);
-  // окно ссылок MTProxy
-  const [proxy, setProxy] = useState<GBinding | null>(null);
+  const [awgConfigBinding, setAwgConfigBinding] = useState<GBinding | null>(null);
+  const [linksBinding, setLinksBinding] = useState<GBinding | null>(null);
   const [qr, setQr] = useState(false);
   const refresh = () => qc.invalidateQueries({ queryKey: ['gclient', id] });
-  // подключение и трафик по привязкам: раз в 3 с, пока карточка открыта и вкладка видна
   const live = useClientLive(id, data?.bindings ?? []);
 
   // пока идёт правка клиента, его кнопки недоступны (двойной тап по вкл/выкл - два запроса)
@@ -315,8 +312,8 @@ export function ClientPage() {
                                 b.service === 'wdtt' ||
                                 b.service === 'openflux' ||
                                 b.service === 'naive'
-                              ? () => setProxy(b)
-                              : () => setConfig(b)
+                              ? () => setLinksBinding(b)
+                              : () => setAwgConfigBinding(b)
                       }
                     />
                   ))}
@@ -339,28 +336,30 @@ export function ClientPage() {
       </div>
 
       <Dialog
-        open={config !== null}
-        onClose={() => setConfig(null)}
-        title={config ? `${config.serverName}: AWG` : ''}
+        open={awgConfigBinding !== null}
+        onClose={() => setAwgConfigBinding(null)}
+        title={awgConfigBinding ? `${awgConfigBinding.serverName}: AWG` : ''}
       >
-        {config && (
+        {awgConfigBinding && (
           <ClientConfig
-            serverId={config.serverId}
-            container={config.awg?.container ?? ''}
-            publicKey={config.awg?.publicKey ?? ''}
+            serverId={awgConfigBinding.serverId}
+            container={awgConfigBinding.awg?.container ?? ''}
+            publicKey={awgConfigBinding.awg?.publicKey ?? ''}
             name={c.name}
-            device={data.devices.find((d) => d.id === config.deviceId)?.type}
+            device={data.devices.find((d) => d.id === awgConfigBinding.deviceId)?.type}
           />
         )}
       </Dialog>
       <Dialog
-        open={proxy !== null}
-        onClose={() => setProxy(null)}
+        open={linksBinding !== null}
+        onClose={() => setLinksBinding(null)}
         title={
-          proxy ? `${proxy.serverName}: ${serviceByBinding(proxy.service)?.clientTitle ?? ''}` : ''
+          linksBinding
+            ? `${linksBinding.serverName}: ${serviceByBinding(linksBinding.service)?.clientTitle ?? ''}`
+            : ''
         }
       >
-        {proxy && <ProxyLinks clientId={id} binding={proxy} exts={data.browserExt} />}
+        {linksBinding && <ProxyLinks clientId={id} binding={linksBinding} exts={data.browserExt} />}
       </Dialog>
       <Dialog open={qr} onClose={() => setQr(false)} title="Подписка VLESS">
         <div className="flex flex-col items-center gap-3">

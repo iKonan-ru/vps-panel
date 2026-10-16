@@ -51,8 +51,8 @@ function Row({
 }
 
 /**
- * Аккаунт: логин, пароль, 2FA и резервные коды администратора; безопасность входа - попытки,
- * откуда ломятся, сессии. Восстановления пароля нет: сброс - vps-panel admin в консоли сервера.
+ * Аккаунт администратора и безопасность входа. Восстановления пароля нет: сброс - vps-panel admin
+ * в консоли сервера.
  */
 export function AccountPage() {
   const qc = useQueryClient();
@@ -69,7 +69,7 @@ export function AccountPage() {
   });
   const { data: servers } = useServers();
   const panelHost = typeof location !== 'undefined' ? location.hostname : '';
-  // Сервер, на котором стоит панель: его jail vps-panel показывает баны fail2ban.
+  // баны fail2ban входа в панель - в jail vps-panel её сервера
   const panelServer = servers?.find((s) => s.panelHost);
   const panelJail = panelServer?.audit?.jails.find((j) => j.name === 'vps-panel');
   const a = acc.data;

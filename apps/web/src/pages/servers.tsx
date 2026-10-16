@@ -12,7 +12,6 @@ import { useServers } from '@/lib/servers';
 import { Plus, Search } from 'lucide-react';
 import { useMemo, useState } from 'react';
 
-/** Сводка серверов: таблица по макету, данные живые. */
 export function ServersPage() {
   const { data, isLoading, error } = useServers();
   const [q, setQ] = useState('');
@@ -62,7 +61,7 @@ export function ServersPage() {
           <Plus className="size-4" />
         </ButtonLink>
       </div>
-      {/* на мобиле поиск и добавление - иконками в верхней плашке; строка поиска по клику */}
+      {/* на телефоне поиск и добавление - значками в верхней плашке, строка поиска - по клику */}
       <MobileActions>
         <Button
           size="icon"

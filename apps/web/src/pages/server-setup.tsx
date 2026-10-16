@@ -213,8 +213,8 @@ function ModeChoice({
 
 /**
  * Настройка сервера в один клик: шаги с ответами (по умолчанию отмечено всё, чего на сервере
- * нет), запуск одним действием, ход по шагам и продолжение с упавшего. С ?backup=<id> -
- * восстановление: сервисы как на старом сервере, затем данные копии.
+ * нет), запуск одним действием, ход по шагам и продолжение с упавшего. С копией - сервисы как на
+ * старом сервере, затем её данные.
  */
 export function ServerSetupPage() {
   const { id } = useParams({ strict: false }) as { id: string };
@@ -239,7 +239,7 @@ export function ServerSetupPage() {
     refetchOnWindowFocus: false,
   });
   // ход - отдельно от плана (план считается дольше) и не под ключом карточки сервера: его
-  // перечитывают только события настройки (эффект ниже), а не каждое событие сервера
+  // перечитывают только события настройки, а не каждое событие сервера
   const prog = useQuery({
     queryKey: ['setup-progress', id],
     queryFn: () => api<{ progress: SetupProgress | null }>(`/api/servers/${id}/setup/progress`),
@@ -259,8 +259,7 @@ export function ServerSetupPage() {
     setPlanFor(null);
     setChecks(null);
   }
-  // шаги с развёрнутыми параметрами (по умолчанию видны только пароли)
-  const [open, setOpen] = useState<Set<string>>(new Set());
+  const [expandedSteps, setExpandedSteps] = useState<Set<string>>(new Set());
   const act = useAction();
   const progress = prog.data?.progress ?? null;
   const running = Boolean(progress && !progress.finishedAt);
@@ -440,9 +439,9 @@ export function ServerSetupPage() {
                       step={st}
                       cmd={cmds.data?.find((c) => c.id === st.command)}
                       disabled={busy}
-                      expanded={open.has(st.id)}
+                      expanded={expandedSteps.has(st.id)}
                       toggle={() =>
-                        setOpen((o) => {
+                        setExpandedSteps((o) => {
                           const n = new Set(o);
                           if (n.has(st.id)) n.delete(st.id);
                           else n.add(st.id);
