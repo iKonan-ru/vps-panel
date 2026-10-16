@@ -22,7 +22,24 @@ import (
 
 const wdttUnitFile = "/etc/systemd/system/wdtt.service"
 
-var reWdttListen = regexp.MustCompile(`(?:^|\s)-listen\s+\S*?:?(\d+)(?:\s|$)`)
+// флаг целым словом (-listen не совпадает с -listen-direct), значение через пробел или "=",
+// "-" или "--" - как у пакета flag в Go, которым wdtt-server их разбирает
+var reWdttFlag = regexp.MustCompile(`(?:^|[\s"'])--?(listen|admin-listen|wg-port)(?:=|\s+)([^\s"']+)`)
+
+// WdttFlagPorts - порты флагов wdtt-server в тексте юнита: -listen и -admin-listen
+// (адрес:порт), -wg-port (порт); имя флага -> порты по порядку.
+func WdttFlagPorts(unit string) map[string][]int {
+	out := map[string][]int{}
+	for _, m := range reWdttFlag.FindAllStringSubmatch(unit, -1) {
+		v := m[2]
+		if i := strings.LastIndex(v, ":"); i >= 0 {
+			v = v[i+1:]
+		}
+		n, _ := strconv.Atoi(v)
+		out[m[1]] = append(out[m[1]], n)
+	}
+	return out
+}
 
 // wdttInstalled - есть служба wdtt (наличие по установке: упавший процесс - не удалённый сервис).
 func wdttInstalled() bool {
@@ -40,9 +57,8 @@ func wdttUnitPort() int {
 }
 
 func parseWdttListen(unit string) int {
-	if m := reWdttListen.FindStringSubmatch(unit); m != nil {
-		n, _ := strconv.Atoi(m[1])
-		return n
+	if p := WdttFlagPorts(unit)["listen"]; len(p) > 0 {
+		return p[0]
 	}
 	return 0
 }

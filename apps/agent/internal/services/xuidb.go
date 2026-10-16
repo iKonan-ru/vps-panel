@@ -7,6 +7,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/iKonan-ru/vps-panel/apps/agent/internal/hostfs"
 	"github.com/iKonan-ru/vps-panel/apps/agent/internal/shell"
 )
 
@@ -24,7 +25,7 @@ const xuiDefaults = "/etc/default/x-ui"
 // ReadXuiDBConfig разбирает /etc/default/x-ui. Возвращает sqlite, если файла нет или тип не postgres.
 func ReadXuiDBConfig() XuiDB {
 	out := XuiDB{Type: "sqlite"}
-	raw, err := os.ReadFile(xuiDefaults)
+	raw, err := os.ReadFile(hostfs.Path(xuiDefaults))
 	if err != nil {
 		return out
 	}

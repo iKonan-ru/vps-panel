@@ -18,10 +18,11 @@ import (
 	"sync"
 	"time"
 
+	"github.com/iKonan-ru/vps-panel/apps/agent/internal/hostfs"
 	"github.com/iKonan-ru/vps-panel/apps/agent/internal/proto"
 )
 
-const socketPath = "/var/run/docker.sock"
+func socketPath() string { return hostfs.Path("/var/run/docker.sock") }
 
 type Client struct{ http *http.Client }
 
@@ -30,7 +31,7 @@ type Client struct{ http *http.Client }
 var transport = &http.Transport{
 	DialContext: func(ctx context.Context, _, _ string) (net.Conn, error) {
 		var d net.Dialer
-		return d.DialContext(ctx, "unix", socketPath)
+		return d.DialContext(ctx, "unix", socketPath())
 	},
 	MaxIdleConns:    4,
 	IdleConnTimeout: 90 * time.Second,
@@ -42,7 +43,7 @@ func New() *Client {
 
 // Available - есть ли сокет docker на этой машине.
 func Available() bool {
-	_, err := os.Stat(socketPath)
+	_, err := os.Stat(socketPath())
 	return err == nil
 }
 
@@ -157,6 +158,60 @@ func (c *Client) List(ctx context.Context) ([]proto.Container, error) {
 	}
 	if len(failed) > 0 {
 		return out, fmt.Errorf("docker: не прочитаны контейнеры %s", strings.Join(failed, ", "))
+	}
+	return out, nil
+}
+
+// Running - то, что port-sync берёт из inspect запущенных контейнеров.
+type Running struct {
+	Name        string
+	NetworkMode string
+	// PortBindings: порт контейнера ("443/tcp") -> привязки на хосте; ключи по порядку
+	PortKeys     []string
+	PortBindings map[string][]Binding
+	Mounts       []Mount
+}
+
+type Binding struct {
+	HostIP   string `json:"HostIp"`
+	HostPort string `json:"HostPort"`
+}
+
+type Mount struct {
+	Source      string `json:"Source"`
+	Destination string `json:"Destination"`
+}
+
+// RunningContainers - запущенные контейнеры в порядке docker ps (новые первыми). Контейнер,
+// который не прочитался, пропускается.
+func (c *Client) RunningContainers(ctx context.Context) ([]Running, error) {
+	var items []struct {
+		ID string `json:"Id"`
+	}
+	if err := c.do(ctx, "GET", "/containers/json", &items); err != nil {
+		return nil, err
+	}
+	out := []Running{}
+	for _, it := range items {
+		var in struct {
+			Name       string `json:"Name"`
+			HostConfig struct {
+				NetworkMode  string               `json:"NetworkMode"`
+				PortBindings map[string][]Binding `json:"PortBindings"`
+			} `json:"HostConfig"`
+			Mounts []Mount `json:"Mounts"`
+		}
+		if c.do(ctx, "GET", "/containers/"+it.ID+"/json", &in) != nil {
+			continue
+		}
+		r := Running{Name: strings.TrimPrefix(in.Name, "/"), NetworkMode: in.HostConfig.NetworkMode,
+			PortBindings: in.HostConfig.PortBindings, Mounts: in.Mounts}
+		for k := range r.PortBindings {
+			r.PortKeys = append(r.PortKeys, k)
+		}
+		// docker отдаёт ключи отсортированными (JSON карты Go)
+		sort.Strings(r.PortKeys)
+		out = append(out, r)
 	}
 	return out, nil
 }

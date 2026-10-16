@@ -8,6 +8,7 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/iKonan-ru/vps-panel/apps/agent/internal/hostfs"
 	"github.com/iKonan-ru/vps-panel/apps/agent/internal/proto"
 	"github.com/iKonan-ru/vps-panel/apps/agent/internal/shell"
 )
@@ -32,18 +33,32 @@ type openfluxChannel struct {
 // down - канал включён, но не работает (выключенный - например, клиент панели выключен - не авария)
 func (c openfluxChannel) down() bool { return c.Enabled && c.State != "active" }
 
-func openfluxChannels(ctx context.Context) []openfluxChannel {
-	ports, _ := filepath.Glob(filepath.Join(openfluxEtc, "*", "port"))
-	var out []openfluxChannel
-	for _, p := range ports {
-		name := filepath.Base(filepath.Dir(p))
+// OpenfluxPort - канал OpenFlux и порт из его файла port (0 - файл не прочитался или не число).
+type OpenfluxPort struct {
+	Channel string
+	Port    int
+}
+
+// OpenfluxPorts - установленные каналы OpenFlux по имени, без обращения к systemd.
+func OpenfluxPorts() []OpenfluxPort {
+	files, _ := filepath.Glob(filepath.Join(hostfs.Path(openfluxEtc), "*", "port"))
+	var out []OpenfluxPort
+	for _, p := range files {
 		b, _ := os.ReadFile(p)
 		port, _ := strconv.Atoi(strings.TrimSpace(string(b)))
-		unit := "openflux-node@" + name
-		enabled := strings.TrimSpace(shell.Out(ctx, "systemctl", "is-enabled", unit)) == "enabled"
-		out = append(out, openfluxChannel{Name: name, Port: port, State: unitActive(ctx, unit), Enabled: enabled})
+		out = append(out, OpenfluxPort{Channel: filepath.Base(filepath.Dir(p)), Port: port})
 	}
-	sort.Slice(out, func(i, j int) bool { return out[i].Name < out[j].Name })
+	sort.Slice(out, func(i, j int) bool { return out[i].Channel < out[j].Channel })
+	return out
+}
+
+func openfluxChannels(ctx context.Context) []openfluxChannel {
+	var out []openfluxChannel
+	for _, c := range OpenfluxPorts() {
+		unit := "openflux-node@" + c.Channel
+		enabled := strings.TrimSpace(shell.Out(ctx, "systemctl", "is-enabled", unit)) == "enabled"
+		out = append(out, openfluxChannel{Name: c.Channel, Port: c.Port, State: unitActive(ctx, unit), Enabled: enabled})
+	}
 	return out
 }
 
