@@ -45,6 +45,8 @@ export function ClientsPage() {
     queryFn: () => api<GServer[]>('/api/gclients/servers'),
   });
   const [view, setView] = useClientsView();
+  // спрятанный фильтр не должен молча прятать клиентов: включённый открывает блок сразу
+  const [filtersOpen, setFiltersOpen] = useState(() => filtered(view));
   const shown = data ? applyView(data, servers.data ?? [], view) : undefined;
   const [adding, setAdding] = useState(false);
   const [serversOpen, setServersOpen] = useState(false);
@@ -60,6 +62,23 @@ export function ClientsPage() {
           <Chip>{shown && filtered(view) ? `${shown.length} из ${data.length}` : data.length}</Chip>
         )}
         <div className="grow" />
+        {data && data.length > 0 && (
+          <Button
+            variant={filtersOpen ? 'primary' : 'default'}
+            size="sm"
+            aria-expanded={filtersOpen}
+            aria-label="Фильтры и сортировка"
+            title="Фильтры и сортировка"
+            className="relative"
+            onClick={() => setFiltersOpen((v) => !v)}
+          >
+            <SlidersHorizontal className="size-3.5" />
+            <span className="hidden sm:inline">Фильтры</span>
+            {!filtersOpen && filtered(view) && (
+              <span className="absolute -top-1 -right-1 size-2.5 rounded-full bg-accent ring-2 ring-bg" />
+            )}
+          </Button>
+        )}
         <ActionBar
           topbar
           actions={[
@@ -98,7 +117,7 @@ export function ClientsPage() {
       {error && <Alert tone="bad">{error.message}</Alert>}
       {sync.error && <Alert tone="bad">{sync.error}</Alert>}
       <SyncPanel />
-      {data && data.length > 0 && (
+      {data && data.length > 0 && filtersOpen && (
         <ClientsFilter view={view} set={setView} servers={servers.data ?? []} />
       )}
       {data && data.length === 0 && (

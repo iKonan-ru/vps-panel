@@ -17,6 +17,7 @@ import { Pager, usePaged } from '@/components/ui/pager';
 import { Section } from '@/components/ui/section';
 import { TBody, THead, Table } from '@/components/ui/table';
 import { api } from '@/lib/api';
+import { cn } from '@/lib/cn';
 import { ago, dateShort } from '@/lib/format';
 import { useServers } from '@/lib/servers';
 import { useAction } from '@/lib/use-action';
@@ -43,7 +44,9 @@ function Row({
       </div>
       <div className="min-w-0 grow">
         <div className="text-[13px] font-medium">{title}</div>
-        <div className="truncate text-xs text-muted">{value}</div>
+        <div className={cn('text-xs text-muted', typeof value === 'string' && 'truncate')}>
+          {value}
+        </div>
       </div>
       {action}
     </div>
@@ -130,7 +133,7 @@ export function AccountPage() {
           title="Двухфакторная аутентификация"
           value={
             a ? (
-              <span className="inline-flex items-center gap-2">
+              <span className="flex flex-wrap items-center gap-x-2 gap-y-1">
                 <Chip tone={a.totpEnabled ? 'ok' : 'warn'}>
                   {a.totpEnabled ? 'включена' : 'не настроена'}
                 </Chip>

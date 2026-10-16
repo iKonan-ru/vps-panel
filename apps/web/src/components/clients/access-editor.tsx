@@ -106,13 +106,17 @@ export function AccessEditor({
               <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
                 {SERVICES.map((x) => {
                   const active = on.includes(x.id);
+                  const absent = !installed(s, x.id);
                   return (
                     <Button
                       key={x.id}
                       type="button"
                       variant={active ? 'primary' : 'default'}
                       aria-pressed={active}
-                      className={cn('justify-center', !installed(s, x.id) && 'border-dashed')}
+                      // уже выбранное снять можно: доступ мог остаться с прошлой установки
+                      disabled={absent && !active}
+                      title={absent ? `${x.title}: нет на сервере` : undefined}
+                      className={cn('justify-center', absent && 'border-dashed')}
                       onClick={() =>
                         setServer(s.id, active ? on.filter((id) => id !== x.id) : [...on, x.id])
                       }

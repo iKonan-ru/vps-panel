@@ -9,7 +9,7 @@ import { useState } from 'react';
 type ClientSort = 'created' | 'name' | 'devices' | 'problems';
 type ClientState = '' | 'on' | 'off' | 'problems' | 'limited';
 
-/** Сортировка и фильтры списка клиентов. desc - по убыванию (новые, больше, проблемные - сверху). */
+/** Сортировка и фильтры списка клиентов. desc - по убыванию (больше, проблемные - сверху). */
 interface ClientsView {
   sort: ClientSort;
   desc: boolean;
@@ -20,7 +20,7 @@ interface ClientsView {
 }
 
 const SORTS: { id: ClientSort; title: string; desc: boolean }[] = [
-  { id: 'created', title: 'По дате', desc: true },
+  { id: 'created', title: 'По дате', desc: false },
   { id: 'name', title: 'По имени', desc: false },
   { id: 'devices', title: 'По устройствам', desc: true },
   { id: 'problems', title: 'Проблемные', desc: true },
@@ -36,7 +36,7 @@ const STATES: { id: ClientState; title: string }[] = [
 
 const DEFAULT: ClientsView = {
   sort: 'created',
-  desc: true,
+  desc: false,
   q: '',
   server: '',
   service: '',
@@ -47,7 +47,7 @@ const DEFAULT: ClientsView = {
  * Сортировка помнится надолго, фильтры - до закрытия вкладки: из карточки клиента возвращаешься к
  * тому же списку, а завтра забытый фильтр не прячет клиентов.
  */
-const SORT_KEY = 'vps-clients-sort';
+const SORT_KEY = 'vps-clients-sort-v2';
 const FILTER_KEY = 'vps-clients-filter';
 
 function load(): ClientsView {
