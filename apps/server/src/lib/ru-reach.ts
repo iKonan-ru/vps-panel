@@ -1,3 +1,4 @@
+import type { ReachLevel, ReachPoint, ReachProbe, ReachTarget, ServerReach } from '@vps/protocol';
 import { eq } from 'drizzle-orm';
 import type { AgentRegistry } from '../agents/registry.js';
 import type { Db } from '../db/index.js';
@@ -8,77 +9,8 @@ import { deleteSetting, getJsonSetting, getSetting, putSetting } from './setting
 import { inboundNode, listInbounds, parseJson, streamOf, xuiApi } from './xui-api.js';
 import { savedXuiToken } from './xui-token.js';
 
-/**
- * Доступность из России. Цели сервера: адрес (TCP до SSH) и inbound-ы 3X-UI (TLS с их SNI или
- * TCP до порта) - их проверяет агент сервера измерениями Globalping со своего адреса
- * (reach.check, раз в 30 минут); MTProxyL проверяет себя сам, его итог агент кладёт в снимок
- * (details.ruReach), панель забирает его итог раз в 3 минуты - каждую его проверку. Уровни как у
- * MTProxyL: от 80% - видно, от 50% - частично, ниже - не видно. Уведомление - цель не видна две
- * проверки подряд и снова видна.
- *
- * Время у всех целей общее: проверки агента - в :00 и :30, интерфейс рисует историю получасовыми
- * интервалами (SLOT_MS), поэтому графики разных целей и серверов совпадают по времени. Зонды
- * последних проверок (откуда дошли, откуда нет) - отдельно, по серверу: ru_reach_probes:<id>.
- *
- * Задержка (rtt, мс) - время установки TCP-соединения у дошедших зондов: медиана по проверке у
- * цели и в точке истории, своя у каждого зонда. Её даёт только проверка агента (новые агенты);
- * у MTProxyL в его итоге времени нет.
- */
-
-export type ReachLevel = 'ok' | 'partial' | 'bad';
-
-/** Зонд проверки: город, сеть и её AS, дошёл ли; ошибка - если нет; задержка - если дошёл. */
-export interface ReachProbe {
-  city: string;
-  asn: number;
-  network: string;
-  ok: boolean;
-  error?: string;
-  rtt?: number;
-}
-
 /** Зонды проверок цели по времени проверки (последние PROBES_MS). */
 export type ProbeStore = Record<string, { at: string; probes: ReachProbe[] }[]>;
-
-export interface ReachPoint {
-  at: string;
-  percent: number;
-  total: number;
-  /** Медиана задержки проверки, мс. */
-  rtt?: number;
-}
-
-export interface ReachTarget {
-  key: string;
-  title: string;
-  kind: 'tcp' | 'tls';
-  port: number;
-  sni?: string;
-  /** null - ещё нет итога. */
-  percent: number | null;
-  total: number;
-  ok: number;
-  errors: string[];
-  /** Проверка не состоялась (квота Globalping, агент устарел, сеть). */
-  error?: string | undefined;
-  checkedAt: string | null;
-  /** Медиана задержки последней проверки, мс; нет - не мерили (MTProxyL, старый агент). */
-  rtt?: number | undefined;
-  history: ReachPoint[];
-  /** Проверок подряд "не видно" и было ли уведомление о нём. */
-  badStreak: number;
-  notified: boolean;
-  /** Кто проверяет: агент панели или сам MTProxyL. */
-  source: 'agent' | 'mtproxyl';
-}
-
-export interface ServerReach {
-  checkedAt: string | null;
-  error?: string;
-  /** Остаток квоты Globalping с адреса сервера после проверки. */
-  remaining?: number;
-  targets: ReachTarget[];
-}
 
 type Store = Record<string, ServerReach>;
 

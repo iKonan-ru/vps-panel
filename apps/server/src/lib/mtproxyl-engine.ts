@@ -1,3 +1,4 @@
+import type { EngineInfo } from '@vps/protocol';
 import type { AgentRegistry } from '../agents/registry.js';
 import { githubReleases } from './github.js';
 
@@ -10,25 +11,6 @@ import { githubReleases } from './github.js';
  * лежащий на сервере, от сборки не спасает: engine update удаляет его и тянет из реестра.
  */
 const IMAGE = 'liafanx/mtproxyl-telemt';
-
-export interface EngineVersion {
-  tag: string;
-  date: string;
-  prerelease: boolean;
-  installed: boolean;
-  /** Готовый образ есть в реестре. */
-  image: boolean;
-  /** Ставится без сборки на сервере. */
-  ready: boolean;
-}
-
-export interface EngineInfo {
-  current: string;
-  binary: boolean;
-  versions: EngineVersion[];
-  /** Реестр образов не ответил: версии docker ставить нельзя (не знаем, будет ли сборка). */
-  registryError?: string;
-}
 
 const norm = (v: string) => v.trim().replace(/^v/i, '').split('-')[0] ?? '';
 

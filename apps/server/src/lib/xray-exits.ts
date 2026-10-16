@@ -1,4 +1,5 @@
 import { randomUUID } from 'node:crypto';
+import type { XrayOutbound } from '@vps/protocol';
 import { eq } from 'drizzle-orm';
 import type { AgentRegistry } from '../agents/registry.js';
 import type { Db } from '../db/index.js';
@@ -6,7 +7,7 @@ import { servers } from '../db/schema.js';
 import { panelAddresses } from './panel-host.js';
 import { schedule } from './schedule.js';
 import type { SecretBox } from './secret-box.js';
-import type { XrayManager, XrayOutbound } from './xray.js';
+import type { XrayManager } from './xray.js';
 import {
   type XuiCall,
   type XuiEnvelope,

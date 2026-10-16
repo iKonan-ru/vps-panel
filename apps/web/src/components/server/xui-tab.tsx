@@ -3,7 +3,7 @@ import { MetricCard } from '@/components/server/metric-card';
 import { UninstallBlock } from '@/components/server/uninstall-block';
 import { type Versions, VersionsSection } from '@/components/server/versions-section';
 import { XuiClients } from '@/components/server/xui-clients';
-import { type Inbound, XuiInbounds } from '@/components/server/xui-inbounds';
+import { XuiInbounds } from '@/components/server/xui-inbounds';
 import { type XuiVersionKind, xuiApi } from '@/components/server/xui-model';
 import { SettingsForm } from '@/components/server/xui-settings';
 import { ActionBar } from '@/components/ui/action-bar';
@@ -20,6 +20,7 @@ import { type ServerDetail, serverLock } from '@/lib/servers';
 import { startServiceUpdate, useUpdatesCheck } from '@/lib/service-update';
 import { useAction } from '@/lib/use-action';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
+import type { XuiInboundRow } from '@vps/protocol';
 import {
   ExternalLink,
   KeyRound,
@@ -57,7 +58,7 @@ export function XuiTab({ s }: { s: ServerDetail }) {
   // тот же запрос, что у блока "Inbound-ы" (общий кэш): имена inbound-ов для клиентов
   const inboundList = useQuery({
     queryKey: ['xui-inbounds', s.id],
-    queryFn: () => api<Inbound[]>(`/api/servers/${s.id}/xui/inbound-list`),
+    queryFn: () => api<XuiInboundRow[]>(`/api/servers/${s.id}/xui/inbound-list`),
     enabled: online && Boolean(data?.installed),
     staleTime: 20_000,
     retry: false,
@@ -195,7 +196,7 @@ export function XuiTab({ s }: { s: ServerDetail }) {
             .join(', ')}
         />
         <MetricCard
-          label="Inbound"
+          label="XuiInboundRow"
           value={<Num value={data.inbounds} />}
           note={`подписка 3X-UI${data.subEnabled ? `: порт ${data.subPort}` : ' выключена'}`}
         />

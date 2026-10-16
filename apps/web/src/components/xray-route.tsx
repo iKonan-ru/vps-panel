@@ -11,39 +11,9 @@ import { ago } from '@/lib/format';
 import { useServers } from '@/lib/servers';
 import { useAction } from '@/lib/use-action';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
+import type { XrayStatus } from '@vps/protocol';
 import { Activity, Power, RefreshCw, Route } from 'lucide-react';
 import { useState } from 'react';
-
-type XrayCheck = { at: string; ok: boolean; ms: number; err: string | null };
-
-/** Выход xray (lib/xray.ts XrayExitView). */
-interface XrayExit {
-  serverId: string;
-  serverName: string;
-  inboundId: number;
-  inboundRemark: string;
-  address: string;
-  port: number;
-  uuid: string;
-  sni: string;
-  updatedAt: string;
-  primary: boolean;
-  lastCheck: XrayCheck | null;
-}
-
-interface XrayStatus {
-  configured: boolean;
-  binary: boolean;
-  running: boolean;
-  pid: number | null;
-  startedAt: string | null;
-  restarts: number;
-  lastError: string | null;
-  lastCheck: XrayCheck | null;
-  outbound: XrayExit | null;
-  exits: XrayExit[];
-  spares: { at: string | null; errors: { server: string; error: string }[] };
-}
 
 interface Inbound {
   id: number;

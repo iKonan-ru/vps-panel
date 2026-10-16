@@ -6,17 +6,8 @@
   "key": "MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAjGo8eq7LZPorh9c1UT8rDLSYJByaXe/l2TO7sv25nrbZVcJw5VAZ/PMNyn/ejX1qP7NjpitswaSRCGh9q7dgdtPx6C4DLV3sxfNZ0a6M8BEFE9b15zZTlDxAnlrnwPDRWueqG8p9ZyjPSg2YhUJKH+qdpXfPAPg6lZJuL0sFAL+cCZ8WmzCAvZa096iFyO0BirbZ5oHu+8CdPKcBeljrFO4t7kI8DcWszieXdAd1T1JHtT/0b49P+F26v8Lov1QxbDsvolH1zPX4wIHLKKgNpSlhOLk08jG98BGkI96XkCBSxPmEFZYJEo69vVu02VyfdCQBmEvr9lVZg1r8tDub1QIDAQAB",
   "description": "Выход в интернет через серверы VPS Panel только из этого браузера: HTTPS-прокси по ссылке с личной страницы.",
   "minimum_chrome_version": "120",
-  "permissions": [
-    "proxy",
-    "storage",
-    "webRequest",
-    "webRequestAuthProvider",
-    "alarms",
-    "privacy"
-  ],
-  "host_permissions": [
-    "<all_urls>"
-  ],
+  "permissions": ["proxy", "storage", "webRequest", "webRequestAuthProvider", "alarms", "privacy"],
+  "host_permissions": ["<all_urls>"],
   "background": {
     "service_worker": "bg.js"
   },

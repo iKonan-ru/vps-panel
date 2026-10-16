@@ -1,4 +1,3 @@
-import type { Inbound } from '@/components/server/xui-inbounds';
 import { Alert } from '@/components/ui/alert';
 import { Button } from '@/components/ui/button';
 import { Checkbox } from '@/components/ui/checkbox';
@@ -16,12 +15,13 @@ import { bytes, dateFull } from '@/lib/format';
 import { useAction } from '@/lib/use-action';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { Link } from '@tanstack/react-router';
-import type { XuiClientRow } from '@vps/protocol';
+import type { XuiClientRow, XuiInboundRow } from '@vps/protocol';
 import { Pencil, Trash2, UserRound } from 'lucide-react';
 import { useState } from 'react';
 
-/** Inbound, куда сверка заводит клиентов панели по умолчанию: свой VLESS, включён, не исключён. */
-const isDefault = (i: Inbound) => i.protocol === 'vless' && !i.node && i.enable && !i.excluded;
+/** XuiInboundRow, куда сверка заводит клиентов панели по умолчанию: свой VLESS, включён, не исключён. */
+const isDefault = (i: XuiInboundRow) =>
+  i.protocol === 'vless' && !i.node && i.enable && !i.excluded;
 
 /**
  * Блок "Клиенты" вкладки 3X-UI: клиенты и их inbound-ы, правка привязки к inbound-ам. У клиента
@@ -34,7 +34,7 @@ export function XuiClients({
   reason,
 }: {
   serverId: string;
-  inbounds: Inbound[] | undefined;
+  inbounds: XuiInboundRow[] | undefined;
   disabled: boolean;
   reason: string | undefined;
 }) {
@@ -118,7 +118,7 @@ export function XuiClients({
         <div className="flex flex-wrap items-center gap-2 px-4 py-2">
           <Select
             size="sm"
-            aria-label="Inbound"
+            aria-label="XuiInboundRow"
             value={inb}
             onChange={(e) => setInb(e.target.value)}
           >
@@ -149,7 +149,7 @@ export function XuiClients({
           <THead>
             <tr>
               <th>Клиент</th>
-              <th>Inbound</th>
+              <th>XuiInboundRow</th>
               <th className="text-right">Трафик</th>
               <th className="w-0" />
             </tr>
@@ -218,8 +218,8 @@ export function XuiClients({
                     <Button
                       size="icon-sm"
                       variant="ghost"
-                      title={reason ?? 'Inbound клиента'}
-                      aria-label="Inbound клиента"
+                      title={reason ?? 'XuiInboundRow клиента'}
+                      aria-label="XuiInboundRow клиента"
                       disabled={locked || !inbounds}
                       onClick={() => {
                         op.setError(null);
@@ -253,7 +253,7 @@ export function XuiClients({
       <Dialog
         open={edit !== null}
         onClose={() => setEdit(null)}
-        title={edit ? `Inbound: ${edit.email}` : ''}
+        title={edit ? `XuiInboundRow: ${edit.email}` : ''}
       >
         {edit && inbounds && (
           <InboundsForm
@@ -282,7 +282,7 @@ function InboundsForm({
   onReset,
 }: {
   client: XuiClientRow;
-  inbounds: Inbound[];
+  inbounds: XuiInboundRow[];
   busy: boolean;
   error: string | null;
   onCancel: () => void;

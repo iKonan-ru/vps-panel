@@ -2,18 +2,11 @@ import { Chip } from '@/components/ui/chip';
 import { api } from '@/lib/api';
 import { cn } from '@/lib/cn';
 import { ago, dateShort, daysUntil, daysWord, paymentSoon, plural } from '@/lib/format';
-import { type ReachTarget, type ServerReach, reachLevel, useReachAll } from '@/lib/reach';
+import { reachLevel, useReachAll } from '@/lib/reach';
 import { useQuery } from '@tanstack/react-query';
 import { Link } from '@tanstack/react-router';
-import type { ServerSummary } from '@vps/protocol';
+import type { ReachTarget, ServerReach, ServerSummary, ServiceUpdate } from '@vps/protocol';
 import { CircleAlert } from 'lucide-react';
-
-/** Обновление сервиса (lib/service-updates.ts на сервере). */
-interface ServiceUpdate {
-  kind: 'xui' | 'xray' | 'mtproxyl' | 'mtproxyl-panel';
-  title: string;
-  latest: string;
-}
 
 /** Вкладка сервера, где обновляется сервис: у 3X-UI - своя, движок и панель MTProxyL - MTProxyL. */
 const updateTab: Record<ServiceUpdate['kind'], string> = {

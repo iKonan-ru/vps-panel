@@ -145,7 +145,10 @@ async function applyNow() {
     return;
   }
   const cur = await B.proxy.settings.get({});
-  if (cur.levelOfControl === 'not_controllable' || cur.levelOfControl === 'controlled_by_other_extensions') {
+  if (
+    cur.levelOfControl === 'not_controllable' ||
+    cur.levelOfControl === 'controlled_by_other_extensions'
+  ) {
     await setState({
       error:
         cur.levelOfControl === 'not_controllable'
@@ -157,7 +160,10 @@ async function applyNow() {
   }
   const pac = (priming) =>
     B.proxy.settings.set({
-      value: { mode: 'pac_script', pacScript: { data: buildPac(st, servers, priming), mandatory: true } },
+      value: {
+        mode: 'pac_script',
+        pacScript: { data: buildPac(st, servers, priming), mandatory: true },
+      },
       scope: 'regular',
     });
   // сначала пароль, потом трафик: без пароля прокси прикидывается сайтом и страница не откроется
@@ -175,7 +181,9 @@ async function applyNow() {
 async function installId() {
   const st = await getState();
   if (st.install) return st.install;
-  const id = [...crypto.getRandomValues(new Uint8Array(8))].map((b) => b.toString(16).padStart(2, '0')).join('');
+  const id = [...crypto.getRandomValues(new Uint8Array(8))]
+    .map((b) => b.toString(16).padStart(2, '0'))
+    .join('');
   await setState({ install: id });
   return id;
 }
@@ -193,7 +201,10 @@ function scheduleReport() {
 async function report() {
   const st = await getState();
   if (!st.subUrl) return;
-  const failed = st.enabled && st.check && !st.check.ok ? `проверка выхода: ${st.check.error || 'не прошла'}` : '';
+  const failed =
+    st.enabled && st.check && !st.check.ok
+      ? `проверка выхода: ${st.check.error || 'не прошла'}`
+      : '';
   await fetch(`${st.subUrl}/status`, {
     method: 'POST',
     cache: 'no-store',
@@ -273,7 +284,10 @@ function refresh() {
         headers: { 'x-vps-ext': await installId() },
       });
       if (r.status === 404) {
-        await setState({ sub: null, error: 'Ссылка больше не действует: возьмите новую на личной странице' });
+        await setState({
+          sub: null,
+          error: 'Ссылка больше не действует: возьмите новую на личной странице',
+        });
         return;
       }
       if (!r.ok) throw new Error(`HTTP ${r.status}`);
@@ -288,7 +302,8 @@ function refresh() {
             ? ''
             : 'Серверов для браузера пока нет',
       };
-      if (st.server !== 'auto' && !sub.servers.some((s) => s.id === st.server)) patch.server = 'auto';
+      if (st.server !== 'auto' && !sub.servers.some((s) => s.id === st.server))
+        patch.server = 'auto';
       await setState(patch);
     } catch (e) {
       // сеть или сервер подписок недоступны - работаем на прежнем списке
@@ -315,7 +330,11 @@ async function ping(s) {
     const timer = setTimeout(() => ctl.abort(), 4000);
     const t0 = performance.now();
     try {
-      await fetch(`${base}?t=${Date.now()}${i}`, { cache: 'no-store', credentials: 'omit', signal: ctl.signal });
+      await fetch(`${base}?t=${Date.now()}${i}`, {
+        cache: 'no-store',
+        credentials: 'omit',
+        signal: ctl.signal,
+      });
       const ms = Math.round(performance.now() - t0);
       best = best === null ? ms : Math.min(best, ms);
     } catch {
@@ -343,7 +362,11 @@ async function check() {
     });
     res = { ok: r.status === 204, ms: Date.now() - started, at: new Date().toISOString() };
   } catch (e) {
-    res = { ok: false, error: ctl.signal.aborted ? 'нет ответа' : 'нет соединения через прокси', at: new Date().toISOString() };
+    res = {
+      ok: false,
+      error: ctl.signal.aborted ? 'нет ответа' : 'нет соединения через прокси',
+      at: new Date().toISOString(),
+    };
   } finally {
     clearTimeout(timer);
   }
@@ -382,13 +405,19 @@ if (!FIREFOX) {
   const reloaded = new Map();
   B.webRequest.onErrorOccurred.addListener(
     (d) => {
-      if (d.type !== 'main_frame' || !/TUNNEL_CONNECTION_FAILED|PROXY_AUTH|PROXY_CONNECTION_FAILED/.test(d.error))
+      if (
+        d.type !== 'main_frame' ||
+        !/TUNNEL_CONNECTION_FAILED|PROXY_AUTH|PROXY_CONNECTION_FAILED/.test(d.error)
+      )
         return;
       (async () => {
         const st = await getState();
         if (!st.enabled) return;
         await applying;
-        await Promise.race([prime(activeServers(st), false), new Promise((r) => setTimeout(r, 3000))]);
+        await Promise.race([
+          prime(activeServers(st), false),
+          new Promise((r) => setTimeout(r, 3000)),
+        ]);
         if (d.tabId >= 0 && Date.now() - (reloaded.get(d.tabId) || 0) > 60_000) {
           reloaded.set(d.tabId, Date.now());
           B.tabs.reload(d.tabId).catch(() => {});
@@ -500,7 +529,12 @@ B.runtime.onMessage.addListener((msg, _sender, reply) => {
   })()
     .then(async (r) => {
       const state = await getState();
-      reply({ ...(r || {}), state, update: updateOf(state), current: B.runtime.getManifest().version });
+      reply({
+        ...(r || {}),
+        state,
+        update: updateOf(state),
+        current: B.runtime.getManifest().version,
+      });
     })
     .catch((e) => reply({ error: e.message }));
   return true;

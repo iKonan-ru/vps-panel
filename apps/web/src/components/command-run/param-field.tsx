@@ -4,9 +4,9 @@ import { PasswordInput } from '@/components/ui/password-input';
 import { Select } from '@/components/ui/select';
 import { Textarea } from '@/components/ui/textarea';
 import { cn } from '@/lib/cn';
-import type { CommandParam } from '@/lib/commands';
 import { clampInt, digitsOnly } from '@/lib/masks';
 import { randomToken } from '@/lib/random';
+import type { CommandParamInfo } from '@vps/protocol';
 import { useEffect } from 'react';
 
 export function ParamField({
@@ -17,7 +17,7 @@ export function ParamField({
   idPrefix,
   generate,
 }: {
-  p: CommandParam;
+  p: CommandParamInfo;
   value: string;
   onChange: (v: string) => void;
   awgContainers: { name: string; label: string }[];
@@ -142,7 +142,7 @@ export function ParamFields({
   idPrefix,
   generate,
 }: {
-  params: CommandParam[];
+  params: CommandParamInfo[];
   answers: Record<string, string>;
   onChange: (name: string, value: string) => void;
   awgContainers: { name: string; label: string }[];

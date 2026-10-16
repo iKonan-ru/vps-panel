@@ -8,17 +8,12 @@ import { PageTitle } from '@/components/ui/page-title';
 import { Pager, usePaged } from '@/components/ui/pager';
 import { Section } from '@/components/ui/section';
 import { TBody, THead, Table } from '@/components/ui/table';
-import {
-  type CommandInfo,
-  type CommandRun,
-  commandsApi,
-  groupTitles,
-  useCommands,
-} from '@/lib/commands';
+import { type CommandRun, commandsApi, groupTitles, useCommands } from '@/lib/commands';
 import { ago } from '@/lib/format';
 import { useServers } from '@/lib/servers';
 import { useQuery } from '@tanstack/react-query';
 import { Link, useSearch } from '@tanstack/react-router';
+import type { CommandInfo } from '@vps/protocol';
 import { Box, Download, FileText, Play, Search, Trash2 } from 'lucide-react';
 import { type ReactNode, useMemo, useState } from 'react';
 

@@ -11,30 +11,11 @@ import { api } from '@/lib/api';
 import { ago, utcHourLocal } from '@/lib/format';
 import { useAction } from '@/lib/use-action';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
+import type { PanelUpdateView } from '@vps/protocol';
 import { ArrowUpCircle, ExternalLink, RefreshCw } from 'lucide-react';
 
 /** Репозиторий панели: исходники, релизы, документация. */
 const REPO_URL = 'https://github.com/iKonan-ru/vps-panel';
-
-interface PanelRelease {
-  version: string;
-  prerelease: boolean;
-  notes: string;
-  url: string;
-  publishedAt: string;
-}
-export interface PanelUpdateView {
-  current: string;
-  managed: boolean;
-  newer: PanelRelease[];
-  checkedAt: string | null;
-  error: string | null;
-  requested: string | null;
-  channel: 'stable' | 'beta';
-  autoUpdate: boolean;
-  autoHour: number;
-  agentsAuto: boolean;
-}
 
 const KEY = ['panel-update'];
 

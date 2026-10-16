@@ -1,6 +1,12 @@
 import { existsSync } from 'node:fs';
 import { mkdir, rename, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
+import type {
+  PanelChannel,
+  PanelRelease,
+  PanelUpdateSettings,
+  PanelUpdateView,
+} from '@vps/protocol';
 import type { Db } from '../db/index.js';
 import { githubReleases } from './github.js';
 import { schedule } from './schedule.js';
@@ -10,37 +16,6 @@ import { PANEL_VERSION } from './version.js';
 export const PANEL_REPO = 'iKonan-ru/vps-panel';
 const CACHE_KEY = 'panel_releases';
 const SEMVER = /^(\d+)\.(\d+)\.(\d+)(?:-beta\.(\d+))?$/;
-
-export type PanelChannel = 'stable' | 'beta';
-
-export interface PanelRelease {
-  version: string;
-  prerelease: boolean;
-  notes: string;
-  url: string;
-  publishedAt: string;
-}
-
-export interface PanelUpdateSettings {
-  channel: PanelChannel;
-  /** Ставить новую версию канала самой, в час autoHour (UTC). */
-  autoUpdate: boolean;
-  autoHour: number;
-  /** После обновления панели раскатить агентов (по одному). */
-  agentsAuto: boolean;
-}
-
-export interface PanelUpdateView extends PanelUpdateSettings {
-  current: string;
-  /** Установка из релиза (vps-panel): есть data/update - панель может обновиться сама. */
-  managed: boolean;
-  /** Новее текущей в своём канале, от новой к старой (со списком изменений). */
-  newer: PanelRelease[];
-  checkedAt: string | null;
-  error: string | null;
-  /** Запрос обновления передан службе на хосте, ещё не подхвачен. */
-  requested: string | null;
-}
 
 /** Сравнение версий semver (X.Y.Z и X.Y.Z-beta.N): >0 - a новее. Не версия - меньше любой. */
 export function compareVersions(a: string, b: string): number {

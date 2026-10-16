@@ -7,7 +7,6 @@ import {
   scanOptions,
   useRealityScan,
 } from '@/components/server/xui-inbound-fields';
-import type { Inbound } from '@/components/server/xui-inbounds';
 import { Alert } from '@/components/ui/alert';
 import { Button } from '@/components/ui/button';
 import { Field } from '@/components/ui/field';
@@ -15,6 +14,7 @@ import { Input } from '@/components/ui/input';
 import { api } from '@/lib/api';
 import { useAction } from '@/lib/use-action';
 import { useQuery } from '@tanstack/react-query';
+import type { XuiInboundRow } from '@vps/protocol';
 import { type FormEvent, useEffect, useState } from 'react';
 
 /** GET /xui/inbounds/:iid/edit: текущие значения (без ключей) и цели других inbound-ов. */
@@ -43,7 +43,7 @@ export function EditInboundForm({
   onStarted,
 }: {
   serverId: string;
-  inbound: Inbound;
+  inbound: XuiInboundRow;
   disabled: boolean;
   onCancel: () => void;
   onStarted: (actionId: string) => void;

@@ -1,44 +1,6 @@
 import { api } from '@/lib/api';
 import { useQuery } from '@tanstack/react-query';
-
-/** Доступность из России (lib/ru-reach.ts на сервере). */
-export interface ReachTarget {
-  key: string;
-  title: string;
-  kind: 'tcp' | 'tls';
-  port: number;
-  sni?: string;
-  percent: number | null;
-  total: number;
-  ok: number;
-  errors: string[];
-  error?: string;
-  checkedAt: string | null;
-  /** Медиана задержки последней проверки, мс (у MTProxyL нет). */
-  rtt?: number;
-  history: { at: string; percent: number; total: number; rtt?: number }[];
-  source: 'agent' | 'mtproxyl';
-}
-
-export interface ServerReach {
-  checkedAt: string | null;
-  error?: string;
-  remaining?: number;
-  targets: ReachTarget[];
-}
-
-/** Зонд проверки: город, сеть и её AS, дошёл ли. */
-export interface ReachProbe {
-  city: string;
-  asn: number;
-  network: string;
-  ok: boolean;
-  error?: string;
-  /** Задержка дошедшего зонда, мс. */
-  rtt?: number;
-}
-
-export type ReachPoint = ReachTarget['history'][number];
+import type { ReachLevel, ReachPoint, ReachProbe, ServerReach } from '@vps/protocol';
 
 /**
  * Общая шкала графиков: получасовые интервалы по часам. Проверки агента - в :00 и :30 и
@@ -121,8 +83,6 @@ export function useReachProbes(serverId: string, key: string | null) {
     staleTime: 60_000,
   });
 }
-
-export type ReachLevel = 'ok' | 'partial' | 'bad';
 
 /** Как у MTProxyL: от 80% - видно, от 50% - частично, ниже - не видно. */
 export function reachLevel(percent: number | null): ReachLevel | null {

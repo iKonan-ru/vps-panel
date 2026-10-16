@@ -12,37 +12,12 @@ import { ApiError, api } from '@/lib/api';
 import { bytes, dateFull } from '@/lib/format';
 import { useAction } from '@/lib/use-action';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
+import type { XuiInboundRow } from '@vps/protocol';
 import { Pencil, Plus, Trash2 } from 'lucide-react';
 import { useState } from 'react';
 
-/** Inbound 3X-UI для вкладки (GET /xui/inbound-list): без настроек клиентов. */
-export interface Inbound {
-  id: number;
-  remark: string;
-  enable: boolean;
-  protocol: string;
-  port: number;
-  listen: string;
-  network: string;
-  security: string;
-  sni: string;
-  node: boolean;
-  up: number;
-  down: number;
-  total: number;
-  expiryTime: number;
-  excludeFromSub: boolean;
-  excluded: boolean;
-  clients: number;
-  clientsOff: number;
-  online: number;
-  panelClients: number;
-  /** Через inbound идёт выход панели в Telegram: основной или запасной. */
-  telegramExit: 'primary' | 'spare' | null;
-}
-
 /** Что станет с выходом в Telegram, если inbound удалить или выключить. */
-function exitNote(i: Inbound): string {
+function exitNote(i: XuiInboundRow): string {
   if (i.telegramExit === 'primary')
     return ' Через него панель отправляет уведомления в Telegram: основной выход перейдёт на другой RAW этого сервера или на запасной выход.';
   if (i.telegramExit === 'spare')
@@ -53,7 +28,7 @@ function exitNote(i: Inbound): string {
 const securityTitle: Record<string, string> = { reality: 'Reality', tls: 'TLS', none: '' };
 
 /**
- * Блок "Inbound-ы" вкладки 3X-UI: что слушает xray, клиенты и трафик; правка - подпись, порт,
+ * Блок "XuiInboundRow-ы" вкладки 3X-UI: что слушает xray, клиенты и трафик; правка - подпись, порт,
  * вкл/выкл (остальное - в панели 3X-UI). Данные - по API-токену; нет токена - подсказка.
  */
 export function XuiInbounds({
@@ -69,18 +44,18 @@ export function XuiInbounds({
   const ask = useConfirm();
   const { data, error, isFetching } = useQuery({
     queryKey: ['xui-inbounds', serverId],
-    queryFn: () => api<Inbound[]>(`/api/servers/${serverId}/xui/inbound-list`),
+    queryFn: () => api<XuiInboundRow[]>(`/api/servers/${serverId}/xui/inbound-list`),
     staleTime: 20_000,
     retry: false,
   });
-  const [edit, setEdit] = useState<Inbound | null>(null);
+  const [edit, setEdit] = useState<XuiInboundRow | null>(null);
   const op = useAction();
   const [adding, setAdding] = useState(false);
   const [run, setRun] = useState<{ id: string; title: string } | null>(null);
   const noToken = error instanceof ApiError && error.code === 'no-token';
 
   /** Включение и выключение (переключатель в строке); остальное - окно правки. */
-  async function save(i: Inbound, body: { enable: boolean }) {
+  async function save(i: XuiInboundRow, body: { enable: boolean }) {
     if (!body.enable) {
       const ok = await ask({
         title: `Выключить inbound \u00ab${i.remark}\u00bb?`,
@@ -97,7 +72,7 @@ export function XuiInbounds({
     });
   }
 
-  async function remove(i: Inbound) {
+  async function remove(i: XuiInboundRow) {
     const ok = await ask({
       title: `Удалить inbound \u00ab${i.remark || `#${i.id}`}\u00bb?`,
       text: `Клиентов: ${i.clients}${i.enable ? `, сейчас онлайн: ${i.online}` : ''}. Ссылки на него пропадут из подписок, клиентам без подписки он перестанет работать.${exitNote(i)}`,
@@ -120,7 +95,7 @@ export function XuiInbounds({
     <>
       {run && <ActionPanel title={run.title} actionId={run.id} onHide={() => setRun(null)} />}
       <Section
-        title="Inbound"
+        title="XuiInboundRow"
         info={
           'Здесь добавляются соединения VLESS (RAW и XHTTP с Reality), меняются подпись, порт и включение, inbound удаляется; остальное\u00a0\u2014 в панели 3X-UI'
         }
@@ -157,7 +132,7 @@ export function XuiInbounds({
           </div>
         )}
         {data && list.length === 0 && (
-          <div className="px-4 py-3 text-[13px] text-muted">Inbound нет</div>
+          <div className="px-4 py-3 text-[13px] text-muted">XuiInboundRow нет</div>
         )}
         {list.map((i) => (
           <div
@@ -167,7 +142,7 @@ export function XuiInbounds({
             <Switch
               checked={i.enable}
               disabled={locked || i.node}
-              label={`Inbound ${i.remark || `#${i.id}`}`}
+              label={`XuiInboundRow ${i.remark || `#${i.id}`}`}
               onChange={() => void save(i, { enable: !i.enable })}
             />
             <div className="min-w-0 grow">
@@ -226,7 +201,7 @@ export function XuiInbounds({
             <Button
               size="icon-sm"
               variant="ghost"
-              title={i.node ? 'Inbound другого узла: правится на нём' : reason}
+              title={i.node ? 'XuiInboundRow другого узла: правится на нём' : reason}
               aria-label="Изменить inbound"
               disabled={locked || i.node}
               onClick={() => {
@@ -240,7 +215,9 @@ export function XuiInbounds({
               size="icon-sm"
               variant="ghost"
               title={
-                i.node ? 'Inbound другого узла: удаляется на нём' : (reason ?? 'Удалить inbound')
+                i.node
+                  ? 'XuiInboundRow другого узла: удаляется на нём'
+                  : (reason ?? 'Удалить inbound')
               }
               aria-label="Удалить inbound"
               disabled={locked || i.node}
@@ -253,7 +230,7 @@ export function XuiInbounds({
         <Dialog
           open={edit !== null}
           onClose={() => setEdit(null)}
-          title={edit ? `Inbound ${edit.remark || `#${edit.id}`}` : ''}
+          title={edit ? `XuiInboundRow ${edit.remark || `#${edit.id}`}` : ''}
         >
           {edit && (
             <EditInboundForm
@@ -264,7 +241,7 @@ export function XuiInbounds({
               onCancel={() => setEdit(null)}
               onStarted={(id) => {
                 setEdit(null);
-                setRun({ id, title: `Inbound ${edit.remark || `#${edit.id}`}` });
+                setRun({ id, title: `XuiInboundRow ${edit.remark || `#${edit.id}`}` });
               }}
             />
           )}

@@ -1,10 +1,11 @@
+import type { ServiceUpdate } from '@vps/protocol';
 import { describe, expect, it } from 'vitest';
 import type { AgentRegistry } from '../src/agents/registry.js';
 import { createDb } from '../src/db/index.js';
 import { servers } from '../src/db/schema.js';
 import type { Action } from '../src/lib/action-journal.js';
 import { SecretBox } from '../src/lib/secret-box.js';
-import { type ServiceUpdate, ServiceUpdates } from '../src/lib/service-updates.js';
+import { ServiceUpdates } from '../src/lib/service-updates.js';
 
 /** 3X-UI через агента: версия Xray, список версий, которые он умеет ставить, установка. */
 function fake3xui(state: { xray: string; offered: string[]; installs: string[]; panel?: string }) {

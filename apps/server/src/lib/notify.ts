@@ -1,13 +1,18 @@
-import { type Inventory, type NotifyEvent, serviceByKind } from '@vps/protocol';
+import {
+  type Inventory,
+  type NotifyEvent,
+  type PanelRelease,
+  type ServiceUpdate,
+  type ServiceUpdateKind,
+  serviceByKind,
+} from '@vps/protocol';
 import { eq } from 'drizzle-orm';
 import type { AgentRegistry } from '../agents/registry.js';
 import type { StatusCache } from '../agents/state.js';
 import type { Db } from '../db/index.js';
 import { servers } from '../db/schema.js';
 import { daysToPayment, rollPaymentDate } from './billing.js';
-import type { PanelRelease } from './panel-updates.js';
 import { schedule } from './schedule.js';
-import type { ServiceUpdate, ServiceUpdateKind } from './service-updates.js';
 import { type Telegram, esc } from './telegram.js';
 
 const STARTUP_QUIET_MS = 2 * 60_000;

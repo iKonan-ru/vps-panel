@@ -1,8 +1,7 @@
 import { type QueryClient, useQueryClient } from '@tanstack/react-query';
+import type { ServiceUpdateKind } from '@vps/protocol';
 import { useSyncExternalStore } from 'react';
 import { api } from './api';
-
-export type ServiceUpdateKind = 'xui' | 'xray' | 'mtproxyl' | 'mtproxyl-panel';
 
 const mtExec = (id: string, op: string) =>
   api<{ actionId: string }>(`/api/servers/${id}/mtproxyl/exec`, {

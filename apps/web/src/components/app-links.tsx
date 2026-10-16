@@ -1,6 +1,7 @@
 import { LinkButton } from '@/components/ui/link-button';
-import { type AppLink, type AppOs, useApps } from '@/lib/apps';
+import { useApps } from '@/lib/apps';
 import { Link } from '@tanstack/react-router';
+import type { AppLink, AppOs } from '@vps/protocol';
 
 /** Ссылка на файл или магазин: кнопка-переход и копирование (ссылку можно переслать клиенту). */
 export function AppLinkButton({ link }: { link: AppLink }) {

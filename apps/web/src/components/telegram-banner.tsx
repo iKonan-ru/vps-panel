@@ -3,23 +3,12 @@ import { api } from '@/lib/api';
 import { ago } from '@/lib/format';
 import { useQuery } from '@tanstack/react-query';
 import { Link } from '@tanstack/react-router';
-
-/** Состояние доставки в Telegram (GET /api/notify/telegram/health, lib/telegram.ts TgHealth). */
-export interface TgHealth {
-  configured?: boolean;
-  ok: boolean | null;
-  failingSince: string | null;
-  lastOkAt: string | null;
-  lastOkVia: string | null;
-  lastError: string | null;
-  checkedAt: string | null;
-  pending: number;
-}
+import type { TgHealthView } from '@vps/protocol';
 
 export function useTgHealth() {
   return useQuery({
     queryKey: ['tg-health'],
-    queryFn: () => api<TgHealth>('/api/notify/telegram/health'),
+    queryFn: () => api<TgHealthView>('/api/notify/telegram/health'),
     refetchInterval: 60_000,
   });
 }

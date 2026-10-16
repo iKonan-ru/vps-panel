@@ -1,5 +1,4 @@
-import type { Service, StdCell, StdItem, StdKey } from '@vps/protocol';
-import type { ServiceUpdate } from './service-updates.js';
+import type { Service, ServiceUpdate, StdCell, StdItem, StdKey } from '@vps/protocol';
 
 /**
  * Эталон сервисов: на каждом сервере (сервер панели - если на нём заводятся клиенты) - 3X-UI, MTProxyL, AWG 3.1 и 2.0,

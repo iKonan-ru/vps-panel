@@ -12,20 +12,12 @@ import { actions } from '@/lib/actions';
 import { api } from '@/lib/api';
 import { useCommands } from '@/lib/commands';
 import { type ServerDetail, serverLock } from '@/lib/servers';
-import { type ServiceUpdateKind, startServiceUpdate, useUpdatesCheck } from '@/lib/service-update';
+import { startServiceUpdate, useUpdatesCheck } from '@/lib/service-update';
 import { useAction } from '@/lib/use-action';
 import { useQuery } from '@tanstack/react-query';
-import type { Finding } from '@vps/protocol';
+import type { Finding, ServiceUpdate } from '@vps/protocol';
 import { ArrowRight, ClipboardCheck, Download, Trash2, Wrench, X } from 'lucide-react';
 import { type ReactNode, useState } from 'react';
-
-/** Обновление установленного сервиса (проверяет панель раз в 6 часов). */
-interface ServiceUpdate {
-  kind: ServiceUpdateKind;
-  title: string;
-  current: string;
-  latest: string;
-}
 
 interface SecurityRow {
   key: string;

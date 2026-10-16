@@ -1,4 +1,4 @@
-import type { XuiClientRow } from '@vps/protocol';
+import type { XuiClientRow, XuiInboundRow, XuiOwnInbound } from '@vps/protocol';
 import { and, eq, isNull } from 'drizzle-orm';
 import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
@@ -123,7 +123,7 @@ export async function xuiRoutes(
    * Inbound-ы 3X-UI для вкладки: без настроек клиентов (UUID в браузер не уходят) - число
    * клиентов, онлайн (clients/onlines), клиенты панели (email = ref привязок VLESS), трафик.
    */
-  app.get('/api/servers/:id/xui/inbound-list', async (req) => {
+  app.get('/api/servers/:id/xui/inbound-list', async (req): Promise<XuiInboundRow[]> => {
     const { id } = Id.parse(req.params);
     const row = db.select().from(servers).where(eq(servers.id, id)).get();
     if (!row) throw Object.assign(new Error('сервер не найден'), { statusCode: 404 });
@@ -397,7 +397,7 @@ export async function xuiRoutes(
   });
 
   /** VLESS-inbound-ы сервера (свои, не других узлов группы 3X-UI) и отметка "без глобальных клиентов". */
-  app.get('/api/servers/:id/xui/inbounds', async (req) => {
+  app.get('/api/servers/:id/xui/inbounds', async (req): Promise<XuiOwnInbound[]> => {
     const { id } = Id.parse(req.params);
     const row = db.select().from(servers).where(eq(servers.id, id)).get();
     if (!row) throw Object.assign(new Error('сервер не найден'), { statusCode: 404 });

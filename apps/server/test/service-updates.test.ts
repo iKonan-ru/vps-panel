@@ -1,17 +1,13 @@
 import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import type { ServiceUpdate } from '@vps/protocol';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import type { AgentRegistry } from '../src/agents/registry.js';
 import { type Db, createDb } from '../src/db/index.js';
 import { servers } from '../src/db/schema.js';
 import type { SecretBox } from '../src/lib/secret-box.js';
-import {
-  type ServiceUpdate,
-  ServiceUpdates,
-  cmpVersion,
-  newest,
-} from '../src/lib/service-updates.js';
+import { ServiceUpdates, cmpVersion, newest } from '../src/lib/service-updates.js';
 
 describe('cmpVersion', () => {
   it('сравнивает по числам, v и хвост коммита не мешают', () => {

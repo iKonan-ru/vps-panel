@@ -1,19 +1,7 @@
 import { api } from '@/lib/api';
 import { useQuery } from '@tanstack/react-query';
+import type { AppView } from '@vps/protocol';
 
-export type AppOs = 'android' | 'ios' | 'windows' | 'macos' | 'linux';
-export interface AppLink {
-  label: string;
-  url: string;
-  version?: string;
-  note?: string;
-}
-export interface AppView {
-  id: string;
-  name: string;
-  purpose: string;
-  platforms: { os: AppOs; title: string; links: AppLink[] }[];
-}
 export interface AppsList {
   checkedAt: string | null;
   apps: AppView[];

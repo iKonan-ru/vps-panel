@@ -1,10 +1,10 @@
 import { createHash } from 'node:crypto';
+import type { AppLink, AppOs } from '@vps/protocol';
 /**
  * HTML личной страницы клиента (routes/personal.ts): стили, скрипт копирования, иконки и
  * помощники разметки. Страница без сборки фронтенда - строки шаблонов.
  */
 import QRCode from 'qrcode';
-import type { AppLink, AppOs } from './apps.js';
 
 export const esc = (s: string) =>
   s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');

@@ -6,7 +6,9 @@
 function asciiHost(s) {
   try {
     const h = new URL(`http://${s}/`).hostname;
-    return /^[a-z0-9.-]+$/.test(h) && !h.startsWith('.') && !h.endsWith('.') && !h.includes('..') ? h : null;
+    return /^[a-z0-9.-]+$/.test(h) && !h.startsWith('.') && !h.endsWith('.') && !h.includes('..')
+      ? h
+      : null;
   } catch {
     return null;
   }
@@ -64,10 +66,12 @@ function parseRule(line) {
     } catch {
       return { error: 'неверный адрес страницы' };
     }
-    if (!/^https?:$/.test(u.protocol) || !u.hostname) return { error: 'страница: только http или https' };
+    if (!/^https?:$/.test(u.protocol) || !u.hostname)
+      return { error: 'страница: только http или https' };
     const path = u.pathname + u.search;
     // адрес без пути - это просто сайт
-    if (path === '/' || path === '') return { kind: 'hosts', value: u.hostname.replace(/^\[|\]$/g, '') };
+    if (path === '/' || path === '')
+      return { kind: 'hosts', value: u.hostname.replace(/^\[|\]$/g, '') };
     return { kind: 'urls', value: { h: u.hostname.replace(/^\[|\]$/g, ''), p: path } };
   }
   if (line.startsWith('*.') || (line.startsWith('.') && !line.startsWith('..'))) {
@@ -148,7 +152,14 @@ function routeContext(st, servers, priming) {
     HOSTS: hosts,
     SUBHOST: subHost,
     RU: Boolean(st.ruDirect),
-    D: { hosts: own, suffixes: r.suffixes, patterns: r.patterns, cidr4: r.cidr4, cidr6: r.cidr6, urls: r.urls },
+    D: {
+      hosts: own,
+      suffixes: r.suffixes,
+      patterns: r.patterns,
+      cidr4: r.cidr4,
+      cidr6: r.cidr6,
+      urls: r.urls,
+    },
   };
 }
 
@@ -160,7 +171,7 @@ function routeContext(st, servers, priming) {
 // сравнивается по началу пути.
 function pacIp4(h) {
   var m = /^(\d+)\.(\d+)\.(\d+)\.(\d+)$/.exec(h);
-  return m ? ((+m[1] << 24) >>> 0) + (+m[2] << 16) + (+m[3] << 8) + (+m[4]) : -1;
+  return m ? ((+m[1] << 24) >>> 0) + (+m[2] << 16) + (+m[3] << 8) + +m[4] : -1;
 }
 function pacOwn(url, host, D) {
   var i;
@@ -173,14 +184,16 @@ function pacOwn(url, host, D) {
   var n = pacIp4(host);
   if (n >= 0)
     for (i = 0; i < D.cidr4.length; i++) {
-      var b = D.cidr4[i][1], mask = b === 0 ? 0 : (0xffffffff << (32 - b)) >>> 0;
-      if (((n & mask) >>> 0) === D.cidr4[i][0]) return true;
+      var b = D.cidr4[i][1],
+        mask = b === 0 ? 0 : (0xffffffff << (32 - b)) >>> 0;
+      if ((n & mask) >>> 0 === D.cidr4[i][0]) return true;
     }
   if (host.indexOf(':') >= 0 && typeof isInNetEx === 'function')
     for (i = 0; i < D.cidr6.length; i++) if (isInNetEx(host, D.cidr6[i])) return true;
   var path = url.replace(/^[a-z]+:\/\/[^\/]*/i, '') || '/';
   for (i = 0; i < D.urls.length; i++)
-    if (host === D.urls[i].h && (url.slice(0, 6) === 'https:' || path.indexOf(D.urls[i].p) === 0)) return true;
+    if (host === D.urls[i].h && (url.slice(0, 6) === 'https:' || path.indexOf(D.urls[i].p) === 0))
+      return true;
   return false;
 }
 function pacRoute(url, host, C) {
@@ -191,8 +204,20 @@ function pacRoute(url, host, C) {
     return m && pr[m[1]] ? pr[m[1]] : C.CHAIN;
   }
   if (host === C.SUBHOST || C.HOSTS[host]) return 'DIRECT';
-  if (isPlainHostName(host) || host === 'localhost' || /\.(localhost|local|lan|internal)$/.test(host)) return 'DIRECT';
-  if (/^(10|127)\./.test(host) || /^192\.168\./.test(host) || /^172\.(1[6-9]|2[0-9]|3[01])\./.test(host) || /^169\.254\./.test(host) || host === '::1') return 'DIRECT';
+  if (
+    isPlainHostName(host) ||
+    host === 'localhost' ||
+    /\.(localhost|local|lan|internal)$/.test(host)
+  )
+    return 'DIRECT';
+  if (
+    /^(10|127)\./.test(host) ||
+    /^192\.168\./.test(host) ||
+    /^172\.(1[6-9]|2[0-9]|3[01])\./.test(host) ||
+    /^169\.254\./.test(host) ||
+    host === '::1'
+  )
+    return 'DIRECT';
   if (C.RU && /(^|\.)(ru|su|xn--p1ai)$/.test(host)) return 'DIRECT';
   if (pacOwn(url, host, C.D)) return 'DIRECT';
   return C.CHAIN;
@@ -201,7 +226,10 @@ function pacRoute(url, host, C) {
 /** PAC для Chrome: данные и функции решения выше; данные - JSON с \uXXXX вместо не-ASCII. */
 function buildPac(st, servers, priming) {
   const json = (v) =>
-    JSON.stringify(v).replace(/[\u0080-\uffff]/g, (c) => `\\u${c.charCodeAt(0).toString(16).padStart(4, '0')}`);
+    JSON.stringify(v).replace(
+      /[\u0080-\uffff]/g,
+      (c) => `\\u${c.charCodeAt(0).toString(16).padStart(4, '0')}`,
+    );
   return `var C=${json(routeContext(st, servers, priming))};
 ${pacIp4}
 ${pacOwn}
@@ -217,7 +245,10 @@ function isPlainHostName(h) {
   return h.indexOf('.') < 0 && h.indexOf(':') < 0;
 }
 function shExpMatch(s, p) {
-  const re = p.replace(/[.+^${}()|[\]\\]/g, '\\$&').replace(/\*/g, '.*').replace(/\?/g, '.');
+  const re = p
+    .replace(/[.+^${}()|[\]\\]/g, '\\$&')
+    .replace(/\*/g, '.*')
+    .replace(/\?/g, '.');
   return new RegExp(`^${re}$`).test(s);
 }
 function ip6big(a) {

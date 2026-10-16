@@ -9,18 +9,9 @@ import { api } from '@/lib/api';
 import { ago } from '@/lib/format';
 import { useAction } from '@/lib/use-action';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
+import type { FirefoxView } from '@vps/protocol';
 import { Power, RefreshCw } from 'lucide-react';
 import { type FormEvent, useState } from 'react';
-
-interface FirefoxView {
-  keySet: boolean;
-  id: string;
-  version: string | null;
-  signed: string | null;
-  busy: boolean;
-  error: string | null;
-  at: string | null;
-}
 
 const KEY = ['firefox-settings'];
 
