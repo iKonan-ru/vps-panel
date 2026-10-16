@@ -3,6 +3,7 @@ package firewall
 
 import (
 	"context"
+	"fmt"
 	"regexp"
 	"slices"
 	"strconv"
@@ -51,9 +52,26 @@ func parseSockets(out string) []socket {
 
 // Listeners - сокеты, слушающие на внешних адресах, без дублей и без DHCP.
 func Listeners(ctx context.Context) []proto.Listener {
+	return listeners(sockets(ctx))
+}
+
+// ListenersStrict - Listeners, но ss, который не запустился, не завершился вовремя или вышел с
+// ошибкой, - ошибка, а не пустой список (по нему port-sync закрыл бы порты).
+func ListenersStrict(ctx context.Context) ([]proto.Listener, error) {
+	out, code, err := shell.Output(ctx, "ss", "-tulnpH")
+	if err != nil {
+		return nil, err
+	}
+	if code != 0 {
+		return nil, fmt.Errorf("ss -tulnpH: код %d", code)
+	}
+	return listeners(parseSockets(out)), nil
+}
+
+func listeners(socks []socket) []proto.Listener {
 	seen := map[string]bool{}
 	res := []proto.Listener{}
-	for _, s := range sockets(ctx) {
+	for _, s := range socks {
 		if IsLoopback(s.addr) {
 			continue
 		}

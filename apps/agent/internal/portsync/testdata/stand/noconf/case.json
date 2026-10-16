@@ -4,5 +4,5 @@
   "chain": false,
   "jump": true,
   "no_comment": true,
-  "legacy_default_conf": true
+  "legacy_known_processes": true
 }

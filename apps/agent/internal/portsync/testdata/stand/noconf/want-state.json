@@ -22,6 +22,10 @@
       8088
     ],
     [
+      "tcp",
+      9091
+    ],
+    [
       "udp",
       443
     ],
@@ -52,7 +56,8 @@
     "56002/udp": "WDTT",
     "7000/tcp": "OpenFlux",
     "8088/tcp": "sing-box",
-    "8443/udp": "3X-UI Docker TUIC"
+    "8443/udp": "3X-UI Docker TUIC",
+    "9091/tcp": "MTProxyL"
   },
   "docker_labels": {
     "1194/udp": "amnezia-xray",
@@ -77,20 +82,7 @@
   "host_network_containers": [
     "3x-ui"
   ],
-  "deny": [
-    [
-      "tcp",
-      9090
-    ],
-    [
-      "tcp",
-      9091
-    ],
-    [
-      "tcp",
-      62789
-    ]
-  ],
+  "deny": [],
   "unknown_listeners": [],
   "admin_ips": [],
   "allow_ping": true,

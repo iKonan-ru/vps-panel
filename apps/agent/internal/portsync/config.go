@@ -5,7 +5,11 @@ package portsync
 
 import (
 	"encoding/json"
+	"errors"
+	"fmt"
+	"io/fs"
 	"os"
+	"strconv"
 
 	"github.com/iKonan-ru/vps-panel/apps/agent/internal/hostfs"
 	"github.com/iKonan-ru/vps-panel/apps/agent/internal/lockout"
@@ -14,8 +18,8 @@ import (
 // Config - /etc/vps-portsync.conf.
 type Config struct {
 	AdminIPs        []string `json:"admin_ips"`
-	DenyPublicPorts []string `json:"deny_public_ports"`
-	ExtraAllow      []string `json:"extra_allow"`
+	DenyPublicPorts PortList `json:"deny_public_ports"`
+	ExtraAllow      PortList `json:"extra_allow"`
 	KnownProcesses  []string `json:"known_processes"`
 	DockerPolicy    string   `json:"docker_policy"`
 	AllowPing       bool     `json:"allow_ping"`
@@ -37,11 +41,51 @@ func DefaultConfig() Config {
 	}
 }
 
-// ReadConfig читает конфиг с диска; ключи, которых в нём нет, - по умолчанию.
-func ReadConfig() Config {
-	cfg := DefaultConfig()
-	if b, err := os.ReadFile(hostfs.Path(ConfPath)); err == nil {
-		_ = json.Unmarshal(b, &cfg)
+// PortList - порты вида "443" или "443/tcp"; число в JSON (51820) - тоже порт.
+type PortList []string
+
+func (l *PortList) UnmarshalJSON(b []byte) error {
+	var raw []json.RawMessage
+	if err := json.Unmarshal(b, &raw); err != nil {
+		return err
 	}
-	return cfg
+	if raw == nil {
+		*l = nil
+		return nil
+	}
+	out := PortList{}
+	for _, r := range raw {
+		var s string
+		if json.Unmarshal(r, &s) == nil {
+			out = append(out, s)
+			continue
+		}
+		var n int
+		if err := json.Unmarshal(r, &n); err != nil {
+			return fmt.Errorf("порт %s: нужна строка или целое число", r)
+		}
+		out = append(out, strconv.Itoa(n))
+	}
+	*l = out
+	return nil
+}
+
+// ReadConfig читает конфиг с диска; ключи, которых в нём нет, - по умолчанию. Нет файла -
+// настройки по умолчанию, но без deny_public_ports: так port-sync работал без конфига всегда, и
+// закрыть порт работающего сервиса нельзя. Файл не читается или не разбирается - ошибка: по
+// настройкам по умолчанию port-sync снял бы extra_allow и правила admin_ips.
+func ReadConfig() (Config, error) {
+	cfg := DefaultConfig()
+	b, err := os.ReadFile(hostfs.Path(ConfPath))
+	if errors.Is(err, fs.ErrNotExist) {
+		cfg.DenyPublicPorts = PortList{}
+		return cfg, nil
+	}
+	if err != nil {
+		return cfg, fmt.Errorf("конфиг port-sync %s: %w", ConfPath, err)
+	}
+	if err := json.Unmarshal(b, &cfg); err != nil {
+		return cfg, fmt.Errorf("конфиг port-sync %s не разбирается: %w", ConfPath, err)
+	}
+	return cfg, nil
 }

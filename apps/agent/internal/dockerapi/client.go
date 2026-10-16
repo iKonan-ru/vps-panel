@@ -183,7 +183,8 @@ type Mount struct {
 }
 
 // RunningContainers - запущенные контейнеры в порядке docker ps (новые первыми). Контейнер,
-// который не прочитался, пропускается.
+// который исчез между списком и inspect (404), пропускается; любая другая ошибка - ошибка:
+// без него список неполный.
 func (c *Client) RunningContainers(ctx context.Context) ([]Running, error) {
 	var items []struct {
 		ID string `json:"Id"`
@@ -201,8 +202,12 @@ func (c *Client) RunningContainers(ctx context.Context) ([]Running, error) {
 			} `json:"HostConfig"`
 			Mounts []Mount `json:"Mounts"`
 		}
-		if c.do(ctx, "GET", "/containers/"+it.ID+"/json", &in) != nil {
-			continue
+		if err := c.do(ctx, "GET", "/containers/"+it.ID+"/json", &in); err != nil {
+			var ae *apiError
+			if errors.As(err, &ae) && ae.status == http.StatusNotFound {
+				continue
+			}
+			return nil, fmt.Errorf("контейнер %s: %w", shortID(it.ID), err)
 		}
 		r := Running{Name: strings.TrimPrefix(in.Name, "/"), NetworkMode: in.HostConfig.NetworkMode,
 			PortBindings: in.HostConfig.PortBindings, Mounts: in.Mounts}

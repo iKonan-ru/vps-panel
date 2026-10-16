@@ -134,6 +134,12 @@ func ReadXui(ctx context.Context, containers []proto.Container) (*XuiInfo, error
 	return ReadXuiWith(ctx, func() string { return findXuiDB(ctx, containers) })
 }
 
+// xuiDSN - база 3x-ui только на чтение; 3x-ui пишет в неё постоянно, поэтому занятая база
+// ждёт до 5 с, а не сразу "database is locked".
+func xuiDSN(path string) string {
+	return "file:" + path + "?mode=ro&_pragma=query_only(1)&_pragma=busy_timeout(5000)"
+}
+
 // XuiFingerprintKeys - настройки 3x-ui, от которых зависят порты и замечания port-sync.
 var XuiFingerprintKeys = []string{"webPort", "webListen", "webCertFile", "webKeyFile", "webBasePath",
 	"twoFactorEnable", "subEnable", "subPort", "subListen"}
@@ -204,7 +210,7 @@ func ReadXuiWith(ctx context.Context, find func() string) (*XuiInfo, error) {
 			return nil, nil
 		}
 		info.DB = path
-		db, err := sql.Open("sqlite", "file:"+path+"?mode=ro&_pragma=query_only(1)")
+		db, err := sql.Open("sqlite", xuiDSN(path))
 		if err != nil {
 			return nil, err
 		}
@@ -551,20 +557,31 @@ type WgListen struct {
 	Port  int
 }
 
-// WgListenPorts - порты WireGuard и AmneziaWG в ядре, по порядку вывода wg и awg.
-func WgListenPorts(ctx context.Context) []WgListen {
+// WgListenPorts - порты WireGuard и AmneziaWG в ядре, по порядку вывода wg и awg. Ошибка -
+// утилита есть, но не запустилась или не завершилась вовремя; ненулевой код (нет модуля ядра)
+// ошибкой не считается: берётся то, что она успела напечатать.
+func WgListenPorts(ctx context.Context) ([]WgListen, error) {
 	var out []WgListen
-	for _, f := range wgListenLines(ctx) {
-		switch {
-		case len(f) == 2 && isDigits(f[1]):
-			n, _ := strconv.Atoi(f[1])
-			out = append(out, WgListen{Iface: f[0], Port: n})
-		case len(f) == 1 && isDigits(f[0]):
-			n, _ := strconv.Atoi(f[0])
-			out = append(out, WgListen{Port: n})
+	for _, tool := range []string{"wg", "awg"} {
+		if !shell.Has(tool) {
+			continue
+		}
+		text, _, err := shell.Output(ctx, tool, "show", "all", "listen-port")
+		if err != nil {
+			return nil, err
+		}
+		for _, line := range strings.Split(text, "\n") {
+			switch f := strings.Fields(line); {
+			case len(f) == 2 && isDigits(f[1]):
+				n, _ := strconv.Atoi(f[1])
+				out = append(out, WgListen{Iface: f[0], Port: n})
+			case len(f) == 1 && isDigits(f[0]):
+				n, _ := strconv.Atoi(f[0])
+				out = append(out, WgListen{Port: n})
+			}
 		}
 	}
-	return out
+	return out, nil
 }
 
 func isDigits(s string) bool {

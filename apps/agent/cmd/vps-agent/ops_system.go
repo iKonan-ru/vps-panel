@@ -53,7 +53,7 @@ func systemOps(panelURL string) map[string]op {
 			Config *baseline.PortsyncConfig `json:"config"`
 		}, _ stream) (any, error) {
 			if p.Config == nil {
-				return baseline.ReadPortsyncConfig(), nil
+				return baseline.ReadPortsyncConfig()
 			}
 			if err := baseline.ApplyPortsyncConfig(ctx, *p.Config); err != nil {
 				return nil, err

@@ -82,10 +82,23 @@ func MakePlan(ctx context.Context) Plan {
 	add("portsync", "Установить port-sync: firewall следует за портами VPN", !fw.PortsyncInstalled || !fw.PortsyncActive, "")
 	add("ufw", "Включить firewall (deny incoming, постоянное правило SSH)", !fw.UfwActive, "")
 
-	// Что закроется: слушатели, которых не откроет port-sync.
-	cfg := ReadPortsyncConfig()
-	allowed, _ := plannedAllow(ctx, cfg)
+	// Что закроется: слушатели, которых не откроет port-sync. Порты не рассчитались - ни ufw, ни
+	// port-sync включать нельзя: неизвестно, что они закроют.
+	cfg, err := planConfig()
+	var allowed map[string]bool
+	if err == nil {
+		allowed, err = plannedAllow(ctx, cfg)
+	}
+	if err != nil {
+		why := "не удалось рассчитать порты port-sync: " + err.Error()
+		block("portsync", why)
+		block("ufw", why)
+		allowed = nil
+	}
 	for _, l := range fw.Listeners {
+		if allowed == nil {
+			break
+		}
 		if l.Process == "docker-proxy" {
 			continue
 		}
@@ -97,7 +110,7 @@ func MakePlan(ctx context.Context) Plan {
 		}
 		p.Ports = append(p.Ports, PortChange{Port: l.Port, Proto: l.Proto, Process: l.Process, Action: "close"})
 	}
-	if !fw.UfwActive {
+	if !fw.UfwActive && allowed != nil {
 		for _, why := range lockout.ClosingVPN(fw.Listeners, allowed, deniedPorts(cfg), nil) {
 			block("ufw", why)
 		}

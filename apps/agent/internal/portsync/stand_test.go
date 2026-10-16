@@ -33,13 +33,13 @@ var update = flag.Bool("update", false, "переписать want-* стенд�
 const script = "../baseline/assets/vps-portsync.py"
 
 type standCase struct {
-	XuiDB             string `json:"xui_db"`
-	Psql              bool   `json:"psql"`
-	DockerUser        bool   `json:"docker_user"`
-	Chain             bool   `json:"chain"`
-	Jump              bool   `json:"jump"`
-	NoComment         bool   `json:"no_comment"`
-	LegacyDefaultConf bool   `json:"legacy_default_conf"`
+	XuiDB       string `json:"xui_db"`
+	Psql        bool   `json:"psql"`
+	DockerUser  bool   `json:"docker_user"`
+	Chain       bool   `json:"chain"`
+	Jump        bool   `json:"jump"`
+	NoComment   bool   `json:"no_comment"`
+	LegacyKnown bool   `json:"legacy_known_processes"`
 }
 
 // stand - один развёрнутый набор: корень, заглушки, журнал вызовов.
@@ -299,15 +299,22 @@ func (s *stand) dockerSocket(t *testing.T) {
 func (s *stand) goState(t *testing.T) []byte {
 	t.Helper()
 	s.dockerSocket(t)
-	old := hostfs.Root
-	hostfs.Root = s.root
-	defer func() { hostfs.Root = old }()
-	t.Setenv("PATH", s.bin)
-	st, err := Compute(context.Background(), ReadConfig())
+	s.use(t)
+	cfg, err := ReadConfig()
+	must(t, err)
+	st, err := Compute(context.Background(), cfg)
 	must(t, err)
 	b, err := json.MarshalIndent(st, "", "  ")
 	must(t, err)
 	return b
+}
+
+// use - корень и PATH стенда до конца теста.
+func (s *stand) use(t *testing.T) {
+	old := hostfs.Root
+	hostfs.Root = s.root
+	t.Cleanup(func() { hostfs.Root = old })
+	t.Setenv("PATH", s.bin)
 }
 
 // python запускает скрипт с подменённым корнем; os.geteuid - 0, чтобы стенд работал и не под root.
@@ -453,10 +460,10 @@ func TestStand(t *testing.T) {
 			l := newStand(t, name)
 			l.dockerSocket(t)
 			var env []string
-			if l.c.LegacyDefaultConf {
-				// без конфига прежний скрипт брал known_processes ["sshd"] и пустой deny_public_ports,
-				// агент - конфиг по умолчанию (DefaultConfig): сверяем на нём
-				cfg, _ := json.Marshal(DefaultConfig())
+			if l.c.LegacyKnown {
+				// без конфига прежний скрипт брал known_processes ["sshd"], агент - список по
+				// умолчанию (решено так); остальное без конфига у обоих одинаково
+				cfg, _ := json.Marshal(map[string]any{"known_processes": DefaultConfig().KnownProcesses})
 				env = append(env, "PORTSYNC_CONF="+string(cfg))
 			}
 			lp := l.legacy(t, legacySrc)

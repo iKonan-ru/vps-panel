@@ -42,6 +42,25 @@ func out(ctx context.Context, name string, args ...string) string {
 	return strings.TrimSpace(string(b))
 }
 
+// Output - stdout команды и её код выхода. err - команда не запустилась (нет программы) или не
+// уложилась в 60 с, или истёк ctx: тогда вывода нет, и пустым его считать нельзя.
+func Output(ctx context.Context, name string, args ...string) (string, int, error) {
+	c, cancel := context.WithTimeout(ctx, 60*time.Second)
+	defer cancel()
+	b, err := exec.CommandContext(c, name, args...).Output()
+	if c.Err() != nil {
+		return "", -1, fmt.Errorf("%s: не завершилась вовремя", name)
+	}
+	var ee *exec.ExitError
+	if errors.As(err, &ee) {
+		return string(b), ee.ExitCode(), nil
+	}
+	if err != nil {
+		return "", -1, fmt.Errorf("%s: %w", name, err)
+	}
+	return string(b), 0, nil
+}
+
 type outCacheKey struct{}
 
 type outCache struct {
