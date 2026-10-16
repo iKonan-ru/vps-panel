@@ -11,6 +11,10 @@ corepack pnpm -r --filter @vps/protocol --filter @vps/server --filter @vps/web e
 npx biome check apps/web/src apps/server/src apps/server/test packages/protocol/src >/dev/null
 # типографика текстов интерфейса: ёлочки, тире, многоточие
 node tools/check-typography.mjs apps/web/src
+# комментарии: без дат и без двух JSDoc подряд
+git ls-files apps packages tools deploy | grep -vE '^deploy/files/|/dist/' |
+  grep -E '\.(ts|tsx|mjs|go|sh|py)$|^deploy/release/vps-panel$' |
+  xargs -r -d '\n' node tools/check-comments.mjs
 log="$(mktemp)"
 (cd apps/server && npx vitest run >"$log" 2>&1) || { grep -P "FAIL|\x{00D7}" "$log" | head; rm -f "$log"; exit 1; }
 grep -E "Tests " "$log"
