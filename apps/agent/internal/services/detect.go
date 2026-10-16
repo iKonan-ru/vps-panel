@@ -240,7 +240,7 @@ func ReadXui(ctx context.Context, containers []proto.Container) (*XuiInfo, error
 		if !enable || port == 0 || protocol == "dokodemo-door" {
 			continue
 		}
-		if strings.HasPrefix(listen, "127.") || listen == "::1" {
+		if firewall.IsLoopback(listen) {
 			continue
 		}
 		var ss struct {
@@ -288,7 +288,7 @@ func xui(ctx context.Context, info *XuiInfo, publicIP string) (proto.Service, bo
 		s.Ports = append(s.Ports, fmt.Sprintf("узлов группы: %d", info.RemoteNodes))
 	}
 	// панель только на 127.0.0.1, вход - через поддомен VPS Panel
-	public := !(strings.HasPrefix(info.PanelListen, "127.") || info.PanelListen == "::1" || info.PanelListen == "localhost")
+	public := !firewall.IsLoopback(info.PanelListen) && info.PanelListen != "localhost"
 	s.Details = map[string]any{"panelPublic": public, "panelPort": info.PanelPort, "https": info.HTTPS, "basePath": info.BasePath != "/", "twoFactor": info.TwoFactor, "inbounds": inb, "db": info.DB, "remoteNodes": info.RemoteNodes}
 	if info.Partial != "" {
 		s.Details["partial"] = info.Partial

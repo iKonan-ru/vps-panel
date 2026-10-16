@@ -12,8 +12,6 @@ import (
 	"time"
 	"unicode"
 	"unicode/utf8"
-
-	"github.com/iKonan-ru/vps-panel/apps/agent/internal/shell"
 )
 
 // Управление клиентами AWG: пир в конфиге сервера и запись в clientsTable - в формате
@@ -218,7 +216,7 @@ func awgBackup(ctx context.Context, container string, files ...string) error {
 	args := append([]string{"exec", container, "sh", "-c",
 		`for f in "$@"; do [ -e "$f" ] || continue; [ -e "$f.panel-orig" ] || cp -p "$f" "$f.panel-orig" || exit 1; cp -p "$f" "$f.panel-bak" || exit 1; done`,
 		"_"}, files...)
-	res, err := shell.Exec(ctx, 20*time.Second, nil, "docker", args...)
+	res, err := awgDocker(ctx, 20*time.Second, nil, args...)
 	if err != nil || res.ExitCode != 0 {
 		return errors.New("не удалось сделать копию перед изменением: " + firstLine(res.Stderr, res.Stdout))
 	}
@@ -227,7 +225,7 @@ func awgBackup(ctx context.Context, container string, files ...string) error {
 
 // awgWrite пишет файл в контейнер атомарно: во временный рядом, затем mv.
 func awgWrite(ctx context.Context, container, file, content, mode string) error {
-	res, err := shell.ExecInput(ctx, 20*time.Second, content, "docker", "exec", "-i", container, "sh", "-c",
+	res, err := awgDocker(ctx, 20*time.Second, &content, "exec", "-i", container, "sh", "-c",
 		`t="$1.panel-tmp" && cat > "$t" && chmod "$2" "$t" && mv "$t" "$1"`, "_", file, mode)
 	if err != nil || res.ExitCode != 0 {
 		return fmt.Errorf("запись %s: %s", file, firstLine(res.Stderr, res.Stdout))
