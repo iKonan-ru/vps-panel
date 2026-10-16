@@ -3,16 +3,20 @@ package services
 
 import (
 	"context"
+	"crypto/sha256"
 	"database/sql"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"os"
 	"regexp"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
 
 	"github.com/iKonan-ru/vps-panel/apps/agent/internal/firewall"
+	"github.com/iKonan-ru/vps-panel/apps/agent/internal/hostfs"
 	"github.com/iKonan-ru/vps-panel/apps/agent/internal/proto"
 	"github.com/iKonan-ru/vps-panel/apps/agent/internal/reach"
 	"github.com/iKonan-ru/vps-panel/apps/agent/internal/shell"
@@ -72,9 +76,12 @@ func markDown(s *proto.Service, down bool, reason string) {
 var udpProtocols = map[string]bool{"wireguard": true, "amneziawg": true, "hysteria": true, "tuic": true}
 var udpNetworks = map[string]bool{"kcp": true, "mkcp": true, "quic": true}
 
+// XuiNativeDB - база нативной установки 3x-ui (её же отслеживает vps-portsync-xui.path).
+func XuiNativeDB() string { return hostfs.Path("/etc/x-ui/x-ui.db") }
+
 func findXuiDB(ctx context.Context, containers []proto.Container) string {
-	if _, err := os.Stat("/etc/x-ui/x-ui.db"); err == nil {
-		return "/etc/x-ui/x-ui.db"
+	if _, err := os.Stat(XuiNativeDB()); err == nil {
+		return XuiNativeDB()
 	}
 	for _, c := range containers {
 		mounts := shell.Out(ctx, "docker", "inspect", "-f", "{{range .Mounts}}{{.Source}}|{{.Destination}}\n{{end}}", c.ID)
@@ -105,6 +112,12 @@ type XuiInfo struct {
 	SubPort     int
 	SubEnabled  bool
 	Inbounds    []XuiInbound
+	// Settings - settings 3x-ui как есть; InboundsErr - inbounds не прочитались (settings прочитаны)
+	Settings    map[string]string
+	InboundsErr error
+	// Fingerprint - отпечаток того, что из 3x-ui берёт port-sync: при записи счётчиков трафика
+	// он не меняется
+	Fingerprint string
 }
 
 type XuiInbound struct {
@@ -118,6 +131,29 @@ type XuiInbound struct {
 // ReadXui читает settings и inbounds 3x-ui (только чтение): из sqlite или, если 3x-ui
 // настроен на PostgreSQL (/etc/default/x-ui), через psql.
 func ReadXui(ctx context.Context, containers []proto.Container) (*XuiInfo, error) {
+	return ReadXuiWith(ctx, func() string { return findXuiDB(ctx, containers) })
+}
+
+// XuiFingerprintKeys - настройки 3x-ui, от которых зависят порты и замечания port-sync.
+var XuiFingerprintKeys = []string{"webPort", "webListen", "webCertFile", "webKeyFile", "webBasePath",
+	"twoFactorEnable", "subEnable", "subPort", "subListen"}
+
+func xuiFingerprint(settings map[string]string, rows [][]string) string {
+	data := [][]string{}
+	for _, k := range XuiFingerprintKeys {
+		data = append(data, []string{k, settings[k]})
+	}
+	sorted := make([][]string, len(rows))
+	copy(sorted, rows)
+	sort.Slice(sorted, func(i, j int) bool { return slices.Compare(sorted[i], sorted[j]) < 0 })
+	b, _ := json.Marshal(append(data, sorted...))
+	sum := sha256.Sum256(b)
+	return hex.EncodeToString(sum[:])
+}
+
+// ReadXuiWith - ReadXui с поиском базы sqlite find (пусто - 3x-ui нет); find не вызывается,
+// если 3x-ui на PostgreSQL.
+func ReadXuiWith(ctx context.Context, find func() string) (*XuiInfo, error) {
 	cfg := ReadXuiDBConfig()
 	var settings map[string]string
 	var inbounds [][]string // port, protocol, listen, enable, stream_settings, remark
@@ -161,9 +197,9 @@ func ReadXui(ctx context.Context, containers []proto.Container) (*XuiInfo, error
 		if rows, err := pgQuery(ctx, cfg.DSN, "select count(*) from information_schema.columns where table_name='inbounds' and column_name='node_id'"); err == nil && len(rows) == 1 && strings.TrimSpace(rows[0][0]) != "0" {
 			nodeCol = "coalesce(node_id,0)"
 		}
-		inbounds, _ = pgQuery(ctx, cfg.DSN, "select port, protocol, coalesce(listen,''), enable, coalesce(stream_settings,''), coalesce(remark,''), "+nodeCol+" from inbounds")
+		inbounds, info.InboundsErr = pgQuery(ctx, cfg.DSN, "select port, protocol, coalesce(listen,''), enable, coalesce(stream_settings,''), coalesce(remark,''), "+nodeCol+" from inbounds")
 	} else {
-		path := findXuiDB(ctx, containers)
+		path := find()
 		if path == "" {
 			return nil, nil
 		}
@@ -192,6 +228,7 @@ func ReadXui(ctx context.Context, containers []proto.Container) (*XuiInfo, error
 			nodeCol = "coalesce(node_id,0)"
 		}
 		rows, err = db.QueryContext(ctx, "select port, protocol, coalesce(listen,''), enable, coalesce(stream_settings,''), coalesce(remark,''), "+nodeCol+" from inbounds")
+		info.InboundsErr = err
 		if err == nil {
 			for rows.Next() {
 				var port, node int
@@ -205,6 +242,7 @@ func ReadXui(ctx context.Context, containers []proto.Container) (*XuiInfo, error
 					inbounds = append(inbounds, []string{strconv.Itoa(port), protocol, listen, en, stream, remark, strconv.Itoa(node)})
 				}
 			}
+			info.InboundsErr = rows.Err()
 			rows.Close()
 		}
 	}
@@ -219,8 +257,10 @@ func ReadXui(ctx context.Context, containers []proto.Container) (*XuiInfo, error
 	if settings["webBasePath"] != "" {
 		info.BasePath = settings["webBasePath"]
 	}
-	info.TwoFactor = settings["twoFactorEnable"] == "true"
-	info.SubEnabled = settings["subEnable"] == "true"
+	info.TwoFactor = strings.EqualFold(settings["twoFactorEnable"], "true")
+	info.SubEnabled = strings.EqualFold(settings["subEnable"], "true")
+	info.Settings = settings
+	info.Fingerprint = xuiFingerprint(settings, inbounds)
 	if v, err := strconv.Atoi(settings["subPort"]); err == nil {
 		info.SubPort = v
 	}
@@ -317,15 +357,21 @@ var rePort = regexp.MustCompile(`(?m)^\s*port\s*=\s*(\d+)`)
 
 // MtproxyPort - порт прокси из config.toml или telemt.toml.
 func MtproxyPort() int {
+	port, _ := MtproxyConfig()
+	return port
+}
+
+// MtproxyConfig - порт прокси и конфиг, в котором он нашёлся (первый с port = N); 0 - не нашёлся.
+func MtproxyConfig() (int, string) {
 	for _, p := range []string{"/opt/mtproxyl/mtproxy/config.toml", "/opt/mtproxyl/mtproxy/telemt.toml"} {
-		if b, err := os.ReadFile(p); err == nil {
+		if b, err := os.ReadFile(hostfs.Path(p)); err == nil {
 			if m := rePort.FindSubmatch(b); m != nil {
 				v, _ := strconv.Atoi(string(m[1]))
-				return v
+				return v, hostfs.Path(p)
 			}
 		}
 	}
-	return 0
+	return 0, ""
 }
 
 // mtReachFile - итог последней проверки "Доступность из России" MTProxyL (его таймер раз в 15
@@ -484,23 +530,63 @@ func wdtt(ctx context.Context, publicIP string) (proto.Service, bool) {
 	return s, true
 }
 
-func wireguard(ctx context.Context) (proto.Service, bool) {
-	var ports []string
+// wgListenLines - строки "wg show all listen-port" и "awg show all listen-port" полями
+// (интерфейс и порт; у одного интерфейса - только порт).
+func wgListenLines(ctx context.Context) [][]string {
+	var out [][]string
 	for _, tool := range []string{"wg", "awg"} {
 		if !shell.Has(tool) {
 			continue
 		}
 		for _, line := range strings.Split(shell.Out(ctx, tool, "show", "all", "listen-port"), "\n") {
-			f := strings.Fields(line)
-			// wdtt0 - встроенный WireGuard сервера WDTT, это сервис WDTT, а не отдельный WireGuard
-			if len(f) == 2 && strings.HasPrefix(f[0], "wdtt") {
-				continue
-			}
-			if len(f) == 2 {
-				ports = append(ports, f[1]+"/udp "+f[0])
-			} else if len(f) == 1 && f[0] != "" {
-				ports = append(ports, f[0]+"/udp")
-			}
+			out = append(out, strings.Fields(line))
+		}
+	}
+	return out
+}
+
+// WgListen - порт интерфейса WireGuard или AmneziaWG в ядре ("" - интерфейс не назван).
+type WgListen struct {
+	Iface string
+	Port  int
+}
+
+// WgListenPorts - порты WireGuard и AmneziaWG в ядре, по порядку вывода wg и awg.
+func WgListenPorts(ctx context.Context) []WgListen {
+	var out []WgListen
+	for _, f := range wgListenLines(ctx) {
+		switch {
+		case len(f) == 2 && isDigits(f[1]):
+			n, _ := strconv.Atoi(f[1])
+			out = append(out, WgListen{Iface: f[0], Port: n})
+		case len(f) == 1 && isDigits(f[0]):
+			n, _ := strconv.Atoi(f[0])
+			out = append(out, WgListen{Port: n})
+		}
+	}
+	return out
+}
+
+func isDigits(s string) bool {
+	for _, r := range s {
+		if r < '0' || r > '9' {
+			return false
+		}
+	}
+	return s != "" && len(s) <= 9
+}
+
+func wireguard(ctx context.Context) (proto.Service, bool) {
+	var ports []string
+	for _, f := range wgListenLines(ctx) {
+		// wdtt0 - встроенный WireGuard сервера WDTT, это сервис WDTT, а не отдельный WireGuard
+		if len(f) == 2 && strings.HasPrefix(f[0], "wdtt") {
+			continue
+		}
+		if len(f) == 2 {
+			ports = append(ports, f[1]+"/udp "+f[0])
+		} else if len(f) == 1 && f[0] != "" {
+			ports = append(ports, f[0]+"/udp")
 		}
 	}
 	down := wgDownIfaces(ctx)

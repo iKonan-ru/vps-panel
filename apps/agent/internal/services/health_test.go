@@ -1,6 +1,7 @@
 package services
 
 import (
+	"slices"
 	"testing"
 
 	"github.com/iKonan-ru/vps-panel/apps/agent/internal/proto"
@@ -16,6 +17,14 @@ func TestParseWdttListen(t *testing.T) {
 	}
 	if got := parseWdttListen("ExecStart=/usr/local/bin/wdtt-server -admin-listen 127.0.0.1:1"); got != 0 {
 		t.Fatalf("admin-listen принят за listen: %d", got)
+	}
+}
+
+func TestWdttFlagPorts(t *testing.T) {
+	unit := "ExecStart=/usr/local/bin/wdtt-server --listen=0.0.0.0:56000 -wg-port=56001 -listen-direct 0.0.0.0:56003 \"-wg-port=56005\"\n"
+	got := WdttFlagPorts(unit)
+	if !slices.Equal(got["listen"], []int{56000}) || !slices.Equal(got["wg-port"], []int{56001, 56005}) || len(got) != 2 {
+		t.Fatalf("got %v", got)
 	}
 }
 

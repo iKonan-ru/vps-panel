@@ -27,3 +27,15 @@ func Port(cfg map[string]string) int {
 	}
 	return 22
 }
+
+// FirstPort - первый Port из sshd -T (несколько Port он печатает по порядку), 22 по умолчанию.
+func FirstPort(ctx context.Context) int {
+	for _, line := range strings.Split(shell.Out(ctx, "sshd", "-T"), "\n") {
+		if k, v, ok := strings.Cut(line, " "); ok && strings.EqualFold(k, "port") {
+			if p, err := strconv.Atoi(strings.TrimSpace(v)); err == nil {
+				return p
+			}
+		}
+	}
+	return 22
+}

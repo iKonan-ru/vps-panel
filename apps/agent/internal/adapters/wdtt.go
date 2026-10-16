@@ -9,9 +9,9 @@ import (
 	"net/http"
 	"net/url"
 	"os"
-	"regexp"
-	"strconv"
 	"strings"
+
+	"github.com/iKonan-ru/vps-panel/apps/agent/internal/services"
 )
 
 // WDTT: admin API сервера wdtt-server - пароли пользователей. Токен и
@@ -40,9 +40,6 @@ var wdttPaths = map[string]bool{
 	"/admin/passwords/unbind-device": true,
 }
 
-// флаг целым словом: -listen не должен совпасть с -listen-direct и -listen-raw
-var reWdttFlag = regexp.MustCompile(`(?:^|\s)-(listen|admin-listen|wg-port)\s+(\S+)`)
-
 // WdttPorts - порты из ExecStart службы wdtt: DTLS (-listen адрес:порт), admin API
 // (-admin-listen адрес:порт), WireGuard (-wg-port порт).
 func WdttPorts() (dtls, admin, wg int, err error) {
@@ -50,21 +47,14 @@ func WdttPorts() (dtls, admin, wg int, err error) {
 	if err != nil {
 		return 0, 0, 0, errors.New("WDTT не установлен: нет службы wdtt")
 	}
-	for _, m := range reWdttFlag.FindAllStringSubmatch(string(b), -1) {
-		v := m[2]
-		if i := strings.LastIndex(v, ":"); i >= 0 {
-			v = v[i+1:]
+	last := func(p []int) int {
+		if len(p) == 0 {
+			return 0
 		}
-		n, _ := strconv.Atoi(v)
-		switch m[1] {
-		case "listen":
-			dtls = n
-		case "admin-listen":
-			admin = n
-		case "wg-port":
-			wg = n
-		}
+		return p[len(p)-1]
 	}
+	flags := services.WdttFlagPorts(string(b))
+	dtls, admin, wg = last(flags["listen"]), last(flags["admin-listen"]), last(flags["wg-port"])
 	if admin == 0 {
 		return dtls, 0, wg, errors.New("в службе wdtt нет -admin-listen: admin API выключен")
 	}
