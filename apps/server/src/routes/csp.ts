@@ -22,9 +22,9 @@ function blocked(raw: unknown): string {
 }
 
 /**
- * Отчёты о нарушениях CSP: их шлют панель и личные страницы. В журнал - страница без токенов, директива и источник;
- * образцы кода (script-sample) не пишутся. Без входа и без проверки Origin: отчёт шлёт
- * браузер, в том числе со страницы на sub.<домен>.
+ * Отчёты о нарушениях CSP: их шлют панель и личные страницы. В журнал - страница без токенов,
+ * директива и источник; образцы кода (script-sample) не пишутся. Без входа и без проверки
+ * Origin: отчёт шлёт браузер, в том числе со страницы на sub.<домен>.
  */
 export async function cspRoutes(app: FastifyInstance) {
   app.addContentTypeParser(
@@ -44,7 +44,7 @@ export async function cspRoutes(app: FastifyInstance) {
     { bodyLimit: 16 * 1024, config: { rateLimit: { max: 60, timeWindow: '1 minute' } } },
     async (req, reply) => {
       const body = req.body as Record<string, unknown> | Record<string, unknown>[] | null;
-      // старый формат: {"csp-report": {...}}; Reporting API: [{type, body: {...}}]
+      // report-uri: {"csp-report": {...}}; Reporting API: [{type, body: {...}}]
       const items = Array.isArray(body)
         ? body.map((r) => (r.body ?? {}) as Record<string, unknown>)
         : [(body?.['csp-report'] ?? {}) as Record<string, unknown>];

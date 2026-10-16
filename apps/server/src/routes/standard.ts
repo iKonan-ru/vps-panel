@@ -12,7 +12,7 @@ import type { ServiceUpdates } from '../lib/service-updates.js';
 import { type AwgInstanceBrief, STANDARD, standardCells } from '../lib/standard.js';
 
 /**
- * Матрица "серверы x сервисы" по эталону (lib/standard.ts). Сервер панели не входит.
+ * Матрица "серверы x сервисы" по эталону. Сервер панели не входит.
  * Версии AWG - живым опросом агентов (параллельно), у серверов не в сети - из прошлого опроса.
  */
 export async function standardRoutes(

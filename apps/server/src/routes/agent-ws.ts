@@ -84,8 +84,8 @@ const AuthSchema = z.object({
 });
 
 /**
- * /ws/agent (`?v=2`): рукопожатие с ключом панели и шифрованный канал (lib/agent-channel.ts),
- * токен по сети не ходит - агент доказывает знание его хеша.
+ * /ws/agent (`?v=2`): рукопожатие с ключом панели и шифрованный канал, токен по сети не ходит -
+ * агент доказывает знание его хеша.
  */
 export async function agentWsRoutes(
   app: FastifyInstance,

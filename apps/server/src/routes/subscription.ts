@@ -69,12 +69,6 @@ export async function subscriptionRoutes(
   });
 
   /**
-   * Подписка расширения Chrome: JSON с прокси для браузера на каждом
-   * сервере. Расширение обновляет её само; выключенный клиент - suspended, расширение снимает
-   * прокси. Неизвестный токен (новая ссылка) - 404, расширение тоже снимает прокси. extension -
-   * актуальная версия расширения и ссылка на архив клиента (обновление - вручную).
-   */
-  /**
    * Расширение Firefox: updates.json (адрес обновлений зашит в подписанном расширении - Firefox
    * сам проверяет его и ставит новую версию) и подписанные архивы. Без входа: архив один на всех,
    * ссылки клиента в нём нет.
@@ -93,12 +87,18 @@ export async function subscriptionRoutes(
     return reply.type(json ? 'application/json' : 'application/x-xpinstall').send(data);
   });
 
+  /**
+   * Подписка расширения Chrome: JSON с прокси для браузера на каждом
+   * сервере. Расширение обновляет её само; выключенный клиент - suspended, расширение снимает
+   * прокси. Неизвестный токен (новая ссылка) - 404, расширение тоже снимает прокси. extension -
+   * актуальная версия расширения и ссылка на архив клиента (обновление - вручную).
+   */
   app.get('/sub/:token/browser', opts30, async (req, reply) => {
     const { token } = req.params as { token: string };
     reply.header('Cache-Control', 'no-store');
     const s = /^[0-9a-f]{32}$/.test(token) ? buildBrowserSubscription(opts.db, token) : null;
     if (!s) return reply.code(404).type('text/plain').send('not found');
-    // версия расширения без отчётов о себе (новые шлют x-vps-ext): хотя бы "была на связи"
+    // версия расширения без отчётов о себе (с отчётами шлют x-vps-ext): хотя бы "была на связи"
     if (!req.headers['x-vps-ext'])
       recordLegacyFetch(opts.db, token, String(req.headers['user-agent'] ?? ''));
     // актуальная версия расширения и архив клиента: расширение старее - предложит обновиться
@@ -113,7 +113,7 @@ export async function subscriptionRoutes(
   });
 
   /**
-   * Отчёт расширения о себе (lib/browser-ext.ts): версия, браузер, включён ли прокси, сервер,
+   * Отчёт расширения о себе: версия, браузер, включён ли прокси, сервер,
    * ошибка в окне. Без входа, по токену клиента; неизвестный токен - 404.
    */
   app.post('/sub/:token/browser/status', opts30, async (req, reply) => {

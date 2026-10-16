@@ -10,7 +10,7 @@ import { xuiToken } from '../lib/xui-token.js';
 
 /**
  * Выход панели в Telegram через xray: основной выход - сервер с 3x-ui и Reality-инбаунд по
- * выбору владельца, запасные панель готовит сама (lib/xray-exits.ts); клиент vps-panel
+ * выбору владельца, запасные панель готовит сама; клиент vps-panel
  * заводится через API 3x-ui, конфиг собирается и применяется панелью.
  */
 export async function xrayRoutes(
