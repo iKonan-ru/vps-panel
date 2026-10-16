@@ -3,7 +3,7 @@ import type { AgentRegistry } from '../agents/registry.js';
 import type { Db } from '../db/index.js';
 import { servers } from '../db/schema.js';
 import type { Action } from './action-journal.js';
-import { githubError } from './github.js';
+import { githubReleases } from './github.js';
 import { schedule } from './schedule.js';
 import type { SecretBox } from './secret-box.js';
 import { getJsonSetting, putSetting } from './settings.js';
@@ -433,12 +433,7 @@ export class ServiceUpdates {
   private async latestPanel(): Promise<string> {
     if (this.panelRelease && Date.now() - this.panelRelease.at < 60 * 60_000)
       return this.panelRelease.version;
-    const r = await this.fetchOut(
-      'https://api.github.com/repos/Liafanx/MTProxyL/releases?per_page=100',
-      { headers: { Accept: 'application/vnd.github+json', 'User-Agent': 'vps-panel' } },
-    );
-    if (!r.ok) throw githubError(r);
-    const list = (await r.json()) as { tag_name: string }[];
+    const list = await githubReleases(this.fetchOut, 'Liafanx/MTProxyL', 100);
     const tag = list.find((x) => x.tag_name.startsWith(PANEL_TAG))?.tag_name;
     if (!tag) throw new Error('GitHub: релизов веб-панели нет');
     const version = tag.slice(PANEL_TAG.length);

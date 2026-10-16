@@ -1,5 +1,5 @@
 import type { Db } from '../db/index.js';
-import { githubError } from './github.js';
+import { type GithubRelease, githubReleases } from './github.js';
 import { schedule } from './schedule.js';
 import { getJsonSetting, putSetting } from './settings.js';
 
@@ -266,27 +266,14 @@ export class AppReleases {
         continue;
       }
       try {
-        const r = await this.fetchOut(`https://api.github.com/repos/${repo}/releases?per_page=10`, {
-          headers: { Accept: 'application/vnd.github+json', 'User-Agent': 'vps-panel' },
-        });
-        if (
-          (r.status === 403 || r.status === 429) &&
-          r.headers.get('x-ratelimit-remaining') === '0'
-        ) {
+        let list: GithubRelease[];
+        try {
+          list = await githubReleases(this.fetchOut, repo, 10);
+        } catch (e) {
           // дальше спрашивать бесполезно: остальные репозитории получат ту же ошибку
-          const e = githubError(r);
-          limited = e.message;
+          if ((e as { rateLimited?: boolean }).rateLimited) limited = (e as Error).message;
           throw e;
         }
-        if (!r.ok) throw githubError(r);
-        const list = (await r.json()) as {
-          tag_name: string;
-          html_url: string;
-          published_at: string;
-          draft: boolean;
-          prerelease: boolean;
-          assets: { name: string; browser_download_url: string; size: number }[];
-        }[];
         cache.repos[repo] = {
           releases: list
             .filter((x) => !x.draft && !x.prerelease)

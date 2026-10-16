@@ -15,3 +15,35 @@ export function githubError(r: Response): Error {
   }
   return new Error(`GitHub: ${r.status}`);
 }
+
+/** Релиз GitHub - поля, которые читает панель. */
+export interface GithubRelease {
+  tag_name: string;
+  html_url: string;
+  published_at: string;
+  draft: boolean;
+  prerelease: boolean;
+  body: string | null;
+  target_commitish: string;
+  assets: { name: string; browser_download_url: string; size: number }[];
+}
+
+export type FetchOut = (url: string, init?: RequestInit) => Promise<Response>;
+
+/**
+ * Релизы репозитория, новые сверху. Ошибка - текстом githubError; исчерпанный лимит запросов -
+ * с rateLimited: остальные репозитории спрашивать бесполезно.
+ */
+export async function githubReleases(
+  fetchOut: FetchOut,
+  repo: string,
+  perPage: number,
+): Promise<GithubRelease[]> {
+  const r = await fetchOut(`https://api.github.com/repos/${repo}/releases?per_page=${perPage}`, {
+    headers: { Accept: 'application/vnd.github+json', 'User-Agent': 'vps-panel' },
+  });
+  if (r.ok) return (await r.json()) as GithubRelease[];
+  const limited =
+    (r.status === 403 || r.status === 429) && r.headers.get('x-ratelimit-remaining') === '0';
+  throw Object.assign(githubError(r), { rateLimited: limited });
+}
