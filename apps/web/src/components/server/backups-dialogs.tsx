@@ -10,6 +10,7 @@ import { Select } from '@/components/ui/select';
 import { bytes, dateTime } from '@/lib/format';
 import { useServers } from '@/lib/servers';
 import { useAction } from '@/lib/use-action';
+import { SERVICES } from '@vps/protocol';
 import { useEffect, useState } from 'react';
 
 export function CreateDialog({
@@ -215,7 +216,6 @@ export function RestoreDialog({
 
 /** Сервиса компонента копии нет на сервере (AWG - нет ни одного контейнера). */
 function serviceMissing(component: string, s: { services: { kind: string }[] }): boolean {
-  const kind = component === 'amnezia' ? 'amnezia' : component;
-  if (!['xui', 'wdtt', 'mtproxyl', 'amnezia'].includes(kind)) return false;
-  return !s.services.some((x) => x.kind === kind);
+  const svc = SERVICES.find((x) => x.component === component);
+  return Boolean(svc) && !s.services.some((x) => x.kind === svc?.kind);
 }

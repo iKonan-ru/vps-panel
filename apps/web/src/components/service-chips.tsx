@@ -1,18 +1,10 @@
 import { Chip } from '@/components/ui/chip';
 import { isSafeHref } from '@/lib/safe-url';
-import type { Service } from '@vps/protocol';
+import { type Service, serviceByKind } from '@vps/protocol';
 import { ExternalLink } from 'lucide-react';
 
-const titles: Record<string, string> = {
-  xui: '3X-UI',
-  mtproxyl: 'MTProxy',
-  amnezia: 'Amnezia',
-  wdtt: 'WDTT',
-  wireguard: 'WG',
-  'wg-easy': 'wg-easy',
-  openflux: 'OpenFlux',
-  custom: '',
-};
+/** Плашки сервисов вне каталога панели. */
+const other: Record<string, string> = { wireguard: 'WG', 'wg-easy': 'wg-easy', custom: '' };
 
 /** Плашки сервисов; у тех, где есть панель, плашка - ссылка. */
 export function ServiceChips({
@@ -31,7 +23,8 @@ export function ServiceChips({
   return (
     <div className="flex flex-wrap gap-1.5">
       {shown.map((s, i) => {
-        const label = s.kind === 'amnezia' ? s.title : titles[s.kind] || s.title;
+        const label =
+          s.kind === 'amnezia' ? s.title : serviceByKind(s.kind)?.short || other[s.kind] || s.title;
         const key = `${s.kind}:${label}:${i}`;
         if (s.kind !== 'amnezia' && seen.has(s.kind)) return null;
         seen.add(s.kind);

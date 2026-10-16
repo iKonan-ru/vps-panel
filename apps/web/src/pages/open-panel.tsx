@@ -5,6 +5,7 @@ import { Card } from '@/components/ui/card';
 import { ApiError, api } from '@/lib/api';
 import { cn } from '@/lib/cn';
 import { useParams } from '@tanstack/react-router';
+import { serviceByKind } from '@vps/protocol';
 import { Check, Circle, LoaderCircle, RotateCw, Server, X } from 'lucide-react';
 import { useCallback, useEffect, useRef, useState } from 'react';
 
@@ -20,7 +21,6 @@ interface Probe {
   panelMs?: number;
 }
 
-const titles: Record<string, string> = { xui: '3X-UI', mtproxyl: 'MTProxyL' };
 /** Сколько раз проверять самим, прежде чем отдать решение человеку. */
 const ATTEMPTS = 3;
 const RETRY_MS = 2000;
@@ -89,7 +89,7 @@ export function OpenPanelPage() {
     return () => clearTimeout(timer.current);
   }, [run]);
 
-  const title = titles[probe?.kind ?? kind] ?? 'панели';
+  const title = serviceByKind(probe?.kind ?? kind)?.title ?? 'панели';
   useEffect(() => {
     document.title = `Открытие ${title}${probe?.server ? `\u00a0\u2014 ${probe.server}` : ''}`;
   }, [title, probe?.server]);

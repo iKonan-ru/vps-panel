@@ -20,20 +20,15 @@ import { api } from '@/lib/api';
 import { ago, bytes, dateTime } from '@/lib/format';
 import { useQuery } from '@tanstack/react-query';
 import { Link, useParams } from '@tanstack/react-router';
-import type { GBinding, GClientDetail, GDevice, GLiveBinding } from '@vps/protocol';
+import {
+  type GBinding,
+  type GClientDetail,
+  type GDevice,
+  type GLiveBinding,
+  serviceByBinding,
+} from '@vps/protocol';
 import { Server, SquareArrowOutUpRight } from 'lucide-react';
 import type { ReactNode } from 'react';
-
-/** Вкладка сервера, где живёт сервис (у прокси для браузера своей вкладки нет). */
-const serviceTab: Partial<Record<GBinding['service'], string>> = {
-  xui: 'xui',
-  mtproxyl: 'mtproxyl',
-  awg: 'awg',
-  wdtt: 'wdtt',
-  openflux: 'openflux',
-};
-/** Сервисы со счётчиками трафика: у них скорость, всего и график. */
-const counted: GBinding['service'][] = ['xui', 'awg', 'mtproxyl', 'wdtt'];
 
 /**
  * Клиент на одном сервере: живая статистика по сервисам - состояние подключения, скорость,
@@ -198,8 +193,9 @@ function ServiceCard({
   live: ClientLive;
   serverId: string;
 }) {
-  const tab = serviceTab[b.service];
-  const hasCounters = counted.includes(b.service);
+  const svc = serviceByBinding(b.service);
+  const tab = svc?.tab;
+  const hasCounters = Boolean(svc?.counters);
   const rows: [string, ReactNode][] = [];
   if (b.state === 'pending') rows.push(['Синхронизация', 'ждёт']);
   if (b.state === 'error')

@@ -27,7 +27,7 @@ import { cn } from '@/lib/cn';
 import { useAction } from '@/lib/use-action';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { Link, useNavigate, useParams } from '@tanstack/react-router';
-import type { GBinding, GClientDetail, GDevice } from '@vps/protocol';
+import { type GBinding, type GClientDetail, type GDevice, serviceByBinding } from '@vps/protocol';
 import {
   ExternalLink,
   KeyRound,
@@ -357,9 +357,7 @@ export function ClientPage() {
         open={proxy !== null}
         onClose={() => setProxy(null)}
         title={
-          proxy
-            ? `${proxy.serverName}: ${{ wdtt: 'WDTT', openflux: 'OpenFlux', naive: 'Браузер' }[proxy.service as string] ?? 'MTProxy'}`
-            : ''
+          proxy ? `${proxy.serverName}: ${serviceByBinding(proxy.service)?.clientTitle ?? ''}` : ''
         }
       >
         {proxy && <ProxyLinks clientId={id} binding={proxy} exts={data.browserExt} />}
