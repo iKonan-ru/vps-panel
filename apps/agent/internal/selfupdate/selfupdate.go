@@ -36,21 +36,36 @@ const (
 // ErrUpToDate - на сервере уже последний бинарник.
 var ErrUpToDate = errors.New("уже установлена последняя версия")
 
-// текущая загрузка: отмена из панели (agent.update.cancel)
+// Отмена из панели (agent.update.cancel) прерывает все идущие и ждущие обновления; обновляет
+// бинарник только одно за раз (running).
 var (
-	curMu     sync.Mutex
-	curCancel context.CancelFunc
+	curMu   sync.Mutex
+	cancels = map[int]context.CancelFunc{}
+	nextID  int
+	running = make(chan struct{}, 1)
 )
 
 // Cancel прерывает идущее обновление. false - ничего не шло.
 func Cancel() bool {
 	curMu.Lock()
 	defer curMu.Unlock()
-	if curCancel == nil {
-		return false
+	for _, c := range cancels {
+		c()
 	}
-	curCancel()
-	return true
+	return len(cancels) > 0
+}
+
+func track(cancel context.CancelFunc) (untrack func()) {
+	curMu.Lock()
+	defer curMu.Unlock()
+	id := nextID
+	nextID++
+	cancels[id] = cancel
+	return func() {
+		curMu.Lock()
+		delete(cancels, id)
+		curMu.Unlock()
+	}
 }
 
 // reSha256 - формат контрольной суммы: из неё собираются имена файлов.
@@ -83,14 +98,17 @@ func Run(ctx context.Context, panelURL string, sums map[string]string, log func(
 
 	ctx, cancel := context.WithTimeout(ctx, totalLimit)
 	defer cancel()
-	curMu.Lock()
-	curCancel = cancel
-	curMu.Unlock()
-	defer func() {
-		curMu.Lock()
-		curCancel = nil
-		curMu.Unlock()
-	}()
+	defer track(cancel)()
+	select {
+	case running <- struct{}{}:
+	case <-ctx.Done():
+		return "", ctx.Err()
+	}
+	defer func() { <-running }()
+	// пока ждали, бинарник мог заменить предыдущий запрос
+	if cur, err := fileSum(binPath); err == nil && cur == want {
+		return want, ErrUpToDate
+	}
 	// недокачанные куски других версий больше не нужны
 	if old, _ := filepath.Glob("/var/tmp/vps-agent.*.part*"); len(old) > 0 {
 		for _, o := range old {
