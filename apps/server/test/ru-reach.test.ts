@@ -107,7 +107,7 @@ describe('доступность из России', () => {
       total: 10,
       rtt: 46.4,
     });
-    // старый агент без задержки: у цели её больше нет, точка без rtt
+    // ответ агента без задержки: у цели её нет, точка без rtt
     apply(t, { ...r(10), at: '2026-10-12T01:00:00Z' });
     expect(t.rtt).toBeUndefined();
     expect(t.history.at(-1)).not.toHaveProperty('rtt');
