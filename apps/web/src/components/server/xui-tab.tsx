@@ -196,7 +196,7 @@ export function XuiTab({ s }: { s: ServerDetail }) {
             .join(', ')}
         />
         <MetricCard
-          label="XuiInboundRow"
+          label="Inbound"
           value={<Num value={data.inbounds} />}
           note={`подписка 3X-UI${data.subEnabled ? `: порт ${data.subPort}` : ' выключена'}`}
         />

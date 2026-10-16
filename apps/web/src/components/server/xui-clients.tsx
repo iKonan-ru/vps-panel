@@ -19,7 +19,7 @@ import type { XuiClientRow, XuiInboundRow } from '@vps/protocol';
 import { Pencil, Trash2, UserRound } from 'lucide-react';
 import { useState } from 'react';
 
-/** XuiInboundRow, куда сверка заводит клиентов панели по умолчанию: свой VLESS, включён, не исключён. */
+/** Inbound-ы, куда сверка заводит клиентов панели по умолчанию: свой VLESS, включён, не исключён. */
 const isDefault = (i: XuiInboundRow) =>
   i.protocol === 'vless' && !i.node && i.enable && !i.excluded;
 
@@ -118,7 +118,7 @@ export function XuiClients({
         <div className="flex flex-wrap items-center gap-2 px-4 py-2">
           <Select
             size="sm"
-            aria-label="XuiInboundRow"
+            aria-label="Inbound"
             value={inb}
             onChange={(e) => setInb(e.target.value)}
           >
@@ -149,7 +149,7 @@ export function XuiClients({
           <THead>
             <tr>
               <th>Клиент</th>
-              <th>XuiInboundRow</th>
+              <th>Inbound</th>
               <th className="text-right">Трафик</th>
               <th className="w-0" />
             </tr>
@@ -218,8 +218,8 @@ export function XuiClients({
                     <Button
                       size="icon-sm"
                       variant="ghost"
-                      title={reason ?? 'XuiInboundRow клиента'}
-                      aria-label="XuiInboundRow клиента"
+                      title={reason ?? 'Inbound клиента'}
+                      aria-label="Inbound клиента"
                       disabled={locked || !inbounds}
                       onClick={() => {
                         op.setError(null);
@@ -253,7 +253,7 @@ export function XuiClients({
       <Dialog
         open={edit !== null}
         onClose={() => setEdit(null)}
-        title={edit ? `XuiInboundRow: ${edit.email}` : ''}
+        title={edit ? `Inbound: ${edit.email}` : ''}
       >
         {edit && inbounds && (
           <InboundsForm
