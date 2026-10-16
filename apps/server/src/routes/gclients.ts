@@ -12,7 +12,6 @@ import {
   type GService,
   type GSyncState,
   G_SERVICES,
-  type XuiClientRow,
 } from '@vps/protocol';
 import { and, eq, isNull, or } from 'drizzle-orm';
 import type { FastifyInstance } from 'fastify';
@@ -21,20 +20,17 @@ import type { AgentRegistry } from '../agents/registry.js';
 import type { Env } from '../config.js';
 import type { Db } from '../db/index.js';
 import { gclientBindings, gclientDevices, gclients, openfluxDocs, servers } from '../db/schema.js';
-import { actionJournal } from '../lib/action-journal.js';
 import { extServers, extsByClient } from '../lib/browser-ext.js';
 import { ClientStatsHub, liveOnServer } from '../lib/client-stats.js';
 import { extensionVersion } from '../lib/extension.js';
 import { clientSlug, newClientToken, newXuiSubId } from '../lib/gclient-names.js';
-import { awgRef, wdttKey, xuiTargets } from '../lib/gclient-services.js';
+import { awgRef, wdttKey } from '../lib/gclient-services.js';
 import { type GClients, PANEL_HOST_KEY, queued } from '../lib/gclients.js';
 import { newId } from '../lib/ids.js';
 import { addOfDocs } from '../lib/openflux-docs.js';
 import type { SecretBox } from '../lib/secret-box.js';
 import { putSetting } from '../lib/settings.js';
-import type { UiHub } from '../lib/ui-hub.js';
-import { ownVlessInbounds, parseJson, readClient, unwrap, xuiApi } from '../lib/xui-api.js';
-import { savedXuiToken, xuiToken } from '../lib/xui-token.js';
+import { savedXuiToken } from '../lib/xui-token.js';
 
 const Id = z.object({ id: z.string() });
 const Name = z.string().trim().min(1, 'имя обязательно').max(64);
@@ -64,10 +60,9 @@ const AccessBody = z
 /** Глобальные клиенты: люди, устройства, привязки; сверку делает GClients. */
 export async function gclientRoutes(
   app: FastifyInstance,
-  opts: { db: Db; registry: AgentRegistry; box: SecretBox; gc: GClients; env: Env; hub: UiHub },
+  opts: { db: Db; registry: AgentRegistry; box: SecretBox; gc: GClients; env: Env },
 ) {
-  const { db, registry, box, gc, env, hub } = opts;
-  const journal = actionJournal(db, hub, registry);
+  const { db, registry, box, gc, env } = opts;
   /** Адрес подписок: отдельное имя (SUB_PUBLIC_URL) или временно - адрес панели. */
   const subBase = (env.SUB_PUBLIC_URL ?? env.PANEL_PUBLIC_URL).replace(/\/+$/, '');
 
@@ -501,200 +496,6 @@ export async function gclientRoutes(
     return out;
   });
 
-  /** REST 3X-UI сервера с сохранённым токеном (нет - 409 no-token: вкладка предложит выпустить). */
-  function xuiFor(id: string) {
-    if (!registry.isOnline(id))
-      throw Object.assign(new Error('сервер не в сети'), { statusCode: 409 });
-    const token = savedXuiToken(db, box, id);
-    if (!token)
-      throw Object.assign(new Error('нет API-токена 3X-UI: его нужно выпустить на вкладке 3X-UI'), {
-        statusCode: 409,
-        code: 'no-token',
-      });
-    return xuiApi(registry, id, token);
-  }
-
-  /** Привязки VLESS сервера к живым клиентам панели: email (ref) -> привязка и клиент. */
-  function xuiBindings(serverId: string) {
-    return new Map(
-      db
-        .select({ b: gclientBindings, c: gclients })
-        .from(gclientBindings)
-        .innerJoin(gclients, eq(gclients.id, gclientBindings.clientId))
-        .where(
-          and(
-            eq(gclientBindings.serverId, serverId),
-            eq(gclientBindings.service, 'xui'),
-            isNull(gclients.deletedAt),
-          ),
-        )
-        .all()
-        .map((r) => [r.b.ref, r]),
-    );
-  }
-
-  /** Клиенты 3X-UI для вкладки: inbound-ы, трафик, онлайн, клиент панели (без UUID и subId). */
-  app.get('/api/servers/:id/xui/clients', async (req, reply): Promise<XuiClientRow[]> => {
-    const { id } = Id.parse(req.params);
-    let api: ReturnType<typeof xuiApi>;
-    try {
-      api = xuiFor(id);
-    } catch (e) {
-      const err = e as Error & { statusCode: number; code?: string };
-      return reply.code(err.statusCode).send({ error: err.message, code: err.code });
-    }
-    const list = (unwrap(await api('GET', 'clients/list'), 'clients/list') ?? []) as Record<
-      string,
-      unknown
-    >[];
-    let online = new Set<string>();
-    try {
-      online = new Set(
-        ((unwrap(await api('POST', 'clients/onlines'), 'clients/onlines') as string[]) ?? []).map(
-          String,
-        ),
-      );
-    } catch {
-      // без онлайна
-    }
-    const panel = xuiBindings(id);
-    return list.map((c) => {
-      const email = String(c.email ?? '');
-      const t = (c.traffic ?? {}) as Record<string, unknown>;
-      const p = panel.get(email);
-      return {
-        email,
-        comment: String(c.comment ?? ''),
-        enable: c.enable !== false,
-        inboundIds: ((c.inboundIds as number[] | undefined) ?? []).map(Number),
-        up: Number(t.up ?? 0),
-        down: Number(t.down ?? 0),
-        totalGB: Number(c.totalGB ?? 0),
-        expiryTime: Number(c.expiryTime ?? 0),
-        online: online.has(email),
-        panel: p ? { clientId: p.c.id, name: p.c.name, custom: p.b.xuiInbounds !== null } : null,
-      };
-    });
-  });
-
-  /**
-   * Inbound-ы клиента 3X-UI: привязать и отвязать по разнице (attach/detach), в журнале. У клиента
-   * панели набор запоминается в привязке (xui_inbounds), и сверка его держит; совпал с общим
-   * (свои VLESS минус исключённые) или reset - снова "как у всех" (новые inbound-ы - сами).
-   */
-  app.post('/api/servers/:id/xui/clients/:email/inbounds', async (req) => {
-    const { id, email } = z
-      .object({ id: z.string(), email: z.string().min(1).max(200) })
-      .parse(req.params);
-    const body = z
-      .object({
-        inboundIds: z.array(z.number().int().positive()).max(100).default([]),
-        reset: z.boolean().optional(),
-      })
-      .parse(req.body ?? {});
-    const row = db.select().from(servers).where(eq(servers.id, id)).get();
-    if (!row) throw Object.assign(new Error('сервер не найден'), { statusCode: 404 });
-    const api = xuiFor(id);
-    const inbounds = (unwrap(await api('GET', 'inbounds/list'), 'inbounds/list') ?? []) as Record<
-      string,
-      unknown
-    >[];
-    const p = xuiBindings(id).get(email);
-    const def = xuiTargets(inbounds, row.xuiExcluded).target;
-    const want = body.reset ? def : [...new Set(body.inboundIds)];
-    if (!want.length)
-      throw Object.assign(
-        new Error('нужен хотя бы один inbound (клиента панели убирают с сервера в его карточке)'),
-        { statusCode: 400 },
-      );
-    const allowed = new Set((p ? ownVlessInbounds(inbounds) : inbounds).map((i) => Number(i.id)));
-    const bad = want.filter((i) => !allowed.has(i));
-    if (bad.length)
-      throw Object.assign(
-        new Error(
-          p
-            ? `клиенту панели подходят только свои inbound VLESS сервера (не подходят: ${bad.join(', ')})`
-            : `нет таких inbound: ${bad.join(', ')}`,
-        ),
-        { statusCode: 400 },
-      );
-    const actionId = await journal.start(id, 'xui:client.inbounds', {
-      email,
-      inbounds: want,
-      ...(body.reset ? { reset: true } : {}),
-    });
-    try {
-      const cur = readClient(
-        unwrap(await api('GET', `clients/get/${encodeURIComponent(email)}`), 'clients/get'),
-      );
-      if (!cur) throw Object.assign(new Error('клиент не найден в 3X-UI'), { statusCode: 404 });
-      const add = want.filter((i) => !cur.inboundIds.includes(i));
-      const del = cur.inboundIds.filter((i) => !want.includes(i));
-      if (add.length)
-        unwrap(
-          await api('POST', `clients/${encodeURIComponent(email)}/attach`, { inboundIds: add }),
-          'attach',
-        );
-      if (del.length)
-        unwrap(
-          await api('POST', `clients/${encodeURIComponent(email)}/detach`, { inboundIds: del }),
-          'detach',
-        );
-      let note = '';
-      if (p) {
-        const same = want.length === def.length && want.every((i) => def.includes(i));
-        // ссылки подписки - заново сверкой (набор inbound-ов изменился)
-        db.update(gclientBindings)
-          .set({ ...queued(), xuiInbounds: same ? null : want })
-          .where(eq(gclientBindings.id, p.b.id))
-          .run();
-        gc.kick();
-        note = same ? ', набор как у всех' : ', свой набор клиента панели';
-      }
-      await journal.finish(
-        actionId,
-        id,
-        0,
-        `привязано ${add.length ? add.join(', ') : '-'}, отвязано ${del.length ? del.join(', ') : '-'}${note}`,
-      );
-      return { ok: true };
-    } catch (e) {
-      await journal.finish(actionId, id, 1, (e as Error).message);
-      const code = (e as { statusCode?: unknown }).statusCode;
-      throw Object.assign(new Error((e as Error).message), {
-        statusCode: typeof code === 'number' ? code : 502,
-      });
-    }
-  });
-
-  /**
-   * Удалить клиента 3X-UI (clients/del), в журнале. Клиента панели здесь не удалить - сверка
-   * заведёт его снова: убирают его в карточке клиента (доступ или удаление).
-   */
-  app.delete('/api/servers/:id/xui/clients/:email', async (req) => {
-    const { id, email } = z
-      .object({ id: z.string(), email: z.string().min(1).max(200) })
-      .parse(req.params);
-    const p = xuiBindings(id).get(email);
-    if (p)
-      throw Object.assign(
-        new Error(
-          `\u00ab${email}\u00bb\u00a0\u2014 клиент панели (${p.c.name}), синхронизация создаст его снова. VLESS или самого клиента убирают в его карточке`,
-        ),
-        { statusCode: 409 },
-      );
-    const api = xuiFor(id);
-    const actionId = await journal.start(id, 'xui:client.del', { email });
-    try {
-      unwrap(await api('POST', `clients/del/${encodeURIComponent(email)}`), 'clients/del');
-      await journal.finish(actionId, id, 0, 'удалён');
-      return { ok: true };
-    } catch (e) {
-      await journal.finish(actionId, id, 1, (e as Error).message);
-      throw Object.assign(new Error((e as Error).message), { statusCode: 502 });
-    }
-  });
-
   /** Серверы и их участие в глобальных клиентах. */
   app.get(
     '/api/gclients/servers',
@@ -724,38 +525,6 @@ export async function gclientRoutes(
     if (st?.panelHost) putSetting(db, PANEL_HOST_KEY, body.enabled ? '1' : '');
     db.update(servers).set({ gclients: body.enabled }).where(eq(servers.id, id)).run();
     db.update(gclientBindings).set(queued()).where(eq(gclientBindings.serverId, id)).run();
-    gc.kick();
-    return { ok: true };
-  });
-
-  /** VLESS-inbound-ы сервера (свои, не других узлов группы 3X-UI) и отметка "без глобальных клиентов". */
-  app.get('/api/servers/:id/xui/inbounds', async (req, reply) => {
-    const { id } = Id.parse(req.params);
-    const row = db.select().from(servers).where(eq(servers.id, id)).get();
-    if (!row) return reply.code(404).send({ error: 'сервер не найден' });
-    if (!registry.isOnline(id)) return reply.code(409).send({ error: 'сервер не в сети' });
-    const api = xuiApi(registry, id, await xuiToken(db, box, registry, id));
-    const list =
-      (unwrap(await api('GET', 'inbounds/list'), 'inbounds/list') as Record<string, unknown>[]) ??
-      [];
-    return ownVlessInbounds(list).map((i) => ({
-      id: Number(i.id),
-      remark: String(i.remark ?? ''),
-      port: Number(i.port),
-      enable: i.enable !== false,
-      security: String(parseJson(i.streamSettings).security ?? ''),
-      excluded: row.xuiExcluded.includes(Number(i.id)),
-    }));
-  });
-
-  app.put('/api/servers/:id/xui/excluded', async (req) => {
-    const { id } = Id.parse(req.params);
-    const body = z.object({ inboundIds: z.array(z.number().int()).max(200) }).parse(req.body ?? {});
-    db.update(servers).set({ xuiExcluded: body.inboundIds }).where(eq(servers.id, id)).run();
-    db.update(gclientBindings)
-      .set(queued())
-      .where(and(eq(gclientBindings.serverId, id), eq(gclientBindings.service, 'xui')))
-      .run();
     gc.kick();
     return { ok: true };
   });

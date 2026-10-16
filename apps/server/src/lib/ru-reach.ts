@@ -1,12 +1,11 @@
 import { eq } from 'drizzle-orm';
 import type { AgentRegistry } from '../agents/registry.js';
-import type { StatusCache } from '../agents/state.js';
 import type { Db } from '../db/index.js';
 import { servers } from '../db/schema.js';
 import { schedule } from './schedule.js';
 import type { SecretBox } from './secret-box.js';
 import { deleteSetting, getJsonSetting, getSetting, putSetting } from './settings.js';
-import { parseJson, unwrap, xuiApi } from './xui-api.js';
+import { inboundNode, listInbounds, parseJson, streamOf, xuiApi } from './xui-api.js';
 import { savedXuiToken } from './xui-token.js';
 
 /**
@@ -173,9 +172,9 @@ export function inboundTargets(
 ): (AgentTarget & { title: string })[] {
   const out: (AgentTarget & { title: string })[] = [];
   for (const i of list) {
-    if (!i.enable || Number(i.nodeId ?? i.node_id ?? 0)) continue;
+    if (!i.enable || inboundNode(i)) continue;
     if (!PROTOCOLS.has(String(i.protocol))) continue;
-    const ss = parseJson(i.streamSettings);
+    const ss = streamOf(i);
     if (!TCP_NETWORKS.has(String(ss.network ?? 'tcp'))) continue;
     const port = Number(i.port);
     if (!port) continue;
@@ -483,7 +482,7 @@ export class RuReach {
       const notes: { serverId: string; note: { key: string; text: string; back: boolean } }[] = [];
       let changed = false;
       for (const row of rows) {
-        const inv = (row.statusCache as StatusCache | null)?.inventory;
+        const inv = row.statusCache?.inventory;
         if (!inv) continue;
         const mt = inv.services.find((s) => s.kind === 'mtproxyl');
         const entry = store[row.id] ?? { checkedAt: null, targets: [] };
@@ -553,7 +552,7 @@ export class RuReach {
   private async run(serverId: string): Promise<ServerReach> {
     const row = (await this.db.select().from(servers).where(eq(servers.id, serverId)).limit(1))[0];
     if (!row) throw Object.assign(new Error('сервер не найден'), { statusCode: 404 });
-    const inv = (row.statusCache as StatusCache | null)?.inventory;
+    const inv = row.statusCache?.inventory;
     const now = new Date().toISOString();
     const prev = this.load()[serverId];
     const old = new Map((prev?.targets ?? []).map((t) => [t.key, t]));
@@ -596,12 +595,7 @@ export class RuReach {
     if (xuiToken && this.registry.isOnline(serverId)) {
       try {
         const api = xuiApi(this.registry, serverId, xuiToken);
-        const list =
-          (unwrap(await api('GET', 'inbounds/list'), 'inbounds/list') as Record<
-            string,
-            unknown
-          >[]) ?? [];
-        agentTargets.push(...inboundTargets(list, row.host));
+        agentTargets.push(...inboundTargets(await listInbounds(api), row.host));
       } catch (e) {
         out.error = `inbound 3X-UI: ${(e as Error).message}`;
       }

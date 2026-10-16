@@ -1,6 +1,17 @@
-import type { GClientAccess } from '@vps/protocol';
+import type { GClientAccess, Inventory, Metrics } from '@vps/protocol';
 import { sql } from 'drizzle-orm';
 import { integer, real, sqliteTable, text } from 'drizzle-orm/sqlite-core';
+
+/** Последнее, что агент сообщил о сервере (колонка status_cache). */
+export interface StatusCache {
+  metrics?: Metrics;
+  metricsAt?: string;
+  inventory?: Inventory;
+  /** Подсети экземпляров AWG (Address) по последнему опросу: выбор подсети для новых. */
+  awgSubnets?: string[];
+  /** Экземпляры AWG и их версии по последнему опросу (awg.status): матрица сервисов. */
+  awgInstances?: { container: string; version: string; state: string }[];
+}
 
 const now = sql`(strftime('%Y-%m-%dT%H:%M:%fZ','now'))`;
 
@@ -68,7 +79,7 @@ export const servers = sqliteTable('server', {
   /** Адрес сервера в конфигах людей (имя под A-записью); null - host (IP). */
   clientHost: text('client_host'),
   /** Последний снимок состояния от агента (Inventory + метрики), JSON. */
-  statusCache: text('status_cache', { mode: 'json' }).$type<Record<string, unknown>>(),
+  statusCache: text('status_cache', { mode: 'json' }).$type<StatusCache>(),
 });
 
 export const firewallRules = sqliteTable('firewall_rule', {

@@ -10,7 +10,8 @@ import { isNull, sql } from 'drizzle-orm';
 import Fastify from 'fastify';
 import { ZodError } from 'zod';
 import { AgentRegistry } from './agents/registry.js';
-import { type StatusCache, bindStateToDb } from './agents/state.js';
+import { bindStateToDb } from './agents/state.js';
+
 import { type Env, panelDomain } from './config.js';
 import { type Db, createDb } from './db/index.js';
 import { actionLog, servers } from './db/schema.js';
@@ -175,10 +176,14 @@ export async function buildApp(opts: AppOptions) {
       return reply.code(400).send({ error: 'неверные данные', issues: err.issues });
     }
     app.log.error(err);
-    const e = err as { statusCode?: unknown; message?: unknown };
+    const e = err as { statusCode?: unknown; message?: unknown; code?: unknown };
     const status = typeof e.statusCode === 'number' ? e.statusCode : 500;
+    if (status === 500) return reply.code(500).send({ error: 'внутренняя ошибка' });
     const message = typeof e.message === 'string' ? e.message : 'ошибка';
-    return reply.code(status).send({ error: status === 500 ? 'внутренняя ошибка' : message });
+    // код ошибки (no-token и т.п.) - для интерфейса: по нему, а не по тексту
+    return reply
+      .code(status)
+      .send({ error: message, ...(typeof e.code === 'string' ? { code: e.code } : {}) });
   });
 
   app.addHook('preHandler', requireAuth(db));
@@ -331,7 +336,7 @@ export async function buildApp(opts: AppOptions) {
     notifier.bind(
       (await db.select({ id: servers.id, cache: servers.statusCache }).from(servers)).map((r) => ({
         id: r.id,
-        cache: (r.cache ?? {}) as StatusCache,
+        cache: r.cache ?? {},
       })),
     ),
   );
@@ -353,7 +358,7 @@ export async function buildApp(opts: AppOptions) {
   stops.push(startFail2banIgnore(db, registry, env.DATA_DIR, app.log));
   // метрики агентов раз в 2 с, пока открыта вкладка панели, иначе раз в 30 с
   stops.push(startMetricsPace(registry, hub, app.log));
-  await app.register(gclientRoutes, { db, registry, box, gc, env, hub });
+  await app.register(gclientRoutes, { db, registry, box, gc, env });
   // добавление и удаление inbound-ов VLESS: после изменений - синхронизация клиентов сразу
   await app.register(xuiInboundRoutes, {
     ...serverRouteOpts,

@@ -1,5 +1,5 @@
 import type { FastifyInstance } from 'fastify';
-import type { AgentRegistry } from '../agents/registry.js';
+import { type AgentRegistry, requireOnline } from '../agents/registry.js';
 import type { Db } from '../db/index.js';
 import { actionJournal } from '../lib/action-journal.js';
 import type { ServiceUpdates } from '../lib/service-updates.js';
@@ -20,9 +20,9 @@ export async function updateRoutes(
   );
 
   /** Проверить сервер сейчас: кнопка во вкладке и после обновления сервиса. */
-  app.post('/api/servers/:id/updates/check', async (req, reply) => {
+  app.post('/api/servers/:id/updates/check', async (req) => {
     const { id } = req.params as { id: string };
-    if (!registry.isOnline(id)) return reply.code(409).send({ error: 'сервер не в сети' });
+    requireOnline(registry, id);
     return updates.recheck(id);
   });
 
@@ -34,9 +34,9 @@ export async function updateRoutes(
   );
 
   /** Обновить Xray внутри 3X-UI до версии из последней проверки: действие с выводом. */
-  app.post('/api/servers/:id/xray/update', async (req, reply) => {
+  app.post('/api/servers/:id/xray/update', async (req) => {
     const { id } = req.params as { id: string };
-    if (!registry.isOnline(id)) return reply.code(409).send({ error: 'сервер не в сети' });
+    requireOnline(registry, id);
     const action = journal.open(id, 'xui:xray');
     void updates.installXray(id, action);
     return { actionId: action.id };

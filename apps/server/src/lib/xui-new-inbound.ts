@@ -1,6 +1,6 @@
 import { generateKeyPairSync, randomBytes, randomInt } from 'node:crypto';
 import type { Listener } from '@vps/protocol';
-import { parseJson } from './xui-api.js';
+import { inboundNode, parseJson, streamOf } from './xui-api.js';
 
 /**
  * Новые inbound-ы VLESS с Reality для 3X-UI: RAW (TCP + Vision) и XHTTP. Настройки - те, что
@@ -132,8 +132,8 @@ export interface SameAs {
 export function realityOfInbounds(list: readonly Record<string, unknown>[]): SameAs[] {
   const out: SameAs[] = [];
   for (const i of list) {
-    if (Number(i.nodeId ?? i.node_id ?? 0)) continue;
-    const st = parseJson(i.streamSettings);
+    if (inboundNode(i)) continue;
+    const st = streamOf(i);
     if (st.security !== 'reality') continue;
     const rs = parseJson(st.realitySettings);
     const target = String(rs.target ?? rs.dest ?? '');
@@ -261,8 +261,8 @@ export function buildInbound(
  * правятся только подпись и порт.
  */
 export function inboundKind(i: Record<string, unknown>): NewInboundKind | null {
-  if (i.protocol !== 'vless' || Number(i.nodeId ?? i.node_id ?? 0)) return null;
-  const st = parseJson(i.streamSettings);
+  if (i.protocol !== 'vless' || inboundNode(i)) return null;
+  const st = streamOf(i);
   if (st.security !== 'reality') return null;
   if (st.network === 'xhttp') return 'xhttp';
   if (st.network === 'tcp' || st.network === 'raw' || st.network === undefined) return 'raw';
@@ -275,7 +275,7 @@ export function realityOf(i: Record<string, unknown>): {
   serverNames: string[];
   fingerprint: string;
 } {
-  const rs = parseJson(parseJson(i.streamSettings).realitySettings);
+  const rs = parseJson(streamOf(i).realitySettings);
   return {
     target: String(rs.target ?? rs.dest ?? ''),
     serverNames: ((rs.serverNames as string[] | undefined) ?? []).map(String),

@@ -1,5 +1,5 @@
 import type { Listener } from '@vps/protocol';
-import { type XuiCall, unwrap } from './xui-api.js';
+import { type XuiCall, listInbounds, unwrap } from './xui-api.js';
 import {
   type Fingerprint,
   KIND_TITLE,
@@ -38,9 +38,6 @@ export async function watchXray(api: XuiCall, waits = XRAY_CHECKS_MS): Promise<s
   }
   return null;
 }
-
-export const inboundList = async (api: XuiCall) =>
-  (unwrap(await api('GET', 'inbounds/list'), 'inbounds/list') as Record<string, unknown>[]) ?? [];
 
 /** Лучшая цель Reality по скану 3X-UI с самого сервера (имена YouTube отброшены). */
 export async function bestRealityTarget(api: XuiCall) {
@@ -82,7 +79,7 @@ export async function addInbounds(
     for (const item of args.items) {
       const title = `${KIND_TITLE[item.kind]} \u00ab${item.remark}\u00bb, порт ${item.port}`;
       args.say(`${title}: проверка порта`);
-      const busy = portBusy(item.port, await inboundList(api), args.listeners());
+      const busy = portBusy(item.port, await listInbounds(api), args.listeners());
       if (busy) throw new Error(busy);
       const inbound = buildInbound({
         kind: item.kind,

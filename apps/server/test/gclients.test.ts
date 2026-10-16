@@ -3,6 +3,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { eq } from 'drizzle-orm';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { AgentError } from '../src/agents/registry.js';
 import type { AgentRegistry } from '../src/agents/registry.js';
 import { type Db, createDb } from '../src/db/index.js';
 import {
@@ -896,7 +897,9 @@ describe('GClients.reconcile: сервис или агент не отвечае
     registry.request = (async (id: string, method: string, p: unknown) => {
       if (method === 'mtproxyl.status' && id === 's1') {
         calls++;
-        throw new Error(fail);
+        throw fail === 'агент не ответил вовремя'
+          ? new AgentError(fail, 'timeout')
+          : new Error(fail);
       }
       return (saved as (...a: unknown[]) => Promise<unknown>)(id, method, p);
     }) as typeof registry.request;

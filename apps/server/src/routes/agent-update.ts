@@ -1,6 +1,7 @@
 import { eq } from 'drizzle-orm';
 import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
+import { requireOnline } from '../agents/registry.js';
 import { servers } from '../db/schema.js';
 import { actionJournal } from '../lib/action-journal.js';
 import { busyAction } from '../lib/action-lock.js';
@@ -21,9 +22,8 @@ export async function agentUpdateRoutes(
   const journal = actionJournal(db, hub, registry);
 
   /** Отмена идущего обновления агента (загрузка на узком канале). */
-  app.post('/api/servers/:id/agent/update/cancel', async (req, reply) => {
+  app.post('/api/servers/:id/agent/update/cancel', async (req) => {
     const { id } = Id.parse(req.params);
-    if (!registry.isOnline(id)) return reply.code(409).send({ error: 'сервер не в сети' });
     return registry.request(id, 'agent.update.cancel', {}, { timeoutMs: 15_000 });
   });
 
@@ -58,8 +58,7 @@ export async function agentUpdateRoutes(
     id: string,
   ): Promise<{ actionId: string; done: Promise<number> }> {
     const row = (await db.select().from(servers).where(eq(servers.id, id)).limit(1))[0];
-    if (!registry.isOnline(id))
-      throw Object.assign(new Error('сервер не в сети'), { statusCode: 409 });
+    requireOnline(registry, id);
     const action = journal.open(id, 'agent.update');
     const actionId = action.id;
     const onStream = action.stream;

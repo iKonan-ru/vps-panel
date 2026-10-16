@@ -1,9 +1,10 @@
 import { and, eq } from 'drizzle-orm';
-import type { AgentRegistry } from '../agents/registry.js';
+import { type AgentRegistry, requireOnline } from '../agents/registry.js';
 import type { Db } from '../db/index.js';
 import { access } from '../db/schema.js';
 import { upsertAccess } from './access.js';
 import type { SecretBox } from './secret-box.js';
+import { type XuiCall, noXuiToken, xuiApi } from './xui-api.js';
 
 /** Сохранённый в "Доступах" API-токен 3X-UI сервера; пустая строка - не выпущен. */
 export function savedXuiToken(db: Db, box: SecretBox, serverId: string): string {
@@ -39,4 +40,15 @@ export async function xuiToken(
   };
   await saveXuiToken(db, box, serverId, r.token);
   return r.token;
+}
+
+/**
+ * REST 3X-UI сервера с сохранённым токеном, без выпуска нового: сервер не в сети - 409, токена
+ * нет - 409 no-token.
+ */
+export function xuiFor(db: Db, box: SecretBox, registry: AgentRegistry, serverId: string): XuiCall {
+  requireOnline(registry, serverId);
+  const token = savedXuiToken(db, box, serverId);
+  if (!token) throw noXuiToken();
+  return xuiApi(registry, serverId, token);
 }

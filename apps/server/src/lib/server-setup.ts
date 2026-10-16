@@ -10,8 +10,7 @@ import type {
   SetupStepState,
 } from '@vps/protocol';
 import { and, eq, inArray } from 'drizzle-orm';
-import type { AgentRegistry } from '../agents/registry.js';
-import type { StatusCache } from '../agents/state.js';
+import { type AgentRegistry, requireOnline } from '../agents/registry.js';
 import { findCommand, validateAnswers } from '../commands/index.js';
 import type { Env } from '../config.js';
 import type { Db } from '../db/index.js';
@@ -31,8 +30,8 @@ import { removeServer } from './server-remove.js';
 import { deleteSetting, getJsonSetting, putSetting } from './settings.js';
 import { keyFingerprint, loadPanelKey } from './ssh.js';
 import type { UiHub } from './ui-hub.js';
-import { ownVlessInbounds, xuiApi } from './xui-api.js';
-import { type NewItem, addInbounds, bestRealityTarget, inboundList } from './xui-inbound-ops.js';
+import { listInbounds, ownVlessInbounds, xuiApi } from './xui-api.js';
+import { type NewItem, addInbounds, bestRealityTarget } from './xui-inbound-ops.js';
 import {
   KIND_REMARK,
   XHTTP_PORT,
@@ -148,7 +147,7 @@ export function serverSetup(deps: SetupDeps) {
     if (!r) throw err('сервер не найден', 404);
     return r;
   };
-  const inventory = (id: string) => (row(id).statusCache as StatusCache | null)?.inventory;
+  const inventory = (id: string) => row(id).statusCache?.inventory;
   const has = (id: string, kind: string) =>
     inventory(id)?.services.some((s) => s.kind === kind) ?? false;
 
@@ -193,7 +192,7 @@ export function serverSetup(deps: SetupDeps) {
           .catch(() => null),
         has(id, 'xui')
           ? xuiToken(db, box, registry, id)
-              .then((t) => inboundList(xuiApi(registry, id, t)))
+              .then((t) => listInbounds(xuiApi(registry, id, t)))
               .then((l) => ownVlessInbounds(l).length)
               .catch(() => null)
           : Promise.resolve(null),
@@ -709,7 +708,7 @@ export function serverSetup(deps: SetupDeps) {
 
   /** Проверки перед запуском: поля, порты, проверки команд каталога на сервере. */
   async function preflight(id: string, req: SetupRunRequest) {
-    if (!registry.isOnline(id)) throw err('сервер не в сети', 409);
+    requireOnline(registry, id);
     const steps = await resolve(id, req);
     const checks = localChecks(steps);
     // проверки команд - для того, что поставится на нынешнее состояние; переустановку и AWG
@@ -767,7 +766,7 @@ export function serverSetup(deps: SetupDeps) {
 
   /** Запуск: id действия сразу, шаги - в фоне. */
   async function run(id: string, request: SetupRunRequest): Promise<{ actionId: string }> {
-    if (!registry.isOnline(id)) throw err('сервер не в сети', 409);
+    requireOnline(registry, id);
     let req = request;
     const prev = progress(id);
     // продолжение - с тем же источником: копия (при переносе - уже снятая свежая), старый
@@ -1237,7 +1236,7 @@ export function serverSetup(deps: SetupDeps) {
       case 'inbounds': {
         if (!has(id, 'xui')) return null;
         const api = xuiApi(registry, id, await xuiToken(db, box, registry, id));
-        const list = await inboundList(api);
+        const list = await listInbounds(api);
         if (ownVlessInbounds(list).length) return null;
         const listeners = () => inventory(id)?.firewall.listeners ?? [];
         const items: NewItem[] = [];

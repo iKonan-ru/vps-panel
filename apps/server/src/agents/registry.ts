@@ -4,13 +4,41 @@ import { AgentMessageSchema, InventorySchema } from '@vps/protocol';
 import { newId } from '../lib/ids.js';
 
 /**
- * Ошибка вызова агента - ответ для человека, а не сбой панели: с кодом, общий обработчик отдаёт
- * её текст ("Агент не ответил вовремя", ошибку сервиса), а не "Внутренняя ошибка".
+ * Ошибка вызова агента - ответ для человека, а не сбой панели: общий обработчик отдаёт её текст
+ * со statusCode. code - для кода панели: по нему, а не по тексту, решают, что делать дальше.
  */
-const agentError = (message: string, statusCode: number) =>
-  Object.assign(new Error(message), { statusCode });
+export type AgentErrorCode = 'offline' | 'timeout' | 'disconnected' | 'outdated' | 'agent';
 
-/** Агент не знает операции: её нет в списке из hello (или агент ответил, что не умеет). */
+const STATUS: Record<AgentErrorCode, number> = {
+  offline: 409,
+  outdated: 409,
+  timeout: 504,
+  disconnected: 502,
+  agent: 502,
+};
+
+export class AgentError extends Error {
+  readonly statusCode: number;
+  constructor(
+    message: string,
+    readonly code: AgentErrorCode,
+  ) {
+    super(message);
+    this.statusCode = STATUS[code];
+  }
+}
+
+/** Агент не на связи или не ответил: остальные запросы к нему сейчас тоже не пройдут. */
+export function agentUnreachable(e: unknown): boolean {
+  return e instanceof AgentError && e.code !== 'agent' && e.code !== 'outdated';
+}
+
+/** Сервер не в сети - ошибка 409: до того, как открывать действие или звать агента. */
+export function requireOnline(registry: Pick<AgentRegistry, 'isOnline'>, serverId: string) {
+  if (!registry.isOnline(serverId)) throw new AgentError('сервер не в сети', 'offline');
+}
+
+/** Агент не знает операции: её нет в списке из hello. */
 export const AGENT_OUTDATED = 'агент устарел: нужно обновить агент';
 
 /**
@@ -30,7 +58,7 @@ export interface AgentSocket {
 export interface AgentConn {
   serverId: string;
   ws: AgentSocket;
-  /** Операции агента из hello; у старых агентов списка нет. */
+  /** Операции агента из hello. */
   methods: readonly string[];
   /** С какого адреса подключился агент (за Caddy - настоящий адрес сервера). */
   addr?: string;
@@ -178,7 +206,7 @@ export class AgentRegistry extends EventEmitter<RegistryEvents> {
     for (const [id, p] of this.pending) {
       if (id.startsWith(`${conn.serverId}:`)) {
         clearTimeout(p.timer);
-        p.reject(agentError('агент отключился', 502));
+        p.reject(new AgentError('агент отключился', 'disconnected'));
         this.pending.delete(id);
       }
     }
@@ -225,9 +253,7 @@ export class AgentRegistry extends EventEmitter<RegistryEvents> {
         this.pending.delete(key);
         clearTimeout(p.timer);
         if (msg.ok) p.resolve(msg.data);
-        else if (msg.error?.startsWith('метод пока не поддерживается'))
-          p.reject(agentError(AGENT_OUTDATED, 409));
-        else p.reject(agentError(msg.error ?? 'ошибка агента', 502));
+        else p.reject(new AgentError(msg.error ?? 'ошибка агента', 'agent'));
         return;
       }
       case 'hello':
@@ -243,14 +269,15 @@ export class AgentRegistry extends EventEmitter<RegistryEvents> {
     opts: { timeoutMs?: number; onStream?: (channel: string, chunk: string) => void } = {},
   ): Promise<T> {
     const conn = this.conns.get(serverId);
-    if (!conn) return Promise.reject(agentError('сервер не в сети', 409));
-    if (!this.supports(serverId, method)) return Promise.reject(agentError(AGENT_OUTDATED, 409));
+    if (!conn) return Promise.reject(new AgentError('сервер не в сети', 'offline'));
+    if (!this.supports(serverId, method))
+      return Promise.reject(new AgentError(AGENT_OUTDATED, 'outdated'));
     const id = newId();
     const key = `${serverId}:${id}`;
     return new Promise<T>((resolve, reject) => {
       const timer = setTimeout(() => {
         this.pending.delete(key);
-        reject(agentError('агент не ответил вовремя', 504));
+        reject(new AgentError('агент не ответил вовремя', 'timeout'));
       }, opts.timeoutMs ?? 60_000);
       const entry: Pending = { resolve: (v) => resolve(v as T), reject, timer };
       if (opts.onStream) entry.onStream = opts.onStream;

@@ -1,20 +1,12 @@
-import type { Inventory, Metrics, ServerSummary } from '@vps/protocol';
+import type { Inventory, ServerSummary } from '@vps/protocol';
 import { eq } from 'drizzle-orm';
 import type { Db } from '../db/index.js';
-import { servers } from '../db/schema.js';
+import { type StatusCache, servers } from '../db/schema.js';
 import { isPanelHost } from '../lib/panel-host.js';
 import type { AgentRegistry } from './registry.js';
 
 /** Что лежит в server.status_cache: последние метрики и inventory. */
-export interface StatusCache {
-  metrics?: Metrics;
-  metricsAt?: string;
-  inventory?: Inventory;
-  /** Подсети экземпляров AWG (Address) по последнему опросу: выбор подсети для новых. */
-  awgSubnets?: string[];
-  /** Экземпляры AWG и их версии по последнему опросу (awg.status): матрица сервисов. */
-  awgInstances?: { container: string; version: string; state: string }[];
-}
+export type { StatusCache } from '../db/schema.js';
 
 /**
  * Дописать поля в снимок состояния сервера; seen - заодно отметка "был на связи". Чтение и
@@ -27,11 +19,9 @@ export function patchStatusCache(
   patch: Partial<StatusCache>,
   seen = false,
 ) {
-  const cur = (db
-    .select({ cache: servers.statusCache })
-    .from(servers)
-    .where(eq(servers.id, serverId))
-    .get()?.cache ?? {}) as StatusCache;
+  const cur =
+    db.select({ cache: servers.statusCache }).from(servers).where(eq(servers.id, serverId)).get()
+      ?.cache ?? {};
   db.update(servers)
     .set({
       statusCache: { ...cur, ...patch },
@@ -82,7 +72,7 @@ export function toSummary(
   /** Адреса домена панели: сервер с таким адресом - сервер панели. */
   panelIps: string[] = [],
 ): ServerSummary {
-  const cache = (row.statusCache ?? {}) as StatusCache;
+  const cache = row.statusCache ?? {};
   const online = registry.isOnline(row.id);
   const inv = cache.inventory;
   return {
@@ -121,3 +111,13 @@ export function toSummary(
     panelLinks: {},
   };
 }
+
+/** Снимок агента из строки сервера (последний пришедший). */
+export function inventoryOf(db: Db, serverId: string): Inventory | undefined {
+  return db.select({ c: servers.statusCache }).from(servers).where(eq(servers.id, serverId)).get()
+    ?.c?.inventory;
+}
+
+/** Слушающие порты сервера по последнему снимку агента. */
+export const listenersOf = (db: Db, serverId: string) =>
+  inventoryOf(db, serverId)?.firewall.listeners ?? [];

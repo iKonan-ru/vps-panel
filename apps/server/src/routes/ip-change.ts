@@ -4,7 +4,6 @@ import { eq } from 'drizzle-orm';
 import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
 import type { AgentRegistry } from '../agents/registry.js';
-import type { StatusCache } from '../agents/state.js';
 import type { Db } from '../db/index.js';
 import { gclientBindings, servers } from '../db/schema.js';
 import type { actionJournal } from '../lib/action-journal.js';
@@ -75,9 +74,8 @@ export async function ipChangeRoutes(
 
     // имена, которые люди и браузеры знают: адрес для клиентов и имя прокси для браузера
     let dnsOk = true;
-    const naive = (row.statusCache as StatusCache | null)?.inventory?.services.find(
-      (s) => s.kind === 'naive',
-    )?.details?.domain;
+    const naive = row.statusCache?.inventory?.services.find((s) => s.kind === 'naive')?.details
+      ?.domain;
     const names = [
       ...(row.clientHost ? [{ name: row.clientHost, what: 'адрес для клиентов', must: true }] : []),
       ...(typeof naive === 'string' && naive && naive !== row.clientHost
@@ -137,26 +135,29 @@ export async function ipChangeRoutes(
     const { ip } = Body.parse(req.body ?? {});
     const { row, steps, canSwitch } = await check(id, ip);
     if (!canSwitch) return reply.code(409).send({ error: 'проверка не пройдена', steps });
-    const actionId = await journal.start(id, 'server:ip', { from: row.host, to: ip });
-    db.update(servers).set({ host: ip }).where(eq(servers.id, id)).run();
-    // ссылки и конфиги на личных страницах - с новым адресом (у кого в них был IP)
-    db.update(gclientBindings).set(queued()).where(eq(gclientBindings.serverId, id)).run();
-    gc.kick();
-    const xrayMoved = await xray.retarget(id, ip).catch(() => false);
-    void reach.check(id).catch(() => undefined);
-    hub.broadcast({ type: 'server.changed', serverId: id });
-    await journal.finish(
-      actionId,
+    await journal.quick(
       id,
-      0,
-      [
-        `Адрес сервера: ${row.host} -> ${ip}`,
-        ...steps.map((s) => `${s.name}: ${s.detail}`),
-        xrayMoved ? 'Маршрут до Telegram через этот сервер переведён на новый адрес' : '',
-      ]
-        .filter(Boolean)
-        .join('\n'),
+      'server:ip',
+      { from: row.host, to: ip },
+      async () => {
+        db.update(servers).set({ host: ip }).where(eq(servers.id, id)).run();
+        // ссылки и конфиги на личных страницах - с новым адресом (у кого в них был IP)
+        db.update(gclientBindings).set(queued()).where(eq(gclientBindings.serverId, id)).run();
+        const moved = await xray.retarget(id, ip).catch(() => false);
+        hub.broadcast({ type: 'server.changed', serverId: id });
+        return moved;
+      },
+      (moved) =>
+        [
+          `Адрес сервера: ${row.host} -> ${ip}`,
+          ...steps.map((s) => `${s.name}: ${s.detail}`),
+          moved ? 'Маршрут до Telegram через этот сервер переведён на новый адрес' : '',
+        ]
+          .filter(Boolean)
+          .join('\n'),
     );
+    gc.kick();
+    void reach.check(id).catch(() => undefined);
     app.log.info({ serverId: id, from: row.host, to: ip }, 'смена IP сервера');
     return { ok: true, steps };
   });

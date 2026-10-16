@@ -42,14 +42,25 @@ function setup(withMt: boolean, clientHost: string | null) {
       },
     },
     journal: {
-      open: () => ({
-        id: 'a1',
-        output: '',
-        stream: () => {},
-        finish: async (code: number) => {
-          finished = code;
-        },
-      }),
+      background: (
+        _s: string,
+        _k: string,
+        _p: unknown,
+        fn: (a: unknown) => Promise<void>,
+        opts: { after?: (ok: boolean) => void } = {},
+      ) => {
+        void fn({ id: 'a1', output: '', stream: () => {} }).then(
+          () => {
+            finished = 0;
+            opts.after?.(true);
+          },
+          () => {
+            finished = 1;
+            opts.after?.(false);
+          },
+        );
+        return 'a1';
+      },
     },
     gc: {
       kick: () => {
