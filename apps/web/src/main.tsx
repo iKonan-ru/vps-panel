@@ -26,7 +26,7 @@ const queryClient: QueryClient = new QueryClient({
       retry: (n, e) => !(e instanceof ApiError && e.status < 500) && n < 2,
     },
   },
-  // сессия истекла или отозвана: без входа - на страницу входа (Gate смотрит на ['me'])
+  // сессия истекла или отозвана: Gate по ['me'] уведёт на вход
   queryCache: new QueryCache({
     onError: (e) => {
       if (e instanceof ApiError && e.status === 401) queryClient.setQueryData(['me'], null);
@@ -34,8 +34,8 @@ const queryClient: QueryClient = new QueryClient({
   }),
 });
 
-// действие запущено: сервер занят сразу (до свежей карточки с activeActions), кнопки всех
-// вкладок сервера блокирует serverLock; конец действия перезапрашивает карточку (lib/live.ts)
+// действие запущено: сервер занят сразу, до свежей карточки с activeActions - кнопки всех его
+// вкладок блокирует serverLock
 onActionStarted((serverId, actionId) => {
   queryClient.setQueryData<ServerDetail>(['servers', serverId], (s) =>
     s && !s.activeActions.some((a) => a.id === actionId)

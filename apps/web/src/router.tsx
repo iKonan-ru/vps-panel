@@ -12,8 +12,8 @@ import {
   lazyRouteComponent,
 } from '@tanstack/react-router';
 
-// Страницы, кроме входа и списка серверов, грузятся по первому заходу: одна сборка весила
-// 1.1 МБ (xterm, QR, все страницы) и целиком качалась на телефоне до первого экрана.
+// страницы, кроме входа и списка серверов, грузятся по первому заходу: телефон не качает всю
+// сборку (xterm, QR, все страницы) до первого экрана
 
 const AppsPage = lazyRouteComponent(() => import('@/pages/apps'), 'AppsPage');
 const ClientPage = lazyRouteComponent(() => import('@/pages/client'), 'ClientPage');
@@ -90,7 +90,6 @@ const openPanelRoute = createRoute({
   path: '/open/$label',
   component: OpenPanelPage,
 });
-/** Старый адрес мастера - на общую страницу входа. */
 const appRoute = createRoute({ getParentRoute: () => rootRoute, id: 'app', component: Gate });
 const serversRoute = createRoute({
   getParentRoute: () => appRoute,
@@ -145,8 +144,8 @@ const commandRunRoute = createRoute({
   getParentRoute: () => appRoute,
   path: '/commands/$id',
   validateSearch: (raw: Record<string, unknown>) => {
-    // preset - ответы формы, заданные ссылкой (удаление экземпляра AWG из его блока): только
-    // строки; что из них применить, решает форма (поля команды, без паролей и подтверждения)
+    // preset - ответы формы из ссылки (удаление экземпляра AWG), только строки; что применить,
+    // решает форма (поля команды, без паролей и подтверждения)
     const p = raw.preset;
     const preset =
       p && typeof p === 'object' && !Array.isArray(p)
