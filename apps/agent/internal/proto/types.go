@@ -84,13 +84,16 @@ type Audit struct {
 }
 
 type Inventory struct {
-	Host        metrics.HostInfo `json:"host"`
-	Services    []Service        `json:"services"`
-	Containers  []Container      `json:"containers"`
-	Firewall    FirewallState    `json:"firewall"`
-	Audit       Audit            `json:"audit"`
-	Certs       []Cert           `json:"certs"`
-	CollectedAt string           `json:"collectedAt"`
+	Host       metrics.HostInfo `json:"host"`
+	Services   []Service        `json:"services"`
+	Containers []Container      `json:"containers"`
+	Firewall   FirewallState    `json:"firewall"`
+	Audit      Audit            `json:"audit"`
+	Certs      []Cert           `json:"certs"`
+	// Unchecked - виды сервисов, которые в этом снимке проверить не удалось: их нет в Services
+	// не потому, что сервис удалён.
+	Unchecked   []string `json:"unchecked"`
+	CollectedAt string   `json:"collectedAt"`
 }
 
 // Cert - TLS-сертификат на сервере: от acme.sh, certbot или указанный в x-ui.

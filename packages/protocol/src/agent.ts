@@ -203,8 +203,12 @@ export const InventorySchema = z.object({
   containers: list(ContainerSchema),
   firewall: FirewallStateSchema,
   audit: AuditSchema,
-  /** У старых агентов поля нет. */
   certs: list(CertSchema),
+  /**
+   * Виды сервисов, которые агент в этом снимке проверить не смог (база 3X-UI не прочиталась,
+   * docker не ответил): их отсутствие в services не значит, что сервис удалён.
+   */
+  unchecked: list(z.string()),
   collectedAt: z.string(),
 });
 export type Inventory = z.infer<typeof InventorySchema>;
