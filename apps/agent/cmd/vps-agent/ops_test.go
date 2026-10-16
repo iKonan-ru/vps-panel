@@ -17,7 +17,7 @@ import (
 // Операции агента и AgentMethodSchema в packages/protocol совпадают: панель не зовёт того, чего
 // агент не умеет, а у агента нет операций, которых панель не знает.
 func TestMethodsMatchProtocol(t *testing.T) {
-	src, err := os.ReadFile("../../../../packages/protocol/src/agent.ts")
+	src, err := os.ReadFile("../../../../packages/protocol/src/wire.ts")
 	if err != nil {
 		t.Fatal(err)
 	}
