@@ -57,7 +57,6 @@ export function ClientPage() {
   const [rename, setRename] = useState(false);
   const [accessOpen, setAccessOpen] = useState(false);
   const [device, setDevice] = useState<GDevice | 'new' | null>(null);
-  const [err, setErr] = useState<string | null>(null);
   // окно конфига AWG: привязка устройства к экземпляру на сервере
   const [config, setConfig] = useState<GBinding | null>(null);
   // окно ссылок MTProxy
@@ -70,14 +69,9 @@ export function ClientPage() {
   // пока идёт правка клиента, его кнопки недоступны (двойной тап по вкл/выкл - два запроса)
   const op = useAction();
   async function call(fn: () => Promise<unknown>) {
-    setErr(null);
     await op.run(async () => {
-      try {
-        await fn();
-        await refresh();
-      } catch (e) {
-        setErr((e as Error).message);
-      }
+      await fn();
+      await refresh();
     });
   }
 
@@ -178,7 +172,7 @@ export function ClientPage() {
         />
       </div>
       {c.note && <div className="text-[13px] text-muted">{c.note}</div>}
-      {err && <Alert tone="bad">{err}</Alert>}
+      {op.error && <Alert tone="bad">{op.error}</Alert>}
       <SyncPanel />
 
       {data.subscription.temporary && (

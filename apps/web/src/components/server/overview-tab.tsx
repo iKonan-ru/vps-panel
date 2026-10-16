@@ -74,21 +74,15 @@ export function OverviewTab({ s, onTab }: { s: ServerDetail; onTab?: (tab: strin
     recheck?: boolean;
     done?: boolean;
   } | null>(null);
-  const [error, setError] = useState<string | null>(null);
   const pending = s.audit?.pendingUpdates ?? 0;
 
   // запуск из "Обслуживания": пока идёт запрос, все кнопки блока заблокированы (двойной тап,
   // соседняя строка)
   const starting = useAction();
   async function startUpgrade() {
-    setError(null);
     await starting.run(async () => {
-      try {
-        const r = await actions.upgrade(s.id);
-        setUpgrade({ id: r.actionId, title: 'Обновление пакетов' });
-      } catch (e) {
-        setError((e as Error).message);
-      }
+      const r = await actions.upgrade(s.id);
+      setUpgrade({ id: r.actionId, title: 'Обновление пакетов' });
     });
   }
   // версии в ключе: после обновления инвентарь меняется, и список перезапрашивается
@@ -99,18 +93,13 @@ export function OverviewTab({ s, onTab }: { s: ServerDetail; onTab?: (tab: strin
     refetchInterval: 10 * 60_000,
   });
   async function updateService(u: ServiceUpdate) {
-    setError(null);
     await starting.run(async () => {
-      try {
-        const r = await startServiceUpdate[u.kind](s.id);
-        setUpgrade({
-          id: r.actionId,
-          title: `Обновление ${u.title} до ${u.latest}`,
-          recheck: true,
-        });
-      } catch (e) {
-        setError((e as Error).message);
-      }
+      const r = await startServiceUpdate[u.kind](s.id);
+      setUpgrade({
+        id: r.actionId,
+        title: `Обновление ${u.title} до ${u.latest}`,
+        recheck: true,
+      });
     });
   }
   const m = s.metrics;
@@ -424,9 +413,9 @@ export function OverviewTab({ s, onTab }: { s: ServerDetail; onTab?: (tab: strin
               />
             }
           >
-            {error && (
+            {starting.error && (
               <div className="px-4 pt-3">
-                <Alert tone="bad">{error}</Alert>
+                <Alert tone="bad">{starting.error}</Alert>
               </div>
             )}
             {upgrade && (
