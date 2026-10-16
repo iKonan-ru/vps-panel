@@ -43,7 +43,6 @@ export type RawInbound = Record<string, unknown>;
 /** Узел группы 3X-UI, которому принадлежит inbound; 0 - этот сервер. */
 export const inboundNode = (i: RawInbound) => Number(i.nodeId ?? i.node_id ?? 0);
 
-/** streamSettings inbound-а объектом. */
 export const streamOf = (i: RawInbound) => parseJson(i.streamSettings);
 
 /**
@@ -54,12 +53,10 @@ export function ownVlessInbounds(list: RawInbound[]): RawInbound[] {
   return list.filter((i) => i.protocol === 'vless' && !inboundNode(i));
 }
 
-/** Все inbound-ы 3X-UI сервера. */
 export async function listInbounds(api: XuiCall): Promise<RawInbound[]> {
   return (unwrap(await api('GET', 'inbounds/list'), 'inbounds/list') as RawInbound[] | null) ?? [];
 }
 
-/** Один inbound или null. */
 export async function getInbound(api: XuiCall, id: number): Promise<RawInbound | null> {
   return unwrap(await api('GET', `inbounds/get/${id}`), 'inbounds/get') as RawInbound | null;
 }

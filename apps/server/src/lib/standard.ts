@@ -1,8 +1,9 @@
 import type { Service, ServiceUpdate, StdCell, StdItem, StdKey } from '@vps/protocol';
 
 /**
- * Эталон сервисов: на каждом сервере (сервер панели - если на нём заводятся клиенты) - 3X-UI, MTProxyL, AWG 3.1 и 2.0,
- * WDTT, OpenFlux, прокси для браузера. install - команда каталога, которой недостающее ставится.
+ * Эталон сервисов: на каждом сервере (сервер панели - если на нём заводятся клиенты) - 3X-UI,
+ * MTProxyL, AWG 3.1 и 2.0, WDTT, OpenFlux, прокси для браузера. install - команда каталога, которой
+ * недостающее ставится.
  */
 
 export const STANDARD: StdItem[] = [
@@ -46,7 +47,7 @@ export function standardCells(o: {
   const xui = svc('xui');
   let xuiCell: StdCell = { state: 'missing', text: 'нет' };
   if (xui) {
-    // агент отдаёт список включённых внешних inbound-ов (detect.go), без них - null
+    // агент отдаёт список включённых внешних inbound-ов, без них - null
     const list = xui.details?.inbounds;
     const own = Array.isArray(list) ? list.length : 0;
     const nodes = num(xui.details?.remoteNodes);
@@ -93,7 +94,7 @@ export function standardCells(o: {
     };
   };
 
-  // OpenFlux: каналы и автообновление ядра по инвентарю (services/openflux.go); упал канал - warn
+  // OpenFlux: каналы и автообновление ядра по инвентарю; упал канал - warn
   const of = svc('openflux');
   let ofCell: StdCell = { state: 'missing', text: 'нет' };
   if (of) {

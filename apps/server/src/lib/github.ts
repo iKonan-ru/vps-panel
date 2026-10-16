@@ -1,7 +1,7 @@
 /**
  * Ошибка ответа GitHub API человеческим текстом. Без токена GitHub даёт 60 запросов в час с
  * одного адреса: исчерпанный лимит - 403 или 429 с x-ratelimit-remaining: 0 (голый код "403"
- * читался как запрет доступа).
+ * читается как запрет доступа).
  */
 export function githubError(r: Response): Error {
   if ((r.status === 403 || r.status === 429) && r.headers.get('x-ratelimit-remaining') === '0') {

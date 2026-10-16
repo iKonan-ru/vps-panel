@@ -178,7 +178,7 @@ export function serverSetup(deps: SetupDeps) {
     return p;
   }
 
-  /** Ответы команды для экрана: пароли пустые - их вводят (решение владельца). */
+  /** Ответы команды для экрана: пароли пустые - их вводят. */
   async function screenAnswers(id: string, cmd: string, extra: Record<string, string> = {}) {
     const c = findCommand(cmd);
     const all = { ...(await runner.defaults(id, cmd)), ...extra };
@@ -220,7 +220,7 @@ export function serverSetup(deps: SetupDeps) {
 
   /**
    * План: пустой сервер, копия этого сервера (backupId) или перенос с другого (migrateFrom);
-   * строка - id копии (как раньше).
+   * строка - id копии.
    */
   async function plan(id: string, source: SetupSource | string = {}): Promise<SetupPlan> {
     const src = typeof source === 'string' ? { backupId: source } : source;
@@ -884,7 +884,7 @@ export function serverSetup(deps: SetupDeps) {
   /**
    * Раскладка архива на поставленные сервисы, затем то, что после неё стало другим: токен API
    * 3X-UI (база заменена - прежний токен в ней не действует), "Доступы" к панелям старого
-   * сервера (логины и пароли теперь его), адрес в ссылках MTProxyL - этого сервера.
+   * сервера (логины и пароли - его), адрес в ссылках MTProxyL - этого сервера.
    */
   async function restoreStep(id: string, bid: string, ctx: Ctx): Promise<string> {
     const { bk, comps } = backupSource(bid);
@@ -908,7 +908,7 @@ export function serverSetup(deps: SetupDeps) {
       ctx.secrets.push(r.token);
       notes.push('токен API 3X-UI выпущен заново');
     }
-    // доступы к панелям сервисов из копии: логины и пароли теперь как в копии - у старого
+    // доступы к панелям сервисов из копии: логины и пароли - как в копии: у старого
     // сервера при переносе, у этого же сервера до переустановки сервисов
     const kinds = ['xui', 'mtproxyl', 'wdtt'].filter((k) => comps.has(k) && !ctx.exclude.has(k));
     if (kinds.length) {

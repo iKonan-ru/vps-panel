@@ -19,7 +19,6 @@ export const XHTTP_PORT = 8443;
 export const RANDOM_PORT_RANGE: [number, number] = [10000, 60000];
 export const FINGERPRINTS = ['firefox', 'chrome', 'safari', 'edge', 'ios', 'android'] as const;
 export type Fingerprint = (typeof FINGERPRINTS)[number];
-/** Имён Reality в inbound-е - не больше (у нынешних 16). */
 export const MAX_SERVER_NAMES = 16;
 
 export interface NewInboundParams {
@@ -284,8 +283,8 @@ export function realityOf(i: Record<string, unknown>): {
 }
 
 /**
- * streamSettings с новой целью Reality и/или fingerprint; ключи, shortIds и остальное - как
- * было. Возвращает строку JSON (так 3X-UI хранит streamSettings).
+ * streamSettings с новой целью Reality и/или fingerprint; ключи, shortIds и остальное - без
+ * изменений. Возвращает строку JSON (так 3X-UI хранит streamSettings).
  */
 export function withReality(
   streamSettings: unknown,
@@ -296,7 +295,7 @@ export function withReality(
   const settings = parseJson(rs.settings);
   if (p.target !== undefined) {
     rs.target = p.target;
-    // старое имя поля у inbound-ов, заведённых давно: остаётся только одно
+    // dest - старое имя поля target в Xray: остаётся только одно
     if ('dest' in rs) rs.dest = undefined;
   }
   if (p.serverNames !== undefined) rs.serverNames = p.serverNames;

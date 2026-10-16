@@ -66,7 +66,7 @@ export function transferClients(
     tx.update(awgClients).set({ serverId: to }).where(eq(awgClients.serverId, from)).run();
     tx.update(gclientExts).set({ serverId: to }).where(eq(gclientExts.serverId, from)).run();
 
-    // доступ клиента по списку серверов: старый сервер в списке - теперь новый
+    // доступ клиента по списку серверов: старый сервер в списке заменяется новым
     let access = 0;
     for (const c of tx.select({ id: gclients.id, access: gclients.access }).from(gclients).all()) {
       const list = c.access as GClientAccess;

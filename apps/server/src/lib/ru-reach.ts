@@ -127,10 +127,6 @@ export function inboundTargets(
 }
 
 /**
- * Итог проверки цели в её запись: процент, история, счётчик "не видно" подряд. Возвращает текст
- * уведомления, если пора (не видна вторую проверку подряд или снова видна после уведомления).
- */
-/**
  * Ошибка проверки человеческим текстом: агент отдаёт "Globalping ответил <код>: <тело JSON,
  * обрезанное>" - вместо куска JSON понятная причина и что делать.
  */
@@ -147,6 +143,10 @@ export function reachError(raw: string): string {
   return `Globalping отклонил запрос (HTTP ${code})${detail ? `: ${detail}` : ''}`;
 }
 
+/**
+ * Итог проверки цели в её запись: процент, история, счётчик "не видно" подряд. Возвращает текст
+ * уведомления, если пора (не видна вторую проверку подряд или снова видна после уведомления).
+ */
 export function apply(
   t: ReachTarget,
   r: { percent: number; total: number; ok: number; errors: string[]; at: string; rtt?: unknown },
@@ -307,7 +307,7 @@ export class RuReach {
 
   private load(): Store {
     const store = getJsonSetting<Store>(this.db, KEY, {});
-    // сохранённые до человеческих текстов ошибки - тоже человеческим текстом
+    // в хранилище могут лежать сырые ошибки агента - тоже человеческим текстом
     for (const r of Object.values(store)) {
       if (r.error) r.error = reachError(r.error);
       for (const t of r.targets) if (t.error) t.error = reachError(t.error);

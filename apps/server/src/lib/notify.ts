@@ -34,11 +34,6 @@ function shortDate(iso: string, now = new Date()): string {
   return d.getUTCFullYear() === now.getUTCFullYear() ? dm : `${dm}.${d.getUTCFullYear()}`;
 }
 
-/**
- * Вкладка карточки сервера для сервиса (id вкладок - apps/web/src/pages/server.tsx); у сервисов
- * без своей вкладки - обзор.
- */
-
 /** Адрес карточки сервера в панели (с вкладкой) или пусто, если адрес панели не задан. */
 export function serverHref(panelUrl: string, id: string, tab?: string): string {
   if (!panelUrl) return '';
@@ -55,7 +50,7 @@ export function serverLabel(name: string, host: string, href: string): string {
   return `${href ? `<a href="${esc(href).replace(/"/g, '&quot;')}">${b}</a>` : b} (${esc(host)})`;
 }
 
-/** Событие уведомления о доступности из России по ключу цели (lib/ru-reach.ts). */
+/** Событие уведомления о доступности из России по ключу цели. */
 export function reachEvent(key: string, back: boolean): NotifyEvent {
   if (back) return 'reachBack';
   if (key === 'ip') return 'reachAddr';
@@ -292,7 +287,7 @@ export class Notifier {
     }
   }
 
-  /** Доступность из России: цель не видна две проверки подряд или снова видна (lib/ru-reach.ts). */
+  /** Доступность из России: цель не видна две проверки подряд или снова видна. */
   async reach(id: string, note: { key: string; text: string; back: boolean }) {
     if (!(await this.tg.wants(reachEvent(note.key, note.back), id))) return;
     // "снова виден" - только если о пропаже этой цели вообще уведомляем

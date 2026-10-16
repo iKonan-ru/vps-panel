@@ -20,7 +20,7 @@ export const PBKDF2_ITER = 100_000;
 export const decryptCommand = (file: string) =>
   `openssl enc -d -aes-256-cbc -pbkdf2 -iter ${PBKDF2_ITER} -in ${file} | tar xz`;
 
-/** Та же команда для человека (в README архива, в Настройках, в deploy/README.md). */
+/** Та же команда для человека (README архива, Настройки). */
 export const DECRYPT_HINT = decryptCommand('<файл>.enc');
 
 /**
@@ -110,7 +110,8 @@ const README = (panelUrl: string) => `Резервная копия VPS Panel ($
 /**
  * Архив для восстановления панели: снимок базы (VACUUM INTO - согласованная копия без
  * остановки панели, проверяется integrity_check), SESSION_SECRET, SSH-ключ панели, ключ
- * панели для агентов, конфиг xray. Бэкапы серверов (DATA_DIR/backups) не входят. Итог - tar.gz, зашифрованный паролем.
+ * панели для агентов, конфиг xray. Бэкапы серверов (DATA_DIR/backups) не входят. Итог - tar.gz,
+ * зашифрованный паролем.
  */
 export async function createPanelBackup(o: {
   db: Db;
