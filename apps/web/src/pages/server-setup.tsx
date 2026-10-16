@@ -13,6 +13,7 @@ import { Select } from '@/components/ui/select';
 import { api } from '@/lib/api';
 import { type CommandInfo, paramVisible, useCommands } from '@/lib/commands';
 import { dateTime } from '@/lib/format';
+import { subscribe } from '@/lib/live';
 import { clampInt } from '@/lib/masks';
 import { serverLock, useServer, useServers } from '@/lib/servers';
 import { useAction } from '@/lib/use-action';
@@ -463,9 +464,10 @@ export function ServerSetupPage() {
     staleTime: Number.POSITIVE_INFINITY,
     refetchOnWindowFocus: false,
   });
-  // ход - отдельно: его обновляет каждое событие сервера, а план считается дольше
+  // ход - отдельно от плана (план считается дольше) и не под ключом карточки сервера: его
+  // перечитывают только события настройки (эффект ниже), а не каждое событие сервера
   const prog = useQuery({
-    queryKey: ['servers', id, 'setup-progress'],
+    queryKey: ['setup-progress', id],
     queryFn: () => api<{ progress: SetupProgress | null }>(`/api/servers/${id}/setup/progress`),
   });
   const [steps, setSteps] = useState<SetupStep[] | null>(null);
@@ -499,6 +501,30 @@ export function ServerSetupPage() {
       void qc.invalidateQueries({ queryKey: ['setup-plan', id] });
     seenDone.current = doneAt;
   }, [doneAt, progLoaded, qc, id]);
+  const progressAction = progress?.actionId;
+  useEffect(() => {
+    let timer: ReturnType<typeof setTimeout> | null = null;
+    const reload = () => {
+      if (timer) clearTimeout(timer);
+      timer = null;
+      void qc.invalidateQueries({ queryKey: ['setup-progress', id] });
+    };
+    const un = subscribe((ev) => {
+      if (ev.type === 'hello') return reload();
+      if (ev.serverId !== id) return;
+      // настройка началась, записала ход (server.changed) или закончилась - сразу
+      if (ev.type === 'action.started' && ev.kind === 'server.setup') return reload();
+      if (ev.type === 'server.changed' && running) return reload();
+      if (!progressAction || ev.actionId !== progressAction) return;
+      if (ev.type === 'action.finished') return reload();
+      // вывод идёт: ход мог смениться, но не чаще раза в 2 с
+      if (ev.type === 'action.stream') timer ??= setTimeout(reload, 2000);
+    });
+    return () => {
+      un();
+      if (timer) clearTimeout(timer);
+    };
+  }, [qc, id, progressAction, running]);
   const online = s?.status === 'online';
   const lock = s ? serverLock(s) : { busy: true, reason: undefined };
   const busy = !online || lock.busy || act.busy || running || !steps || prog.isFetching;
@@ -536,7 +562,10 @@ export function ServerSetupPage() {
         if (!r.canRun) return;
       }
       await api(`/api/servers/${id}/setup/run`, { method: 'POST', json: body(from) });
-      await qc.invalidateQueries({ queryKey: ['servers', id] });
+      await Promise.all([
+        qc.invalidateQueries({ queryKey: ['servers', id], exact: true }),
+        qc.invalidateQueries({ queryKey: ['setup-progress', id] }),
+      ]);
     });
   }
 
@@ -644,10 +673,7 @@ export function ServerSetupPage() {
             ))}
           </div>
           {running || showOutput ? (
-            <ActionOutput
-              actionId={progress.actionId}
-              onFinished={() => void qc.invalidateQueries({ queryKey: ['servers', id] })}
-            />
+            <ActionOutput actionId={progress.actionId} />
           ) : (
             <button
               type="button"
