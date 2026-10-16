@@ -3,10 +3,7 @@ import { QrCode } from '@/components/ui/qr-code';
 import { Tabs } from '@/components/ui/tabs';
 import { useState } from 'react';
 
-/**
- * Ссылки прокси: переключатель TLS (tg://proxy) и t.me, QR и сдвоенная кнопка "Подключить
- * прокси" и копирование. Общая для вкладки MTProxyL и карточки глобального клиента.
- */
+/** Ссылки MTProxy (TLS и t.me) с QR - для вкладки MTProxyL и карточки клиента. */
 export function MtLinksView({
   links,
   label,
