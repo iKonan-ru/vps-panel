@@ -6,8 +6,8 @@ const reduced =
   window.matchMedia('(prefers-reduced-motion: reduce)').matches;
 
 /**
- * Плавное число: при появлении бежит от нуля, при новом target - от текущего значения к нему
- * (ease-out, ms). При "уменьшить движение" в системе - сразу target.
+ * Плавное число: бежит к target от текущего значения (при появлении - от нуля), ease-out за ms.
+ * При "уменьшить движение" в системе - сразу target.
  */
 export function useTween(target: number, ms = 700): number {
   const [value, setValue] = useState(reduced ? target : 0);

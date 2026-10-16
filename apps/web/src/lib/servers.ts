@@ -10,10 +10,7 @@ export function useServers() {
   });
 }
 
-/**
- * Занят ли сервер действием (установка, обновление, исправление...): пока оно идёт, другие
- * изменения на сервере недоступны. reason - подсказка для неактивных кнопок.
- */
+/** Занят ли сервер блокирующим действием; reason - подсказка для неактивных кнопок. */
 export function serverLock(s: ServerDetail): { busy: boolean; reason: string | undefined } {
   const a = s.activeActions.find((x) => isBlockingAction(x.kind));
   return a ? { busy: true, reason: `Идёт: ${a.title}` } : { busy: false, reason: undefined };

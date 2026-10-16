@@ -1,5 +1,3 @@
-/** Человеческие форматы для интерфейса. */
-
 /** Неразрывный пробел: число и единица (5 мин, 1,5 ГБ) не разрываются переносом. */
 const NB = '\u00a0';
 
@@ -39,7 +37,7 @@ function periodLabel(months: number): string {
   return `${months}${NB}мес.`;
 }
 
-/** Знак валюты: 500 \u20bd/мес. */
+/** Знак валюты по коду; неизвестный код показывается как есть. */
 const CURRENCY: Record<string, string> = { RUB: '\u20bd', EUR: '\u20ac', USD: '$' };
 
 export function money(price: number | null, currency: string, months: number): string {
@@ -111,7 +109,7 @@ export function daysUntil(iso: string | null): number | null {
 /** За сколько дней до платежа хостингу дата подсвечивается. */
 const PAYMENT_SOON_DAYS = 2;
 
-/** Платёж скоро: дата в ближайшие PAYMENT_SOON_DAYS дней. */
+/** Платёж скоро или просрочен: не дальше PAYMENT_SOON_DAYS дней. */
 export function paymentSoon(days: number | null): days is number {
   return days !== null && days <= PAYMENT_SOON_DAYS;
 }
@@ -153,5 +151,5 @@ export function bytes(n: number): string {
   return `${v >= 10 || i === 0 ? Math.round(v) : comma(v, 1)}${NB}${units[i]}`;
 }
 
-/** Первая буква - прописная: ошибка API (со строчной) показана сама по себе, не после двоеточия. */
+/** Первая буква - прописная: для ошибки API (она со строчной), показанной не после двоеточия. */
 export const cap = (s: string): string => (s ? s[0]?.toUpperCase() + s.slice(1) : s);

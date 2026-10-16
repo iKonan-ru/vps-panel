@@ -2,7 +2,7 @@ export class ApiError extends Error {
   constructor(
     public status: number,
     message: string,
-    /** Код ошибки панели, если она его дала (no-token и т.п.): по нему, а не по тексту. */
+    /** Код ошибки панели (no-token и т.п.): проверять по нему, а не по тексту. */
     public code?: string,
   ) {
     super(message);
@@ -10,15 +10,15 @@ export class ApiError extends Error {
 }
 
 /**
- * Запуск действия на сервере (ответ POST /api/servers/<id>/... с actionId): кнопки сервера
- * блокируются сразу, не дожидаясь, пока придёт свежая карточка с activeActions (main.tsx).
+ * Ответ POST /api/servers/<id>/... с actionId: кнопки сервера блокируются сразу, не дожидаясь
+ * свежей карточки с activeActions.
  */
 let actionStarted: ((serverId: string, actionId: string) => void) | null = null;
 export function onActionStarted(fn: (serverId: string, actionId: string) => void) {
   actionStarted = fn;
 }
 
-/** Единая точка запросов к панели. Cookie-сессия, JSON, ошибки в ApiError. */
+/** Запрос к панели: cookie-сессия, JSON, ошибки - ApiError. */
 export async function api<T>(path: string, init?: RequestInit & { json?: unknown }): Promise<T> {
   const { json, ...rest } = init ?? {};
   const headers = new Headers(rest.headers);

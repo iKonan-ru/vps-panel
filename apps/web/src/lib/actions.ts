@@ -69,12 +69,12 @@ export const actions = {
     api<{ installCommand: string }>(`/api/servers/${id}/registration`, { method: 'POST' }),
 };
 
-/** Строка журнала (тип - общий с сервером). */
+/** Строка журнала действий. */
 export type ActionRow = ActionListRow;
 
 export { actionTitles } from '@vps/protocol';
 
-/** Название действия для журнала: у команд каталога - их название (а не command:id). */
+/** Название действия с прописной буквы: у команд каталога - их название, а не command:id. */
 export function actionName(r: { kind: string; params: Record<string, unknown> }): string {
   const t = actionTitle(r.kind, r.params);
   return t.charAt(0).toUpperCase() + t.slice(1);
