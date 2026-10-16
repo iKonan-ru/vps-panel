@@ -8,7 +8,7 @@ import { Link } from '@tanstack/react-router';
 import type { ReachTarget, ServerReach, ServerSummary, ServiceUpdate } from '@vps/protocol';
 import { CircleAlert } from 'lucide-react';
 
-/** Вкладка сервера, где обновляется сервис: у 3X-UI - своя, движок и панель MTProxyL - MTProxyL. */
+/** Вкладка, где обновляется сервис: xray - в 3X-UI, веб-панель MTProxyL - в MTProxyL. */
 const updateTab: Record<ServiceUpdate['kind'], string> = {
   xui: 'xui',
   xray: 'xui',
@@ -26,9 +26,8 @@ function useServiceUpdates() {
 }
 
 /**
- * Что на сервере требует действия (замечания аудита, перезагрузка, обновления, агент). Плашка -
- * ссылка туда, где это действие: обновление сервиса - его вкладка, остальное - "Обзор". mobile -
- * ещё то, что на узком экране негде показать отдельно: сервер не в сети и скорая оплата.
+ * Что на сервере требует действия; плашка ведёт туда, где это действие. mobile - ещё то, что на
+ * узком экране негде показать отдельно: не в сети и скорая оплата.
  */
 function attention(
   s: ServerSummary,
@@ -41,7 +40,7 @@ function attention(
   text: string;
   title?: string;
   pulse?: boolean;
-  /** вкладка карточки сервера с действием; нет - плашка не ссылка */
+  /** Вкладка карточки сервера с действием; нет - плашка не ссылка. */
   tab?: string;
 }[] {
   const out: ReturnType<typeof attention> = [];
@@ -133,8 +132,8 @@ function attention(
 }
 
 /**
- * Что не видно из России: цели ниже 80%. Адрес не виден - inbound-ы того же адреса не
- * перечисляем (их не видно по той же причине), MTProxyL - отдельно (его проверка своя).
+ * Что не видно из России: цели ниже 80%. Адрес не виден - inbound-ы не перечисляем (причина та
+ * же), MTProxyL - отдельно (его проверка своя).
  */
 function reachProblems(r: ServerReach | undefined): ReachTarget[] {
   const bad = (r?.targets ?? []).filter((t) => {
