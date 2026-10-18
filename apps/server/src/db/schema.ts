@@ -1,4 +1,11 @@
-import type { GClientAccess, Inventory, Metrics, PortsyncConfig } from '@vps/protocol';
+import type {
+  CascadeCheck,
+  CascadeMode,
+  GClientAccess,
+  Inventory,
+  Metrics,
+  PortsyncConfig,
+} from '@vps/protocol';
 import { sql } from 'drizzle-orm';
 import { integer, real, sqliteTable, text } from 'drizzle-orm/sqlite-core';
 
@@ -236,6 +243,28 @@ export const gclientBindings = sqliteTable('gclient_binding', {
   /** VLESS: свой набор inbound-ов клиента на этом сервере (null - как у всех: свои минус исключённые). */
   xuiInbounds: text('xui_inbounds', { mode: 'json' }).$type<number[] | null>(),
   updatedAt: text('updated_at').notNull().default(now),
+});
+
+/**
+ * Каскад VLESS: inbound на входе (свой порт), outbound к RAW-inbound-у выхода и правила
+ * маршрутизации в шаблоне Xray входа. Шаблон на входе - источник правды о том, что стоит сейчас.
+ */
+export const cascades = sqliteTable('vless_cascade', {
+  id: text('id').primaryKey(),
+  /** Без внешнего ключа: при удалении сервера каскады снимаются с другой стороны и потом стираются. */
+  entryServerId: text('entry_server_id').notNull(),
+  entryInboundId: integer('entry_inbound_id'),
+  entryPort: integer('entry_port'),
+  entryRemark: text('entry_remark').notNull().default(''),
+  exitServerId: text('exit_server_id').notNull(),
+  exitInboundId: integer('exit_inbound_id').notNull(),
+  mode: text('mode').$type<CascadeMode>().notNull().default('ru-direct'),
+  directList: text('direct_list', { mode: 'json' }).$type<string[]>().notNull().default([]),
+  exitList: text('exit_list', { mode: 'json' }).$type<string[]>().notNull().default([]),
+  blockQuic: integer('block_quic', { mode: 'boolean' }).notNull().default(false),
+  check: text('check_result', { mode: 'json' }).$type<CascadeCheck | null>(),
+  error: text('error'),
+  createdAt: text('created_at').notNull().default(now),
 });
 
 /**

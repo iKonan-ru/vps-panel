@@ -42,7 +42,25 @@ describe('database schema', () => {
       createDb(dir);
       createDb(dir);
       const db = new Database(join(dir, 'panel.db'), { readonly: true });
-      expect(db.pragma('user_version', { simple: true })).toBe(21);
+      expect(db.pragma('user_version', { simple: true })).toBe(22);
+      db.close();
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it('шаг 22: база версии 21 получает таблицу каскадов', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'vps-s22-'));
+    try {
+      createDb(dir);
+      const raw = new Database(join(dir, 'panel.db'));
+      raw.exec('drop table vless_cascade');
+      raw.pragma('user_version = 21');
+      raw.close();
+      createDb(dir);
+      const db = new Database(join(dir, 'panel.db'), { readonly: true });
+      expect(db.pragma('user_version', { simple: true })).toBe(22);
+      expect(columnsOf(join(dir, 'panel.db'), 'vless_cascade')).toContain('exit_inbound_id');
       db.close();
     } finally {
       rmSync(dir, { recursive: true, force: true });
@@ -61,7 +79,7 @@ describe('database schema', () => {
       raw.close();
       createDb(dir);
       const db = new Database(join(dir, 'panel.db'), { readonly: true });
-      expect(db.pragma('user_version', { simple: true })).toBe(21);
+      expect(db.pragma('user_version', { simple: true })).toBe(22);
       expect(db.prepare('select host, client_host from server').get()).toEqual({
         host: '203.0.113.1',
         client_host: null,

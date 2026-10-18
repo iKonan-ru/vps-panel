@@ -19,6 +19,7 @@ import { actionLog, servers } from './db/schema.js';
 import { actionJournal } from './lib/action-journal.js';
 import { AppReleases } from './lib/apps.js';
 import { BackupRestorer } from './lib/backup-restore.js';
+import { Cascades } from './lib/cascades.js';
 import { catalogRunner } from './lib/catalog-runner.js';
 import { startFail2banIgnore } from './lib/fail2ban-ignore.js';
 import { FirefoxSigner } from './lib/firefox.js';
@@ -53,6 +54,7 @@ import { authRoutes, requireAuth, useHostCookies } from './routes/auth.js';
 import { awgRoutes } from './routes/awg.js';
 import { backupRoutes } from './routes/backups.js';
 import { baselineFirewallRoutes } from './routes/baseline-firewall.js';
+import { cascadeRoutes } from './routes/cascades.js';
 import { clientHostRoutes } from './routes/client-host.js';
 import { commandRoutes } from './routes/commands.js';
 import { cspRoutes } from './routes/csp.js';
@@ -282,8 +284,12 @@ export async function buildApp(opts: AppOptions) {
   const syncSpares = () => void xraySpares.sync().catch(() => undefined);
   await app.register(xrayRoutes, { db, registry, box, xray, spares: xraySpares, deps: exitDeps });
   // inbound-ы 3X-UI меняются из панели - выходы в Telegram за ними (основной хранит снимок)
-  const exitsAfter = (serverId: string, inboundId: number, gone: boolean) =>
-    exitsAfterInboundChange(exitDeps, xraySpares, serverId, inboundId, gone);
+  // и каскады VLESS, у которых этот inbound на входе или на выходе
+  let cascades: Cascades | null = null;
+  const exitsAfter = (serverId: string, inboundId: number, gone: boolean) => {
+    cascades?.afterInboundChange(serverId, inboundId);
+    return exitsAfterInboundChange(exitDeps, xraySpares, serverId, inboundId, gone);
+  };
   // глобальные клиенты: сверка с серверами в фоне (до маршрутов 3X-UI: их правки запускают её)
   const gc = new GClients(
     db,
@@ -373,6 +379,18 @@ export async function buildApp(opts: AppOptions) {
     exitsAfter,
     syncSpares,
   });
+  // каскады VLESS: inbound на входе, outbound к выходу и правила в шаблоне Xray входа
+  cascades = new Cascades({
+    db,
+    box,
+    registry,
+    journal,
+    gc,
+    log: app.log,
+    notify: (id, text, back) => void notifier.cascade(id, text, back),
+  });
+  stops.push(cascades.start());
+  await app.register(cascadeRoutes, { cascades });
   // настройка сервера в один клик: команды каталога, inbound-ы, синхронизация - одним действием
   const setup = serverSetup({
     db,
@@ -396,6 +414,7 @@ export async function buildApp(opts: AppOptions) {
       void serviceUpdates.forget(id);
       setup.forget(id);
       void exitsAfterServerRemoved(exitDeps, xraySpares, id);
+      void cascades?.forget(id);
     }),
   );
   await app.register(clientHostRoutes, {

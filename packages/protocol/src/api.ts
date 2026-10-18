@@ -418,3 +418,81 @@ export interface XuiServerStatus {
   xray?: { state: string; version: string; errorMsg?: string };
   appStats?: { threads: number; mem: number; uptime: number };
 }
+
+/**
+ * Каскад VLESS: клиент подключается к входу (обычно российский сервер), трафик уходит на выход
+ * (зарубежный сервер). all - всё через выход; ru-direct - российское с входа напрямую, остальное
+ * через выход; blocked - через выход только заблокированное в России, остальное напрямую.
+ */
+export type CascadeMode = 'all' | 'ru-direct' | 'blocked';
+export const CASCADE_MODES: readonly CascadeMode[] = ['all', 'ru-direct', 'blocked'];
+
+/** Последняя проверка выхода с входа (testOutbound 3X-UI). */
+export interface CascadeCheck {
+  at: string;
+  ok: boolean;
+  /** Задержка запроса через выход, мс. */
+  ms: number;
+  error: string | null;
+}
+
+export interface CascadeView {
+  id: string;
+  entryServerId: string;
+  /** Inbound входа (null - ещё не создан или удалён в 3X-UI). */
+  entryInboundId: number | null;
+  entryPort: number | null;
+  entryRemark: string;
+  exitServerId: string;
+  exitServerName: string;
+  exitInboundId: number;
+  mode: CascadeMode;
+  /** Свои списки: домены (example.com, regexp:..., geosite:...), IP и подсети. */
+  directList: string[];
+  exitList: string[];
+  blockQuic: boolean;
+  check: CascadeCheck | null;
+  /** Последняя ошибка применения на входе. */
+  error: string | null;
+  createdAt: string;
+}
+
+/** Каскад, который выходит через этот сервер (строка на вкладке 3X-UI выхода). */
+export interface CascadeVia {
+  id: string;
+  entryServerId: string;
+  entryServerName: string;
+  exitInboundId: number;
+}
+
+/** Inbound выхода, через который можно провести каскад (VLESS Reality RAW, свой). */
+export interface CascadeExitInbound {
+  id: number;
+  remark: string;
+  port: number;
+  enable: boolean;
+}
+
+export interface CascadeExitOption {
+  serverId: string;
+  serverName: string;
+  online: boolean;
+  /** Почему сервер не подходит (нет 3X-UI, нет токена, нет RAW Reality). */
+  reason: string | null;
+  inbounds: CascadeExitInbound[];
+}
+
+/** Значения окна добавления каскада. */
+export interface CascadeNewInfo {
+  port: number;
+  exits: CascadeExitOption[];
+  /** Нет geosite_RU.dat / geoip_RU.dat на входе: режим blocked недоступен. */
+  geoRu: boolean;
+  /** Агент входа понимает тело-форму (без этого каскад не настроить). */
+  agentReady: boolean;
+}
+
+export interface CascadesView {
+  cascades: CascadeView[];
+  via: CascadeVia[];
+}

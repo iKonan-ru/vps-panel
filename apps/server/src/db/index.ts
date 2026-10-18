@@ -69,6 +69,18 @@ const STEPS: ((sqlite: Database.Database) => void)[] = [
       .prepare("update setting set value = ? where key = 'tg_events'")
       .run(JSON.stringify(saved));
   },
+  // 22: каскады VLESS - новая таблица vless_cascade (её же создаёт BOOTSTRAP_SQL)
+  (sqlite) => {
+    sqlite.exec(`create table if not exists vless_cascade (
+  id text primary key, entry_server_id text not null,
+  entry_inbound_id integer, entry_port integer, entry_remark text not null default '',
+  exit_server_id text not null,
+  exit_inbound_id integer not null, mode text not null default 'ru-direct',
+  direct_list text not null default '[]', exit_list text not null default '[]',
+  block_quic integer not null default 0, check_result text, error text,
+  created_at text not null default (strftime('%Y-%m-%dT%H:%M:%fZ','now'))
+)`);
+  },
 ];
 
 /** Шаги, которых база ещё не видела, - по порядку, каждый с отметкой версии. */
@@ -166,6 +178,15 @@ create table if not exists gclient_binding (
   links text not null default '[]', state text not null default 'pending',
   error text not null default '', xui_inbounds text,
   updated_at text not null default (strftime('%Y-%m-%dT%H:%M:%fZ','now'))
+);
+create table if not exists vless_cascade (
+  id text primary key, entry_server_id text not null,
+  entry_inbound_id integer, entry_port integer, entry_remark text not null default '',
+  exit_server_id text not null,
+  exit_inbound_id integer not null, mode text not null default 'ru-direct',
+  direct_list text not null default '[]', exit_list text not null default '[]',
+  block_quic integer not null default 0, check_result text, error text,
+  created_at text not null default (strftime('%Y-%m-%dT%H:%M:%fZ','now'))
 );
 create table if not exists gclient_ext (
   id text primary key, client_id text not null references gclient(id) on delete cascade,

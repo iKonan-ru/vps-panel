@@ -1,6 +1,6 @@
 import { and, eq, isNull } from 'drizzle-orm';
 import type { Db } from '../db/index.js';
-import { gclientBindings, gclients, servers } from '../db/schema.js';
+import { cascades, gclientBindings, gclients, servers } from '../db/schema.js';
 import { awgTunnelNames } from './awg-config.js';
 import { clientHost } from './client-host.js';
 import { parseNaiveLink } from './gclient-services.js';
@@ -32,6 +32,11 @@ export function rewriteLink(
   return `${base}#${encodeURIComponent(remark)}`;
 }
 
+/** Порт из ссылки vless://...@адрес:порт; нет - 0. */
+export function linkPort(link: string): number {
+  return Number(/@(?:\[[^\]]*\]|[^:/?#@]+):(\d+)/.exec(link)?.[1] ?? 0);
+}
+
 /**
  * Подписка клиента по токену: ссылки VLESS со всех серверов из кэша привязок (обновляет сверка),
  * без запросов к агентам. Нет клиента - null; выключен - пустой список.
@@ -57,25 +62,65 @@ export function buildSubscription(db: Db, token: string): { links: string[] } | 
         eq(servers.gclients, true),
       ),
     )
-    .all()
-    .sort((x, y) => x.s.name.localeCompare(y.s.name));
-  const links: string[] = [];
+    .all();
+  const byId = new Map(
+    db
+      .select()
+      .from(servers)
+      .all()
+      .map((s) => [s.id, s]),
+  );
+  // каскады: порт inbound-а входа -> выход (ссылка через вход подписывается по выходу)
+  const via = new Map<string, Map<number, string>>();
+  for (const r of db.select().from(cascades).all()) {
+    if (!r.entryPort) continue;
+    const m = via.get(r.entryServerId) ?? new Map<number, string>();
+    m.set(r.entryPort, r.exitServerId);
+    via.set(r.entryServerId, m);
+  }
+  const items: { name: string; rank: number; link: string }[] = [];
   for (const { b, s } of rows) {
     const { title } = awgTunnelNames({
       provider: s.provider,
       country: s.country,
       serverName: s.name,
     });
-    for (const l of b.links)
-      links.push(
-        rewriteLink(l, {
+    for (const l of b.links) {
+      const exit = byId.get(via.get(s.id)?.get(linkPort(l)) ?? '');
+      if (exit) {
+        // каскадная ссылка - сразу после прямых ссылок своего выхода
+        const exitTitle = awgTunnelNames({
+          provider: exit.provider,
+          country: exit.country,
+          serverName: exit.name,
+        }).title;
+        const through = s.country === 'RU' ? 'РФ' : s.name;
+        items.push({
+          name: exit.name,
+          rank: 1,
+          link: rewriteLink(l, {
+            host: clientHost(s),
+            title: `${exitTitle} через ${through}`,
+            email: b.ref,
+            withInbound: false,
+          }),
+        });
+        continue;
+      }
+      items.push({
+        name: s.name,
+        rank: 0,
+        link: rewriteLink(l, {
           host: clientHost(s),
           title,
           email: b.ref,
-          withInbound: b.links.length > 1,
+          withInbound: b.links.filter((x) => !via.get(s.id)?.has(linkPort(x))).length > 1,
         }),
-      );
+      });
+    }
   }
+  items.sort((x, y) => x.name.localeCompare(y.name) || x.rank - y.rank);
+  const links = items.map((i) => i.link);
   return { links };
 }
 

@@ -1,4 +1,3 @@
-import { randomUUID } from 'node:crypto';
 import type { XrayOutbound } from '@vps/protocol';
 import { eq } from 'drizzle-orm';
 import type { AgentRegistry } from '../agents/registry.js';
@@ -10,14 +9,12 @@ import type { SecretBox } from './secret-box.js';
 import type { XrayManager } from './xray.js';
 import {
   type XuiCall,
-  type XuiEnvelope,
+  ensureServiceClient,
   getInbound,
   inboundNode,
   listInbounds,
-  parseJson,
-  readClient,
+  realityClientParams,
   streamOf,
-  unwrap,
   xuiApi,
 } from './xui-api.js';
 import { xuiToken } from './xui-token.js';
@@ -77,51 +74,14 @@ export async function prepareExit(
 
   const inbound = await getInbound(api, inboundId);
   if (!inbound) throw fail(502, '3X-UI не вернула inbound');
-  const ss = streamOf(inbound);
-  const rs = parseJson(ss.realitySettings);
-  const rsSettings = parseJson(rs.settings);
-  if (inbound.protocol !== 'vless' || ss.security !== 'reality')
-    throw fail(409, 'нужен inbound VLESS с security = reality');
-  const publicKey = String(rsSettings.publicKey ?? '');
-  const shortId = String((rs.shortIds as string[] | undefined)?.[0] ?? '');
-  const sni = String((rs.serverNames as string[] | undefined)?.[0] ?? '');
-  if (!publicKey || !sni)
-    throw fail(409, 'у inbound нет publicKey или serverNames в настройках Reality');
-
+  const { publicKey, shortId, sni, fingerprint } = realityClientParams(inbound);
   // клиент vps-panel (3X-UI 3.1+: клиенты - отдельные сущности, как у глобальных клиентов)
-  const got = await api('GET', `clients/get/${EXIT_CLIENT}`);
-  if (got.status === 404)
-    throw fail(409, '3X-UI старше 3.1 (нет API клиентов): нужно обновить 3X-UI');
-  let client = (got.data as XuiEnvelope | undefined)?.success
-    ? readClient((got.data as XuiEnvelope).obj)
-    : null;
-  if (!client) {
-    unwrap(
-      await api('POST', 'clients/add', {
-        client: {
-          email: EXIT_CLIENT,
-          enable: true,
-          limitIp: 0,
-          totalGB: 0,
-          expiryTime: 0,
-          subId: randomUUID().replace(/-/g, '').slice(0, 16),
-          reset: 0,
-          flow: '',
-          comment: 'выход VPS Panel в Telegram',
-        },
-        inboundIds: [inboundId],
-      }),
-      'clients/add',
-    );
-    client = readClient(unwrap(await api('GET', `clients/get/${EXIT_CLIENT}`), 'clients/get'));
-  } else if (!client.inboundIds.includes(inboundId)) {
-    unwrap(
-      await api('POST', `clients/${EXIT_CLIENT}/attach`, { inboundIds: [inboundId] }),
-      'attach',
-    );
-  }
-  const uuid = client?.uuid ?? '';
-  if (!uuid) throw fail(502, '3X-UI не вернула uuid клиента vps-panel');
+  const uuid = await ensureServiceClient(api, {
+    email: EXIT_CLIENT,
+    inboundId,
+    flow: '',
+    comment: 'выход VPS Panel в Telegram',
+  });
 
   return {
     serverId: row.id,
@@ -134,7 +94,7 @@ export async function prepareExit(
     publicKey,
     shortId,
     sni,
-    fingerprint: String(rsSettings.fingerprint || 'chrome'),
+    fingerprint,
     flow: '',
     updatedAt: new Date().toISOString(),
   };

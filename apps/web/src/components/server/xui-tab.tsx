@@ -2,6 +2,7 @@ import { ActionPanel } from '@/components/action-output';
 import { MetricCard } from '@/components/server/metric-card';
 import { UninstallBlock } from '@/components/server/uninstall-block';
 import { type Versions, VersionsSection } from '@/components/server/versions-section';
+import { XuiCascades } from '@/components/server/xui-cascades';
 import { XuiClients } from '@/components/server/xui-clients';
 import { XuiInbounds } from '@/components/server/xui-inbounds';
 import { type XuiVersionKind, xuiApi } from '@/components/server/xui-model';
@@ -285,6 +286,7 @@ export function XuiTab({ s }: { s: ServerDetail }) {
       />
 
       <XuiInbounds serverId={s.id} disabled={op.busy || lock.busy} reason={lock.reason} />
+      <XuiCascades serverId={s.id} disabled={op.busy || lock.busy} reason={lock.reason} />
       <XuiClients
         serverId={s.id}
         inbounds={inboundList.data}

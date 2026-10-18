@@ -4,7 +4,7 @@ import type { Db } from '../db/index.js';
 import { access } from '../db/schema.js';
 import { upsertAccess } from './access.js';
 import type { SecretBox } from './secret-box.js';
-import { type XuiCall, noXuiToken, xuiApi } from './xui-api.js';
+import { type XuiCall, type XuiFormCall, noXuiToken, xuiApi, xuiFormApi } from './xui-api.js';
 
 /** Сохранённый в "Доступах" API-токен 3X-UI сервера; пустая строка - не выпущен. */
 export function savedXuiToken(db: Db, box: SecretBox, serverId: string): string {
@@ -51,4 +51,17 @@ export function xuiFor(db: Db, box: SecretBox, registry: AgentRegistry, serverId
   const token = savedXuiToken(db, box, serverId);
   if (!token) throw noXuiToken();
   return xuiApi(registry, serverId, token);
+}
+
+/** То же для вызовов формой (шаблон Xray, проверка outbound-а, маршруты). */
+export function xuiFormFor(
+  db: Db,
+  box: SecretBox,
+  registry: AgentRegistry,
+  serverId: string,
+): XuiFormCall {
+  requireOnline(registry, serverId);
+  const token = savedXuiToken(db, box, serverId);
+  if (!token) throw noXuiToken();
+  return xuiFormApi(registry, serverId, token);
 }

@@ -99,6 +99,7 @@ export const AgentMethodSchema = z.enum([
   'xui.update',
   'xui.token',
   'xui.api',
+  'xui.form',
   'wdtt.api',
   'clients.stats',
 ]);

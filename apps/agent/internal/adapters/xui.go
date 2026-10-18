@@ -8,6 +8,7 @@ import (
 	"io"
 	"net"
 	"net/http"
+	neturl "net/url"
 	"os"
 	"regexp"
 	"strconv"
@@ -200,9 +201,52 @@ type XuiAPIRequest struct {
 	Method string          `json:"method"`
 	Path   string          `json:"path"` // относительно /panel/api/, например server/status
 	Body   json.RawMessage `json:"body"`
+	// Form - тело формой (application/x-www-form-urlencoded) вместо JSON: часть методов 3X-UI
+	// (xray/update, xray/testOutbound, xray/routeTest) читает только форму.
+	Form map[string]string `json:"form,omitempty"`
+	// Query - параметры строки запроса (xray/geodata/categories?file=...).
+	Query map[string]string `json:"query,omitempty"`
 }
 
 var reAPIPath = regexp.MustCompile(`^[A-Za-z0-9_./:-]{1,200}$`)
+
+// newXuiRequest - запрос к REST 3X-UI: base - адрес /panel/api/ с завершающим слешем.
+func newXuiRequest(ctx context.Context, base string, p XuiAPIRequest) (*http.Request, error) {
+	url := base + strings.TrimPrefix(p.Path, "/")
+	if len(p.Query) > 0 {
+		q := neturl.Values{}
+		for k, v := range p.Query {
+			q.Set(k, v)
+		}
+		url += "?" + q.Encode()
+	}
+	method := strings.ToUpper(p.Method)
+	if method == "" {
+		method = http.MethodGet
+	}
+	var body io.Reader
+	contentType := "application/json"
+	if p.Form != nil {
+		f := neturl.Values{}
+		for k, v := range p.Form {
+			f.Set(k, v)
+		}
+		body = strings.NewReader(f.Encode())
+		contentType = "application/x-www-form-urlencoded"
+	} else if len(p.Body) > 0 {
+		body = strings.NewReader(string(p.Body))
+	}
+	req, err := http.NewRequestWithContext(ctx, method, url, body)
+	if err != nil {
+		return nil, err
+	}
+	req.Header.Set("Authorization", "Bearer "+p.Token)
+	req.Header.Set("Accept", "application/json")
+	if body != nil {
+		req.Header.Set("Content-Type", contentType)
+	}
+	return req, nil
+}
 
 func XuiAPI(ctx context.Context, p XuiAPIRequest) (map[string]any, error) {
 	if p.Token == "" {
@@ -223,25 +267,12 @@ func XuiAPI(ctx context.Context, p XuiAPIRequest) (map[string]any, error) {
 	if info.PanelListen != "" && info.PanelListen != "0.0.0.0" && info.PanelListen != "::" {
 		host = info.PanelListen
 	}
-	base := strings.TrimSuffix(info.BasePath, "/")
-	url := fmt.Sprintf("%s://%s%s/panel/api/%s", scheme, net.JoinHostPort(host, strconv.Itoa(info.PanelPort)), base, strings.TrimPrefix(p.Path, "/"))
-	method := strings.ToUpper(p.Method)
-	if method == "" {
-		method = http.MethodGet
-	}
-	var body io.Reader
-	if len(p.Body) > 0 {
-		body = strings.NewReader(string(p.Body))
-	}
-	req, err := http.NewRequestWithContext(ctx, method, url, body)
+	base := fmt.Sprintf("%s://%s%s/panel/api/", scheme, net.JoinHostPort(host, strconv.Itoa(info.PanelPort)), strings.TrimSuffix(info.BasePath, "/"))
+	req, err := newXuiRequest(ctx, base, p)
 	if err != nil {
 		return nil, err
 	}
-	req.Header.Set("Authorization", "Bearer "+p.Token)
-	req.Header.Set("Accept", "application/json")
-	if body != nil {
-		req.Header.Set("Content-Type", "application/json")
-	}
+	url := req.URL.String()
 	resp, err := localTLS.Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("панель 3X-UI не отвечает на %s: %w", url, err)

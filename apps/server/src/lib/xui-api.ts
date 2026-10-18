@@ -1,3 +1,4 @@
+import { randomUUID } from 'node:crypto';
 import type { AgentRegistry } from '../agents/registry.js';
 
 /** Ответ REST 3X-UI через агента (xui.api): HTTP-код и тело. */
@@ -22,6 +23,28 @@ export function xuiApi(registry: AgentRegistry, serverId: string, token: string)
       'xui.api',
       { token, method, path, body: body ?? null },
       { timeoutMs: 60_000 },
+    )) as ApiResult;
+}
+
+/**
+ * Вызов REST 3X-UI телом-формой и/или со строкой запроса (xray/update, xray/testOutbound,
+ * xray/routeTest, xray/geodata/categories?...): агент - метод xui.form; старый агент без него -
+ * ошибка outdated.
+ */
+export type XuiFormCall = (
+  method: 'GET' | 'POST',
+  path: string,
+  form?: Record<string, string> | null,
+  query?: Record<string, string>,
+) => Promise<ApiResult>;
+
+export function xuiFormApi(registry: AgentRegistry, serverId: string, token: string): XuiFormCall {
+  return async (method, path, form, query) =>
+    (await registry.request(
+      serverId,
+      'xui.form',
+      { token, method, path, ...(form ? { form } : {}), ...(query ? { query } : {}) },
+      { timeoutMs: 90_000 },
     )) as ApiResult;
 }
 
@@ -100,4 +123,75 @@ export function readClient(obj: unknown): XuiClient | null {
     flow: String(c.flow ?? ''),
     inboundIds: ((o.inboundIds ?? c.inboundIds) as number[] | undefined) ?? [],
   };
+}
+
+/** Fail с HTTP-кодом. */
+const fail = (statusCode: number, message: string) =>
+  Object.assign(new Error(message), { statusCode });
+
+/** Что нужно клиенту Xray, чтобы подключиться к VLESS Reality inbound-у (кроме адреса и uuid). */
+export function realityClientParams(inbound: RawInbound): {
+  publicKey: string;
+  shortId: string;
+  sni: string;
+  fingerprint: string;
+} {
+  const ss = streamOf(inbound);
+  if (inbound.protocol !== 'vless' || ss.security !== 'reality')
+    throw fail(409, 'нужен inbound VLESS с security = reality');
+  const rs = parseJson(ss.realitySettings);
+  const rsSettings = parseJson(rs.settings);
+  const publicKey = String(rsSettings.publicKey ?? '');
+  const shortId = String((rs.shortIds as string[] | undefined)?.[0] ?? '');
+  const sni = String((rs.serverNames as string[] | undefined)?.[0] ?? '');
+  if (!publicKey || !sni)
+    throw fail(409, 'у inbound нет publicKey или serverNames в настройках Reality');
+  return { publicKey, shortId, sni, fingerprint: String(rsSettings.fingerprint || 'chrome') };
+}
+
+/**
+ * Служебный клиент панели в 3X-UI (выход в Telegram, каскад): заводится, если его нет, и
+ * привязывается к inbound-у; другие его привязки и другие клиенты не меняются. Возвращает uuid.
+ */
+export async function ensureServiceClient(
+  api: XuiCall,
+  c: { email: string; inboundId: number; flow: string; comment: string },
+): Promise<string> {
+  const path = `clients/get/${encodeURIComponent(c.email)}`;
+  const got = await api('GET', path);
+  if (got.status === 404)
+    throw fail(409, '3X-UI старше 3.1 (нет API клиентов): нужно обновить 3X-UI');
+  let client = (got.data as XuiEnvelope | undefined)?.success
+    ? readClient((got.data as XuiEnvelope).obj)
+    : null;
+  if (!client) {
+    unwrap(
+      await api('POST', 'clients/add', {
+        client: {
+          email: c.email,
+          enable: true,
+          limitIp: 0,
+          totalGB: 0,
+          expiryTime: 0,
+          subId: randomUUID().replace(/-/g, '').slice(0, 16),
+          reset: 0,
+          flow: c.flow,
+          comment: c.comment,
+        },
+        inboundIds: [c.inboundId],
+      }),
+      'clients/add',
+    );
+    client = readClient(unwrap(await api('GET', path), 'clients/get'));
+  } else if (!client.inboundIds.includes(c.inboundId)) {
+    unwrap(
+      await api('POST', `clients/${encodeURIComponent(c.email)}/attach`, {
+        inboundIds: [c.inboundId],
+      }),
+      'attach',
+    );
+  }
+  const uuid = client?.uuid ?? '';
+  if (!uuid) throw fail(502, `3X-UI не вернула uuid клиента ${c.email}`);
+  return uuid;
 }

@@ -87,6 +87,12 @@ function staleAfter(kind: string): { server: string[]; global?: string[] } {
     case 'xui':
       return {
         server: ['xui', 'xui-api', 'xui-inbounds', 'xui-clients', 'xray-inbounds', 'access'],
+        global: ['cascades'],
+      };
+    case 'cascade':
+      return {
+        server: ['xui', 'xui-api', 'xui-inbounds', 'xui-clients', 'xray-inbounds'],
+        global: ['cascades'],
       };
     case 'mtproxyl':
       return { server: ['mtproxyl', 'mtproxyl-engine'] };

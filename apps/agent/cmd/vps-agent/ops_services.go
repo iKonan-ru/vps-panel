@@ -53,6 +53,10 @@ func serviceOps() map[string]op {
 		"xui.api": typed(func(ctx context.Context, p adapters.XuiAPIRequest, _ stream) (any, error) {
 			return adapters.XuiAPI(ctx, p)
 		}),
+		// тот же вызов REST 3X-UI; отдельное имя - признак для панели, что агент понимает form и query
+		"xui.form": typed(func(ctx context.Context, p adapters.XuiAPIRequest, _ stream) (any, error) {
+			return adapters.XuiAPI(ctx, p)
+		}),
 
 		"wdtt.api": typed(func(ctx context.Context, p adapters.WdttAPIRequest, _ stream) (any, error) {
 			return adapters.WdttAPI(ctx, p)

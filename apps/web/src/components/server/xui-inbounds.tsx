@@ -1,4 +1,5 @@
 import { ActionPanel } from '@/components/action-output';
+import { useCascades } from '@/components/server/xui-cascades';
 import { EditInboundForm } from '@/components/server/xui-edit-inbound';
 import { NewInboundsForm } from '@/components/server/xui-new-inbounds';
 import { Alert } from '@/components/ui/alert';
@@ -45,6 +46,11 @@ export function XuiInbounds({
     staleTime: 20_000,
     retry: false,
   });
+  const cascades = useCascades(serverId);
+  /** Inbound-ы входа каскадов: меняются и удаляются в блоке "Каскад". */
+  const cascadeOf = new Map(
+    (cascades.data?.cascades ?? []).map((c) => [c.entryInboundId, c.exitServerName] as const),
+  );
   const [edit, setEdit] = useState<XuiInboundRow | null>(null);
   const op = useAction();
   const [adding, setAdding] = useState(false);
@@ -181,6 +187,9 @@ export function XuiInbounds({
                   </Chip>
                 )}
                 {i.excludeFromSub && <Chip tone="muted">не в подписке</Chip>}
+                {cascadeOf.has(i.id) && (
+                  <Chip tone="accent">{`каскад \u2192 ${cascadeOf.get(i.id) ?? ''}`}</Chip>
+                )}
               </div>
               <div className="text-xs text-muted">
                 {[
@@ -198,9 +207,15 @@ export function XuiInbounds({
             <Button
               size="icon-sm"
               variant="ghost"
-              title={i.node ? 'Inbound другого узла: правится на нём' : reason}
+              title={
+                i.node
+                  ? 'Inbound другого узла: правится на нём'
+                  : cascadeOf.has(i.id)
+                    ? 'Меняется в блоке \u00abКаскад\u00bb'
+                    : reason
+              }
               aria-label="Изменить inbound"
-              disabled={locked || i.node}
+              disabled={locked || i.node || cascadeOf.has(i.id)}
               onClick={() => {
                 op.setError(null);
                 setEdit(i);
@@ -212,10 +227,14 @@ export function XuiInbounds({
               size="icon-sm"
               variant="ghost"
               title={
-                i.node ? 'Inbound другого узла: удаляется на нём' : (reason ?? 'Удалить inbound')
+                i.node
+                  ? 'Inbound другого узла: удаляется на нём'
+                  : cascadeOf.has(i.id)
+                    ? 'Удаляется в блоке \u00abКаскад\u00bb'
+                    : (reason ?? 'Удалить inbound')
               }
               aria-label="Удалить inbound"
-              disabled={locked || i.node}
+              disabled={locked || i.node || cascadeOf.has(i.id)}
               onClick={() => void remove(i)}
             >
               <Trash2 className="size-3.5 text-bad" />

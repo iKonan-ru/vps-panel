@@ -295,6 +295,13 @@ export class Notifier {
     await this.tg.send(`${await this.serverName(id)}: ${note.text}`);
   }
 
+  /** Каскад VLESS входа: выход не отвечает две проверки подряд или снова отвечает. */
+  async cascade(id: string, text: string, back: boolean) {
+    if (!(await this.tg.wants(back ? 'serviceUp' : 'serviceDown', id))) return;
+    if (back && !(await this.tg.wants('serviceDown', id))) return;
+    await this.tg.send(`${await this.serverName(id, 'xui')}: ${esc(text)}`);
+  }
+
   /** Новая версия самой панели (релиз GitHub в её канале), один раз на версию. */
   async panelRelease(r: PanelRelease) {
     if (!(await this.tg.wants('updPanel'))) return;
