@@ -11,18 +11,22 @@ import { eq, or } from 'drizzle-orm';
 import type { AgentRegistry } from '../agents/registry.js';
 import type { Db } from '../db/index.js';
 import { cascades, servers } from '../db/schema.js';
-import type { actionJournal } from './action-journal.js';
+import { type actionJournal, onActionFinished } from './action-journal.js';
 import { busyAction } from './action-lock.js';
 import {
   type ExitParams,
   RU_REALITY_CANDIDATES,
+  blockedRules,
   buildOutbound,
   buildRules,
   entryInbound,
   entryRemark,
+  loopOutbound,
   mergeTemplate,
   outboundTag,
+  ownOf,
   ownParts,
+  parseList,
 } from './cascade-build.js';
 import { type GClients, resyncXui } from './gclients.js';
 import { newId } from './ids.js';
@@ -32,20 +36,20 @@ import {
   type XuiCall,
   type XuiFormCall,
   ensureServiceClient,
-  getInbound,
   inboundNode,
   listInbounds,
   realityClientParams,
   streamOf,
   unwrap,
 } from './xui-api.js';
-import { watchXray, xrayState } from './xui-inbound-ops.js';
+import { XRAY_CHECKS_MS, watchXray, xrayState } from './xui-inbound-ops.js';
 import { type Fingerprint, pickTargets, portBusy, randomFreePort } from './xui-new-inbound.js';
 import { savedXuiToken, xuiFor, xuiFormFor } from './xui-token.js';
 
 type Row = typeof cascades.$inferSelect;
 type Journal = ReturnType<typeof actionJournal>;
 type Say = (line: string) => void;
+type Json = Record<string, unknown>;
 
 /** Проверка Xray после записи шаблона: изменения применяются через API ядра за секунды. */
 const TEMPLATE_CHECKS_MS = [3_000, 5_000, 5_000];
@@ -59,13 +63,18 @@ const FAILS_TO_NOTIFY = 2;
 const fail = (statusCode: number, message: string) =>
   Object.assign(new Error(message), { statusCode });
 
+/** Ошибка выхода, после которой каскад не собрать (а не временный сбой связи или 3X-UI). */
+const hard = (message: string) =>
+  Object.assign(new Error(message), { statusCode: 409, hard: true });
+const isHard = (e: unknown) => Boolean((e as { hard?: boolean }).hard);
+
 /** Служебный клиент каскадов входа на выходе: свой на каждый вход. */
 export function cascadeClientEmail(entryServerId: string): string {
   return `vp-cascade-${createHash('sha256').update(entryServerId).digest('hex').slice(0, 10)}`;
 }
 
 /** Свой VLESS Reality RAW inbound (через него ходит каскад). */
-function isRawReality(i: Record<string, unknown>): boolean {
+function isRawReality(i: Json): boolean {
   if (i.protocol !== 'vless' || inboundNode(i)) return false;
   const st = streamOf(i);
   const net = st.network;
@@ -73,8 +82,21 @@ function isRawReality(i: Record<string, unknown>): boolean {
 }
 
 interface Template {
-  xraySetting: Record<string, unknown>;
+  xraySetting: Json;
   outboundTestUrl: string;
+}
+
+/** Свои части шаблона входа по базе и состояние каскадов. */
+interface Plan {
+  outbounds: Json[];
+  rules: Json[];
+  state: {
+    id: string;
+    label: string;
+    error: string | null;
+    port: number | null;
+    remark?: string;
+  }[];
 }
 
 export interface CascadeDeps {
@@ -86,7 +108,9 @@ export interface CascadeDeps {
   log: { info: (o: unknown, m?: string) => void; warn: (o: unknown, m?: string) => void };
   /** Уведомление: каскад не работает (back=false) или снова работает. */
   notify: (entryServerId: string, text: string, back: boolean) => void;
+  /** Паузы проверки Xray (тесты - короче). */
   checksMs?: number[];
+  inboundChecksMs?: number[];
 }
 
 export interface CascadeInput {
@@ -111,29 +135,42 @@ export type CascadeEdit = {
 /**
  * Каскады VLESS: inbound на входе, outbound к выходу и правила в шаблоне Xray 3X-UI входа.
  * Изменения на входе - действия журнала (сервер занят); шаблон пишется целиком, но меняются в
- * нём только свои части (cascade-build.ts), после записи Xray проверяется и при остановке
- * шаблон возвращается.
+ * нём только свои части (cascade-build.ts): шаблон перечитывается прямо перед записью, после
+ * записи Xray проверяется, при остановке свои части возвращаются как были.
  */
 export class Cascades {
   /** Очередь записи шаблона по входу: две записи подряд не перетирают друг друга. */
   private chains = new Map<string, Promise<unknown>>();
   /** Неудачные проверки подряд и сказали ли о них. */
   private fails = new Map<string, { count: number; notified: boolean }>();
+  /** Входы, которые надо сверить, когда закончится действие на них. */
+  private pending = new Set<string>();
+  private checking = false;
 
   constructor(private d: CascadeDeps) {}
 
   start(): () => void {
     const a = schedule(() => void this.syncAll(), 3 * 60_000, SYNC_EVERY_MS);
     const b = schedule(() => void this.checkAll(), 2 * 60_000, CHECK_EVERY_MS);
+    const c = onActionFinished((id) => {
+      if (this.pending.delete(id)) void this.syncEntry(id);
+    });
     return () => {
       a();
       b();
+      c();
     };
   }
 
   private rows(where?: ReturnType<typeof eq>): Row[] {
     const q = this.d.db.select().from(cascades);
     return (where ? q.where(where) : q).all();
+  }
+
+  private row(cid: string): Row {
+    const r = this.rows(eq(cascades.id, cid))[0];
+    if (!r) throw fail(404, 'каскад не найден');
+    return r;
   }
 
   private server(id: string) {
@@ -148,6 +185,11 @@ export class Cascades {
 
   private form(id: string): XuiFormCall {
     return xuiFormFor(this.d.db, this.d.box, this.d.registry, id);
+  }
+
+  private requireForm(id: string) {
+    if (!this.d.registry.supports(id, 'xui.form'))
+      throw fail(409, 'агент входа устарел: нужно обновить агент');
   }
 
   private view(r: Row): CascadeView {
@@ -197,15 +239,36 @@ export class Cascades {
 
   /** Есть ли на сервере списки заблокированного (geosite_RU.dat и geoip_RU.dat). */
   private async geoRu(api: XuiCall): Promise<boolean> {
-    try {
-      const files = unwrap(await api('GET', 'xray/geodata/files'), 'xray/geodata/files') as
-        | { name?: string }[]
-        | null;
-      const names = new Set((files ?? []).map((f) => String(f.name ?? '')));
-      return names.has('geosite_RU.dat') && names.has('geoip_RU.dat');
-    } catch {
-      return false;
+    const files = unwrap(await api('GET', 'xray/geodata/files'), 'xray/geodata/files') as
+      | { name?: string }[]
+      | null;
+    const names = new Set((files ?? []).map((f) => String(f.name ?? '')));
+    return names.has('geosite_RU.dat') && names.has('geoip_RU.dat');
+  }
+
+  /**
+   * Свои списки: строки, которые не разобрать, и категории geosite/geoip, которых нет на входе
+   * (такое правило останавливает весь Xray) - ошибка 400 до записи.
+   */
+  private async checkLists(entryId: string, lists: (string[] | undefined)[]) {
+    const all = lists.flatMap((l) => l ?? []);
+    const parsed = parseList(all);
+    if (parsed.invalid.length)
+      throw fail(400, `не понятны строки списка: ${parsed.invalid.slice(0, 5).join(', ')}`);
+    const form = this.form(entryId);
+    const bad: string[] = [];
+    for (const [kind, tokens] of [
+      ['site', parsed.domains],
+      ['ip', parsed.ips],
+    ] as const) {
+      if (!tokens.length) continue;
+      const issues = unwrap(
+        await form('POST', 'xray/geodata/validate', { tokens: tokens.join(','), kind }),
+        'xray/geodata/validate',
+      ) as { token?: string }[] | null;
+      bad.push(...(issues ?? []).map((i) => String(i.token ?? '')));
     }
+    if (bad.length) throw fail(400, `на входе нет таких категорий: ${bad.slice(0, 5).join(', ')}`);
   }
 
   /** Значения окна добавления: свободный порт входа, выходы с их RAW-inbound-ами. */
@@ -250,7 +313,7 @@ export class Cascades {
     return {
       port,
       exits,
-      geoRu: await this.geoRu(api),
+      geoRu: await this.geoRu(api).catch(() => false),
       agentReady: registry.supports(entryId, 'xui.form'),
     };
   }
@@ -266,7 +329,10 @@ export class Cascades {
     return { targets: pickTargets(Array.isArray(rows) ? rows : []) };
   }
 
-  /** Параметры выхода: служебный клиент на его inbound-е (заводится, если нет). */
+  /**
+   * Параметры выхода: служебный клиент на его inbound-е (заводится, если нет). Inbound выхода
+   * удалён, выключен или не того типа - hard: каскад не собрать; остальное - временный сбой.
+   */
   private async exitParams(
     entryId: string,
     exitId: string,
@@ -274,10 +340,14 @@ export class Cascades {
   ): Promise<ExitParams> {
     const exit = this.server(exitId);
     const api = this.api(exitId);
-    const inbound = await getInbound(api, inboundId);
-    if (!inbound) throw fail(409, 'inbound выхода не найден в 3X-UI');
-    if (!isRawReality(inbound)) throw fail(409, 'на выходе нужен inbound VLESS Reality RAW');
-    if (inbound.enable === false) throw fail(409, 'inbound выхода выключен');
+    // 3X-UI отвечает 200 с success=false на несуществующий id; другой код - временный сбой
+    const got = await api('GET', `inbounds/get/${inboundId}`);
+    const env = got.data as { success?: boolean; obj?: unknown } | undefined;
+    if (got.status !== 200) throw fail(502, `3X-UI выхода не отвечает (${got.status})`);
+    const inbound = env?.success ? ((env.obj as Json | null) ?? null) : null;
+    if (!inbound) throw hard('inbound выхода не найден в 3X-UI');
+    if (!isRawReality(inbound)) throw hard('на выходе нужен inbound VLESS Reality RAW');
+    if (inbound.enable === false) throw hard('inbound выхода выключен');
     const reality = realityClientParams(inbound);
     const uuid = await ensureServiceClient(api, {
       email: cascadeClientEmail(entryId),
@@ -295,7 +365,7 @@ export class Cascades {
       outboundTestUrl?: string;
     };
     const x = obj?.xraySetting;
-    const xraySetting = (typeof x === 'string' ? JSON.parse(x) : x) as Record<string, unknown>;
+    const xraySetting = (typeof x === 'string' ? JSON.parse(x) : x) as Json;
     if (!xraySetting || typeof xraySetting !== 'object')
       throw fail(502, '3X-UI не вернула шаблон Xray');
     return { xraySetting, outboundTestUrl: String(obj.outboundTestUrl ?? '') };
@@ -324,48 +394,58 @@ export class Cascades {
   }
 
   /**
-   * Шаблон входа по базе: для каждого каскада - outbound (параметры выхода с выхода; выход не в
-   * сети - прежний outbound из шаблона) и правила по тегу inbound-а входа. Пропал inbound входа
-   * или выхода - у каскада ошибка, его частей в шаблоне нет.
+   * Свои части шаблона входа по базе. Outbound - с параметрами с выхода; выход не в сети или
+   * временный сбой - прежний outbound из шаблона. Нельзя собрать (нет inbound-а выхода, нет
+   * прежнего outbound-а, ошибка правил) - у каскада ошибка, его трафик - в блок, а не напрямую.
+   * Пропал inbound входа - своих частей у каскада нет (3X-UI сама убрала его тег из правил).
    */
-  private async plan(entryId: string) {
+  private async plan(entryId: string, current: Template): Promise<Plan> {
     const { registry } = this.d;
     const api = this.api(entryId);
-    const tpl = await this.readTemplate(api);
-    const current = new Map(
-      ((tpl.xraySetting.outbounds as Record<string, unknown>[] | undefined) ?? []).map((o) => [
+    const prevOut = new Map(
+      ((current.xraySetting.outbounds as Json[] | undefined) ?? []).map((o) => [
         String(o.tag ?? ''),
         o,
       ]),
     );
     const inbounds = await listInbounds(api);
-    const geoRu = await this.geoRu(api);
-    const outbounds: Record<string, unknown>[] = [];
-    const rules: Record<string, unknown>[] = [];
-    const state: {
-      id: string;
-      label: string;
-      error: string | null;
-      port?: number;
-      remark?: string;
-    }[] = [];
-    for (const r of this.rows(eq(cascades.entryServerId, entryId))) {
+    const rows = this.rows(eq(cascades.entryServerId, entryId));
+    const geoRu = rows.some((r) => r.mode !== 'all') ? await this.geoRu(api) : false;
+    const plan: Plan = { outbounds: [], rules: [], state: [] };
+    for (const r of rows) {
       const inb = inbounds.find((i) => Number(i.id) === r.entryInboundId);
-      const st: (typeof state)[number] = {
+      const label = r.entryRemark || r.id;
+      if (!inb) {
+        plan.state.push({ id: r.id, label, error: 'inbound входа удалён в 3X-UI', port: null });
+        continue;
+      }
+      const st = {
         id: r.id,
-        label: r.entryRemark || r.id,
-        error: null,
-        ...(inb ? { port: Number(inb.port), remark: String(inb.remark ?? '') } : {}),
+        label,
+        error: null as string | null,
+        port: Number(inb.port),
+        remark: String(inb.remark ?? ''),
       };
+      const tag = String(inb.tag ?? '');
       try {
-        if (!inb) throw new Error('inbound входа удалён в 3X-UI');
-        const tag = String(inb.tag ?? '');
         if (!tag) throw new Error('у inbound входа нет тега');
-        const ob = registry.isOnline(r.exitServerId)
-          ? buildOutbound(r.id, await this.exitParams(entryId, r.exitServerId, r.exitInboundId))
-          : current.get(outboundTag(r.id));
-        if (!ob) throw new Error('выход не в сети');
-        const own = buildRules({
+        let ob: Json | undefined;
+        if (registry.isOnline(r.exitServerId)) {
+          try {
+            ob = buildOutbound(
+              r.id,
+              await this.exitParams(entryId, r.exitServerId, r.exitInboundId),
+            );
+          } catch (e) {
+            ob = prevOut.get(outboundTag(r.id));
+            // временный сбой выхода: каскад работает со старыми параметрами, ошибки нет
+            if (isHard(e) || !ob) throw e;
+          }
+        } else {
+          ob = prevOut.get(outboundTag(r.id));
+          if (!ob) throw new Error('выход не в сети');
+        }
+        const rules = buildRules({
           id: r.id,
           mode: r.mode,
           inboundTag: tag,
@@ -374,57 +454,70 @@ export class Cascades {
           blockQuic: r.blockQuic,
           geoRu,
         });
-        outbounds.push(ob);
-        rules.push(...own);
+        plan.outbounds.push(ob, loopOutbound(r.id));
+        plan.rules.push(...rules);
       } catch (e) {
         st.error = (e as Error).message;
+        if (tag) plan.rules.push(...blockedRules(r.id, tag));
       }
-      state.push(st);
+      plan.state.push(st);
     }
-    const next = { ...tpl, xraySetting: mergeTemplate(tpl.xraySetting, outbounds, rules) };
-    return {
-      api,
-      tpl,
-      next,
-      state,
-      changed: ownParts(next.xraySetting) !== ownParts(tpl.xraySetting),
-    };
+    return plan;
   }
 
-  /** Состояние каскадов по плану: ошибка, порт и подпись inbound-а входа. */
-  private saveState(state: Awaited<ReturnType<Cascades['plan']>>['state']) {
+  /** Состояние каскадов по плану: ошибка, порт (нет inbound-а - нет порта) и подпись. */
+  private saveState(state: Plan['state']) {
     for (const st of state)
       this.d.db
         .update(cascades)
         .set({
           error: st.error,
-          ...(st.port !== undefined ? { entryPort: st.port, entryRemark: st.remark ?? '' } : {}),
+          entryPort: st.port,
+          ...(st.remark !== undefined ? { entryRemark: st.remark } : {}),
         })
         .where(eq(cascades.id, st.id))
         .run();
   }
 
   /**
-   * Запись шаблона входа по плану: изменилось - запись, проверка Xray, при остановке - прежний
-   * шаблон. Возвращает, менялся ли шаблон.
+   * Запись шаблона входа: план (с запросами к выходам), шаблон перечитывается прямо перед
+   * записью, свои части заменяются. Ошибка записи или остановка Xray - свои части возвращаются
+   * как были на свежем шаблоне. Возвращает, менялся ли шаблон.
    */
   private apply(entryId: string, say: Say): Promise<boolean> {
     return this.serial(entryId, async () => {
-      const p = await this.plan(entryId);
-      this.saveState(p.state);
-      for (const st of p.state) if (st.error) say(`${st.label}: ${st.error}`);
-      if (!p.changed) {
+      const api = this.api(entryId);
+      const form = this.form(entryId);
+      const plan = await this.plan(entryId, await this.readTemplate(api));
+      this.saveState(plan.state);
+      for (const st of plan.state) if (st.error) say(`${st.label}: ${st.error}`);
+      const tpl = await this.readTemplate(api);
+      const next = mergeTemplate(tpl.xraySetting, plan.outbounds, plan.rules);
+      if (ownParts(next) === ownParts(tpl.xraySetting)) {
         say('Шаблон Xray входа уже такой');
         return false;
       }
-      const form = this.form(entryId);
-      const before = await xrayState(p.api).catch(() => null);
+      const before = await xrayState(api).catch(() => null);
+      const old = ownOf(tpl.xraySetting);
+      const restore = async () => {
+        const fresh = await this.readTemplate(api).catch(() => tpl);
+        await this.writeTemplate(form, {
+          ...fresh,
+          xraySetting: mergeTemplate(fresh.xraySetting, old.outbounds, old.rules),
+        });
+      };
       say('Записываю шаблон Xray входа');
-      await this.writeTemplate(form, p.next);
+      try {
+        await this.writeTemplate(form, { ...tpl, xraySetting: next });
+      } catch (e) {
+        // 3X-UI сохраняет шаблон до перезапуска Xray: ошибка перезапуска - шаблон уже новый
+        await restore().catch(() => undefined);
+        throw e;
+      }
       if (before?.state === 'running') {
-        const bad = await watchXray(p.api, this.d.checksMs ?? TEMPLATE_CHECKS_MS);
+        const bad = await watchXray(api, this.d.checksMs ?? TEMPLATE_CHECKS_MS);
         if (bad) {
-          await this.writeTemplate(form, p.tpl).catch(() => undefined);
+          await restore().catch(() => undefined);
           throw new Error(`Xray остановился, шаблон возвращён как был: ${bad}`);
         }
         say('Xray работает');
@@ -437,14 +530,14 @@ export class Cascades {
    * Новый каскад (действие на входе): служебный клиент на выходе, inbound входа (с проверкой
    * Xray), шаблон. Сбой - созданное убирается. Клиенты панели попадают в inbound синхронизацией.
    */
-  create(entryId: string, body: CascadeInput): string {
-    const { db, registry, journal, gc } = this.d;
+  async create(entryId: string, body: CascadeInput): Promise<string> {
+    const { db, journal, gc } = this.d;
     if (body.exitServerId === entryId) throw fail(400, 'выход - другой сервер');
     this.server(body.exitServerId);
+    this.requireForm(entryId);
     const api = this.api(entryId);
     const form = this.form(entryId);
-    if (!registry.supports(entryId, 'xui.form'))
-      throw fail(409, 'агент входа устарел: нужно обновить агент');
+    await this.checkLists(entryId, [body.directList, body.exitList]);
     let ok = false;
     return journal.background(
       entryId,
@@ -479,7 +572,8 @@ export class Cascades {
         ) as { id?: number } | null;
         const iid = Number(created?.id ?? 0);
         if (!iid) throw new Error('3X-UI не вернула id inbound-а');
-        const bad = await watchXray(api, this.d.checksMs ?? TEMPLATE_CHECKS_MS);
+        // после inbounds/add 3X-UI перезапускает Xray не сразу: смотрим дольше, чем после шаблона
+        const bad = await watchXray(api, this.d.inboundChecksMs ?? XRAY_CHECKS_MS);
         if (bad) {
           await api('POST', `inbounds/del/${iid}`).catch(() => undefined);
           throw new Error(`Xray остановился после добавления inbound-а, он удалён: ${bad}`);
@@ -521,29 +615,44 @@ export class Cascades {
   }
 
   /** Правка каскада (режим, списки, QUIC, inbound выхода) - запись шаблона входа. */
-  edit(cid: string, body: CascadeEdit): string {
+  async edit(cid: string, body: CascadeEdit): Promise<string> {
     const { db, journal } = this.d;
-    const row = this.rows(eq(cascades.id, cid))[0];
-    if (!row) throw fail(404, 'каскад не найден');
+    const row = this.row(cid);
+    const change = Object.fromEntries(
+      Object.entries(body).filter(([, v]) => v !== undefined),
+    ) as CascadeEdit;
+    if (!Object.keys(change).length) throw fail(400, 'нечего менять');
+    this.requireForm(row.entryServerId);
     this.api(row.entryServerId);
-    const prev = { ...row };
+    await this.checkLists(row.entryServerId, [change.directList, change.exitList]);
+    // откат - только изменённых полей: проверка и ошибка могли обновиться за время действия
+    const back = Object.fromEntries(
+      Object.keys(change).map((k) => [k, row[k as keyof Row]]),
+    ) as CascadeEdit;
     return journal.background(
       row.entryServerId,
       'cascade:edit',
-      { cascade: cid, ...('mode' in body ? { mode: body.mode } : {}) },
+      { cascade: cid, ...(change.mode ? { mode: change.mode } : {}) },
       async (action) => {
         const say = (line: string) => action.stream('log', `${line}\n`);
-        db.update(cascades).set(body).where(eq(cascades.id, cid)).run();
+        db.update(cascades).set(change).where(eq(cascades.id, cid)).run();
         try {
           await this.apply(row.entryServerId, say);
           const now = this.rows(eq(cascades.id, cid))[0];
           if (now?.error) throw new Error(now.error);
         } catch (e) {
-          const { id: _, ...back } = prev;
           db.update(cascades).set(back).where(eq(cascades.id, cid)).run();
           await this.apply(row.entryServerId, say).catch(() => undefined);
           throw e;
         }
+        if (change.exitInboundId !== undefined && change.exitInboundId !== row.exitInboundId)
+          await this.releaseExitClient(
+            row.entryServerId,
+            row.exitServerId,
+            row.exitInboundId,
+          ).catch((e: Error) =>
+            say(`служебный клиент на прежнем inbound-е выхода не отвязан: ${e.message}`),
+          );
         say('Сохранено');
       },
     );
@@ -551,24 +660,26 @@ export class Cascades {
 
   /** Служебный клиент входа на выходе: отвязать от inbound-а, без привязок - удалить. */
   private async releaseExitClient(entryId: string, exitId: string, inboundId: number) {
-    const still = this.rows(eq(cascades.entryServerId, entryId)).some(
-      (r) => r.exitServerId === exitId && r.exitInboundId === inboundId,
-    );
-    if (still || !this.d.registry.isOnline(exitId)) return;
-    const api = this.api(exitId);
-    const email = encodeURIComponent(cascadeClientEmail(entryId));
-    const others = this.rows(eq(cascades.entryServerId, entryId)).some(
+    const mine = this.rows(eq(cascades.entryServerId, entryId)).filter(
       (r) => r.exitServerId === exitId,
     );
-    if (others) await api('POST', `clients/${email}/detach`, { inboundIds: [inboundId] });
-    else await api('POST', `clients/del/${email}`);
+    if (mine.some((r) => r.exitInboundId === inboundId) || !this.d.registry.isOnline(exitId))
+      return;
+    const api = this.api(exitId);
+    const email = encodeURIComponent(cascadeClientEmail(entryId));
+    if (mine.length)
+      unwrap(await api('POST', `clients/${email}/detach`, { inboundIds: [inboundId] }), 'detach');
+    else unwrap(await api('POST', `clients/del/${email}`), 'clients/del');
   }
 
-  /** Удаление каскада: части шаблона, inbound входа, служебный клиент на выходе. */
+  /**
+   * Удаление каскада: сначала свои части шаблона (не вышло - каскад остаётся как был), затем
+   * inbound входа и служебный клиент на выходе.
+   */
   async remove(cid: string): Promise<void> {
     const { db, journal, gc } = this.d;
-    const row = this.rows(eq(cascades.id, cid))[0];
-    if (!row) throw fail(404, 'каскад не найден');
+    const row = this.row(cid);
+    this.requireForm(row.entryServerId);
     const api = this.api(row.entryServerId);
     await journal.quick(
       row.entryServerId,
@@ -577,10 +688,20 @@ export class Cascades {
       async () => {
         const notes: string[] = [];
         db.delete(cascades).where(eq(cascades.id, cid)).run();
-        await this.apply(row.entryServerId, (l) => notes.push(l));
+        try {
+          await this.apply(row.entryServerId, (l) => notes.push(l));
+        } catch (e) {
+          db.insert(cascades).values(row).run();
+          throw e;
+        }
+        this.fails.delete(cid);
         if (row.entryInboundId) {
-          await api('POST', `inbounds/del/${row.entryInboundId}`).catch(() => undefined);
-          notes.push(`удалён inbound входа, порт ${row.entryPort ?? '?'}`);
+          const del = await api('POST', `inbounds/del/${row.entryInboundId}`).catch(() => null);
+          notes.push(
+            del?.status === 200
+              ? `удалён inbound входа, порт ${row.entryPort ?? '?'}`
+              : 'inbound входа не удалён: удалить его можно в списке inbound-ов',
+          );
         }
         await this.releaseExitClient(row.entryServerId, row.exitServerId, row.exitInboundId).catch(
           (e: Error) => notes.push(`служебный клиент на выходе не убран: ${e.message}`),
@@ -594,13 +715,12 @@ export class Cascades {
 
   /** Проверка выхода с входа: testOutbound 3X-UI (временный Xray, запрос на адрес проверки). */
   private async checkOne(cid: string, form?: XuiFormCall): Promise<CascadeCheck> {
-    const row = this.rows(eq(cascades.id, cid))[0];
-    if (!row) throw fail(404, 'каскад не найден');
+    const row = this.row(cid);
     let check: CascadeCheck;
     try {
       const f = form ?? this.form(row.entryServerId);
       const tpl = await this.readTemplate(this.api(row.entryServerId));
-      const all = (tpl.xraySetting.outbounds as Record<string, unknown>[] | undefined) ?? [];
+      const all = (tpl.xraySetting.outbounds as Json[] | undefined) ?? [];
       const ob = all.find((o) => o.tag === outboundTag(row.id));
       if (!ob) throw new Error('outbound каскада нет в шаблоне Xray');
       const r = unwrap(
@@ -628,53 +748,75 @@ export class Cascades {
     return this.checkOne(cid);
   }
 
-  /** Плановая проверка всех каскадов, вход которых на связи; уведомления при смене состояния. */
+  /**
+   * Плановая проверка каскадов, вход которых на связи и свободен (во время действия 3X-UI может
+   * перезапускаться - ложная тревога); уведомления при смене состояния. Прогоны не накладываются.
+   */
   async checkAll() {
-    const { registry } = this.d;
-    for (const r of this.rows()) {
-      if (!registry.isOnline(r.entryServerId) || !registry.supports(r.entryServerId, 'xui.form'))
-        continue;
-      const c = await this.checkOne(r.id);
-      const f = this.fails.get(r.id) ?? { count: 0, notified: false };
-      const exit = this.d.db
-        .select({ name: servers.name })
-        .from(servers)
-        .where(eq(servers.id, r.exitServerId))
-        .get();
-      const title = `каскад через ${exit?.name ?? 'выход'} (порт ${r.entryPort ?? '?'})`;
-      if (c.ok) {
-        if (f.notified) this.d.notify(r.entryServerId, `${title} снова работает`, true);
-        this.fails.delete(r.id);
-        continue;
+    if (this.checking) return;
+    this.checking = true;
+    try {
+      const { registry, db } = this.d;
+      for (const r of this.rows()) {
+        if (!registry.isOnline(r.entryServerId) || !registry.supports(r.entryServerId, 'xui.form'))
+          continue;
+        if (busyAction(db, r.entryServerId)) continue;
+        const c = await this.checkOne(r.id);
+        if (!this.rows(eq(cascades.id, r.id)).length) continue;
+        const f = this.fails.get(r.id) ?? { count: 0, notified: false };
+        const exit = db
+          .select({ name: servers.name })
+          .from(servers)
+          .where(eq(servers.id, r.exitServerId))
+          .get();
+        const title = `каскад через ${exit?.name ?? 'выход'} (порт ${r.entryPort ?? '?'})`;
+        if (c.ok) {
+          if (f.notified) this.d.notify(r.entryServerId, `${title} снова работает`, true);
+          this.fails.delete(r.id);
+          continue;
+        }
+        f.count += 1;
+        if (f.count >= FAILS_TO_NOTIFY && !f.notified) {
+          f.notified = true;
+          this.d.notify(r.entryServerId, `${title} не работает: ${c.error ?? ''}`, false);
+        }
+        this.fails.set(r.id, f);
       }
-      f.count += 1;
-      if (f.count >= FAILS_TO_NOTIFY && !f.notified) {
-        f.notified = true;
-        this.d.notify(r.entryServerId, `${title} не работает: ${c.error ?? ''}`, false);
-      }
-      this.fails.set(r.id, f);
+    } finally {
+      this.checking = false;
     }
   }
 
-  /**
-   * Плановая сверка шаблонов: вход на связи и свободен; изменения - действием журнала
-   * (сервер занят на время записи).
-   */
+  /** Плановая сверка шаблонов всех входов. */
   async syncAll() {
     const entries = new Set(this.rows().map((r) => r.entryServerId));
     for (const id of entries) await this.syncEntry(id).catch(() => undefined);
   }
 
-  /** Сверка одного входа: без изменений - тихо, иначе действие с записью шаблона. */
+  /**
+   * Сверка одного входа: план без журнала (чаще всего менять нечего), отличается - действие с
+   * записью шаблона. Вход занят - сверка после окончания мешающего действия.
+   */
   async syncEntry(entryId: string): Promise<void> {
     const { registry, db, journal, log } = this.d;
     if (!registry.isOnline(entryId) || !registry.supports(entryId, 'xui.form')) return;
-    if (busyAction(db, entryId) || !savedXuiToken(db, this.d.box, entryId)) return;
+    if (!savedXuiToken(db, this.d.box, entryId)) return;
+    if (busyAction(db, entryId)) {
+      this.pending.add(entryId);
+      return;
+    }
     try {
-      // сначала план без журнала: чаще всего менять нечего
-      const p = await this.serial(entryId, () => this.plan(entryId));
-      this.saveState(p.state);
-      if (!p.changed) return;
+      const changed = await this.serial(entryId, async () => {
+        const api = this.api(entryId);
+        const tpl = await this.readTemplate(api);
+        const plan = await this.plan(entryId, tpl);
+        this.saveState(plan.state);
+        return (
+          ownParts(mergeTemplate(tpl.xraySetting, plan.outbounds, plan.rules)) !==
+          ownParts(tpl.xraySetting)
+        );
+      });
+      if (!changed) return;
       await journal.quick(
         entryId,
         'cascade:sync',
@@ -693,7 +835,8 @@ export class Cascades {
 
   /**
    * Inbound изменили или удалили из панели: каскады с этим inbound-ом на входе (тег зависит от
-   * порта) или на выходе (порт, ключи) - сверка их входов сразу.
+   * порта) или на выходе (порт, ключи) - сверка их входов (вызов приходит изнутри действия,
+   * поэтому сверка - по его окончании).
    */
   afterInboundChange(serverId: string, inboundId: number) {
     const entries = new Set<string>();
@@ -708,9 +851,18 @@ export class Cascades {
     for (const id of entries) void this.syncEntry(id);
   }
 
+  /** Адрес сервера сменился: каскады с выходом через него - сверка их входов. */
+  afterAddressChange(serverId: string) {
+    for (const id of new Set(
+      this.rows(eq(cascades.exitServerId, serverId)).map((r) => r.entryServerId),
+    ))
+      void this.syncEntry(id);
+  }
+
   /**
-   * Сервер удалён из панели: его каскады снимаются с другой стороны (служебный клиент на выходе;
-   * inbound и части шаблона на входе) и стираются. Промис - когда другая сторона обработана.
+   * Сервер удалён из панели: его каскады стираются и снимаются с другой стороны - служебный
+   * клиент на выходе; на входе сначала свои части шаблона, потом inbound. Промис - когда другая
+   * сторона обработана.
    */
   forget(serverId: string): Promise<void> {
     const { db } = this.d;
@@ -727,11 +879,11 @@ export class Cascades {
       if (!this.d.registry.isOnline(id)) continue;
       jobs.push(
         (async () => {
+          await this.syncEntry(id);
           const api = this.api(id);
           for (const r of asExit.filter((x) => x.entryServerId === id))
             if (r.entryInboundId)
               await api('POST', `inbounds/del/${r.entryInboundId}`).catch(() => undefined);
-          await this.syncEntry(id);
           resyncXui(db, this.d.gc, id);
         })(),
       );

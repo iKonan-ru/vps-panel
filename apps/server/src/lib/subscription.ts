@@ -73,7 +73,8 @@ export function buildSubscription(db: Db, token: string): { links: string[] } | 
   // каскады: порт inbound-а входа -> выход (ссылка через вход подписывается по выходу)
   const via = new Map<string, Map<number, string>>();
   for (const r of db.select().from(cascades).all()) {
-    if (!r.entryPort) continue;
+    // каскад с ошибкой не ведёт через выход: такую ссылку "через РФ" не подписываем
+    if (!r.entryPort || r.error) continue;
     const m = via.get(r.entryServerId) ?? new Map<number, string>();
     m.set(r.entryPort, r.exitServerId);
     via.set(r.entryServerId, m);

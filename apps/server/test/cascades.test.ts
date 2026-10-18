@@ -32,12 +32,19 @@ function fakeXui(opts: { inbounds?: Record<string, unknown>[] } = {}) {
     xray: 'running',
     /** Шаблон, после записи которого Xray падает (проверка отката). */
     breakOnWrite: false,
+    /** После любой записи шаблона Xray падает. */
+    breakAll: false,
+    /** 3X-UI выхода не отвечает (временный сбой). */
+    exitDown: false,
     writes: 0,
     testUrl: 'https://example.com/204',
     handle(method: string, path: string, body: unknown, form?: Record<string, string>) {
       if (path === 'inbounds/list') return ok(inbounds);
-      if (path.startsWith('inbounds/get/'))
-        return ok(inbounds.find((i) => i.id === Number(path.split('/')[2])) ?? null);
+      if (path.startsWith('inbounds/get/')) {
+        if (s.exitDown) return { status: 502, data: { success: false, msg: 'timeout' } };
+        const got = inbounds.find((i) => i.id === Number(path.split('/')[2]));
+        return got ? ok(got) : { status: 200, data: { success: false, msg: 'record not found' } };
+      }
       if (path === 'inbounds/add') {
         const b = body as Record<string, unknown>;
         const id = 100 + inbounds.length;
@@ -46,10 +53,24 @@ function fakeXui(opts: { inbounds?: Record<string, unknown>[] } = {}) {
       }
       if (path.startsWith('inbounds/del/')) {
         const id = Number(path.split('/')[2]);
-        inbounds.splice(
+        const [gone] = inbounds.splice(
           inbounds.findIndex((i) => i.id === id),
           1,
         );
+        // как RemoveInboundTagReferences 3X-UI: правило только с тегом удаляется, у прочих тег
+        // убирается, само правило остаётся
+        const routing = template.routing as { rules: Record<string, unknown>[] };
+        routing.rules = routing.rules.flatMap((r) => {
+          const tags = (r.inboundTag as string[] | undefined) ?? [];
+          if (!tags.includes(String(gone?.tag))) return [r];
+          const rest = tags.filter((t) => t !== gone?.tag);
+          const { inboundTag: _, ...other } = r;
+          if (!rest.length)
+            return Object.keys(other).some((k) => !['type', 'ruleTag', 'outboundTag'].includes(k))
+              ? [other]
+              : [];
+          return [{ ...r, inboundTag: rest }];
+        });
         return ok(id);
       }
       if (path === 'server/status')
@@ -89,10 +110,19 @@ function fakeXui(opts: { inbounds?: Record<string, unknown>[] } = {}) {
         template = JSON.parse(form?.xraySetting ?? '{}');
         s.testUrl = form?.outboundTestUrl ?? '';
         s.xray =
-          s.breakOnWrite && JSON.stringify(template).includes('vp-cascade') ? 'error' : 'running';
+          s.breakAll || (s.breakOnWrite && JSON.stringify(template).includes('vp-cascade'))
+            ? 'error'
+            : 'running';
         return ok(null);
       }
       if (path === 'xray/testOutbound') return ok({ success: true, delay: 87 });
+      if (path === 'xray/geodata/validate')
+        return ok(
+          (form?.tokens ?? '')
+            .split(',')
+            .filter((t) => t.includes('no-such'))
+            .map((token) => ({ token, reason: 'categoryMissing' })),
+        );
       return { status: 404 };
     },
   };
@@ -166,6 +196,7 @@ async function setup() {
     log: { info: () => {}, warn: () => {} },
     notify: (_id, text) => void notes.push(text),
     checksMs: [1],
+    inboundChecksMs: [1],
   });
   const done = async () => {
     for (let i = 0; i < 200; i++) {
@@ -197,7 +228,7 @@ async function setup() {
 describe('каскады', () => {
   it('создание: клиент Vision на выходе, inbound входа, outbound и правила в шаблоне', async () => {
     const { db, c, xui, done, input, kicks } = await setup();
-    c.create('entry', input);
+    await c.create('entry', input);
     const a = await done();
     expect(a?.exitCode, a?.output).toBe(0);
     const client = xui.exit?.clients.get(cascadeClientEmail('entry'));
@@ -218,7 +249,7 @@ describe('каскады', () => {
   it('Xray упал после записи шаблона - шаблон и inbound возвращаются, каскада нет', async () => {
     const { db, c, xui, done, input } = await setup();
     if (xui.entry) xui.entry.breakOnWrite = true;
-    c.create('entry', input);
+    await c.create('entry', input);
     const a = await done();
     expect(a?.exitCode).toBe(1);
     expect(a?.output).toContain('шаблон возвращён');
@@ -229,10 +260,10 @@ describe('каскады', () => {
 
   it('правка режима меняет правила; сверка без изменений шаблон не пишет', async () => {
     const { db, c, xui, done, input } = await setup();
-    c.create('entry', input);
+    await c.create('entry', input);
     await done();
     const id = db.select().from(cascades).get()?.id ?? '';
-    c.edit(id, { mode: 'all', exitList: ['habr.com'] });
+    await c.edit(id, { mode: 'all', exitList: ['habr.com'] });
     const a = await done();
     expect(a?.exitCode, a?.output).toBe(0);
     const t = JSON.stringify(xui.entry?.template);
@@ -245,7 +276,7 @@ describe('каскады', () => {
 
   it('порт inbound-а выхода сменили - сверка переписывает outbound', async () => {
     const { c, xui, done, input } = await setup();
-    c.create('entry', input);
+    await c.create('entry', input);
     await done();
     const inb = xui.exit?.inbounds[0];
     if (inb) inb.port = 8443;
@@ -255,7 +286,7 @@ describe('каскады', () => {
 
   it('удаление: шаблон чист, inbound входа удалён, служебный клиент на выходе удалён', async () => {
     const { db, c, xui, done, input } = await setup();
-    c.create('entry', input);
+    await c.create('entry', input);
     await done();
     await c.remove(db.select().from(cascades).get()?.id ?? '');
     expect(JSON.stringify(xui.entry?.template)).not.toContain('vp-cascade');
@@ -265,7 +296,7 @@ describe('каскады', () => {
 
   it('выход удалён из панели - каскад снимается со входа', async () => {
     const { db, c, xui, done, input } = await setup();
-    c.create('entry', input);
+    await c.create('entry', input);
     await done();
     await c.forget('exit');
     expect(db.select().from(cascades).all()).toEqual([]);
@@ -275,7 +306,7 @@ describe('каскады', () => {
 
   it('подписка: каскадная ссылка подписана по выходу и стоит после его прямой', async () => {
     const { db, c, done, input } = await setup();
-    c.create('entry', input);
+    await c.create('entry', input);
     await done();
     db.insert(gclients)
       .values({ id: 'g', name: 'anna', slug: 'anna', token: 'tk' } as never)
@@ -305,7 +336,7 @@ describe('каскады', () => {
 
   it('проверка: две неудачи подряд - уведомление, затем "снова работает"', async () => {
     const { db, c, xui, done, input, notes } = await setup();
-    c.create('entry', input);
+    await c.create('entry', input);
     await done();
     const orig = xui.entry?.handle.bind(xui.entry);
     let up = false;
@@ -328,5 +359,107 @@ describe('каскады', () => {
         .where(eq(cascades.id, db.select().from(cascades).get()?.id ?? ''))
         .get()?.check?.ok,
     ).toBe(true);
+  });
+  it('правила каскада - на своём теге loopback-а; торренты и private - в блок первыми', async () => {
+    const { db, c, xui, done, input } = await setup();
+    await c.create('entry', input);
+    await done();
+    const id = db.select().from(cascades).get()?.id ?? '';
+    const rules = (xui.entry?.template.routing as { rules: Record<string, unknown>[] }).rules;
+    const own = rules.filter((r) => String(r.ruleTag ?? '').startsWith('vp-cascade-'));
+    expect(own[0]).toMatchObject({
+      inboundTag: ['in-20443-tcp'],
+      outboundTag: `vp-cascade-${id}-lb`,
+    });
+    expect(
+      own
+        .slice(1)
+        .every((r) => JSON.stringify(r.inboundTag) === JSON.stringify([`vp-cascade-${id}-in`])),
+    ).toBe(true);
+    expect(own[1]).toMatchObject({ ip: ['geoip:private'], outboundTag: 'vp-cascade-blocked' });
+    expect(own[2]).toMatchObject({ protocol: ['bittorrent'] });
+    const outs = (xui.entry?.template.outbounds as Record<string, unknown>[]).map((o) => o.tag);
+    expect(outs).toContain(`vp-cascade-${id}-lb`);
+  });
+
+  it('inbound входа удалили в 3X-UI - правила каскада не становятся общими', async () => {
+    const { c, xui, done, input } = await setup();
+    await c.create('entry', input);
+    await done();
+    const iid = Number(xui.entry?.inbounds[0]?.id);
+    xui.entry?.handle('POST', `inbounds/del/${iid}`, undefined);
+    const rules = (xui.entry?.template.routing as { rules: Record<string, unknown>[] }).rules;
+    const own = rules.filter((r) => String(r.ruleTag ?? '').startsWith('vp-cascade-'));
+    expect(own.length).toBeGreaterThan(0);
+    expect(
+      own.every(
+        (r) => Array.isArray(r.inboundTag) && (r.inboundTag as string[])[0]?.endsWith('-in'),
+      ),
+    ).toBe(true);
+    await c.syncEntry('entry');
+    expect(JSON.stringify(xui.entry?.template)).not.toContain('vp-cascade');
+  });
+
+  it('временный сбой 3X-UI выхода - каскад остаётся как был', async () => {
+    const { db, c, xui, done, input } = await setup();
+    await c.create('entry', input);
+    await done();
+    const before = JSON.stringify(xui.entry?.template);
+    if (xui.exit) xui.exit.exitDown = true;
+    await c.syncEntry('entry');
+    expect(JSON.stringify(xui.entry?.template)).toBe(before);
+    expect(db.select().from(cascades).get()?.error).toBeNull();
+  });
+
+  it('inbound выхода удалён - трафик каскада в блок, а не напрямую', async () => {
+    const { db, c, xui, done, input } = await setup();
+    await c.create('entry', input);
+    await done();
+    xui.exit?.inbounds.splice(0, 1);
+    await c.syncEntry('entry');
+    await done();
+    const row = db.select().from(cascades).get();
+    expect(row?.error).toContain('inbound выхода не найден');
+    const own = (xui.entry?.template.routing as { rules: Record<string, unknown>[] }).rules.filter(
+      (r) => String(r.ruleTag ?? '').startsWith('vp-cascade-'),
+    );
+    expect(own).toEqual([
+      {
+        type: 'field',
+        ruleTag: `vp-cascade-${row?.id}-entry`,
+        inboundTag: ['in-20443-tcp'],
+        outboundTag: 'vp-cascade-blocked',
+      },
+    ]);
+  });
+
+  it('удаление не удалось (Xray упал) - каскад и inbound остаются', async () => {
+    const { db, c, xui, done, input } = await setup();
+    await c.create('entry', input);
+    await done();
+    if (xui.entry) xui.entry.breakAll = true;
+    await expect(c.remove(db.select().from(cascades).get()?.id ?? '')).rejects.toThrow(/Xray/);
+    expect(db.select().from(cascades).all()).toHaveLength(1);
+    expect(xui.entry?.inbounds).toHaveLength(1);
+  });
+
+  it('неверные строки и категории списков - отказ до действия', async () => {
+    const { c, input } = await setup();
+    await expect(c.create('entry', { ...input, exitList: ['999.1.1.1/99'] })).rejects.toThrow(
+      /не понятны/,
+    );
+    await expect(c.create('entry', { ...input, exitList: ['regexp:('] })).rejects.toThrow(
+      /не понятны/,
+    );
+    await expect(c.create('entry', { ...input, directList: ['geosite:no-such'] })).rejects.toThrow(
+      /нет таких категорий/,
+    );
+  });
+
+  it('пустая правка - 400', async () => {
+    const { db, c, done, input } = await setup();
+    await c.create('entry', input);
+    await done();
+    await expect(c.edit(db.select().from(cascades).get()?.id ?? '', {})).rejects.toThrow(/нечего/);
   });
 });

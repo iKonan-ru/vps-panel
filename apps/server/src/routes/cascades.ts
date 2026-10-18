@@ -1,7 +1,6 @@
 import { CASCADE_MODES, type CascadeMode } from '@vps/protocol';
 import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
-import { parseList } from '../lib/cascade-build.js';
 import type { Cascades } from '../lib/cascades.js';
 import { FINGERPRINTS, MAX_SERVER_NAMES, realityNames } from '../lib/xui-new-inbound.js';
 
@@ -40,15 +39,6 @@ const EditBody = z.object({
   blockQuic: z.boolean().optional(),
 });
 
-/** Неверные строки своих списков - 400 с ними же (окно подсвечивает). */
-function checkLists(...lists: (string[] | undefined)[]) {
-  const invalid = lists.flatMap((l) => (l ? parseList(l).invalid : []));
-  if (invalid.length)
-    throw Object.assign(new Error(`не понятны строки списка: ${invalid.slice(0, 5).join(', ')}`), {
-      statusCode: 400,
-    });
-}
-
 const clean = (l: string[]) => l.map((s) => s.trim()).filter(Boolean);
 
 /** Каскады VLESS: блок во вкладке 3X-UI входа (и строка "через этот сервер" на выходе). */
@@ -68,11 +58,10 @@ export async function cascadeRoutes(app: FastifyInstance, opts: { cascades: Casc
   app.post('/api/servers/:id/cascades', async (req) => {
     const { id } = Id.parse(req.params);
     const body = AddBody.parse(req.body ?? {});
-    checkLists(body.directList, body.exitList);
     const names = realityNames(body.serverNames);
     if (!names.length)
       throw Object.assign(new Error('нет подходящих имён Reality'), { statusCode: 400 });
-    const actionId = cascades.create(id, {
+    const actionId = await cascades.create(id, {
       ...body,
       serverNames: names,
       directList: clean(body.directList),
@@ -84,8 +73,7 @@ export async function cascadeRoutes(app: FastifyInstance, opts: { cascades: Casc
   app.post('/api/cascades/:cid/edit', async (req) => {
     const { cid } = Cid.parse(req.params);
     const body = EditBody.parse(req.body ?? {});
-    checkLists(body.directList, body.exitList);
-    const actionId = cascades.edit(cid, {
+    const actionId = await cascades.edit(cid, {
       ...body,
       ...(body.directList ? { directList: clean(body.directList) } : {}),
       ...(body.exitList ? { exitList: clean(body.exitList) } : {}),

@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   CASCADE_DIRECT,
+  blockedRules,
   buildOutbound,
   buildRules,
   entryInbound,
@@ -20,20 +21,28 @@ const base = {
 const tags = (rules: Record<string, unknown>[]) => rules.map((r) => r.ruleTag);
 
 describe('правила каскада', () => {
-  it('всё через выход - одно правило по inbound-у входа', () => {
+  it('первое правило - inbound входа в loopback, остальные - на своём теге; блок private и торрентов', () => {
     const r = buildRules({ ...base, mode: 'all' });
-    expect(r).toEqual([
-      {
-        type: 'field',
-        ruleTag: 'vp-cascade-c1-rest',
-        inboundTag: ['in-20443-tcp'],
-        outboundTag: 'vp-cascade-c1',
-      },
+    expect(r[0]).toEqual({
+      type: 'field',
+      ruleTag: 'vp-cascade-c1-entry',
+      inboundTag: ['in-20443-tcp'],
+      outboundTag: 'vp-cascade-c1-lb',
+    });
+    expect(r.slice(1).every((x) => JSON.stringify(x.inboundTag) === '["vp-cascade-c1-in"]')).toBe(
+      true,
+    );
+    expect(tags(r)).toEqual([
+      'vp-cascade-c1-entry',
+      'vp-cascade-c1-private',
+      'vp-cascade-c1-torrent',
+      'vp-cascade-c1-rest',
     ]);
+    expect(r.at(-1)?.outboundTag).toBe('vp-cascade-c1');
   });
 
   it('российское напрямую: заблокированное через выход выше российского, остальное - выход', () => {
-    const r = buildRules({ ...base, mode: 'ru-direct' });
+    const r = buildRules({ ...base, mode: 'ru-direct' }).slice(3);
     expect(tags(r)).toEqual([
       'vp-cascade-c1-blocked-domains',
       'vp-cascade-c1-ru-domains',
@@ -54,7 +63,7 @@ describe('правила каскада', () => {
   });
 
   it('только заблокированное: списки через выход, остальное напрямую', () => {
-    const r = buildRules({ ...base, mode: 'blocked' });
+    const r = buildRules({ ...base, mode: 'blocked' }).slice(3);
     expect(r.at(-1)?.outboundTag).toBe(CASCADE_DIRECT);
     expect(r[0]?.domain).toEqual(['ext:geosite_RU.dat:ru-blocked']);
   });
@@ -67,13 +76,39 @@ describe('правила каскада', () => {
       exitList: ['habr.com', '1.2.3.0/24'],
       directList: ['regexp:\\.corp$'],
     });
-    expect(tags(r).slice(0, 4)).toEqual([
+    expect(tags(r).slice(3, 7)).toEqual([
       'vp-cascade-c1-quic',
       'vp-cascade-c1-exit-domains',
       'vp-cascade-c1-exit-ips',
       'vp-cascade-c1-direct-domains',
     ]);
-    expect(r[1]?.domain).toEqual(['domain:habr.com']);
+    expect(r[4]?.domain).toEqual(['domain:habr.com']);
+  });
+
+  it('список: неверные IP, маски и regexp - в invalid', () => {
+    expect(
+      parseList(['999.1.1.1', '10.0.0.0/33', 'a:b', 'regexp:(', 'regexp:(?=x)', 'regexp:\\.corp$'])
+        .invalid,
+    ).toEqual(['999.1.1.1', '10.0.0.0/33', 'a:b', 'regexp:(', 'regexp:(?=x)']);
+  });
+
+  it('ошибка каскада - его inbound в блок', () => {
+    expect(blockedRules('c1', 'in-1-tcp')).toEqual([
+      {
+        type: 'field',
+        ruleTag: 'vp-cascade-c1-entry',
+        inboundTag: ['in-1-tcp'],
+        outboundTag: 'vp-cascade-blocked',
+      },
+    ]);
+    // служебные outbound-ы - и без outbound-ов каскадов, раз есть правила
+    expect(
+      mergeTemplate(
+        { outbounds: [], routing: { rules: [] } },
+        [],
+        blockedRules('c1', 'x'),
+      ).outbounds?.map((o) => o.tag),
+    ).toEqual(['vp-cascade-direct', 'vp-cascade-blocked']);
   });
 
   it('список: домены, префиксы xray, IP и подсети; мусор - в invalid', () => {
@@ -124,11 +159,10 @@ describe('шаблон', () => {
 
   it('свои части - после правила api, чужое остаётся как было', () => {
     const t = mergeTemplate(owner, [ob], rules);
-    expect(t.routing?.rules?.map((r) => r.ruleTag ?? r.outboundTag)).toEqual([
-      'api',
-      'vp-cascade-c1-rest',
-      'warp',
-    ]);
+    const order = t.routing?.rules?.map((r) => r.ruleTag ?? r.outboundTag);
+    expect(order?.[0]).toBe('api');
+    expect(order?.[1]).toBe('vp-cascade-c1-entry');
+    expect(order?.at(-1)).toBe('warp');
     expect(t.outbounds?.map((o) => o.tag)).toEqual([
       'direct',
       'warp',

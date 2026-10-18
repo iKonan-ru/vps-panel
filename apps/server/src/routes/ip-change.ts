@@ -7,6 +7,7 @@ import type { AgentRegistry } from '../agents/registry.js';
 import type { Db } from '../db/index.js';
 import { gclientBindings, servers } from '../db/schema.js';
 import type { actionJournal } from '../lib/action-journal.js';
+import type { Cascades } from '../lib/cascades.js';
 import { resolvePublic } from '../lib/client-host.js';
 import { type GClients, queued } from '../lib/gclients.js';
 import type { RuReach } from '../lib/ru-reach.js';
@@ -54,6 +55,8 @@ export async function ipChangeRoutes(
     xray: XrayManager;
     reach: RuReach;
     journal: ReturnType<typeof actionJournal>;
+    /** Каскады через этот сервер: адрес выхода в outbound-ах входов. */
+    cascades?: Pick<Cascades, 'afterAddressChange'>;
   },
 ) {
   const { db, registry, hub, gc, xray, reach, journal } = opts;
@@ -157,6 +160,7 @@ export async function ipChangeRoutes(
           .join('\n'),
     );
     gc.kick();
+    opts.cascades?.afterAddressChange(id);
     void reach.check(id).catch(() => undefined);
     app.log.info({ serverId: id, from: row.host, to: ip }, 'смена IP сервера');
     return { ok: true, steps };

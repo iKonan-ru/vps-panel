@@ -124,7 +124,7 @@ export function XuiCascades({
             {noToken ? 'Нужен API-токен 3X-UI' : `Не удалось получить каскады: ${error.message}`}
           </div>
         )}
-        {data && list.length === 0 && (
+        {data && list.length === 0 && via.length === 0 && (
           <div className="px-4 py-3 text-[13px] text-muted">Каскадов нет</div>
         )}
         {list.map((c) => (

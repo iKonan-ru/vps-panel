@@ -433,6 +433,7 @@ export async function buildApp(opts: AppOptions) {
     xray,
     reach: ruReach,
     journal,
+    cascades,
   });
   await app.register(wdttRoutes, { db, registry, hub, gc });
   await app.register(subscriptionRoutes, { db, env });

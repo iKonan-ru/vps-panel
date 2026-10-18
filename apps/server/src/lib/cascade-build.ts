@@ -1,3 +1,4 @@
+import { isIP } from 'node:net';
 import type { CascadeMode } from '@vps/protocol';
 import { type Fingerprint, buildInbound } from './xui-new-inbound.js';
 
@@ -12,6 +13,9 @@ export const CASCADE_DIRECT = `${CASCADE_PREFIX}direct`;
 export const CASCADE_BLOCKED = `${CASCADE_PREFIX}blocked`;
 
 export const outboundTag = (id: string) => `${CASCADE_PREFIX}${id}`;
+/** Свой inbound-тег каскада: трафик входа заводится на него loopback-ом (см. buildRules). */
+const innerTag = (id: string) => `${CASCADE_PREFIX}${id}-in`;
+const loopTag = (id: string) => `${CASCADE_PREFIX}${id}-lb`;
 const ruleTag = (id: string, part: string) => `${CASCADE_PREFIX}${id}-${part}`;
 const own = (tag: unknown) => typeof tag === 'string' && tag.startsWith(CASCADE_PREFIX);
 
@@ -24,6 +28,11 @@ export interface ExitParams {
   shortId: string;
   sni: string;
   fingerprint: string;
+}
+
+/** Loopback каскада: возвращает трафик inbound-а входа в маршрутизацию под своим тегом. */
+export function loopOutbound(id: string): Record<string, unknown> {
+  return { tag: loopTag(id), protocol: 'loopback', settings: { inboundTag: innerTag(id) } };
 }
 
 export function buildOutbound(id: string, p: ExitParams): Record<string, unknown> {
@@ -69,15 +78,36 @@ const RU_ONLY_INSIDE = 'ext:geosite_RU.dat:ru-available-only-inside';
 const RU_BLOCKED_DOMAINS = 'ext:geosite_RU.dat:ru-blocked';
 const RU_BLOCKED_IPS = 'ext:geoip_RU.dat:ru-blocked';
 
-const IPV4 = /^(\d{1,3})(\.\d{1,3}){3}(\/\d{1,2})?$/;
-const IPV6 = /^[0-9a-f:]+:[0-9a-f:]*(\/\d{1,3})?$/i;
 const DOMAIN = /^[a-z0-9-]+(\.[a-z0-9-]+)*\.[a-z0-9-]{2,}$/i;
-const PREFIXED = /^(domain|full|keyword|regexp|geosite|ext):\S+$/;
+const PREFIXED = /^(domain|full|keyword|geosite|ext):\S+$/;
+
+/** IP или подсеть с маской в своих границах. */
+function ipOrCidr(s: string): boolean {
+  const [addr = '', mask, extra] = s.split('/');
+  if (extra !== undefined) return false;
+  const v = isIP(addr);
+  if (!v) return false;
+  if (mask === undefined) return true;
+  if (!/^\d{1,3}$/.test(mask)) return false;
+  return Number(mask) <= (v === 4 ? 32 : 128);
+}
+
+/** regexp: - то, что примет и Go (RE2): без обратных ссылок и просмотра вперёд/назад. */
+function goodRegexp(body: string): boolean {
+  if (!body || /\(\?[=!<]|\\[1-9]/.test(body)) return false;
+  try {
+    new RegExp(body);
+    return true;
+  } catch {
+    return false;
+  }
+}
 
 /**
  * Свой список каскада: строки - домены (example.com - с поддоменами), с префиксом xray
  * (full:, keyword:, regexp:, geosite:, ext:файл:категория), IP, подсети, geoip:XX. Неверные
- * строки - в invalid (окно их показывает, в шаблон не попадают).
+ * строки - в invalid. Есть ли категории geosite/geoip на сервере, проверяет 3X-UI
+ * (xray/geodata/validate) до записи: неверное правило останавливает весь Xray входа.
  */
 export function parseList(lines: readonly string[]): {
   domains: string[];
@@ -90,8 +120,11 @@ export function parseList(lines: readonly string[]): {
   for (const raw of lines) {
     const s = raw.trim();
     if (!s || s.startsWith('#')) continue;
-    if (s.startsWith('geoip:') && /^geoip:[a-z!-]+$/i.test(s)) ips.push(s.toLowerCase());
-    else if (IPV4.test(s) || IPV6.test(s)) ips.push(s);
+    if (/^geoip:[a-z!-]+$/i.test(s)) ips.push(s.toLowerCase());
+    else if (/^ext:[\w.-]+\.dat:[\w!-]+$/.test(s) && /geoip/i.test(s.split(':')[1] ?? ''))
+      ips.push(s);
+    else if (ipOrCidr(s)) ips.push(s);
+    else if (s.startsWith('regexp:')) (goodRegexp(s.slice(7)) ? domains : invalid).push(s);
     else if (PREFIXED.test(s)) domains.push(s);
     else if (DOMAIN.test(s)) domains.push(`domain:${s.toLowerCase()}`);
     else invalid.push(s);
@@ -111,22 +144,33 @@ export interface CascadeRules {
 }
 
 /**
- * Правила каскада по порядку (первое совпавшее решает): QUIC в блок, свои списки "через выход"
- * и "напрямую", затем режим. Доменные правила "через выход" стоят выше российских: резолвер
- * провайдера отдаёт для заблокированного домена российский адрес-заглушку, и по geoip он ушёл
- * бы напрямую.
+ * Правила каскада. Первое - трафик inbound-а входа в loopback каскада; остальные стоят на своём
+ * inbound-теге loopback-а, а не на теге inbound-а входа: при удалении inbound-а 3X-UI убирает его
+ * тег из правил, и правило с другими условиями стало бы общим для всего сервера, а так пропадает
+ * только первое правило. Дальше по порядку (первое совпавшее решает): private-адреса и торренты в
+ * блок, QUIC в блок, свои списки "через выход" и "напрямую", затем режим. Заблокированное в
+ * России стоит выше российского: российские сервисы на .ru бывают в списке блокировок.
  */
 export function buildRules(c: CascadeRules): Record<string, unknown>[] {
   const ob = outboundTag(c.id);
-  const out: Record<string, unknown>[] = [];
+  const out: Record<string, unknown>[] = [
+    {
+      type: 'field',
+      ruleTag: ruleTag(c.id, 'entry'),
+      inboundTag: [c.inboundTag],
+      outboundTag: loopTag(c.id),
+    },
+  ];
   const rule = (part: string, outbound: string, match: Record<string, unknown>) =>
     out.push({
       type: 'field',
       ruleTag: ruleTag(c.id, part),
-      inboundTag: [c.inboundTag],
+      inboundTag: [innerTag(c.id)],
       ...match,
       outboundTag: outbound,
     });
+  rule('private', CASCADE_BLOCKED, { ip: ['geoip:private'] });
+  rule('torrent', CASCADE_BLOCKED, { protocol: ['bittorrent'] });
   if (c.blockQuic) rule('quic', CASCADE_BLOCKED, { network: 'udp', port: '443' });
   const ex = parseList(c.exitList);
   if (ex.domains.length) rule('exit-domains', ob, { domain: ex.domains });
@@ -148,6 +192,21 @@ export function buildRules(c: CascadeRules): Record<string, unknown>[] {
     rule('rest', CASCADE_DIRECT, {});
   } else rule('rest', ob, {});
   return out;
+}
+
+/**
+ * Каскад, который сейчас не собрать (нет inbound-а выхода, ошибка правил): трафик его inbound-а
+ * - в блок, а не напрямую с входа мимо выхода.
+ */
+export function blockedRules(id: string, inboundTag: string): Record<string, unknown>[] {
+  return [
+    {
+      type: 'field',
+      ruleTag: ruleTag(id, 'entry'),
+      inboundTag: [inboundTag],
+      outboundTag: CASCADE_BLOCKED,
+    },
+  ];
 }
 
 type Template = Record<string, unknown> & {
@@ -173,7 +232,7 @@ export function mergeTemplate(
     if (r.outboundTag === 'api' || (Array.isArray(r.inboundTag) && r.inboundTag.includes('api')))
       at = i + 1;
   });
-  const ownOut = outbounds.length ? [...SERVICE_OUTBOUNDS, ...outbounds] : [];
+  const ownOut = outbounds.length || rules.length ? [...SERVICE_OUTBOUNDS, ...outbounds] : [];
   return {
     ...template,
     outbounds: [...keepOut, ...ownOut],
@@ -181,12 +240,36 @@ export function mergeTemplate(
   };
 }
 
+/** JSON с ключами по алфавиту: 3X-UI при своих перезаписях шаблона сортирует ключи. */
+function canonical(v: unknown): string {
+  if (Array.isArray(v)) return `[${v.map(canonical).join(',')}]`;
+  if (v && typeof v === 'object')
+    return `{${Object.keys(v)
+      .sort()
+      .filter((k) => (v as Record<string, unknown>)[k] !== undefined)
+      .map((k) => `${JSON.stringify(k)}:${canonical((v as Record<string, unknown>)[k])}`)
+      .join(',')}}`;
+  return JSON.stringify(v);
+}
+
 /** Свои части шаблона (outbound-ы и правила каскадов) - для сравнения "уже стоит". */
 export function ownParts(template: Template): string {
-  return JSON.stringify({
+  return canonical({
     o: (template.outbounds ?? []).filter((o) => own(o.tag)),
     r: (template.routing?.rules ?? []).filter((r) => own(r.ruleTag)),
   });
+}
+
+/** Свои части шаблона без служебных outbound-ов - для отката на свежий шаблон. */
+export function ownOf(template: Template): {
+  outbounds: Record<string, unknown>[];
+  rules: Record<string, unknown>[];
+} {
+  const service = new Set(SERVICE_OUTBOUNDS.map((o) => o.tag));
+  return {
+    outbounds: (template.outbounds ?? []).filter((o) => own(o.tag) && !service.has(o.tag)),
+    rules: (template.routing?.rules ?? []).filter((r) => own(r.ruleTag)),
+  };
 }
 
 /**
