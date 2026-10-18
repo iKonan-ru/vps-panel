@@ -695,7 +695,8 @@ export class Cascades {
           throw e;
         }
         this.fails.delete(cid);
-        if (row.entryInboundId) {
+        // нет порта - inbound входа уже удалён в 3X-UI
+        if (row.entryInboundId && row.entryPort) {
           const del = await api('POST', `inbounds/del/${row.entryInboundId}`).catch(() => null);
           notes.push(
             del?.status === 200
