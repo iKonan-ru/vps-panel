@@ -4,8 +4,7 @@ import {
   TargetField,
   type TargetOption,
   sameOptions,
-  scanOptions,
-  useRealityScan,
+  useRealityPicker,
 } from '@/components/server/xui-inbound-fields';
 import { Alert } from '@/components/ui/alert';
 import { Button } from '@/components/ui/button';
@@ -18,7 +17,7 @@ import type { XuiInboundRow } from '@vps/protocol';
 import { type FormEvent, useEffect, useState } from 'react';
 
 /** GET /xui/inbounds/:iid/edit: текущие значения (без ключей) и цели других inbound-ов. */
-interface EditData {
+export interface EditData {
   id: number;
   remark: string;
   port: number;
@@ -54,8 +53,8 @@ export function EditInboundForm({
     retry: false,
   });
   // скан - только по кнопке: по умолчанию цель остаётся прежней
-  const [scanOn, setScanOn] = useState(false);
-  const scan = useRealityScan(serverId, scanOn);
+  const picker = useRealityPicker(serverId, { preset: 'foreign', enabled: false });
+  const scan = picker.scan;
   const [remark, setRemark] = useState(inbound.remark);
   const [port, setPort] = useState(String(inbound.port));
   const [fp, setFp] = useState('');
@@ -78,7 +77,7 @@ export function EditInboundForm({
           target: d.reality.target,
           serverNames: d.reality.serverNames,
         },
-        ...scanOptions(scan.data?.targets),
+        ...picker.options,
         ...sameOptions(d.same),
       ]
     : [];
@@ -153,9 +152,10 @@ export function EditInboundForm({
             onChange={setTargetKey}
             scanning={scan.isFetching}
             scanError={scan.error}
-            onRescan={() => (scanOn ? void scan.refetch() : setScanOn(true))}
+            onRescan={picker.rescan}
             disabled={act.busy}
             rescanTitle="Подобрать цель с сервера"
+            picker={picker}
           />
           <FingerprintField value={fp} onChange={setFp} disabled={act.busy} />
         </>

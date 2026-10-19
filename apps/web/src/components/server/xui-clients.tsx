@@ -187,13 +187,13 @@ export function XuiClients({
                     )}
                   </div>
                 </td>
-                <td className="text-xs">
+                <td className="max-w-[240px] whitespace-nowrap text-xs">
                   {c.inboundIds.length === 0 ? (
                     <span className="text-warn">нет</span>
                   ) : (
-                    <span className="text-muted">
-                      {c.inboundIds.map((id) => byId.get(id)?.remark || `#${id}`).join(', ')}
-                    </span>
+                    <InboundNames
+                      names={c.inboundIds.map((id) => byId.get(id)?.remark || `#${id}`)}
+                    />
                   )}
                 </td>
                 <td
@@ -266,6 +266,16 @@ export function XuiClients({
         )}
       </Dialog>
     </Section>
+  );
+}
+
+/** Inbound-ы клиента одной строкой: не влезло - многоточие, весь список - в подсказке. */
+function InboundNames({ names }: { names: string[] }) {
+  const all = names.join(', ');
+  return (
+    <span className="block truncate text-muted" title={all}>
+      {all}
+    </span>
   );
 }
 

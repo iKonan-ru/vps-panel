@@ -60,6 +60,7 @@ async function setup(
   const ok = (obj: unknown) => ({ status: 200, data: { success: true, obj } });
   const registry = {
     isOnline: () => true,
+    supports: () => false,
     refreshInventory: async () => undefined,
     request: async (
       _id: string,
@@ -201,7 +202,11 @@ describe('inbound-ы VLESS из панели', () => {
   it('скан целей: без имён YouTube', async () => {
     const t = await setup();
     const j = (
-      await t.app.inject({ method: 'GET', url: '/api/servers/s1/xui/reality-scan' })
+      await t.app.inject({
+        method: 'POST',
+        url: '/api/servers/s1/xui/reality-scan',
+        payload: { preset: 'foreign' },
+      })
     ).json();
     expect(j.targets).toEqual([
       { target: 'dl.google.com:443', serverNames: ['dl.google.com'], latencyMs: 9, issuer: '' },

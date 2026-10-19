@@ -3,8 +3,7 @@ import {
   PortField,
   TargetField,
   sameOptions,
-  scanOptions,
-  useRealityScan,
+  useRealityPicker,
 } from '@/components/server/xui-inbound-fields';
 import { Alert } from '@/components/ui/alert';
 import { Button } from '@/components/ui/button';
@@ -50,7 +49,8 @@ export function NewInboundsForm({
     gcTime: 0,
     retry: false,
   });
-  const scan = useRealityScan(serverId, true);
+  const picker = useRealityPicker(serverId, { preset: 'foreign', enabled: true });
+  const scan = picker.scan;
   const [on, setOn] = useState<Record<Kind, boolean>>({ raw: true, xhttp: true });
   const [port, setPort] = useState<Record<Kind, string>>({ raw: '', xhttp: '' });
   const [remark, setRemark] = useState<Record<Kind, string>>({ raw: '', xhttp: '' });
@@ -67,7 +67,7 @@ export function NewInboundsForm({
     if (d.fingerprint) setFp(d.fingerprint);
   }, [d]);
 
-  const options = [...scanOptions(scan.data?.targets), ...sameOptions(d?.same)];
+  const options = [...picker.options, ...sameOptions(d?.same)];
   // выбор по умолчанию - лучшая цель скана (или первая из стоящих, пока скан идёт или не удался)
   const key = options.some((o) => o.key === targetKey) ? targetKey : (options[0]?.key ?? '');
   const chosen = options.find((o) => o.key === key);
@@ -80,7 +80,7 @@ export function NewInboundsForm({
   });
   const samePorts = kinds.length === 2 && portOf('raw') === portOf('xhttp');
   const noRemark = kinds.some((k) => !remark[k.kind].trim());
-  const loading = defaults.isFetching || scan.isFetching;
+  const loading = defaults.isFetching || picker.busy;
   const ready =
     !disabled && !act.busy && !loading && Boolean(d) && kinds.length > 0 && Boolean(chosen);
   const valid = !badPort && !samePorts && !noRemark;
@@ -153,9 +153,10 @@ export function NewInboundsForm({
         onChange={setTargetKey}
         scanning={scan.isFetching}
         scanError={scan.error}
-        onRescan={() => void scan.refetch()}
+        onRescan={picker.rescan}
         disabled={act.busy}
         rescanTitle="Подобрать заново"
+        picker={picker}
       />
       <FingerprintField value={fp} onChange={setFp} disabled={act.busy} />
 

@@ -15,7 +15,6 @@ import { type actionJournal, onActionFinished } from './action-journal.js';
 import { busyAction } from './action-lock.js';
 import {
   type ExitParams,
-  RU_REALITY_CANDIDATES,
   blockedRules,
   buildOutbound,
   buildRules,
@@ -23,6 +22,7 @@ import {
   entryRemark,
   loopOutbound,
   mergeTemplate,
+  oldEntryRemark,
   outboundTag,
   ownOf,
   ownParts,
@@ -36,6 +36,7 @@ import {
   type XuiCall,
   type XuiFormCall,
   ensureServiceClient,
+  getInbound,
   inboundNode,
   listInbounds,
   realityClientParams,
@@ -43,7 +44,13 @@ import {
   unwrap,
 } from './xui-api.js';
 import { XRAY_CHECKS_MS, watchXray, xrayState } from './xui-inbound-ops.js';
-import { type Fingerprint, pickTargets, portBusy, randomFreePort } from './xui-new-inbound.js';
+import {
+  type Fingerprint,
+  portBusy,
+  randomFreePort,
+  realityOf,
+  withReality,
+} from './xui-new-inbound.js';
 import { savedXuiToken, xuiFor, xuiFormFor } from './xui-token.js';
 
 type Row = typeof cascades.$inferSelect;
@@ -90,6 +97,8 @@ interface Template {
 interface Plan {
   outbounds: Json[];
   rules: Json[];
+  /** Inbound-ы входа с подписью прежнего вида: переименовать. */
+  renames: { inboundId: number; remark: string }[];
   state: {
     id: string;
     label: string;
@@ -127,10 +136,19 @@ export interface CascadeInput {
 }
 
 export type CascadeEdit = {
-  [K in 'exitInboundId' | 'mode' | 'directList' | 'exitList' | 'blockQuic']?:
-    | CascadeInput[K]
-    | undefined;
+  [K in
+    | 'exitInboundId'
+    | 'mode'
+    | 'directList'
+    | 'exitList'
+    | 'blockQuic'
+    | 'target'
+    | 'serverNames'
+    | 'fingerprint']?: CascadeInput[K] | undefined;
 };
+
+/** Поля правки, которые меняют inbound входа, а не строку каскада. */
+const REALITY_FIELDS = ['target', 'serverNames', 'fingerprint'] as const;
 
 /**
  * Каскады VLESS: inbound на входе, outbound к выходу и правила в шаблоне Xray 3X-UI входа.
@@ -318,17 +336,6 @@ export class Cascades {
     };
   }
 
-  /** Цели Reality входа: российские сайты, проверка - 3X-UI на самом сервере. */
-  async realityScan(entryId: string) {
-    const rows = unwrap(
-      await this.form(entryId)('POST', 'server/scanRealityTargets', {
-        targets: RU_REALITY_CANDIDATES.join(','),
-      }),
-      'server/scanRealityTargets',
-    );
-    return { targets: pickTargets(Array.isArray(rows) ? rows : []) };
-  }
-
   /**
    * Параметры выхода: служебный клиент на его inbound-е (заводится, если нет). Inbound выхода
    * удалён, выключен или не того типа - hard: каскад не собрать; остальное - временный сбой.
@@ -411,7 +418,7 @@ export class Cascades {
     const inbounds = await listInbounds(api);
     const rows = this.rows(eq(cascades.entryServerId, entryId));
     const geoRu = rows.some((r) => r.mode !== 'all') ? await this.geoRu(api) : false;
-    const plan: Plan = { outbounds: [], rules: [], state: [] };
+    const plan: Plan = { outbounds: [], rules: [], renames: [], state: [] };
     for (const r of rows) {
       const inb = inbounds.find((i) => Number(i.id) === r.entryInboundId);
       const label = r.entryRemark || r.id;
@@ -427,6 +434,11 @@ export class Cascades {
         remark: String(inb.remark ?? ''),
       };
       const tag = String(inb.tag ?? '');
+      const renamed = oldEntryRemark(String(inb.remark ?? ''));
+      if (renamed) {
+        plan.renames.push({ inboundId: Number(inb.id), remark: renamed });
+        st.remark = renamed;
+      }
       try {
         if (!tag) throw new Error('у inbound входа нет тега');
         let ob: Json | undefined;
@@ -491,6 +503,17 @@ export class Cascades {
       const plan = await this.plan(entryId, await this.readTemplate(api));
       this.saveState(plan.state);
       for (const st of plan.state) if (st.error) say(`${st.label}: ${st.error}`);
+      for (const r of plan.renames) {
+        const got = (await api('GET', `inbounds/get/${r.inboundId}`)).data as
+          | { success?: boolean; obj?: Json }
+          | undefined;
+        if (got?.success && got.obj)
+          unwrap(
+            await api('POST', `inbounds/update/${r.inboundId}`, { ...got.obj, remark: r.remark }),
+            'inbounds/update',
+          );
+        say(`Подпись inbound-а входа: ${r.remark}`);
+      }
       const tpl = await this.readTemplate(api);
       const next = mergeTemplate(tpl.xraySetting, plan.outbounds, plan.rules);
       if (ownParts(next) === ownParts(tpl.xraySetting)) {
@@ -614,47 +637,121 @@ export class Cascades {
     );
   }
 
-  /** Правка каскада (режим, списки, QUIC, inbound выхода) - запись шаблона входа. */
+  /**
+   * Правка каскада: режим, списки, QUIC, inbound выхода - запись шаблона входа; цель Reality,
+   * имена и fingerprint - правка inbound-а входа (ключи те же). После правки inbound-а панель
+   * следит за Xray и при остановке возвращает inbound как был; ссылки клиентов обновятся
+   * синхронизацией.
+   */
   async edit(cid: string, body: CascadeEdit): Promise<string> {
-    const { db, journal } = this.d;
+    const { db, journal, gc } = this.d;
     const row = this.row(cid);
-    const change = Object.fromEntries(
+    const given = Object.fromEntries(
       Object.entries(body).filter(([, v]) => v !== undefined),
     ) as CascadeEdit;
-    if (!Object.keys(change).length) throw fail(400, 'нечего менять');
+    if (!Object.keys(given).length) throw fail(400, 'нечего менять');
+    const { target, serverNames, fingerprint, ...change } = given;
+    const realityGiven = REALITY_FIELDS.some((k) => given[k] !== undefined);
+    if ((target === undefined) !== (serverNames === undefined))
+      throw fail(400, 'цель Reality и имена меняются вместе');
+    if (realityGiven && !(row.entryInboundId && row.entryPort))
+      throw fail(409, 'inbound входа удалён в 3X-UI: цель Reality не поменять');
     this.requireForm(row.entryServerId);
-    this.api(row.entryServerId);
+    const api = this.api(row.entryServerId);
     await this.checkLists(row.entryServerId, [change.directList, change.exitList]);
+    const rowChanged = Object.keys(change).length > 0;
     // откат - только изменённых полей: проверка и ошибка могли обновиться за время действия
     const back = Object.fromEntries(
       Object.keys(change).map((k) => [k, row[k as keyof Row]]),
     ) as CascadeEdit;
+    let linksChanged = false;
     return journal.background(
       row.entryServerId,
       'cascade:edit',
-      { cascade: cid, ...(change.mode ? { mode: change.mode } : {}) },
+      {
+        cascade: cid,
+        ...(change.mode ? { mode: change.mode } : {}),
+        ...(target ? { target, serverNames: serverNames?.length } : {}),
+        ...(fingerprint ? { fingerprint } : {}),
+      },
       async (action) => {
         const say = (line: string) => action.stream('log', `${line}\n`);
-        db.update(cascades).set(change).where(eq(cascades.id, cid)).run();
-        try {
-          await this.apply(row.entryServerId, say);
-          const now = this.rows(eq(cascades.id, cid))[0];
-          if (now?.error) throw new Error(now.error);
-        } catch (e) {
-          db.update(cascades).set(back).where(eq(cascades.id, cid)).run();
-          await this.apply(row.entryServerId, say).catch(() => undefined);
-          throw e;
+        // сначала inbound входа: он может остановить Xray, шаблон после него
+        let restore: (() => Promise<unknown>) | null = null;
+        if (realityGiven && row.entryInboundId) {
+          const iid = row.entryInboundId;
+          const got = await getInbound(api, iid);
+          if (!got) throw new Error('inbound входа не найден в 3X-UI');
+          const cur = realityOf(got);
+          const reality: { target?: string; serverNames?: string[]; fingerprint?: string } = {};
+          const done: string[] = [];
+          if (
+            target !== undefined &&
+            serverNames !== undefined &&
+            (target !== cur.target || serverNames.join(',') !== cur.serverNames.join(','))
+          ) {
+            reality.target = target;
+            reality.serverNames = serverNames;
+            done.push(`цель Reality ${target}`);
+          }
+          if (fingerprint !== undefined && fingerprint !== cur.fingerprint) {
+            reality.fingerprint = fingerprint;
+            done.push(`fingerprint ${fingerprint}`);
+          }
+          if (done.length) {
+            const before = await xrayState(api).catch(() => null);
+            say(`Inbound входа: ${done.join(', ')}`);
+            unwrap(
+              await api('POST', `inbounds/update/${iid}`, {
+                ...got,
+                streamSettings: withReality(got.streamSettings, reality),
+              }),
+              'inbounds/update',
+            );
+            restore = () => api('POST', `inbounds/update/${iid}`, got).catch(() => undefined);
+            if (before?.state === 'running') {
+              say('Проверка Xray');
+              const bad = await watchXray(api, this.d.inboundChecksMs ?? XRAY_CHECKS_MS);
+              if (bad) {
+                await restore();
+                throw new Error(`Xray остановился после правки, inbound возвращён как был: ${bad}`);
+              }
+              say('Xray работает');
+            }
+            linksChanged = true;
+          } else if (!rowChanged) {
+            say('Без изменений');
+            return;
+          }
         }
-        if (change.exitInboundId !== undefined && change.exitInboundId !== row.exitInboundId)
-          await this.releaseExitClient(
-            row.entryServerId,
-            row.exitServerId,
-            row.exitInboundId,
-          ).catch((e: Error) =>
-            say(`служебный клиент на прежнем inbound-е выхода не отвязан: ${e.message}`),
-          );
+        if (rowChanged) {
+          db.update(cascades).set(change).where(eq(cascades.id, cid)).run();
+          try {
+            await this.apply(row.entryServerId, say);
+            const now = this.rows(eq(cascades.id, cid))[0];
+            if (now?.error) throw new Error(now.error);
+          } catch (e) {
+            db.update(cascades).set(back).where(eq(cascades.id, cid)).run();
+            await this.apply(row.entryServerId, say).catch(() => undefined);
+            if (restore) {
+              await restore();
+              linksChanged = false;
+            }
+            throw e;
+          }
+          if (change.exitInboundId !== undefined && change.exitInboundId !== row.exitInboundId)
+            await this.releaseExitClient(
+              row.entryServerId,
+              row.exitServerId,
+              row.exitInboundId,
+            ).catch((e: Error) =>
+              say(`служебный клиент на прежнем inbound-е выхода не отвязан: ${e.message}`),
+            );
+        }
+        if (linksChanged) say('Ссылки клиентов панели обновятся синхронизацией, подписки - сами');
         say('Сохранено');
       },
+      { after: () => linksChanged && resyncXui(db, gc, row.entryServerId) },
     );
   }
 
@@ -813,8 +910,9 @@ export class Cascades {
         const plan = await this.plan(entryId, tpl);
         this.saveState(plan.state);
         return (
+          plan.renames.length > 0 ||
           ownParts(mergeTemplate(tpl.xraySetting, plan.outbounds, plan.rules)) !==
-          ownParts(tpl.xraySetting)
+            ownParts(tpl.xraySetting)
         );
       });
       if (!changed) return;

@@ -293,24 +293,9 @@ export function entryInbound(p: {
   };
 }
 
-/**
- * Кандидаты цели Reality для входа: крупные российские сайты (TLS 1.3, h2, X25519 проверяет
- * 3X-UI на самом сервере). Зарубежная цель на российском адресе выглядит странно для DPI.
- */
-export const RU_REALITY_CANDIDATES = [
-  'ya.ru:443',
-  'www.ozon.ru:443',
-  'www.wildberries.ru:443',
-  'www.avito.ru:443',
-  'vk.com:443',
-  'dzen.ru:443',
-  'rutube.ru:443',
-  'www.kinopoisk.ru:443',
-  'mail.ru:443',
-  'www.gosuslugi.ru:443',
-  'www.sberbank.ru:443',
-  'www.tbank.ru:443',
-];
-
 /** Подпись inbound-а входа в 3X-UI. */
-export const entryRemark = (exitName: string) => `-> ${exitName}`.slice(0, 100);
+export const entryRemark = (exitName: string) => `\u2192 ${exitName}`.slice(0, 100);
+
+/** Подпись входа прежнего вида ("-> выход"): переименовывается сверкой. */
+export const oldEntryRemark = (remark: string) =>
+  remark.startsWith('-> ') ? entryRemark(remark.slice(3)) : null;

@@ -1,3 +1,4 @@
+import { REALITY_PRESETS, type RealityPreset } from '@vps/protocol';
 import { eq } from 'drizzle-orm';
 import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
@@ -5,6 +6,7 @@ import { servers } from '../db/schema.js';
 import { actionJournal } from '../lib/action-journal.js';
 import type { ServerRouteOpts } from '../lib/action-runners.js';
 import { type GClients, resyncXui } from '../lib/gclients.js';
+import { MAX_CUSTOM, realityScan } from '../lib/reality-scan.js';
 import type { RuReach } from '../lib/ru-reach.js';
 import type { InboundExitHooks } from '../lib/xray-exits.js';
 import { getInbound, inboundNode, listInbounds, unwrap } from '../lib/xui-api.js';
@@ -22,7 +24,6 @@ import {
   XHTTP_PORT,
   freeRemark,
   inboundKind,
-  pickTargets,
   portBusy,
   randomFreePort,
   realityNames,
@@ -30,7 +31,7 @@ import {
   realityOfInbounds,
   withReality,
 } from '../lib/xui-new-inbound.js';
-import { xuiFor } from '../lib/xui-token.js';
+import { xuiFor, xuiFormFor } from '../lib/xui-token.js';
 
 const Id = z.object({ id: z.string() });
 const Host = z
@@ -38,11 +39,16 @@ const Host = z
   .trim()
   .toLowerCase()
   .regex(/^[a-z0-9.-]+\.[a-z]{2,}$/, 'неверное имя');
+/** Цель Reality: имя или IPv4 (адреса рядом с сервером) и порт. */
 const Target = z
   .string()
   .trim()
   .toLowerCase()
-  .regex(/^[a-z0-9.-]+\.[a-z]{2,}:\d{1,5}$/, 'цель - имя:порт');
+  .regex(/^([a-z0-9.-]+\.[a-z]{2,}|\d{1,3}(\.\d{1,3}){3}):\d{1,5}$/, 'цель - имя:порт');
+const ScanBody = z.object({
+  preset: z.enum(REALITY_PRESETS as [RealityPreset, ...RealityPreset[]]).optional(),
+  targets: z.array(z.string().max(200)).max(MAX_CUSTOM).optional(),
+});
 const EditBody = z
   .object({
     remark: z.string().trim().min(1).max(100).optional(),
@@ -137,16 +143,23 @@ export async function xuiInboundRoutes(app: FastifyInstance, opts: Deps) {
   });
 
   /**
-   * Подбор цели Reality с самого сервера: scanRealityTargets 3X-UI по её списку кандидатов
-   * (TLS 1.3, h2, X25519, сертификат, задержка); имена YouTube отбрасываются.
+   * Подбор цели Reality с самого сервера (scanRealityTargets 3X-UI: TLS 1.3, h2, X25519,
+   * сертификат, задержка): готовый список (зарубежные или российские сайты), адреса рядом с
+   * сервером или свои адреса - с причинами отказа. Имена YouTube отбрасываются.
    */
-  app.get('/api/servers/:id/xui/reality-scan', async (req) => {
+  app.post('/api/servers/:id/xui/reality-scan', async (req) => {
     const { id } = Id.parse(req.params);
-    const rows = unwrap(
-      await apiFor(id)('POST', 'server/scanRealityTargets'),
-      'server/scanRealityTargets',
+    const body = ScanBody.parse(req.body ?? {});
+    const row = db.select({ host: servers.host }).from(servers).where(eq(servers.id, id)).get();
+    if (!row) throw Object.assign(new Error('сервер не найден'), { statusCode: 404 });
+    return realityScan(
+      {
+        api: apiFor(id),
+        form: registry.supports(id, 'xui.form') ? xuiFormFor(db, box, registry, id) : null,
+        host: row.host,
+      },
+      body,
     );
-    return { targets: pickTargets(Array.isArray(rows) ? rows : []) };
   });
 
   /** Добавление (действие со стримом): по одному inbound-у, каждый - с проверкой Xray. */

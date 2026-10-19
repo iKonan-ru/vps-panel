@@ -34,9 +34,13 @@ function fakeXui(opts: { inbounds?: Record<string, unknown>[] } = {}) {
     breakOnWrite: false,
     /** После любой записи шаблона Xray падает. */
     breakAll: false,
+    /** После правки inbound-а Xray падает; возврат как было - снова работает. */
+    breakOnInboundUpdate: false,
     /** 3X-UI выхода не отвечает (временный сбой). */
     exitDown: false,
     writes: 0,
+    /** inbound до первой правки (для проверки возврата). */
+    original: new Map<number, unknown>(),
     testUrl: 'https://example.com/204',
     handle(method: string, path: string, body: unknown, form?: Record<string, string>) {
       if (path === 'inbounds/list') return ok(inbounds);
@@ -113,6 +117,15 @@ function fakeXui(opts: { inbounds?: Record<string, unknown>[] } = {}) {
           s.breakAll || (s.breakOnWrite && JSON.stringify(template).includes('vp-cascade'))
             ? 'error'
             : 'running';
+        return ok(null);
+      }
+      if (path.startsWith('inbounds/update/')) {
+        const id = Number(path.split('/')[2]);
+        const i = inbounds.findIndex((x) => x.id === id);
+        const restoring = JSON.stringify(body) === JSON.stringify(s.original.get(id));
+        if (!s.original.has(id)) s.original.set(id, inbounds[i]);
+        inbounds[i] = { ...(body as Record<string, unknown>) };
+        if (s.breakOnInboundUpdate) s.xray = restoring ? 'running' : 'error';
         return ok(null);
       }
       if (path === 'xray/testOutbound') return ok({ success: true, delay: 87 });
@@ -234,7 +247,7 @@ describe('каскады', () => {
     const client = xui.exit?.clients.get(cascadeClientEmail('entry'));
     expect(client).toMatchObject({ flow: 'xtls-rprx-vision', inboundIds: [7] });
     const inb = xui.entry?.inbounds[0];
-    expect(inb).toMatchObject({ port: 20443, remark: '-> NetCore' });
+    expect(inb).toMatchObject({ port: 20443, remark: '\u2192 NetCore' });
     expect(JSON.parse(String(inb?.sniffing))).toMatchObject({ enabled: true, routeOnly: true });
     const t = JSON.stringify(xui.entry?.template);
     expect(t).toContain('"address":"203.0.113.20"');
@@ -456,10 +469,66 @@ describe('каскады', () => {
     );
   });
 
+  it('правка цели Reality: inbound входа с новой целью и теми же ключами, синхронизация', async () => {
+    const { db, c, xui, done, input, kicks } = await setup();
+    await c.create('entry', input);
+    await done();
+    const id = db.select().from(cascades).get()?.id ?? '';
+    const reality = (i: unknown) =>
+      JSON.parse(String((i as { streamSettings: string }).streamSettings)).realitySettings;
+    const before = reality(xui.entry?.inbounds[0]);
+    const writes = xui.entry?.writes ?? 0;
+    await c.edit(id, { target: 'vk.com:443', serverNames: ['vk.com'], fingerprint: 'chrome' });
+    const a = await done();
+    expect(a?.exitCode, a?.output).toBe(0);
+    const after = reality(xui.entry?.inbounds[0]);
+    expect(after).toMatchObject({ target: 'vk.com:443', serverNames: ['vk.com'] });
+    expect(after.settings.fingerprint).toBe('chrome');
+    expect(after.privateKey).toBe(before.privateKey);
+    expect(after.shortIds).toEqual(before.shortIds);
+    expect(xui.entry?.writes).toBe(writes); // шаблон не трогали
+    expect(kicks()).toBe(2);
+  });
+
+  it('правка цели Reality остановила Xray - inbound входа возвращается как был', async () => {
+    const { db, c, xui, done, input, kicks } = await setup();
+    await c.create('entry', input);
+    await done();
+    const id = db.select().from(cascades).get()?.id ?? '';
+    const was = JSON.stringify(xui.entry?.inbounds[0]);
+    if (xui.entry) xui.entry.breakOnInboundUpdate = true;
+    await c.edit(id, { target: 'vk.com:443', serverNames: ['vk.com'], mode: 'all' });
+    const a = await done();
+    expect(a?.exitCode).toBe(1);
+    expect(a?.output).toContain('возвращён как был');
+    expect(JSON.stringify(xui.entry?.inbounds[0])).toBe(was);
+    expect(db.select().from(cascades).get()?.mode).toBe('ru-direct');
+    expect(kicks()).toBe(1);
+  });
+
+  it('цель Reality без имён - 400', async () => {
+    const { db, c, done, input } = await setup();
+    await c.create('entry', input);
+    await done();
+    const id = db.select().from(cascades).get()?.id ?? '';
+    await expect(c.edit(id, { target: 'vk.com:443' })).rejects.toThrow(/вместе/);
+  });
+
   it('пустая правка - 400', async () => {
     const { db, c, done, input } = await setup();
     await c.create('entry', input);
     await done();
     await expect(c.edit(db.select().from(cascades).get()?.id ?? '', {})).rejects.toThrow(/нечего/);
+  });
+  it('подпись входа прежнего вида "-> выход" сверка меняет на стрелку', async () => {
+    const { db, c, xui, done, input } = await setup();
+    await c.create('entry', input);
+    await done();
+    const inb = xui.entry?.inbounds[0];
+    if (inb) inb.remark = '-> NetCore';
+    await c.syncEntry('entry');
+    await done();
+    expect(xui.entry?.inbounds[0]?.remark).toBe('\u2192 NetCore');
+    expect(db.select().from(cascades).get()?.entryRemark).toBe('\u2192 NetCore');
   });
 });

@@ -1,8 +1,10 @@
+import type { EditData } from '@/components/server/xui-edit-inbound';
 import {
   FingerprintField,
   PortField,
   TargetField,
-  scanOptions,
+  type TargetOption,
+  useRealityPicker,
 } from '@/components/server/xui-inbound-fields';
 import { Alert } from '@/components/ui/alert';
 import { Button } from '@/components/ui/button';
@@ -38,23 +40,10 @@ const lines = (s: string) =>
     .map((x) => x.trim())
     .filter(Boolean);
 
-/** Цели Reality входа: российские сайты, проверка с самого сервера. */
-function useRuScan(serverId: string, enabled: boolean) {
-  return useQuery({
-    queryKey: ['cascade-reality-scan', serverId],
-    queryFn: () =>
-      api<{
-        targets: { target: string; serverNames: string[]; latencyMs: number; issuer: string }[];
-      }>(`/api/servers/${serverId}/cascades/reality-scan`),
-    staleTime: 5 * 60_000,
-    retry: false,
-    enabled,
-  });
-}
-
 /**
  * Окно каскада: новый - выход, его inbound, порт и цель Reality входа, режим и списки; правка -
- * режим, списки, QUIC и inbound того же выхода.
+ * режим, списки, QUIC, inbound того же выхода, цель Reality и fingerprint входа (по умолчанию
+ * прежние, подбор - по кнопке).
  */
 export function CascadeForm({
   serverId,
@@ -77,13 +66,24 @@ export function CascadeForm({
     gcTime: 0,
     retry: false,
   });
-  const scan = useRuScan(serverId, !editing);
+  const entryInboundId = cascade?.entryPort ? cascade.entryInboundId : null;
+  const current = useQuery({
+    queryKey: ['xui-inbound-edit', serverId, entryInboundId],
+    queryFn: () => api<EditData>(`/api/servers/${serverId}/xui/inbounds/${entryInboundId}/edit`),
+    enabled: Boolean(entryInboundId),
+    staleTime: 0,
+    gcTime: 0,
+    retry: false,
+  });
+  const reality = current.data?.reality ?? null;
+  const picker = useRealityPicker(serverId, { preset: 'ru', enabled: !editing });
+  const scan = picker.scan;
   const d = info.data;
   const [exitId, setExitId] = useState(cascade?.exitServerId ?? '');
   const [inboundId, setInboundId] = useState(cascade ? String(cascade.exitInboundId) : '');
   const [port, setPort] = useState('');
-  const [targetKey, setTargetKey] = useState('');
-  const [fp, setFp] = useState('firefox');
+  const [targetKey, setTargetKey] = useState(editing ? 'cur' : '');
+  const [fp, setFp] = useState(editing ? '' : 'firefox');
   const [mode, setMode] = useState<CascadeMode>(cascade?.mode ?? 'ru-direct');
   const [direct, setDirect] = useState((cascade?.directList ?? []).join('\n'));
   const [viaExit, setViaExit] = useState((cascade?.exitList ?? []).join('\n'));
@@ -97,17 +97,37 @@ export function CascadeForm({
     setExitId((cur) => cur || first?.serverId || '');
   }, [d, editing]);
 
+  useEffect(() => {
+    if (reality) setFp(reality.fingerprint);
+  }, [reality]);
+
   const exit = d?.exits.find((e) => e.serverId === exitId);
   const inbounds = exit?.inbounds ?? [];
   const inb = inbounds.some((i) => String(i.id) === inboundId)
     ? inboundId
     : String(inbounds.find((i) => i.enable)?.id ?? '');
-  const options = scanOptions(scan.data?.targets);
+  const options: TargetOption[] = reality
+    ? [
+        {
+          key: 'cur',
+          label: `Сейчас: ${reality.target}`,
+          target: reality.target,
+          serverNames: reality.serverNames,
+        },
+        ...picker.options,
+      ]
+    : picker.options;
   const key = options.some((o) => o.key === targetKey) ? targetKey : (options[0]?.key ?? '');
   const target = options.find((o) => o.key === key);
   const portN = Number(port);
   const badPort = !editing && (!Number.isInteger(portN) || portN < 1 || portN > 65535);
-  const loading = info.isFetching || scan.isFetching;
+  const loading = info.isFetching || picker.busy || current.isFetching;
+  const realityEdit: Record<string, unknown> = {};
+  if (reality && target && key !== 'cur') {
+    realityEdit.target = target.target;
+    realityEdit.serverNames = target.serverNames;
+  }
+  if (reality && fp && fp !== reality.fingerprint) realityEdit.fingerprint = fp;
   const ready =
     !disabled &&
     !act.busy &&
@@ -132,7 +152,7 @@ export function CascadeForm({
       const r = cascade
         ? await api<{ actionId: string }>(`/api/cascades/${cascade.id}/edit`, {
             method: 'POST',
-            json: common,
+            json: { ...common, ...realityEdit },
           })
         : await api<{ actionId: string }>(`/api/servers/${serverId}/cascades`, {
             method: 'POST',
@@ -189,25 +209,31 @@ export function CascadeForm({
           </Select>
         </Field>
       )}
+      {editing && current.error && (
+        <Alert tone="bad">{`Цель Reality входа не прочитана: ${current.error.message}`}</Alert>
+      )}
       {!editing && (
+        <PortField
+          id="cascade-port"
+          serverId={serverId}
+          value={port}
+          onChange={setPort}
+          disabled={!d || act.busy}
+          avoid={[]}
+        />
+      )}
+      {(!editing || reality) && (
         <>
-          <PortField
-            id="cascade-port"
-            serverId={serverId}
-            value={port}
-            onChange={setPort}
-            disabled={!d || act.busy}
-            avoid={[]}
-          />
           <TargetField
             options={options}
             value={key}
             onChange={setTargetKey}
             scanning={scan.isFetching}
             scanError={scan.error}
-            onRescan={() => void scan.refetch()}
+            onRescan={picker.rescan}
             disabled={act.busy}
-            rescanTitle="Подобрать заново"
+            rescanTitle={editing ? 'Подобрать цель с сервера' : 'Подобрать заново'}
+            picker={picker}
           />
           <FingerprintField value={fp} onChange={setFp} disabled={act.busy} />
         </>
@@ -262,6 +288,12 @@ export function CascadeForm({
         onChange={(e) => setQuic(e.target.checked)}
       />
       {act.error && <Alert tone="bad">{act.error}</Alert>}
+      {Object.keys(realityEdit).length > 0 && (
+        <div className="text-xs text-muted">
+          Ссылки клиентов на этот каскад изменятся, подписки обновятся сами; если Xray остановится,
+          панель вернёт inbound входа как был
+        </div>
+      )}
       {!editing && (
         <div className="text-xs text-muted">
           Ссылки через этот сервер появятся в подписках клиентов рядом с прямыми ссылками выхода

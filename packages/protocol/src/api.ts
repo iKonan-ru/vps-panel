@@ -496,3 +496,16 @@ export interface CascadesView {
   cascades: CascadeView[];
   via: CascadeVia[];
 }
+
+/**
+ * Откуда брать кандидатов цели Reality: зарубежные или российские сайты, адреса рядом с
+ * сервером (его /24).
+ */
+export type RealityPreset = 'foreign' | 'ru' | 'nearby';
+export const REALITY_PRESETS: readonly RealityPreset[] = ['foreign', 'ru', 'nearby'];
+
+/** Свой адрес, который не подошёл для Reality, и почему. */
+export interface RealityRejected {
+  target: string;
+  reason: string;
+}

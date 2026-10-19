@@ -17,7 +17,7 @@ const Target = z
   .string()
   .trim()
   .toLowerCase()
-  .regex(/^[a-z0-9.-]+\.[a-z]{2,}:\d{1,5}$/, 'цель - имя:порт');
+  .regex(/^([a-z0-9.-]+\.[a-z]{2,}|\d{1,3}(\.\d{1,3}){3}):\d{1,5}$/, 'цель - имя:порт');
 
 const AddBody = z.object({
   exitServerId: z.string().min(1),
@@ -37,6 +37,9 @@ const EditBody = z.object({
   directList: List.optional(),
   exitList: List.optional(),
   blockQuic: z.boolean().optional(),
+  target: Target.optional(),
+  serverNames: z.array(Host).min(1).max(MAX_SERVER_NAMES).optional(),
+  fingerprint: z.enum(FINGERPRINTS).optional(),
 });
 
 const clean = (l: string[]) => l.map((s) => s.trim()).filter(Boolean);
@@ -49,10 +52,6 @@ export async function cascadeRoutes(app: FastifyInstance, opts: { cascades: Casc
 
   app.get('/api/servers/:id/cascades/new', async (req) =>
     cascades.newInfo(Id.parse(req.params).id),
-  );
-
-  app.get('/api/servers/:id/cascades/reality-scan', async (req) =>
-    cascades.realityScan(Id.parse(req.params).id),
   );
 
   app.post('/api/servers/:id/cascades', async (req) => {
@@ -73,8 +72,12 @@ export async function cascadeRoutes(app: FastifyInstance, opts: { cascades: Casc
   app.post('/api/cascades/:cid/edit', async (req) => {
     const { cid } = Cid.parse(req.params);
     const body = EditBody.parse(req.body ?? {});
+    const names = body.serverNames ? realityNames(body.serverNames) : undefined;
+    if (names && !names.length)
+      throw Object.assign(new Error('нет подходящих имён Reality'), { statusCode: 400 });
     const actionId = await cascades.edit(cid, {
       ...body,
+      ...(names ? { serverNames: names } : {}),
       ...(body.directList ? { directList: clean(body.directList) } : {}),
       ...(body.exitList ? { exitList: clean(body.exitList) } : {}),
     });
