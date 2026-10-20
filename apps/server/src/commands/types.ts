@@ -52,7 +52,7 @@ export interface CommandDef {
    * удаляются сразу: сервис снесён вместе с пользователями (без этого сверка ждёт 30 минут
    * отсутствия сервиса в снимках, а привязка висит "ждёт сверки").
    */
-  dropsBindings?: string[];
+  dropsBindings?: string[] | ((answers: Record<string, string>) => string[]);
   /**
    * Только привязки, ref которых содержит эту строку (AWG: "|<контейнер>|" - удаляется один
    * экземпляр, привязки к остальным остаются, иначе сверка завела бы людям новые ключи).
@@ -69,7 +69,7 @@ export interface CommandDef {
    */
   access?: (ctx: RunContext & { output: string }) => AccessEntry | AccessEntry[] | null;
   /** Доступы этих видов после успешного выполнения устаревают (сервис поставлен заново) - удаляются. */
-  forgetsAccess?: string[];
+  forgetsAccess?: string[] | ((answers: Record<string, string>) => string[]);
 }
 
 export interface AccessEntry {

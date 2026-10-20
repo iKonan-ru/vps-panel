@@ -85,7 +85,7 @@ export const mtproxylCmd: CommandDef = {
   group: 'install',
   service: 'MTProxyL',
   description:
-    'MTProto-прокси Telegram (telemt) с веб-панелью MTProxyL. Если прокси уже установлен, устанавливается только панель.',
+    'MTProto-прокси Telegram (telemt), с веб-панелью MTProxyL или без неё: прокси и его пользователи управляются из VPS Panel и так. Если прокси уже установлен, устанавливается только панель.',
   // 443 занят (3X-UI, Caddy сервера панели) - форма предложит свободный порт
   liveDefaults: 'mtproxyl',
   params: [
@@ -148,12 +148,24 @@ export const mtproxylCmd: CommandDef = {
       pattern: '^([0-9]+)?$',
     },
     {
+      name: 'MT_PANEL',
+      label: 'Веб-панель MTProxyL',
+      type: 'select',
+      default: 'yes',
+      options: [
+        { value: 'yes', label: 'установить' },
+        { value: 'no', label: 'не устанавливать' },
+      ],
+      hint: 'без неё прокси и пользователи\u00a0\u2014 на вкладке MTProxyL; панель можно поставить потом',
+    },
+    {
       name: 'MTP_USER',
       label: 'Логин администратора',
       type: 'string',
       default: 'admin',
       required: true,
       pattern: '^[A-Za-z0-9_.-]{2,40}$',
+      showIf: { MT_PANEL: 'yes' },
     },
     {
       name: 'MTP_PASSWORD',
@@ -163,6 +175,7 @@ export const mtproxylCmd: CommandDef = {
       required: true,
       generate: rndHex(12),
       hint: 'не короче 8\u00a0символов',
+      showIf: { MT_PANEL: 'yes' },
     },
     {
       name: 'MTP_PORT',
@@ -170,14 +183,21 @@ export const mtproxylCmd: CommandDef = {
       type: 'port',
       default: '8080',
       required: true,
+      showIf: { MT_PANEL: 'yes' },
     },
   ],
   timeoutSec: 45 * 60,
   files: () => ({ '/tmp/mtproxyl-panel-driver.py': DRIVER }),
   cleanup: ['/tmp/mtproxyl-panel-driver.py', '/tmp/mtproxyl-panel-install.sh'],
   script: `${PROLOGUE}${NAIVE_FUNCS}
-[ "\${#MTP_PASSWORD}" -ge 8 ] || { echo "пароль панели короче 8 символов" >&2; exit 2; }
+# без MT_PANEL (ответы прошлых версий, настройка сервера) - с панелью, как раньше
+panel=yes
+[ "$MT_PANEL" = no ] && panel=no
+if [ "$panel" = yes ]; then
+  [ "\${#MTP_PASSWORD}" -ge 8 ] || { echo "пароль панели короче 8 символов" >&2; exit 2; }
+fi
 if need mtproxyl; then
+  [ "$panel" = yes ] || { echo "MTProxyL уже установлен, а панель не выбрана: делать нечего" >&2; exit 3; }
   say "MTProxyL уже установлен: прокси и пользователей не трогаю, ставлю или обновляю панель"
 else
   if [ "$MT_ENGINE" = "docker" ]; then
@@ -215,29 +235,33 @@ ${ENSURE_DOCKER}  fi
 fi
 say "Ссылки для пользователей"
 mtproxyl links 2>/dev/null || mtproxyl status 2>/dev/null || true
-need python3 || apt_install python3
-# sudo-rs (свежие Ubuntu): его visudo не принимает * в аргументах команд, а установщик панели
-# пишет такие правила sudoers и падает. Переходим на классический sudo, как советует сам установщик.
-sudo_v=""
-if need sudo; then sudo_v="$(sudo --version 2>/dev/null || true) $(readlink -f "$(command -v sudo)")"; fi
-case "$sudo_v" in
-  *sudo-rs*)
-    say "Системный sudo - sudo-rs: перехожу на классический sudo (sudo.ws), иначе установщик панели не примет свой sudoers"
-    [ -x /usr/bin/sudo.ws ] || apt_install sudo
-    update-alternatives --set sudo /usr/bin/sudo.ws
-    sudo --version | sed -n 1p
-    ;;
-esac
-say "Скачиваю установщик панели"
-fetch https://raw.githubusercontent.com/Liafanx/MTProxyL/main/mtproxyl-panel/install.sh -o /tmp/mtproxyl-panel-install.sh
-say "Запускаю установщик панели (отвечаю на его вопросы автоматически)"
-export MTP_USER MTP_PASSWORD MTP_PORT SERVER_HOST
-apt_wait
-python3 /tmp/mtproxyl-panel-driver.py /tmp/mtproxyl-panel-install.sh
-say "Проверяю службу панели"
-systemctl is-active mtproxyl-panel
-grep -E '^[[:space:]]*listen[[:space:]]*=' /etc/mtproxyl-panel/config.toml || true
-say "Панель - только на 127.0.0.1:$MTP_PORT, вход через VPS Panel"
+if [ "$panel" = yes ]; then
+  need python3 || apt_install python3
+  # sudo-rs (свежие Ubuntu): его visudo не принимает * в аргументах команд, а установщик панели
+  # пишет такие правила sudoers и падает. Переходим на классический sudo, как советует сам установщик.
+  sudo_v=""
+  if need sudo; then sudo_v="$(sudo --version 2>/dev/null || true) $(readlink -f "$(command -v sudo)")"; fi
+  case "$sudo_v" in
+    *sudo-rs*)
+      say "Системный sudo - sudo-rs: перехожу на классический sudo (sudo.ws), иначе установщик панели не примет свой sudoers"
+      [ -x /usr/bin/sudo.ws ] || apt_install sudo
+      update-alternatives --set sudo /usr/bin/sudo.ws
+      sudo --version | sed -n 1p
+      ;;
+  esac
+  say "Скачиваю установщик панели"
+  fetch https://raw.githubusercontent.com/Liafanx/MTProxyL/main/mtproxyl-panel/install.sh -o /tmp/mtproxyl-panel-install.sh
+  say "Запускаю установщик панели (отвечаю на его вопросы автоматически)"
+  export MTP_USER MTP_PASSWORD MTP_PORT SERVER_HOST
+  apt_wait
+  python3 /tmp/mtproxyl-panel-driver.py /tmp/mtproxyl-panel-install.sh
+  say "Проверяю службу панели"
+  systemctl is-active mtproxyl-panel
+  grep -E '^[[:space:]]*listen[[:space:]]*=' /etc/mtproxyl-panel/config.toml || true
+  say "Панель - только на 127.0.0.1:$MTP_PORT, вход через VPS Panel"
+else
+  say "Веб-панель не устанавливаю: прокси и пользователи - на вкладке MTProxyL в VPS Panel"
+fi
 if naive_installed && [ "$(mt_port)" = 443 ] && [ "$(naive_mode)" != mask ]; then
   nd=$(naive_get domain)
   np=$(naive_get port)
@@ -255,25 +279,33 @@ if naive_installed && [ "$(mt_port)" = 443 ] && [ "$(naive_mode)" != mask ]; the
 fi
 say "Готово"
 `,
-  preflight: `${NAIVE_FUNCS}if command -v mtproxyl >/dev/null 2>&1; then echo "WARN|MTProxyL уже установлен: будет установлена или обновлена только панель"
+  preflight: `${NAIVE_FUNCS}if command -v mtproxyl >/dev/null 2>&1 && [ "$MT_PANEL" = no ]; then echo "FAIL|MTProxyL уже установлен, а панель не выбрана: делать нечего"
+elif command -v mtproxyl >/dev/null 2>&1; then echo "WARN|MTProxyL уже установлен: будет установлена или обновлена только панель"
 elif [ "$MT_PORT" = 443 ] && [ "$(port_owner 443)" = caddy ] && naive_installed; then echo "WARN|порт 443 занят прокси для браузера: он перейдёт за MTProxyL, браузеры клиентов переподключатся"
 elif ss -ltn | awk '{print $4}' | grep -q ":$MT_PORT$"; then echo "FAIL|порт $MT_PORT занят"
 else echo "OK|порт $MT_PORT свободен"; fi
 if [ "$MT_ENGINE" = "docker" ] && ! command -v docker >/dev/null 2>&1 && ! command -v mtproxyl >/dev/null 2>&1; then echo "WARN|Docker не установлен, будет установлен"; fi
+if [ "$MT_PANEL" != no ]; then
 case "$(sudo --version 2>/dev/null || true) $(readlink -f "$(command -v sudo || true)" || true)" in *sudo-rs*) echo "WARN|sudo-rs будет заменён на классический sudo";; esac
 if systemctl is-active mtproxyl-panel >/dev/null 2>&1; then echo "WARN|панель уже установлена: она будет обновлена с сохранением настроек"; fi
-if ss -ltn | awk '{print $4}' | grep -q ":$MTP_PORT$" && ! systemctl is-active mtproxyl-panel >/dev/null 2>&1; then echo "FAIL|порт панели $MTP_PORT занят"; else echo "OK|порт панели $MTP_PORT свободен"; fi`,
+if ss -ltn | awk '{print $4}' | grep -q ":$MTP_PORT$" && ! systemctl is-active mtproxyl-panel >/dev/null 2>&1; then echo "FAIL|порт панели $MTP_PORT занят"; else echo "OK|порт панели $MTP_PORT свободен"; fi
+fi`,
   plan: (a) => [
     'Установить MTProxyL, если его нет',
     `Прокси на порту ${a.MT_PORT}, FakeTLS ${a.MT_SNI}, ${a.MT_ENGINE === 'binary' ? 'служба systemd' : 'Docker'}`,
     `Пользователи: ${a.MT_USERS}`,
     a.MT_ZAPRET2 === 'yes' ? 'Zapret2 включён' : 'Zapret2 выключен',
-    'Заменить sudo-rs на классический sudo, если нужно',
-    `Веб-панель, логин ${a.MTP_USER}: вход только через VPS Panel`,
+    ...(a.MT_PANEL === 'no'
+      ? ['Без веб-панели: прокси и пользователи\u00a0\u2014 на вкладке MTProxyL']
+      : [
+          'Заменить sudo-rs на классический sudo, если нужно',
+          `Веб-панель, логин ${a.MTP_USER}: вход только через VPS Panel`,
+        ]),
     'Вывести ссылки tg://proxy пользователей',
     'Если порт 443 занят прокси для браузера, перевести прокси за MTProxyL',
   ],
   access: ({ answers, server, panelUrl }) => {
+    if (answers.MT_PANEL === 'no') return null;
     const panel: AccessEntry = {
       kind: 'mtproxyl-panel',
       title: 'Панель MTProxyL',
@@ -288,5 +320,5 @@ if ss -ltn | awk '{print $4}' | grep -q ":$MTP_PORT$" && ! systemctl is-active m
     return [panel];
   },
   after:
-    'Доступ к панели\u00a0\u2014 в\u00a0\u00abДоступах\u00bb сервера, ссылки пользователей\u00a0\u2014 на вкладке MTProxyL.',
+    'Ссылки пользователей\u00a0\u2014 на вкладке MTProxyL, доступ к веб-панели (если она установлена)\u00a0\u2014 в\u00a0\u00abДоступах\u00bb сервера.',
 };

@@ -55,13 +55,41 @@ export const mtproxylUninstallCmd: CommandDef = {
   group: 'maintain',
   service: 'MTProxyL',
   description:
-    'Удаляет MTProxyL с веб-панелью, пользователями и секретами. Ссылки tg://proxy перестанут работать.',
-  params: [CONFIRM],
+    'Удаляет MTProxyL с веб-панелью, пользователями и секретами (ссылки tg://proxy перестанут работать) или только веб-панель: прокси и пользователи остаются.',
+  params: [
+    {
+      name: 'MT_WHAT',
+      label: 'Что удалить',
+      type: 'select',
+      default: 'all',
+      options: [
+        { value: 'all', label: 'MTProxyL целиком' },
+        { value: 'panel', label: 'только веб-панель' },
+      ],
+    },
+    CONFIRM,
+  ],
   timeoutSec: 10 * 60,
   script: `${PROLOGUE}${NAIVE_FUNCS}
 ${GUARD}
 need mtproxyl || { echo "MTProxyL не установлен" >&2; exit 3; }
-if systemctl list-unit-files mtproxyl-panel.service >/dev/null 2>&1 && systemctl cat mtproxyl-panel >/dev/null 2>&1; then
+panel_here() { systemctl cat mtproxyl-panel >/dev/null 2>&1; }
+if [ "$MT_WHAT" = panel ]; then
+  panel_here || { echo "веб-панель MTProxyL не установлена" >&2; exit 3; }
+  say "Удаляю веб-панель MTProxyL (mtproxyl panel uninstall): прокси и пользователей не трогаю"
+  # MTPROXYL_ASSUME_YES: на вопросы "Продолжить?" и "Удалить конфиг и данные тоже?" - да (логин
+  # и пароль панели уходят вместе с ней: новая установка задаст их заново)
+  MTPROXYL_ASSUME_YES=1 mtproxyl panel uninstall </dev/null || true
+  if panel_here || systemctl is-active --quiet mtproxyl-panel 2>/dev/null; then
+    echo "веб-панель не удалилась: служба mtproxyl-panel осталась" >&2
+    exit 1
+  fi
+  say "Прокси работает дальше"
+  mtproxyl status 2>/dev/null | sed -n 1,5p || true
+  say "Готово"
+  exit 0
+fi
+if panel_here; then
   say "Удаляю веб-панель MTProxyL"
   printf 'y\\n' | mtproxyl panel uninstall --no-confirm || true
 fi
@@ -81,14 +109,25 @@ if naive_installed && [ "$(naive_mode)" = mask ]; then
 fi
 say "Готово"
 `,
-  preflight: `${NAIVE_FUNCS}if command -v mtproxyl >/dev/null 2>&1; then echo "WARN|секреты и ссылки пользователей будут удалены; резервная копия\u00a0\u2014 на вкладке \u00abРезервные копии\u00bb"; else echo "FAIL|MTProxyL не установлен"; fi
-if naive_installed && grep -q '"mask443": true' /etc/vps-naive/config.json 2>/dev/null; then echo "OK|прокси для браузера займёт порт 443 сам и перезапустится"; fi`,
-  plan: () => [
-    'Удалить веб-панель MTProxyL',
-    'Удалить MTProxyL с пользователями и секретами',
-    'Вернуть порт 443 прокси для браузера, если он отвечал через MTProxyL',
-  ],
-  dropsBindings: ['mtproxyl'],
+  preflight: `${NAIVE_FUNCS}if ! command -v mtproxyl >/dev/null 2>&1; then echo "FAIL|MTProxyL не установлен"
+elif [ "$MT_WHAT" = panel ]; then
+  if systemctl cat mtproxyl-panel >/dev/null 2>&1; then echo "WARN|будет удалена веб-панель с её логином и паролем; прокси, пользователи и ссылки остаются"; else echo "FAIL|веб-панель MTProxyL не установлена"; fi
+else echo "WARN|секреты и ссылки пользователей будут удалены; резервная копия\u00a0\u2014 на вкладке \u00abРезервные копии\u00bb"; fi
+if [ "$MT_WHAT" != panel ] && naive_installed && grep -q '"mask443": true' /etc/vps-naive/config.json 2>/dev/null; then echo "OK|прокси для браузера займёт порт 443 сам и перезапустится"; fi`,
+  plan: (a) =>
+    a.MT_WHAT === 'panel'
+      ? [
+          'Удалить веб-панель MTProxyL с её логином и паролем',
+          'Прокси, пользователи и ссылки tg://proxy остаются',
+        ]
+      : [
+          'Удалить веб-панель MTProxyL',
+          'Удалить MTProxyL с пользователями и секретами',
+          'Вернуть порт 443 прокси для браузера, если он отвечал через MTProxyL',
+        ],
+  // только панель: пользователи на месте - привязки клиентов остаются, уходит доступ к панели
+  dropsBindings: (a) => (a.MT_WHAT === 'panel' ? [] : ['mtproxyl']),
+  forgetsAccess: (a) => (a.MT_WHAT === 'panel' ? ['mtproxyl-panel'] : []),
 };
 
 export const wdttUninstallCmd: CommandDef = {

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { findCommand } from '../src/commands/index.js';
+import { findCommand, validateAnswers } from '../src/commands/index.js';
 import { WDTT_FW_FUNCS } from '../src/commands/util.js';
 
 describe('удаление сервиса стирает привязки клиентов сразу', () => {
@@ -11,8 +11,33 @@ describe('удаление сервиса стирает привязки кли
       ['awg-uninstall', 'awg'],
       ['openflux-uninstall', 'openflux'],
       ['naive-uninstall', 'naive'],
-    ] as const)
-      expect(findCommand(cmd)?.dropsBindings, cmd).toContain(service);
+    ] as const) {
+      const d = findCommand(cmd)?.dropsBindings;
+      expect(typeof d === 'function' ? d({}) : d, cmd).toContain(service);
+    }
+  });
+
+  it('MTProxyL: удаление только панели оставляет привязки и убирает доступ к панели', () => {
+    const c = findCommand('mtproxyl-uninstall');
+    const drops = c?.dropsBindings as (a: Record<string, string>) => string[];
+    const forgets = c?.forgetsAccess as (a: Record<string, string>) => string[];
+    expect(drops({ MT_WHAT: 'all' })).toEqual(['mtproxyl']);
+    expect(drops({ MT_WHAT: 'panel' })).toEqual([]);
+    expect(forgets({ MT_WHAT: 'panel' })).toEqual(['mtproxyl-panel']);
+    expect(forgets({ MT_WHAT: 'all' })).toEqual([]);
+    expect(c?.plan({ MT_WHAT: 'panel' }).join(' ')).toContain('остаются');
+  });
+
+  it('MTProxyL без панели: логин, пароль и порт панели не нужны, доступов нет', () => {
+    const c = findCommand('mtproxyl');
+    if (!c) throw new Error('нет команды');
+    const base = { MT_PORT: '443', MT_SNI: 'example.com', MT_USERS: 'default' };
+    expect(validateAnswers(c, { ...base, MT_PANEL: 'no' })).toEqual([]);
+    expect(validateAnswers(c, { ...base, MT_PANEL: 'yes' }).join('; ')).toContain('Пароль');
+    const ctx = { panelUrl: 'https://p.example', server: { id: 's', name: 'S', host: 'h' } };
+    expect(c.access?.({ ...ctx, answers: { ...base, MT_PANEL: 'no' }, output: '' })).toBeNull();
+    expect(c.plan({ ...base, MT_PANEL: 'no' }).join(' ')).toContain('Без веб-панели');
+    expect(c.script).toContain('[ "$MT_PANEL" = no ] && panel=no');
   });
 
   it('AWG - только привязки удаляемого контейнера', () => {

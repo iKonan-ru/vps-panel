@@ -47,6 +47,14 @@ interface CatalogDeps {
 const err = (message: string, statusCode: number) =>
   Object.assign(new Error(message), { statusCode });
 
+/** Список команды, который может зависеть от ответов формы (что именно удаляется). */
+function byAnswers(
+  v: string[] | ((answers: Record<string, string>) => string[]) | undefined,
+  answers: Record<string, string>,
+): string[] {
+  return (typeof v === 'function' ? v(answers) : v) ?? [];
+}
+
 /**
  * Команды каталога на сервере: значения формы, проверки перед запуском и исполнение (агент
  * command.run, затем доступы, очередь синхронизации, снятие привязок). Исполнение не открывает
@@ -129,7 +137,8 @@ export function catalogRunner(deps: CatalogDeps) {
   }
 
   /**
-   * Порт MTProxyL: 443 лучше всего для маскировки, но если его (или сохранённый порт) уже слушает
+   * MTProxyL уже установлен - "с панелью": команда тогда ставит только её. Порт MTProxyL: 443
+   * лучше всего для маскировки, но если его (или сохранённый порт) уже слушает
    * другой процесс (Xray 3X-UI, Caddy сервера панели), форма сразу предлагает свободный. 443
    * прокси для браузера (caddy на хосте) занятым не считается: MTProxyL забирает его сам.
    */
@@ -138,7 +147,9 @@ export function catalogRunner(deps: CatalogDeps) {
       await db.select({ cache: servers.statusCache }).from(servers).where(eq(servers.id, id))
     )[0];
     const inv = row?.cache?.inventory;
-    if (!inv || inv.services.some((s) => s.kind === 'mtproxyl')) return {};
+    if (!inv) return {};
+    // MTProxyL уже стоит: команда ставит только панель - выбор "без панели" не имеет смысла
+    if (inv.services.some((s) => s.kind === 'mtproxyl')) return { MT_PANEL: 'yes' };
     const naive = inv.services.some((s) => s.kind === 'naive');
     const busy = (port: number) =>
       inv.firewall.listeners.some(
@@ -307,21 +318,23 @@ export function catalogRunner(deps: CatalogDeps) {
         .set(queued())
         .where(and(eq(gclientBindings.serverId, id), inArray(gclientBindings.service, c.resync)))
         .run();
-    if (exitCode === 0 && c.dropsBindings?.length && !sink.keepBindings) {
+    const drops = byAnswers(c.dropsBindings, ctx.answers);
+    if (exitCode === 0 && drops.length && !sink.keepBindings) {
       const refPart = c.dropsBindingsRef?.(ctx.answers);
       db.delete(gclientBindings)
         .where(
           and(
             eq(gclientBindings.serverId, id),
-            inArray(gclientBindings.service, c.dropsBindings),
+            inArray(gclientBindings.service, drops),
             refPart ? sql`instr(${gclientBindings.ref}, ${refPart}) > 0` : undefined,
           ),
         )
         .run();
     }
-    if (exitCode === 0 && c.forgetsAccess?.length && !sink.keepBindings)
+    const forgets = byAnswers(c.forgetsAccess, ctx.answers);
+    if (exitCode === 0 && forgets.length && !sink.keepBindings)
       db.delete(access)
-        .where(and(eq(access.serverId, id), inArray(access.kind, c.forgetsAccess)))
+        .where(and(eq(access.serverId, id), inArray(access.kind, forgets)))
         .run();
     for (const e of entries) {
       try {

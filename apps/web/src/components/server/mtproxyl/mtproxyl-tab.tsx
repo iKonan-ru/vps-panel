@@ -231,7 +231,12 @@ export function MtproxylTab({ s }: { s: ServerDetail }) {
               <ButtonLink
                 to="/commands/$id"
                 params={{ id: 'mtproxyl' }}
-                search={{ server: s.id, run: undefined, tab: undefined }}
+                search={{
+                  server: s.id,
+                  run: undefined,
+                  tab: undefined,
+                  preset: { MT_PANEL: 'yes' },
+                }}
                 size="sm"
                 title="Веб-панель не установлена"
               >
@@ -365,9 +370,17 @@ export function MtproxylTab({ s }: { s: ServerDetail }) {
         serverId={s.id}
         kind="mtproxyl"
         title="MTProxyL"
-        loses="Прокси, его пользователи и веб-панель удалятся, ссылки tg://proxy перестанут работать"
+        loses={
+          panelInstalled
+            ? 'Прокси, его пользователи и веб-панель удалятся, ссылки tg://proxy перестанут работать. \u00abУдалить панель\u00bb уберёт только веб-панель: прокси и ссылки останутся'
+            : 'Прокси и его пользователи удалятся, ссылки tg://proxy перестанут работать'
+        }
         disabled={op.busy || lock.busy}
         reason={lock.reason}
+        preset={{ MT_WHAT: 'all' }}
+        part={
+          panelInstalled ? { label: 'Удалить панель', preset: { MT_WHAT: 'panel' } } : undefined
+        }
       />
 
       <Dialog open={engineOpen} onClose={() => setEngineOpen(false)} title="Версия движка telemt">
