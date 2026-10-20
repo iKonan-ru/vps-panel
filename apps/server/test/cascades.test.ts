@@ -79,6 +79,8 @@ function fakeXui(opts: { inbounds?: Record<string, unknown>[] } = {}) {
       }
       if (path === 'server/status')
         return ok({ xray: { state: s.xray, errorMsg: s.xray === 'running' ? '' : 'boom' } });
+      if (path === 'clients/list')
+        return ok([...clients].map(([email, c]) => ({ email, inboundIds: c.inboundIds })));
       if (path.startsWith('clients/get/')) {
         const email = decodeURIComponent(path.split('/')[2] ?? '');
         const c = clients.get(email);
@@ -315,6 +317,42 @@ describe('каскады', () => {
     expect(db.select().from(cascades).all()).toEqual([]);
     expect(xui.entry?.inbounds).toEqual([]);
     expect(JSON.stringify(xui.entry?.template)).not.toContain('vp-cascade');
+  });
+
+  it('выход не в сети при удалении - служебного клиента убирает плановая сверка', async () => {
+    const { db, c, xui, online, done, input } = await setup();
+    // чужой клиент выхода сверка не трогает
+    xui.exit?.clients.set('alice', { uuid: 'u-a', flow: '', inboundIds: [7] });
+    await c.create('entry', input);
+    await done();
+    const email = cascadeClientEmail('entry');
+    online.delete('exit');
+    await c.remove(db.select().from(cascades).get()?.id ?? '');
+    const a = db.select().from(actionLog).all().at(-1);
+    expect(a?.output).toContain('плановой сверкой');
+    expect(xui.exit?.clients.has(email)).toBe(true);
+    online.add('exit');
+    await c.syncAll();
+    expect(xui.exit?.clients.has(email)).toBe(false);
+    expect(xui.exit?.clients.has('alice')).toBe(true);
+    const r = db.select().from(actionLog).all().at(-1);
+    expect(r).toMatchObject({ serverId: 'exit', kind: 'cascade:release', exitCode: 0 });
+  });
+
+  it('плановая сверка: лишний inbound служебного клиента отвязывается, нужный остаётся', async () => {
+    const { db, c, xui, done, input } = await setup();
+    await c.create('entry', input);
+    await done();
+    const email = cascadeClientEmail('entry');
+    const sc = xui.exit?.clients.get(email);
+    if (sc) sc.inboundIds = [7, 8];
+    await c.syncAll();
+    expect(xui.exit?.clients.get(email)?.inboundIds).toEqual([7]);
+    // вход удалён из панели, пока выход был не в сети: клиент удаляется
+    db.delete(cascades).run();
+    db.delete(servers).where(eq(servers.id, 'entry')).run();
+    await c.sweepExits();
+    expect(xui.exit?.clients.has(email)).toBe(false);
   });
 
   it('подписка: каскадная ссылка подписана по выходу и стоит после его прямой', async () => {

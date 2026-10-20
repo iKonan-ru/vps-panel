@@ -75,9 +75,12 @@ const hard = (message: string) =>
   Object.assign(new Error(message), { statusCode: 409, hard: true });
 const isHard = (e: unknown) => Boolean((e as { hard?: boolean }).hard);
 
+/** Начало email служебных клиентов каскадов на выходах. */
+const SERVICE_EMAIL_PREFIX = 'vp-cascade-';
+
 /** Служебный клиент каскадов входа на выходе: свой на каждый вход. */
 export function cascadeClientEmail(entryServerId: string): string {
-  return `vp-cascade-${createHash('sha256').update(entryServerId).digest('hex').slice(0, 10)}`;
+  return `${SERVICE_EMAIL_PREFIX}${createHash('sha256').update(entryServerId).digest('hex').slice(0, 10)}`;
 }
 
 /** Свой VLESS Reality RAW inbound (через него ходит каскад). */
@@ -745,7 +748,9 @@ export class Cascades {
               row.exitServerId,
               row.exitInboundId,
             ).catch((e: Error) =>
-              say(`служебный клиент на прежнем inbound-е выхода не отвязан: ${e.message}`),
+              say(
+                `служебный клиент на прежнем inbound-е выхода не отвязан (${e.message}): панель отвяжет его плановой сверкой`,
+              ),
             );
         }
         if (linksChanged) say('Ссылки клиентов панели обновятся синхронизацией, подписки - сами');
@@ -755,13 +760,16 @@ export class Cascades {
     );
   }
 
-  /** Служебный клиент входа на выходе: отвязать от inbound-а, без привязок - удалить. */
+  /**
+   * Служебный клиент входа на выходе: отвязать от inbound-а, без привязок - удалить. Выход не в
+   * сети - ошибка; клиента потом уберёт плановая сверка (sweepExits).
+   */
   private async releaseExitClient(entryId: string, exitId: string, inboundId: number) {
     const mine = this.rows(eq(cascades.entryServerId, entryId)).filter(
       (r) => r.exitServerId === exitId,
     );
-    if (mine.some((r) => r.exitInboundId === inboundId) || !this.d.registry.isOnline(exitId))
-      return;
+    if (mine.some((r) => r.exitInboundId === inboundId)) return;
+    if (!this.d.registry.isOnline(exitId)) throw new Error('выход не в сети');
     const api = this.api(exitId);
     const email = encodeURIComponent(cascadeClientEmail(entryId));
     if (mine.length)
@@ -802,7 +810,10 @@ export class Cascades {
           );
         }
         await this.releaseExitClient(row.entryServerId, row.exitServerId, row.exitInboundId).catch(
-          (e: Error) => notes.push(`служебный клиент на выходе не убран: ${e.message}`),
+          (e: Error) =>
+            notes.push(
+              `служебный клиент на выходе не убран (${e.message}): панель уберёт его плановой сверкой`,
+            ),
         );
         return notes;
       },
@@ -889,6 +900,75 @@ export class Cascades {
   async syncAll() {
     const entries = new Set(this.rows().map((r) => r.entryServerId));
     for (const id of entries) await this.syncEntry(id).catch(() => undefined);
+    await this.sweepExits().catch(() => undefined);
+  }
+
+  /**
+   * Служебные клиенты каскадов на выходах (vp-cascade-...) приводятся к базе: клиент без
+   * каскадов удаляется, лишние inbound-ы отвязываются. Так отзываются клиенты, которых не
+   * удалось убрать сразу (выход был не в сети при удалении каскада, входа или сервера).
+   * Серверы - все в сети с API-токеном 3X-UI; занятые и те, чей вход сейчас занят, - в
+   * следующий раз.
+   */
+  async sweepExits(): Promise<void> {
+    const { db, registry, journal, log } = this.d;
+    const all = db.select({ id: servers.id }).from(servers).all();
+    // email служебного клиента -> вход (сервер в панели)
+    const entryOf = new Map(all.map((x) => [cascadeClientEmail(x.id), x.id]));
+    for (const { id } of all) {
+      if (!registry.isOnline(id) || !savedXuiToken(db, this.d.box, id) || busyAction(db, id))
+        continue;
+      try {
+        const api = this.api(id);
+        const got = await api('GET', 'clients/list');
+        // 3X-UI старше 3.1 (нет API клиентов): каскадов через такой сервер не бывает
+        if (got.status === 404) continue;
+        const list = (unwrap(got, 'clients/list') ?? []) as Json[];
+        const work: { email: string; drop: number[] | null }[] = [];
+        for (const c of list) {
+          const email = String(c.email ?? '');
+          if (!email.startsWith(SERVICE_EMAIL_PREFIX)) continue;
+          const entry = entryOf.get(email);
+          // вход занят (создание, правка, удаление каскада) - не мешать ему
+          if (entry && busyAction(db, entry)) continue;
+          const want = new Set(
+            this.rows(eq(cascades.exitServerId, id))
+              .filter((r) => r.entryServerId === entry)
+              .map((r) => r.exitInboundId),
+          );
+          const has = ((c.inboundIds as number[] | undefined) ?? []).map(Number);
+          if (!want.size) work.push({ email, drop: null });
+          else {
+            const extra = has.filter((x) => !want.has(x));
+            if (extra.length) work.push({ email, drop: extra });
+          }
+        }
+        if (!work.length) continue;
+        await journal.quick(
+          id,
+          'cascade:release',
+          { clients: work.length },
+          async () => {
+            const notes: string[] = [];
+            for (const w of work) {
+              const e = encodeURIComponent(w.email);
+              if (w.drop)
+                unwrap(await api('POST', `clients/${e}/detach`, { inboundIds: w.drop }), 'detach');
+              else unwrap(await api('POST', `clients/del/${e}`), 'clients/del');
+              notes.push(
+                w.drop
+                  ? `служебный клиент каскада ${w.email}: отвязан от inbound ${w.drop.join(', ')}`
+                  : `служебный клиент каскада ${w.email}: удалён, каскадов через этот сервер у входа нет`,
+              );
+            }
+            return notes;
+          },
+          (n) => n.join('\n'),
+        );
+      } catch (e) {
+        log.warn({ serverId: id, err: (e as Error).message }, 'каскады: служебные клиенты выхода');
+      }
+    }
   }
 
   /**
