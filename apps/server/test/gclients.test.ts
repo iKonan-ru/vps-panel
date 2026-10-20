@@ -8,6 +8,7 @@ import type { AgentRegistry } from '../src/agents/registry.js';
 import { type Db, createDb } from '../src/db/index.js';
 import {
   awgClients,
+  cascades,
   gclientBindings,
   gclientDevices,
   gclients,
@@ -447,6 +448,63 @@ describe('GClients.reconcile: 3X-UI', () => {
     only(null);
     await g.reconcile();
     expect(xui.s1?.clients.get(c.slug)?.inboundIds.sort()).toEqual([1, 2]);
+  });
+});
+
+describe('GClients.reconcile: каскад', () => {
+  it('inbound входа каскада - только клиентам с VLESS на сервере выхода', async () => {
+    // inbound 2 на s1 - вход каскада с выходом s2
+    db.insert(cascades)
+      .values({
+        id: 'k1',
+        entryServerId: 's1',
+        entryInboundId: 2,
+        entryPort: 20443,
+        exitServerId: 's2',
+        exitInboundId: 1,
+      })
+      .run();
+    const all = mk('Аня');
+    const only = mk('Боря');
+    const access = (v: unknown) =>
+      db
+        .update(gclients)
+        .set({ access: v as never })
+        .where(eq(gclients.id, only.id))
+        .run();
+    access([{ serverId: 's1', services: ['xui'] }]);
+    const g = new GClients(db, box, registry, journal, async () => [], { warn: () => {} });
+    await g.reconcile();
+    expect(xui.s1?.clients.get(all.slug)?.inboundIds).toEqual([1, 2]);
+    expect(xui.s1?.clients.get(only.slug)?.inboundIds).toEqual([1]);
+    const bOf = (id: string) =>
+      db
+        .select()
+        .from(gclientBindings)
+        .all()
+        .find((x) => x.clientId === id && x.serverId === 's1' && x.service === 'xui');
+    expect(bOf(only.id)?.links).toHaveLength(1);
+    expect(journal.streamed.s1).toContain('каскадов без доступа к выходу: 1');
+
+    // разрешили VLESS на выходе - каскад появляется
+    access([
+      { serverId: 's1', services: ['xui'] },
+      { serverId: 's2', services: ['xui'] },
+    ]);
+    db.update(gclientBindings).set(queued()).where(eq(gclientBindings.clientId, only.id)).run();
+    await g.reconcile();
+    expect(xui.s1?.clients.get(only.slug)?.inboundIds).toEqual([1, 2]);
+
+    // свой набор - только каскад, выхода нет: клиента на сервере нет, ссылок нет, не ошибка
+    access([{ serverId: 's1', services: ['xui'] }]);
+    db.update(gclientBindings)
+      .set({ ...queued(), xuiInbounds: [2] })
+      .where(eq(gclientBindings.clientId, only.id))
+      .run();
+    await g.reconcile();
+    expect(xui.s1?.clients.has(only.slug)).toBe(false);
+    expect(bOf(only.id)).toMatchObject({ state: 'ok', links: [] });
+    expect(xui.s1?.clients.get(all.slug)?.inboundIds).toEqual([1, 2]);
   });
 });
 

@@ -4,7 +4,7 @@ import { type AgentRegistry, agentUnreachable } from '../agents/registry.js';
 import { toSummary } from '../agents/state.js';
 
 import type { Db } from '../db/index.js';
-import { gclientBindings, gclientDevices, gclients, servers } from '../db/schema.js';
+import { cascades, gclientBindings, gclientDevices, gclients, servers } from '../db/schema.js';
 import { type actionJournal, onActionFinished } from './action-journal.js';
 import { awgForgetKey } from './awg-clients.js';
 import {
@@ -18,6 +18,7 @@ import {
   awgRef,
   awgRemove,
   awgStatus,
+  cascadeAllowed,
   mtEnsure,
   mtRemove,
   naiveEnsure,
@@ -544,8 +545,13 @@ export class GClients {
     say(`Синхронизация клиентов: изменений ${work.length}`);
     // Состояние сервисов спрашивается один раз и только если есть работа для них. Запоминается
     // и ошибка: после таймаута следующие привязки не ждут те же 60-120 с заново.
-    let xui: Promise<{ api: XuiCall; target: number[]; reason: string; own: number[] }> | null =
-      null;
+    let xui: Promise<{
+      api: XuiCall;
+      target: number[];
+      reason: string;
+      own: number[];
+      exitOf: Map<number, string>;
+    }> | null = null;
     let awg: Promise<AwgStatus> | null = null;
     let mt: Promise<MtStatus> | null = null;
     let wd: Promise<WdttList> | null = null;
@@ -560,7 +566,17 @@ export class GClients {
         );
         const inbounds = await listInbounds(api);
         const own = ownVlessInbounds(inbounds).map((i) => Number(i.id));
-        return { api, own, ...xuiTargets(inbounds, row.xuiExcluded) };
+        // каскады этого сервера: inbound входа -> сервер выхода
+        const exitOf = new Map(
+          this.db
+            .select()
+            .from(cascades)
+            .where(eq(cascades.entryServerId, row.id))
+            .all()
+            .filter((k) => k.entryInboundId)
+            .map((k) => [Number(k.entryInboundId), k.exitServerId] as const),
+        );
+        return { api, own, exitOf, ...xuiTargets(inbounds, row.xuiExcluded) };
       })();
       return xui;
     };
@@ -626,9 +642,18 @@ export class GClients {
         if (b.service === 'xui') {
           const x = await xuiCtx();
           // свой набор (вкладка 3X-UI) - из тех inbound-ов, что ещё есть
-          const target = b.xuiInbounds
-            ? b.xuiInbounds.filter((id) => x.own.includes(id))
-            : x.target;
+          const base = b.xuiInbounds ? b.xuiInbounds.filter((id) => x.own.includes(id)) : x.target;
+          // inbound входа каскада - только клиентам с VLESS на сервере выхода
+          const { target, denied } = cascadeAllowed(base, x.exitOf, (exit) =>
+            allowed(c, exit, 'xui'),
+          );
+          if (!target.length && denied) {
+            // здесь у клиента только каскады, а выходы ему не разрешены: VLESS на сервере нет
+            await xuiRemove(x.api, b.ref);
+            this.setBinding(b, { state: 'ok', error: '', links: [] });
+            say(`${label}: только каскады без доступа к выходу, ссылки убраны`);
+            continue;
+          }
           if (!target.length) {
             // своих inbound-ов VLESS на сервере нет (удалили все): VLESS здесь просто нет -
             // не ошибка; ссылок нет, сервер уходит из подписки
@@ -650,7 +675,9 @@ export class GClients {
           }
           const links = await xuiEnsure(x.api, c, b.ref, target);
           this.setBinding(b, { state: 'ok', error: '', links });
-          say(`${label}: ${c.enabled ? 'включён' : 'выключен'}, inbound: ${target.length}`);
+          say(
+            `${label}: ${c.enabled ? 'включён' : 'выключен'}, inbound: ${target.length}${denied ? `, каскадов без доступа к выходу: ${denied}` : ''}`,
+          );
         }
         if (b.service === 'mtproxyl') {
           const r = await mtEnsure(this.deps, row.id, await mtCtx(), c, b);

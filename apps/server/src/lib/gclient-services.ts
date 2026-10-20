@@ -114,6 +114,23 @@ export function xuiTargets(
 }
 
 /**
+ * Inbound-ы VLESS клиента без каскадов, выход которых ему не разрешён: inbound входа каскада
+ * ведёт в интернет через выход, поэтому клиент получает его, только если у него есть VLESS на
+ * сервере выхода. exitOf - inbound входа -> сервер выхода (каскады этого сервера).
+ */
+export function cascadeAllowed(
+  target: number[],
+  exitOf: ReadonlyMap<number, string>,
+  allowedOn: (serverId: string) => boolean,
+): { target: number[]; denied: number } {
+  const ok = target.filter((id) => {
+    const exit = exitOf.get(id);
+    return exit === undefined || allowedOn(exit);
+  });
+  return { target: ok, denied: target.length - ok.length };
+}
+
+/**
  * Ссылки VLESS привязки устарели: в отчёте агента, пришедшем после их получения, нет порта, на
  * который они указывают (inbound в самой 3X-UI перенесли на другой порт, выключили или удалили).
  */
