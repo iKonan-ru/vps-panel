@@ -266,7 +266,7 @@ export async function xuiRoutes(
       new Error(
         s.kind === 'telegram'
           ? `\u00ab${email}\u00bb\u00a0\u2014 выход панели в Telegram: его ведёт панель`
-          : `\u00ab${email}\u00bb\u00a0\u2014 служебный клиент каскада${s.entry ? ` с ${s.entry.name}` : ''}: его ведёт панель, каскад меняется и удаляется на вкладке 3X-UI входа`,
+          : `\u00ab${email}\u00bb\u00a0\u2014 служебный пользователь каскада${s.entry ? ` с ${s.entry.name}` : ''}: его ведёт панель, каскад меняется и удаляется на вкладке 3X-UI входа`,
       ),
       { statusCode: 409 },
     );
@@ -359,7 +359,8 @@ export async function xuiRoutes(
         const cur = readClient(
           unwrap(await api('GET', `clients/get/${encodeURIComponent(email)}`), 'clients/get'),
         );
-        if (!cur) throw Object.assign(new Error('клиент не найден в 3X-UI'), { statusCode: 404 });
+        if (!cur)
+          throw Object.assign(new Error('пользователь не найден в 3X-UI'), { statusCode: 404 });
         const add = want.filter((i) => !cur.inboundIds.includes(i));
         const del = cur.inboundIds.filter((i) => !want.includes(i));
         if (add.length)

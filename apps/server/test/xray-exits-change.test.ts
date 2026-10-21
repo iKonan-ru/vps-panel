@@ -166,3 +166,71 @@ describe('выходы в Telegram за inbound-ами', () => {
     expect(telegramExitOf(ex, 's1', 3)).toBeNull();
   });
 });
+
+describe('запасные выходы: выбор владельца', () => {
+  it('выключенные серверы запасными не берутся, остальные и новые - да', async () => {
+    const { XraySpares } = await import('../src/lib/xray-exits.js');
+    const { setSpareOff } = await import('../src/lib/xray.js');
+    const db = createDb(':memory:');
+    const box = new SecretBox('s'.repeat(40));
+    for (const [id, host] of [
+      ['s1', '203.0.113.10'],
+      ['s2', '203.0.113.20'],
+      ['s3', '203.0.113.30'],
+      ['s4', '203.0.113.40'],
+    ] as const) {
+      db.insert(servers)
+        .values({
+          id,
+          name: id,
+          host,
+          statusCache: { inventory: { services: [{ kind: 'xui' }] } },
+        } as never)
+        .run();
+      await saveXuiToken(db, box, id, 'tok');
+    }
+    const ok = (obj: unknown) => ({ status: 200, data: { success: true, obj } });
+    const inbound = {
+      id: 1,
+      remark: 'VLESS',
+      enable: true,
+      protocol: 'vless',
+      port: 443,
+      streamSettings: reality(443),
+    };
+    const registry = {
+      isOnline: () => true,
+      request: async (_id: string, _m: string, p: { path: string }) => {
+        if (p.path === 'inbounds/list') return ok([inbound]);
+        if (p.path.startsWith('inbounds/get/')) return ok(inbound);
+        if (p.path === 'clients/get/vps-panel')
+          return ok({ client: { uuid: 'u', email: 'vps-panel' }, inboundIds: [1] });
+        return ok(null);
+      },
+    };
+    let spares: XrayOutbound[] = [];
+    const xray = {
+      status: () => ({ outbound: exit('s1', 1, 443) }),
+      exits: () => [exit('s1', 1, 443), ...spares],
+      setSpares: async (l: XrayOutbound[]) => {
+        spares = l;
+        return false;
+      },
+      start: async () => {},
+      checkAll: async () => [],
+    };
+    const s = new XraySpares({
+      db,
+      box,
+      registry: registry as never,
+      xray: xray as never,
+      log: { info: () => {}, warn: () => {} },
+      panelUrl: 'http://127.0.0.1',
+    });
+    await s.sync();
+    expect(spares.map((x) => x.serverId)).toEqual(['s2', 's3', 's4']);
+    setSpareOff(db, ['s3', 's3']);
+    await s.sync();
+    expect(spares.map((x) => x.serverId)).toEqual(['s2', 's4']);
+  });
+});

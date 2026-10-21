@@ -62,7 +62,7 @@ export function XuiInbounds({
     if (!body.enable) {
       const ok = await ask({
         title: `Выключить inbound \u00ab${i.remark}\u00bb?`,
-        text: `Его клиенты (${i.clients}) не смогут подключиться.${exitNote(i)}`,
+        text: `Его пользователи (${i.clients}) не смогут подключиться.${exitNote(i)}`,
         okLabel: 'Выключить',
         danger: true,
       });
@@ -78,7 +78,7 @@ export function XuiInbounds({
   async function remove(i: XuiInboundRow) {
     const ok = await ask({
       title: `Удалить inbound \u00ab${i.remark || `#${i.id}`}\u00bb?`,
-      text: `Клиентов: ${i.clients}${i.enable ? `, сейчас онлайн: ${i.online}` : ''}. Ссылки на него пропадут из подписок, клиентам без подписки он перестанет работать.${exitNote(i)}`,
+      text: `Пользователей: ${i.clients}${i.enable ? `, сейчас онлайн: ${i.online}` : ''}. Ссылки на него пропадут из подписок, пользователям без подписки он перестанет работать.${exitNote(i)}`,
       okLabel: 'Удалить',
       danger: true,
     });
@@ -201,7 +201,7 @@ export function XuiInbounds({
               <div className="mt-0.5 text-xs text-muted">
                 {[
                   i.sni && `SNI ${i.sni}`,
-                  `клиентов: ${i.clients}${i.clientsOff ? ` (выключено: ${i.clientsOff})` : ''}`,
+                  `пользователей: ${i.clients}${i.clientsOff ? ` (выключено: ${i.clientsOff})` : ''}`,
                   i.panelClients ? `из панели: ${i.panelClients}` : '',
                   i.enable ? `онлайн: ${i.online}` : '',
                   `трафик: ${bytes(i.up + i.down)}${i.total ? ` из ${bytes(i.total)}` : ''}`,

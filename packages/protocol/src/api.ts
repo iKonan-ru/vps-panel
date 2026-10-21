@@ -156,8 +156,11 @@ export interface XrayStatus {
   outbound: XrayExitView | null;
   /** Все выходы по порядку: основной, затем запасные. */
   exits: XrayExitView[];
-  /** Запасные: когда готовились и что не вышло по серверам. */
-  spares: { at: string | null; errors: { server: string; error: string }[] };
+  /**
+   * Запасные: когда готовились и что не вышло по серверам; off - серверы, которые владелец не
+   * разрешил брать запасными (остальные с 3X-UI - можно, в том числе новые).
+   */
+  spares: { at: string | null; errors: { server: string; error: string }[]; off: string[] };
 }
 
 // ---- Расширение Firefox ----

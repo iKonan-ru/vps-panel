@@ -4,7 +4,7 @@ import { type AgentRegistry, requireOnline } from '../agents/registry.js';
 import type { Db } from '../db/index.js';
 import type { SecretBox } from '../lib/secret-box.js';
 import { type ExitDeps, type XraySpares, prepareExit, realityInbounds } from '../lib/xray-exits.js';
-import type { XrayManager } from '../lib/xray.js';
+import { type XrayManager, setSpareOff } from '../lib/xray.js';
 import { xuiApi } from '../lib/xui-api.js';
 import { xuiToken } from '../lib/xui-token.js';
 
@@ -61,6 +61,17 @@ export async function xrayRoutes(
   /** Подготовить запасные выходы сейчас (кнопка в настройках). */
   app.post('/api/xray/spares', async () => {
     await spares.sync();
+    return { status: xray.status() };
+  });
+
+  /**
+   * Какие серверы можно брать запасными выходами: off - нельзя (остальные и новые - можно).
+   * Запасные пересобираются сразу.
+   */
+  app.put('/api/xray/spares/off', async (req) => {
+    const { off } = z.object({ off: z.array(z.string().max(64)).max(200) }).parse(req.body ?? {});
+    setSpareOff(db, off);
+    if (xray.status().configured) await spares.sync();
     return { status: xray.status() };
   });
 

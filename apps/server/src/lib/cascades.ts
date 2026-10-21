@@ -582,7 +582,7 @@ export class Cascades {
       async (action) => {
         const say = (line: string) => action.stream('log', `${line}\n`);
         const exit = this.server(body.exitServerId);
-        say(`Выход ${exit.name}: служебный клиент`);
+        say(`Выход ${exit.name}: служебный пользователь`);
         await this.exitParams(entryId, body.exitServerId, body.exitInboundId);
         const st = await xrayState(api);
         if (st.state !== 'running')
@@ -759,7 +759,7 @@ export class Cascades {
               row.exitInboundId,
             ).catch((e: Error) =>
               say(
-                `служебный клиент на прежнем inbound-е выхода не отвязан (${e.message}): панель отвяжет его плановой сверкой`,
+                `служебный пользователь на прежнем inbound-е выхода не отвязан (${e.message}): панель отвяжет его плановой сверкой`,
               ),
             );
         }
@@ -783,16 +783,16 @@ export class Cascades {
       (r) => r.exitServerId === exitId,
     );
     if (mine.some((r) => r.exitInboundId === inboundId))
-      return 'служебный клиент на выходе нужен другому каскаду этого входа';
+      return 'служебный пользователь на выходе нужен другому каскаду этого входа';
     if (!this.d.registry.isOnline(exitId)) throw new Error('выход не в сети');
     const api = this.api(exitId);
     const email = encodeURIComponent(cascadeClientEmail(entryId));
     if (mine.length) {
       unwrap(await api('POST', `clients/${email}/detach`, { inboundIds: [inboundId] }), 'detach');
-      return 'служебный клиент на выходе отвязан от inbound-а';
+      return 'служебный пользователь на выходе отвязан от inbound-а';
     }
     unwrap(await api('POST', `clients/del/${email}`), 'clients/del');
-    return 'служебный клиент на выходе удалён';
+    return 'служебный пользователь на выходе удалён';
   }
 
   /**
@@ -833,12 +833,12 @@ export class Cascades {
               : 'Inbound входа не удалён: удалить его можно в списке inbound-ов',
           );
         }
-        say('Служебный клиент на выходе');
+        say('Служебный пользователь на выходе');
         await this.releaseExitClient(row.entryServerId, row.exitServerId, row.exitInboundId).then(
           (note) => say(note.charAt(0).toUpperCase() + note.slice(1)),
           (e: Error) =>
             say(
-              `Служебный клиент на выходе не убран (${e.message}): панель уберёт его плановой сверкой`,
+              `Служебный пользователь на выходе не убран (${e.message}): панель уберёт его плановой сверкой`,
             ),
         );
         say('Ссылки через этот каскад уйдут из подписок после синхронизации');
@@ -982,8 +982,8 @@ export class Cascades {
               else unwrap(await api('POST', `clients/del/${e}`), 'clients/del');
               notes.push(
                 w.drop
-                  ? `служебный клиент каскада ${w.email}: отвязан от inbound ${w.drop.join(', ')}`
-                  : `служебный клиент каскада ${w.email}: удалён, каскадов через этот сервер у входа нет`,
+                  ? `служебный пользователь каскада ${w.email}: отвязан от inbound ${w.drop.join(', ')}`
+                  : `служебный пользователь каскада ${w.email}: удалён, каскадов через этот сервер у входа нет`,
               );
             }
             return notes;
@@ -991,7 +991,10 @@ export class Cascades {
           (n) => n.join('\n'),
         );
       } catch (e) {
-        log.warn({ serverId: id, err: (e as Error).message }, 'каскады: служебные клиенты выхода');
+        log.warn(
+          { serverId: id, err: (e as Error).message },
+          'каскады: служебные пользователи выхода',
+        );
       }
     }
   }

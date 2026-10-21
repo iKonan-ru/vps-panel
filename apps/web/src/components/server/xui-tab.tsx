@@ -35,7 +35,7 @@ import {
 } from 'lucide-react';
 import { useState } from 'react';
 
-/** Вкладка 3X-UI: служба, Xray, inbound-ы и клиенты, настройки панели и обновление. */
+/** Вкладка 3X-UI: служба, Xray, inbound-ы и пользователи, настройки панели и обновление. */
 export function XuiTab({ s }: { s: ServerDetail }) {
   const qc = useQueryClient();
   const online = s.status === 'online';
@@ -56,7 +56,7 @@ export function XuiTab({ s }: { s: ServerDetail }) {
     staleTime: 20_000,
     retry: false,
   });
-  // тот же запрос, что у блока "Inbound-ы" (общий кэш): имена inbound-ов для клиентов
+  // тот же запрос, что у блока "Inbound-ы" (общий кэш): имена inbound-ов для пользователей
   const inboundList = useQuery({
     queryKey: ['xui-inbounds', s.id],
     queryFn: () => api<XuiInboundRow[]>(`/api/servers/${s.id}/xui/inbound-list`),
@@ -260,7 +260,7 @@ export function XuiTab({ s }: { s: ServerDetail }) {
             icon: <KeyRound className="size-3.5" />,
             onClick: () => void issueToken(),
             disabled: op.busy || lock.busy,
-            title: 'Нужен для статуса Xray, inbound и клиентов панели',
+            title: 'Нужен для статуса Xray, inbound и пользователей',
             group: 'more',
           },
           {
@@ -300,7 +300,7 @@ export function XuiTab({ s }: { s: ServerDetail }) {
             kind: 'xui',
             title: '3X-UI',
             current: data.version,
-            hint: 'Через x-ui update: inbound и клиенты сохранятся, панель перезапустится',
+            hint: 'Через x-ui update: inbound и пользователи сохранятся, панель перезапустится',
           },
           {
             kind: 'xray',
@@ -329,7 +329,7 @@ export function XuiTab({ s }: { s: ServerDetail }) {
         serverId={s.id}
         kind="xui"
         title="3X-UI"
-        loses="Панель, Xray и все inbound с клиентами удалятся, привязки клиентов панели снимутся"
+        loses="Панель, Xray и все inbound с пользователями удалятся, привязки клиентов панели снимутся"
         disabled={op.busy || lock.busy}
         reason={lock.reason}
       />

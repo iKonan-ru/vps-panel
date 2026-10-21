@@ -1,5 +1,6 @@
 import { Alert } from '@/components/ui/alert';
 import { Button } from '@/components/ui/button';
+import { Checkbox } from '@/components/ui/checkbox';
 import { Chip } from '@/components/ui/chip';
 import { useConfirm } from '@/components/ui/confirm';
 import { Dialog } from '@/components/ui/dialog';
@@ -106,10 +107,21 @@ export function XrayRouteDialog({ open, onClose }: { open: boolean; onClose: () 
   const prepareSpares = () =>
     run('Запасные выходы готовы', () => api('/api/xray/spares', { method: 'POST' }));
 
+  // запасным может быть любой сервер с 3X-UI, кроме сервера панели и основного выхода
+  const off = new Set(st.spares.off);
+  const spareServers = (servers ?? []).filter(
+    (s) =>
+      s.services.some((sv) => sv.kind === 'xui') && !s.panelHost && s.id !== st.outbound?.serverId,
+  );
+  const toggleSpare = (id: string) => {
+    const next = off.has(id) ? st.spares.off.filter((x) => x !== id) : [...st.spares.off, id];
+    void run('', () => api('/api/xray/spares/off', { method: 'PUT', json: { off: next } }));
+  };
+
   const disable = async () => {
     const ok = await ask({
       title: 'Отключить маршрут через xray?',
-      text: 'Уведомления пойдут напрямую или через агенты. Клиенты vps-panel в 3X-UI останутся.',
+      text: 'Уведомления пойдут напрямую или через агенты. Пользователи vps-panel в 3X-UI останутся.',
       okLabel: 'Отключить',
       danger: true,
     });
@@ -128,8 +140,8 @@ export function XrayRouteDialog({ open, onClose }: { open: boolean; onClose: () 
         </Chip>
         <InfoTip>
           Панель отправляет сообщения через 3X-UI на зарубежных серверах. Если основной выход не
-          отвечает, используются запасные: клиент <span className="font-mono">vps-panel</span> на
-          остальных серверах с 3X-UI.
+          отвечает, используются запасные: пользователь <span className="font-mono">vps-panel</span>{' '}
+          на отмеченных серверах с 3X-UI.
         </InfoTip>
         <div className="grow" />
         {st.configured && (
@@ -151,40 +163,42 @@ export function XrayRouteDialog({ open, onClose }: { open: boolean; onClose: () 
               {st.restarts > 0 ? `, перезапусков: ${st.restarts}` : ''}
             </div>
             <div className="flex flex-col rounded-lg border border-border">
-              {st.exits.map((x) => (
-                <div
-                  key={x.serverId}
-                  className="flex items-start gap-3 border-b border-border px-3 py-2 text-[13px] last:border-b-0"
-                >
-                  <span className="min-w-0 grow">
-                    <span className="font-medium">{x.serverName}</span>
-                    {x.primary && (
-                      <Chip tone="accent" className="ml-2">
-                        основной
-                      </Chip>
-                    )}
-                    <span className="block truncate text-xs text-muted">
-                      {x.inboundRemark || `#${x.inboundId}`}, порт {x.port}, SNI {x.sni}
+              {st.exits
+                .filter((x) => x.primary)
+                .map((x) => (
+                  <div
+                    key={x.serverId}
+                    className="flex items-start gap-3 border-b border-border px-3 py-2 text-[13px] last:border-b-0"
+                  >
+                    <span className="min-w-0 grow">
+                      <span className="font-medium">{x.serverName}</span>
+                      {x.primary && (
+                        <Chip tone="accent" className="ml-2">
+                          основной
+                        </Chip>
+                      )}
+                      <span className="block truncate text-xs text-muted">
+                        {x.inboundRemark || `#${x.inboundId}`}, порт {x.port}, SNI {x.sni}
+                      </span>
                     </span>
-                  </span>
-                  {x.lastCheck ? (
-                    <Chip
-                      tone={x.lastCheck.ok ? 'ok' : 'bad'}
-                      className="mt-px"
-                      title={`${ago(x.lastCheck.at)}${x.lastCheck.err ? `: ${x.lastCheck.err}` : ''}`}
-                    >
-                      {x.lastCheck.ok ? `${x.lastCheck.ms} мс` : 'не отвечает'}
-                    </Chip>
-                  ) : (
-                    <Chip className="mt-px">не проверен</Chip>
-                  )}
-                </div>
-              ))}
+                    {x.lastCheck ? (
+                      <Chip
+                        tone={x.lastCheck.ok ? 'ok' : 'bad'}
+                        className="mt-px"
+                        title={`${ago(x.lastCheck.at)}${x.lastCheck.err ? `: ${x.lastCheck.err}` : ''}`}
+                      >
+                        {x.lastCheck.ok ? `${x.lastCheck.ms} мс` : 'не отвечает'}
+                      </Chip>
+                    ) : (
+                      <Chip className="mt-px">не проверен</Chip>
+                    )}
+                  </div>
+                ))}
             </div>
-            <div className="flex flex-wrap items-center gap-2 text-xs text-muted">
-              <span className="grow">
-                Запасные: {st.exits.length > 1 ? st.exits.length - 1 : 'нет'}
-                {st.spares.at ? `, обновлены ${ago(st.spares.at)}` : ''}
+            <div className="flex flex-wrap items-center gap-2 pt-2">
+              <span className="text-[13px] font-medium">Запасные выходы</span>
+              <span className="grow text-xs text-muted">
+                {st.spares.at ? `обновлены ${ago(st.spares.at)}` : ''}
               </span>
               <Button
                 size="sm"
@@ -196,11 +210,45 @@ export function XrayRouteDialog({ open, onClose }: { open: boolean; onClose: () 
                 <RefreshCw className="size-3.5" />
               </Button>
             </div>
-            {st.spares.errors.map((e) => (
-              <div key={e.server} className="text-xs text-warn">
-                {e.server}: {e.error}
-              </div>
-            ))}
+            {/* отмеченные серверы панель берёт запасными сама; снятые - нет (новые - да) */}
+            <div className="flex flex-col rounded-lg border border-border">
+              {spareServers.length === 0 && (
+                <div className="px-3 py-2 text-[13px] text-muted">Других серверов с 3X-UI нет</div>
+              )}
+              {spareServers.map((s) => {
+                const used = st.exits.find((x) => !x.primary && x.serverId === s.id);
+                const err = st.spares.errors.find((e) => e.server === s.name)?.error;
+                return (
+                  <div
+                    key={s.id}
+                    className="flex items-center gap-3 border-b border-border px-3 py-2 text-[13px] last:border-b-0"
+                  >
+                    <Checkbox
+                      className="min-w-0 grow"
+                      checked={!off.has(s.id)}
+                      disabled={locked}
+                      onChange={() => toggleSpare(s.id)}
+                      label={<span className="font-medium">{s.name}</span>}
+                      hint={
+                        off.has(s.id)
+                          ? 'не используется'
+                          : used
+                            ? `${used.inboundRemark || `#${used.inboundId}`}, порт ${used.port}`
+                            : (err ?? (s.status === 'online' ? 'ещё не подготовлен' : 'не в сети'))
+                      }
+                    />
+                    {used?.lastCheck && (
+                      <Chip
+                        tone={used.lastCheck.ok ? 'ok' : 'bad'}
+                        title={`${ago(used.lastCheck.at)}${used.lastCheck.err ? `: ${used.lastCheck.err}` : ''}`}
+                      >
+                        {used.lastCheck.ok ? `${used.lastCheck.ms}\u00a0мс` : 'не отвечает'}
+                      </Chip>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
             {st.lastError && <div className="font-mono text-xs text-warn">{st.lastError}</div>}
           </div>
         )}

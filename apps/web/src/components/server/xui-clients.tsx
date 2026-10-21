@@ -74,8 +74,8 @@ export function XuiClients({
 
   async function remove(c: XuiClientRow) {
     const ok = await ask({
-      title: `Удалить клиента \u00ab${c.email}\u00bb?`,
-      text: 'Клиент удалится из 3X-UI на этом сервере вместе со статистикой',
+      title: `Удалить пользователя \u00ab${c.email}\u00bb?`,
+      text: 'Пользователь удалится из 3X-UI на этом сервере вместе со статистикой',
       okLabel: 'Удалить',
       danger: true,
     });
@@ -95,8 +95,8 @@ export function XuiClients({
       <Button
         size="icon-sm"
         variant="ghost"
-        title={c.service ? serviceTitle(c.service) : (reason ?? 'Inbound клиента')}
-        aria-label="Inbound клиента"
+        title={c.service ? serviceTitle(c.service) : (reason ?? 'Inbound пользователя')}
+        aria-label="Inbound пользователя"
         disabled={locked || !inbounds || Boolean(c.service)}
         onClick={() => {
           op.setError(null);
@@ -113,9 +113,9 @@ export function XuiClients({
             ? serviceTitle(c.service)
             : c.panel
               ? 'Клиент панели удаляется в своей карточке'
-              : (reason ?? 'Удалить клиента')
+              : (reason ?? 'Удалить пользователя')
         }
-        aria-label="Удалить клиента"
+        aria-label="Удалить пользователя"
         disabled={locked || Boolean(c.panel) || Boolean(c.service)}
         onClick={() => void remove(c)}
       >
@@ -126,7 +126,7 @@ export function XuiClients({
 
   return (
     <Section
-      title="Клиенты"
+      title="Пользователи"
       info={
         'Свой набор inbound клиента панели сохраняется при синхронизации, новые inbound он не получает. \u00abКак у всех\u00bb возвращает общий набор.'
       }
@@ -139,7 +139,9 @@ export function XuiClients({
       )}
       {error && (
         <div className="px-4 py-3 text-[13px] text-muted">
-          {noToken ? 'Нужен API-токен 3X-UI' : `Не удалось получить клиентов: ${error.message}`}
+          {noToken
+            ? 'Нужен API-токен 3X-UI'
+            : `Не удалось получить пользователей: ${error.message}`}
         </div>
       )}
       {!data && !error && (
@@ -177,7 +179,7 @@ export function XuiClients({
       )}
       {data && rows.length === 0 && (
         <div className="px-4 py-3 text-[13px] text-muted">
-          {data.length ? 'Ничего не найдено' : 'Клиентов нет'}
+          {data.length ? 'Ничего не найдено' : 'Пользователей нет'}
         </div>
       )}
       {paged.items.length > 0 && (
@@ -186,7 +188,7 @@ export function XuiClients({
             <Table>
               <THead>
                 <tr>
-                  <th>Клиент</th>
+                  <th>Пользователь</th>
                   <th>Inbound</th>
                   <th className="text-right">Трафик</th>
                   <th className="w-0" />
@@ -219,7 +221,7 @@ export function XuiClients({
               </TBody>
             </Table>
           </div>
-          {/* узкий экран: две строки на клиента всегда, у всех одинаково - email и кнопки, под
+          {/* узкий экран: две строки на пользователя всегда, у всех одинаково - email и кнопки, под
               ним клиент панели (или служебный, комментарий), inbound-ы и трафик */}
           <div className="md:hidden">
             {paged.items.map((c) => (
@@ -302,7 +304,7 @@ const limits = (c: XuiClientRow) =>
 function serviceTitle(s: NonNullable<XuiClientRow['service']>): string {
   return s.kind === 'telegram'
     ? 'Выход панели в Telegram: его ведёт панель'
-    : `Служебный клиент каскада${s.entry ? ` с ${s.entry.name}` : ''}: его ведёт панель`;
+    : `Служебный пользователь каскада${s.entry ? ` с ${s.entry.name}` : ''}: его ведёт панель`;
 }
 
 /**
@@ -385,9 +387,9 @@ function InboundsForm({
       <div className="text-[13px] text-muted">
         {client.panel
           ? client.panel.custom
-            ? 'Свой набор: сохраняется при синхронизации, новые inbound клиент не получает'
+            ? 'Свой набор: сохраняется при синхронизации, новые inbound пользователь не получает'
             : 'Общий набор. Другой набор запомнится и будет сохраняться при синхронизации.'
-          : 'Клиент не из панели: привязка меняется прямо в 3X-UI'}
+          : 'Пользователь не из панели: привязка меняется прямо в 3X-UI'}
       </div>
       <div className="flex flex-col gap-2">
         {choices.map((i) => (

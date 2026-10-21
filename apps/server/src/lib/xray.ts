@@ -15,13 +15,20 @@ export interface XrayRoute {
 
 const SETTING_KEY = 'xray_outbound';
 const SPARES_KEY = 'xray_spares';
+const SPARE_OFF_KEY = 'xray_spare_off';
+
+/** Серверы, которые нельзя брать запасными выходами (выбор владельца в "Маршруте до Telegram"). */
+export const spareOff = (db: Db): string[] => getJsonSetting<string[]>(db, SPARE_OFF_KEY, []);
+
+export const setSpareOff = (db: Db, ids: string[]) =>
+  putSetting(db, SPARE_OFF_KEY, JSON.stringify([...new Set(ids)]));
 const BASE_PORT = 3128;
 
 export class XrayManager {
   private proc: ChildProcess | null = null;
   private outbound: XrayOutbound | null = null;
   private spares: XrayOutbound[] = [];
-  private sparesInfo: XrayStatus['spares'] = { at: null, errors: [] };
+  private sparesInfo: Omit<XrayStatus['spares'], 'off'> = { at: null, errors: [] };
   private startedAt: string | null = null;
   private restarts = 0;
   private lastError: string | null = null;
@@ -175,7 +182,7 @@ export class XrayManager {
       lastCheck: exits[0]?.lastCheck ?? null,
       outbound: exits[0] ?? null,
       exits,
-      spares: this.sparesInfo,
+      spares: { ...this.sparesInfo, off: spareOff(this.db) },
     };
   }
 

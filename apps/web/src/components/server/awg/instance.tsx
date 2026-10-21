@@ -47,7 +47,7 @@ export function Instance({
       variant="link"
       className="text-xs text-bad"
       disabled={addDisabled}
-      title={addTitle ?? 'Клиенты экземпляра удалятся вместе с ним'}
+      title={addTitle ?? 'Пользователи экземпляра удалятся вместе с ним'}
       onClick={onUninstall}
     >
       Удалить экземпляр
@@ -84,7 +84,7 @@ export function Instance({
             disabled={addDisabled}
             title={addTitle}
             onClick={onAdd}
-            label="Добавить клиента"
+            label="Добавить пользователя"
           >
             <Plus className="size-3.5" />
           </Button>
@@ -103,7 +103,7 @@ export function Instance({
           <dl className="grid grid-cols-2 gap-x-4 gap-y-2 border-b border-border px-4 py-3 text-[13px] sm:grid-cols-4">
             <Fact label="Порт" value={inst.port ? `${inst.port}/udp` : '-'} />
             <Fact label="Подсеть" value={inst.address || '-'} />
-            <Fact label="Клиенты" value={`${inst.clients.length}, онлайн: ${onlineCount}`} />
+            <Fact label="Пользователи" value={`${inst.clients.length}, онлайн: ${onlineCount}`} />
             <Fact label="Реализация" value={impl} title={inst.tools} />
           </dl>
           {inst.tableError && (
@@ -198,10 +198,10 @@ export function Instance({
               title={`Параметры ${inst.container}`}
             >
               <div className="text-[13px]">
-                Ключ сервера, порт, подсеть и клиенты сохранятся, но{' '}
-                <b>клиенты не подключатся, пока не импортируют новый конфиг</b>. Новые конфиги
-                &mdash; в окне клиента, в приложении Amnezia нужно переподключить сервер. При ошибке
-                вернутся прежние параметры.
+                Ключ сервера, порт, подсеть и пользователи сохранятся, но{' '}
+                <b>пользователи не подключатся, пока не импортируют новый конфиг</b>. Новые конфиги
+                &mdash; в окне пользователя, в приложении Amnezia нужно переподключить сервер. При
+                ошибке вернутся прежние параметры.
               </div>
               <Field
                 label="Версия"

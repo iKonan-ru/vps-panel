@@ -17,7 +17,7 @@ import type { ServerDetail } from '@vps/protocol';
 import { Plus, RefreshCw } from 'lucide-react';
 import { useEffect, useState } from 'react';
 
-/** Вкладка AWG: экземпляры AmneziaWG, их версии и клиенты. */
+/** Вкладка AWG: экземпляры AmneziaWG, их версии и пользователи. */
 export function AwgTab({ s }: { s: ServerDetail }) {
   const owner = useOwners(s.id);
   const uninstall = useUninstall();
@@ -165,7 +165,7 @@ export function AwgTab({ s }: { s: ServerDetail }) {
         </div>
       </Dialog>
 
-      <Dialog open={adding !== null} onClose={() => setAdding(null)} title="Новый клиент AWG">
+      <Dialog open={adding !== null} onClose={() => setAdding(null)} title="Новый пользователь AWG">
         <AddClient
           container={adding ?? ''}
           busy={act.busy || lock.busy}

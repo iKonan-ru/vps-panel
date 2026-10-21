@@ -6,7 +6,7 @@ import { servers } from '../db/schema.js';
 import { panelAddresses } from './panel-host.js';
 import { schedule } from './schedule.js';
 import type { SecretBox } from './secret-box.js';
-import type { XrayManager } from './xray.js';
+import { type XrayManager, spareOff } from './xray.js';
 import {
   type XuiCall,
   ensureServiceClient,
@@ -101,8 +101,9 @@ export async function prepareExit(
 }
 
 /**
- * Запасные выходы: на каждом сервере на связи с 3X-UI, кроме сервера панели и сервера
- * основного выхода, - первый включённый VLESS Reality inbound по TCP (свой, не узла группы).
+ * Запасные выходы: на каждом сервере на связи с 3X-UI, кроме сервера панели, сервера основного
+ * выхода и выключенных владельцем (`spareOff`), - первый включённый VLESS Reality inbound по TCP
+ * (свой, не узла группы).
  * Сервер не на связи сохраняет прежний запасной выход: он мог вернуться к следующей отправке.
  * Основной выход выключен - запасных нет.
  */
@@ -147,8 +148,9 @@ export class XraySpares {
       .from(servers);
     const list: XrayOutbound[] = [];
     const errors: { server: string; error: string }[] = [];
+    const off = new Set(spareOff(db));
     for (const r of rows) {
-      if (r.id === primary.serverId || panelIps.includes(r.host)) continue;
+      if (r.id === primary.serverId || panelIps.includes(r.host) || off.has(r.id)) continue;
       const inv = r.cache?.inventory;
       if (!inv?.services.some((s) => s.kind === 'xui')) continue;
       if (!registry.isOnline(r.id)) {

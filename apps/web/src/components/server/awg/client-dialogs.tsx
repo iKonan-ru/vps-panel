@@ -13,7 +13,7 @@ import { type GOwner, deviceOf } from '@vps/protocol';
 import { Pencil, Power, Trash2 } from 'lucide-react';
 import { Fragment, useState } from 'react';
 
-/** Окно клиента: состояние, управление, адрес, трафик, откуда взялся. */
+/** Окно пользователя: состояние, управление, адрес, трафик, откуда взялся. */
 export function ClientInfo({
   c,
   serverId,
@@ -47,9 +47,9 @@ export function ClientInfo({
       'Последнее подключение',
       c.handshake ? ago(new Date(c.handshake * 1000).toISOString()) : 'не подключался',
     ],
-    ['Получено от клиента', bytes(c.rx)],
-    ['Отправлено клиенту', bytes(c.tx)],
-    ['Адрес клиента', c.endpoint || '-'],
+    ['Получено от пользователя', bytes(c.rx)],
+    ['Отправлено пользователю', bytes(c.tx)],
+    ['Адрес пользователя', c.endpoint || '-'],
     ['Создан', c.created || '-'],
     ['Откуда', source],
     ['Ключ', c.publicKey],
@@ -84,8 +84,8 @@ export function ClientInfo({
           title={reason}
           onClick={async () => {
             const ok = await ask({
-              title: `Удалить клиента \u00ab${clientTitle(c)}\u00bb?`,
-              text: 'Конфиг клиента перестанет работать',
+              title: `Удалить пользователя \u00ab${clientTitle(c)}\u00bb?`,
+              text: 'Конфиг пользователя перестанет работать',
               okLabel: 'Удалить',
               danger: true,
             });
@@ -120,7 +120,7 @@ export function ClientInfo({
             onChange={(e) => setEdit({ ...edit, name: e.target.value })}
             maxLength={64}
             autoFocus
-            aria-label="Имя клиента"
+            aria-label="Имя пользователя"
             className="min-w-0 basis-full sm:basis-0 sm:grow"
           />
           <DeviceSelect
@@ -159,8 +159,8 @@ export function ClientInfo({
         />
       ) : (
         <div className="text-xs text-muted">
-          Конфиг недоступен: приватного ключа клиента нет ни в панели, ни на сервере. Для нового
-          конфига нужен новый клиент.
+          Конфиг недоступен: приватного ключа пользователя нет ни в панели, ни на сервере. Для
+          нового конфига нужен новый пользователь.
         </div>
       )}
     </div>
