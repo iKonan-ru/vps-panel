@@ -11,6 +11,7 @@ import { api } from '@/lib/api';
 import { cn } from '@/lib/cn';
 import { useLiveUpdates } from '@/lib/live';
 import { toggleTheme } from '@/lib/theme';
+import { useSlider } from '@/lib/use-slider';
 import { useQueryClient } from '@tanstack/react-query';
 import { Link, Outlet, useLocation, useNavigate } from '@tanstack/react-router';
 import {
@@ -79,6 +80,10 @@ export function AppLayout({ login, name }: { login: string; name: string }) {
   const version = usePanelVersion();
   // живые события панели - одна подписка на всё приложение
   useLiveUpdates();
+  // подсветка раздела в меню и полоса в полосе вкладок переезжают к выбранному пункту
+  const side = useSlider<HTMLDivElement>([pathname, collapsed]);
+  const moreActive = more || nav.some((n) => n.more && isActive(n.to, pathname));
+  const bottom = useSlider<HTMLElement>([pathname, more]);
 
   function toggleCollapsed() {
     const next = !collapsed;
@@ -139,23 +144,41 @@ export function AppLayout({ login, name }: { login: string; name: string }) {
             </div>
           )}
         </div>
-        {nav.map((n) => (
-          <Link
-            key={n.to}
-            to={n.to}
-            title={collapsed ? n.label : undefined}
-            className={cn(
-              'flex h-9.5 items-center gap-2.5 rounded-lg border text-sm hover:bg-surface-2/70 hover:text-text',
-              collapsed ? 'justify-center px-0' : 'px-2.5',
-              isActive(n.to, pathname)
-                ? 'gloss-button border-border bg-surface-2 text-text [&>svg]:text-accent'
-                : 'border-transparent text-muted',
-            )}
-          >
-            {n.icon}
-            {!collapsed && <span>{n.label}</span>}
-          </Link>
-        ))}
+        <div ref={side.box} className="relative flex flex-col gap-1.5">
+          {/* подсветка выбранного раздела - одна на меню, переезжает к нему */}
+          {side.rect && (
+            <span
+              aria-hidden="true"
+              className={cn(
+                'gloss-button pointer-events-none absolute inset-x-0 rounded-lg border border-border bg-surface-2',
+                side.rect.animate && 'transition-[top,height] duration-300 ease-out',
+              )}
+              style={{ top: side.rect.top, height: side.rect.height }}
+            />
+          )}
+          {nav.map((n) => {
+            const active = isActive(n.to, pathname);
+            return (
+              <Link
+                key={n.to}
+                to={n.to}
+                title={collapsed ? n.label : undefined}
+                data-active={active}
+                className={cn(
+                  'relative flex h-9.5 items-center gap-2.5 rounded-lg border border-transparent text-sm transition-colors duration-200',
+                  '[&>svg]:transition-transform [&>svg]:duration-200 hover:[&>svg]:scale-110',
+                  collapsed ? 'justify-center px-0' : 'px-2.5',
+                  active
+                    ? 'text-text [&>svg]:text-accent'
+                    : 'text-muted hover:bg-surface-2/60 hover:text-text',
+                )}
+              >
+                {n.icon}
+                {!collapsed && <span className="animate-fade-in">{n.label}</span>}
+              </Link>
+            );
+          })}
+        </div>
         <div className="grow" />
         <div
           className={cn(
@@ -191,6 +214,7 @@ export function AppLayout({ login, name }: { login: string; name: string }) {
             aria-label="Тёмная или светлая тема"
             title="Тёмная или светлая тема"
             onClick={() => toggleTheme()}
+            className="[&>svg]:transition-transform [&>svg]:duration-300 hover:[&>svg]:-rotate-20"
           >
             <Moon className="size-4" />
           </Button>
@@ -238,14 +262,32 @@ export function AppLayout({ login, name }: { login: string; name: string }) {
           <DeployBanner />
           <SyncBanner />
           <TelegramBanner />
-          <Outlet />
+          {/* новая страница проявляется (только прозрачность: transform сломал бы fixed внутри) */}
+          <div
+            key={pathname}
+            className="flex min-w-0 animate-fade-in flex-col gap-5 [&>*]:shrink-0"
+          >
+            <Outlet />
+          </div>
         </div>
       </main>
 
       <nav
+        ref={bottom.box}
         className="glass fixed inset-x-0 bottom-0 z-20 flex border-t pb-[env(safe-area-inset-bottom)] md:hidden"
         aria-label="Разделы"
       >
+        {/* полоса над выбранным разделом - переезжает к нему */}
+        {bottom.rect && (
+          <span
+            aria-hidden="true"
+            className={cn(
+              'pointer-events-none absolute top-0 h-0.5 rounded-full bg-accent shadow-[0_0_8px_var(--accent)]',
+              bottom.rect.animate && 'transition-[left,width] duration-300 ease-out',
+            )}
+            style={{ left: bottom.rect.left + 20, width: bottom.rect.width - 40 }}
+          />
+        )}
         {nav
           .filter((n) => !n.more)
           .map((n) => (
@@ -253,11 +295,11 @@ export function AppLayout({ login, name }: { login: string; name: string }) {
               key={n.to}
               to={n.to}
               onClick={() => setMore(false)}
+              data-active={isActive(n.to, pathname) && !more}
               className={cn(
-                'relative flex h-14 flex-1 flex-col items-center justify-center gap-1 text-[11px]',
-                isActive(n.to, pathname) && !more
-                  ? 'font-medium text-accent before:absolute before:inset-x-5 before:top-0 before:h-0.5 before:rounded-full before:bg-accent before:shadow-[0_0_8px_var(--accent)]'
-                  : 'text-muted',
+                'relative flex h-14 flex-1 flex-col items-center justify-center gap-1 text-[11px] transition-colors duration-200',
+                '[&>svg]:transition-transform [&>svg]:duration-150 active:[&>svg]:scale-90',
+                isActive(n.to, pathname) && !more ? 'font-medium text-accent' : 'text-muted',
               )}
             >
               {n.icon}
@@ -267,11 +309,11 @@ export function AppLayout({ login, name }: { login: string; name: string }) {
         <button
           type="button"
           aria-expanded={more}
+          data-active={moreActive}
           className={cn(
-            'relative flex h-14 flex-1 flex-col items-center justify-center gap-1 text-[11px]',
-            more || nav.some((n) => n.more && isActive(n.to, pathname))
-              ? 'font-medium text-accent before:absolute before:inset-x-5 before:top-0 before:h-0.5 before:rounded-full before:bg-accent before:shadow-[0_0_8px_var(--accent)]'
-              : 'text-muted',
+            'relative flex h-14 flex-1 flex-col items-center justify-center gap-1 text-[11px] transition-colors duration-200',
+            '[&>svg]:transition-transform [&>svg]:duration-150 active:[&>svg]:scale-90',
+            moreActive ? 'font-medium text-accent' : 'text-muted',
           )}
           onClick={() => setMore(!more)}
         >
@@ -320,6 +362,7 @@ export function AppLayout({ login, name }: { login: string; name: string }) {
             aria-label="Тёмная или светлая тема"
             title="Тёмная или светлая тема"
             onClick={() => toggleTheme()}
+            className="[&>svg]:transition-transform [&>svg]:duration-300 active:[&>svg]:rotate-45"
           >
             <SunMoon className="size-4" />
           </Button>

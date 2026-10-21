@@ -11,5 +11,9 @@ export function Placeholder({ children }: { children: ReactNode }) {
 export function LoadState({ offline, error }: { offline?: boolean; error?: Error | null }) {
   if (offline) return <Placeholder>Сервер не в сети</Placeholder>;
   if (error) return <Alert tone="bad">{error.message}</Alert>;
-  return <Placeholder>Загрузка&hellip;</Placeholder>;
+  return (
+    <Placeholder>
+      <span className="animate-pulse">Загрузка&hellip;</span>
+    </Placeholder>
+  );
 }

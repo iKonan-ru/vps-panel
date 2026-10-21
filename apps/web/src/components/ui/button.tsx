@@ -5,10 +5,12 @@ import type { AnchorHTMLAttributes, ButtonHTMLAttributes, ReactNode, Ref } from 
 type Variant = 'default' | 'primary' | 'danger' | 'ghost' | 'link';
 type Size = 'md' | 'sm' | 'icon' | 'icon-sm';
 
+// выпуклые кнопки при наведении приподнимаются (тень глубже - в gloss-button/gloss-primary)
+const lift = 'not-disabled:hover:-translate-y-px not-disabled:active:translate-y-0';
 const variants: Record<Variant, string> = {
-  default: 'gloss-button border border-border bg-surface-2 text-text hover:bg-border/60',
-  primary: 'gloss-primary border border-accent bg-accent text-white hover:brightness-110',
-  danger: 'gloss-button border border-bad/40 bg-surface-2 text-bad hover:bg-bad/10',
+  default: `gloss-button border border-border bg-surface-2 text-text hover:bg-border/60 ${lift}`,
+  primary: `gloss-primary border border-accent bg-accent text-white hover:brightness-110 ${lift}`,
+  danger: `gloss-button border border-bad/40 bg-surface-2 text-bad hover:bg-bad/10 ${lift}`,
   ghost: 'border border-transparent bg-transparent text-muted hover:bg-surface-2 hover:text-text',
   // текстовая ссылка-кнопка внутри текста и таблиц: без рамки и высоты
   link: 'h-auto rounded-none border-0 bg-transparent p-0 text-accent hover:underline',
@@ -43,8 +45,9 @@ export function buttonClass({
   className?: string | undefined;
 } = {}) {
   return cn(
-    'inline-flex shrink-0 items-center whitespace-nowrap rounded-lg font-medium transition-[color,background-color,border-color,scale,filter] enabled:active:scale-[0.97]',
-    'disabled:cursor-not-allowed disabled:opacity-50 focus-visible:outline-2 focus-visible:outline-accent',
+    // нажатие - кнопка вдавливается; рамка фокуса подходит к кнопке (outline-offset 4 -> 2)
+    'inline-flex shrink-0 items-center whitespace-nowrap rounded-lg font-medium outline-offset-4 transition-[color,background-color,border-color,box-shadow,scale,translate,filter,outline-offset] duration-150 ease-out not-disabled:active:scale-[0.97]',
+    'disabled:cursor-not-allowed disabled:opacity-50 focus-visible:outline-2 focus-visible:outline-accent focus-visible:outline-offset-2',
     sizes[size],
     variants[variant],
     labelled && compact[size],

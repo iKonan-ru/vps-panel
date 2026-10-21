@@ -15,6 +15,7 @@ import { InfoTip } from '@/components/ui/info-tip';
 import { Num } from '@/components/ui/num';
 import { PageTitle } from '@/components/ui/page-title';
 import { Pager, usePaged } from '@/components/ui/pager';
+import { Presence } from '@/components/ui/presence';
 import { Section } from '@/components/ui/section';
 import { TBody, THead, Table } from '@/components/ui/table';
 import { api } from '@/lib/api';
@@ -172,13 +173,22 @@ export function AccountPage() {
         />
       </Section>
 
-      {dialog === 'name' && a && (
-        <NameDialog current={a.displayName} onClose={() => setDialog(null)} />
-      )}
-      {dialog === 'login' && a && <LoginDialog current={a.login} onClose={() => setDialog(null)} />}
-      {dialog === 'password' && <PasswordDialog onClose={() => setDialog(null)} />}
-      {dialog === 'totp' && <TotpDialog onClose={() => setDialog(null)} />}
-      {dialog === 'codes' && <CodesDialog onClose={() => setDialog(null)} />}
+      {/* окна монтируются при открытии (чистая форма) и закрываются с анимацией - Presence */}
+      <Presence value={dialog === 'name' && a}>
+        {(acc) => <NameDialog current={acc.displayName} onClose={() => setDialog(null)} />}
+      </Presence>
+      <Presence value={dialog === 'login' && a}>
+        {(acc) => <LoginDialog current={acc.login} onClose={() => setDialog(null)} />}
+      </Presence>
+      <Presence value={dialog === 'password'}>
+        {() => <PasswordDialog onClose={() => setDialog(null)} />}
+      </Presence>
+      <Presence value={dialog === 'totp'}>
+        {() => <TotpDialog onClose={() => setDialog(null)} />}
+      </Presence>
+      <Presence value={dialog === 'codes'}>
+        {() => <CodesDialog onClose={() => setDialog(null)} />}
+      </Presence>
 
       <div className="grid gap-3 sm:grid-cols-3 md:gap-4">
         <MetricCard

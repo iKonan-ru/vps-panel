@@ -57,8 +57,8 @@ function Resources({ s }: { s: ServerSummary }) {
   );
 }
 
-/** Строка таблицы серверов (широкий экран). */
-export function ServerRow({ s }: { s: ServerSummary }) {
+/** Строка таблицы серверов (широкий экран); i - номер строки для каскада появления. */
+export function ServerRow({ s, i = 0 }: { s: ServerSummary; i?: number }) {
   const navigate = useNavigate();
   const open = () => navigate({ to: '/servers/$id', params: { id: s.id } });
   return (
@@ -69,7 +69,8 @@ export function ServerRow({ s }: { s: ServerSummary }) {
         if ((e.target as HTMLElement).closest('a, button')) return;
         void open();
       }}
-      className="cursor-pointer hover:bg-surface-2 [&>td]:border-b [&>td]:border-border [&>td]:px-3 [&>td]:py-2.5 [&>td]:align-middle"
+      style={{ '--i': i } as React.CSSProperties}
+      className="stagger animate-rise cursor-pointer transition-colors duration-150 hover:bg-surface-2 [&>td]:border-b [&>td]:border-border [&>td]:px-3 [&>td]:py-2.5 [&>td]:align-middle"
     >
       <td>
         <Link
@@ -125,20 +126,21 @@ function PanelHostChip() {
 }
 
 /** Карточка сервера в списке на узком экране. */
-export function ServerCard({ s }: { s: ServerSummary }) {
+export function ServerCard({ s, i = 0 }: { s: ServerSummary; i?: number }) {
   const navigate = useNavigate();
   return (
     // не ссылка целиком: внутри - ссылки на панели сервисов, вложенная ссылка уводила бы на
     // карточку сервера; клавиатурный путь - ссылка на имени
     // biome-ignore lint/a11y/useKeyWithClickEvents: клавиатурный путь - ссылка на имени сервера
     <div
-      className="cursor-pointer"
+      style={{ '--i': i } as React.CSSProperties}
+      className="stagger animate-rise cursor-pointer"
       onClick={(e) => {
         if ((e.target as HTMLElement).closest('a, button')) return;
         void navigate({ to: '/servers/$id', params: { id: s.id } });
       }}
     >
-      <Card className="flex flex-col gap-2 p-3.5">
+      <Card className="flex flex-col gap-2 p-3.5 transition-[border-color,scale] duration-150 hover:border-accent active:scale-[0.99]">
         <div className="flex items-center gap-2">
           <Link to="/servers/$id" params={{ id: s.id }} className="font-semibold text-text">
             {s.name}

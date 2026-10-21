@@ -79,7 +79,11 @@ function FieldValue({ f }: { f: AccessField }) {
         </Button>
       )}
       <Button size="icon-sm" variant="ghost" title="Скопировать" onClick={copy}>
-        {copied ? <Check className="size-3.5 text-ok" /> : <Copy className="size-3.5" />}
+        {copied ? (
+          <Check className="size-3.5 animate-check text-ok" />
+        ) : (
+          <Copy className="size-3.5" />
+        )}
       </Button>
     </span>
   );

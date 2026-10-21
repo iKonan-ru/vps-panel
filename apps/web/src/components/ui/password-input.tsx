@@ -59,7 +59,11 @@ export function PasswordInput({
           disabled={!value}
           onClick={copy}
         >
-          {copied ? <Check className="size-3.5 text-ok" /> : <Copy className="size-3.5" />}
+          {copied ? (
+            <Check className="size-3.5 animate-check text-ok" />
+          ) : (
+            <Copy className="size-3.5" />
+          )}
         </Button>
       </div>
     </div>

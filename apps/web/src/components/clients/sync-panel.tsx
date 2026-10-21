@@ -32,6 +32,7 @@ export function SyncPanel() {
   const done = data.progress.reduce((n, p) => n + p.done, 0);
   return (
     <Section
+      className="animate-reveal"
       title="Синхронизация с серверами"
       info="Дольше всего заводятся каналы OpenFlux для новых устройств. Прерванное доделает следующая синхронизация: автоматическая раз в 5&nbsp;мин или по кнопке."
       extra={

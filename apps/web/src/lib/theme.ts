@@ -21,8 +21,16 @@ export function applyTheme(t: Theme) {
   } catch {}
 }
 
+/**
+ * Смена темы перетеканием (View Transitions: снимок старой темы растворяется в новой); браузер без
+ * них или "уменьшить движение" - сразу.
+ */
 export function toggleTheme(): Theme {
   const next: Theme = getTheme() === 'dark' ? 'light' : 'dark';
-  applyTheme(next);
+  const run = () => applyTheme(next);
+  const reduce = window.matchMedia?.('(prefers-reduced-motion: reduce)').matches;
+  if (!reduce && typeof document.startViewTransition === 'function')
+    document.startViewTransition(run);
+  else run();
   return next;
 }

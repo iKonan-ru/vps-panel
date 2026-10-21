@@ -1,3 +1,4 @@
+import { cn } from '@/lib/cn';
 import {
   DndContext,
   type DragEndEvent,
@@ -70,7 +71,8 @@ export function SortableList<T>({
       {createPortal(
         <DragOverlay>
           {active !== undefined && (
-            <div className="rounded-lg bg-surface shadow-lg ring-1 ring-border">
+            // поднятый элемент: чуть крупнее, с тенью и лёгким наклоном - видно, что он "в руке"
+            <div className="rotate-[0.6deg] scale-[1.02] rounded-lg bg-surface shadow-2xl ring-1 ring-accent/40 transition-transform">
               {children(active, <Grip />, activeIndex)}
             </div>
           )}
@@ -123,7 +125,7 @@ function SortableItem({
     <div
       ref={setNodeRef}
       style={{ transform: CSS.Translate.toString(transform), transition }}
-      className={isDragging ? 'opacity-30' : undefined}
+      className={cn('transition-opacity duration-200', isDragging && 'opacity-30')}
     >
       {children(handle)}
     </div>

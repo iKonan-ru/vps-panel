@@ -102,7 +102,9 @@ export function ClientsPage() {
       {sync.error && <Alert tone="bad">{sync.error}</Alert>}
       <SyncPanel />
       {data && data.length > 0 && filtersOpen && (
-        <ClientsFilter view={view} set={setView} servers={servers.data ?? []} />
+        <div className="animate-reveal">
+          <ClientsFilter view={view} set={setView} servers={servers.data ?? []} />
+        </div>
       )}
       {data && data.length === 0 && (
         <Card className="p-8 text-[13px] text-muted">Клиентов пока нет</Card>
@@ -112,10 +114,17 @@ export function ClientsPage() {
       )}
       {/* колонок - сколько влезает карточек от 300px: на телефоне одна, на широком экране 3-5 */}
       <div className="grid grid-cols-[repeat(auto-fill,minmax(min(300px,100%),1fr))] gap-2">
-        {shown?.map((c) => (
-          <Link key={c.id} to="/clients/$id" params={{ id: c.id }} className="min-w-0">
+        {shown?.map((c, i) => (
+          <Link
+            key={c.id}
+            to="/clients/$id"
+            params={{ id: c.id }}
+            style={{ '--i': i } as React.CSSProperties}
+            className="group stagger min-w-0 animate-rise"
+          >
             {/* плашки состояний - строкой под именем, внизу карточки: в ряду они на одной линии */}
-            <Card className="flex h-full flex-col gap-2 p-3.5 hover:border-accent">
+            {/* наведение - карточка приподнимается, нажатие - вдавливается */}
+            <Card className="flex h-full flex-col gap-2 p-3.5 transition-[border-color,translate,scale] duration-200 ease-out group-hover:-translate-y-0.5 group-hover:border-accent group-active:translate-y-0 group-active:scale-[0.99]">
               <div className="min-w-0 flex-1">
                 {/* строка имени не переносится: длинное имя обрезается, значок выборочного
                     доступа - всегда у правого края */}
@@ -321,7 +330,7 @@ function ServersList() {
               )}
             </div>
             {open && (
-              <div className="mt-3 rounded-lg border border-border bg-surface-2 p-3">
+              <div className="mt-3 animate-reveal rounded-lg border border-border bg-surface-2 p-3">
                 <InboundsForm server={s} onDone={() => setOpenId(null)} />
               </div>
             )}

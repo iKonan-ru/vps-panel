@@ -139,7 +139,11 @@ export function ClientConfig({
       )}
       <div className="flex w-full flex-wrap gap-2">
         <Button className="grow justify-center" onClick={() => copy(text)}>
-          {copied ? <Check className="size-4 text-ok" /> : <Copy className="size-4" />}
+          {copied ? (
+            <Check className="size-4 animate-check text-ok" />
+          ) : (
+            <Copy className="size-4" />
+          )}
           {copied
             ? 'Скопировано'
             : format === 'amnezia'

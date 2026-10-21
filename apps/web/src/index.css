@@ -100,11 +100,33 @@
 @utility gloss-button {
   background-image: linear-gradient(180deg, var(--gloss-btn), transparent);
   box-shadow: inset 0 1px 0 var(--gloss-hi), var(--shadow-btn);
+  /* наведение - тень чуть глубже: кнопка "приподнимается" вместе с translate */
+  &:hover:not(:disabled) {
+    box-shadow: inset 0 1px 0 var(--gloss-hi), var(--shadow-btn), 0 4px 12px -6px rgb(0 0 0 / 0.35);
+  }
 }
 @utility gloss-primary {
   background-image: linear-gradient(180deg, rgb(255 255 255 / 0.24), rgb(255 255 255 / 0) 60%);
   box-shadow: inset 0 1px 0 rgb(255 255 255 / 0.35), 0 1px 2px rgb(0 0 0 / 0.25), 0 4px 14px -4px
     color-mix(in srgb, var(--accent) 60%, transparent);
+  &:hover:not(:disabled) {
+    box-shadow: inset 0 1px 0 rgb(255 255 255 / 0.35), 0 1px 2px rgb(0 0 0 / 0.25), 0 6px 20px -4px
+      color-mix(in srgb, var(--accent) 75%, transparent);
+  }
+}
+/* Поле ввода (Input, Select, Textarea): рамка и мягкое свечение фокуса появляются плавно. */
+@utility field {
+  transition: border-color 0.15s, box-shadow 0.2s, background-color 0.2s;
+  &:focus {
+    box-shadow: var(--well), 0 0 0 3px color-mix(in srgb, var(--accent) 22%, transparent);
+  }
+}
+/* Чекбокс: заливка плавно, галочка при отметке - с отскоком. */
+@utility check-anim {
+  transition: background-color 0.15s, border-color 0.15s;
+  &:checked {
+    animation: check 0.3s cubic-bezier(0.34, 1.56, 0.64, 1);
+  }
 }
 @utility gloss-fill {
   background-image: linear-gradient(180deg, rgb(255 255 255 / 0.45), rgb(255 255 255 / 0) 70%);
@@ -131,18 +153,33 @@
   --color-update: var(--update);
   --font-sans: "IBM Plex Sans", system-ui, sans-serif;
   --font-mono: "JetBrains Mono", ui-monospace, monospace;
+  --ease-out: cubic-bezier(0.22, 1, 0.36, 1);
+  --ease-spring: cubic-bezier(0.34, 1.56, 0.64, 1);
   --animate-fade-in: fade-in 0.2s ease-out backwards;
+  --animate-fade-out: fade-out 0.14s ease-in forwards;
   --animate-pop-in: pop-in 0.2s cubic-bezier(0.22, 1, 0.36, 1) backwards;
+  --animate-pop-out: pop-out 0.14s ease-in forwards;
+  --animate-rise: rise 0.32s cubic-bezier(0.22, 1, 0.36, 1) backwards;
+  --animate-reveal: reveal 0.22s cubic-bezier(0.22, 1, 0.36, 1) backwards;
+  --animate-check: check 0.32s cubic-bezier(0.34, 1.56, 0.64, 1) backwards;
 }
 
 /*
- * Анимации. fade-in - только прозрачность: transform у предка сломал бы fixed внутри
- * (терминал на весь экран во вкладке). pop-in - для окон и выпадающих списков. Заполнение
- * backwards, не both: законченная анимация не держит слой наложения (fixed внутри уходил бы
- * под шапку).
+ * Анимации. Короткие (120-320 мс), только transform и opacity. fade-in - только прозрачность:
+ * transform у предка сломал бы fixed внутри (терминал на весь экран во вкладке) - для страниц и
+ * вкладок. pop-in/pop-out - появление и закрытие окон, меню, подсказок (закрытие держит
+ * usePresence); rise - строки и карточки списков (каскад - задержкой по номеру, --i);
+ * reveal - раскрывающиеся панели и сообщения; check - значок "готово" (скопировано, галочка).
+ * Заполнение появления - backwards, не both: законченная анимация не держит слой наложения
+ * (fixed внутри уходил бы под шапку).
  */
 @keyframes fade-in {
   from {
+    opacity: 0;
+  }
+}
+@keyframes fade-out {
+  to {
     opacity: 0;
   }
 }
@@ -151,6 +188,41 @@
     opacity: 0;
     transform: translateY(6px) scale(0.98);
   }
+}
+@keyframes pop-out {
+  to {
+    opacity: 0;
+    transform: translateY(4px) scale(0.98);
+  }
+}
+@keyframes rise {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+}
+@keyframes reveal {
+  from {
+    opacity: 0;
+    transform: translateY(-6px);
+  }
+}
+@keyframes check {
+  from {
+    opacity: 0;
+    transform: scale(0.4) rotate(-12deg);
+  }
+}
+/* каскад: элемент с --i появляется чуть позже предыдущего (не дольше 0.3 с на весь список) */
+.stagger {
+  animation-delay: calc(min(var(--i, 0), 12) * 25ms);
+}
+
+/* Смена темы (toggleTheme через View Transitions): старая тема перетекает в новую. */
+::view-transition-old(root),
+::view-transition-new(root) {
+  animation-duration: 0.35s;
+  animation-timing-function: ease-out;
 }
 
 /* Шкала заполнения (Meter): при появлении растёт от нуля, новое значение - плавно. */
@@ -165,12 +237,26 @@
   }
 }
 
+/*
+ * "Уменьшить движение" в системе: без анимаций и переходов во всём интерфейсе (смена состояния -
+ * сразу). Крутится и пульсирует только то, что значит "идёт процесс".
+ */
 @media (prefers-reduced-motion: reduce) {
-  .meter-fill,
-  .animate-fade-in,
-  .animate-pop-in {
-    animation: none;
-    transition: none;
+  *:not(.animate-spin):not(.animate-pulse),
+  *::before,
+  *::after {
+    /* ноль, а не "почти ноль": иначе переход шёл бы у всех свойств (transition-property: all
+       по умолчанию), и скрытое на миг оставалось бы скрытым - например, focus() в меню */
+    animation-duration: 0s !important;
+    animation-delay: 0s !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0s !important;
+    transition-delay: 0s !important;
+  }
+  ::view-transition-group(*),
+  ::view-transition-old(*),
+  ::view-transition-new(*) {
+    animation: none !important;
   }
 }
 

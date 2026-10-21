@@ -18,7 +18,7 @@ export function Alert({
       // [overflow-wrap:anywhere]: ошибки бывают длинными словами без пробелов (пути, ответы
       // OpenSSL) - иначе строка вылезает за рамку и страница едет вбок
       className={cn(
-        'animate-fade-in min-w-0 rounded-lg border px-3 py-2 text-sm [overflow-wrap:anywhere]',
+        'min-w-0 animate-reveal rounded-lg border px-3 py-2 text-sm [overflow-wrap:anywhere]',
         t,
         className,
       )}

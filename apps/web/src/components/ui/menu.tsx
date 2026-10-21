@@ -1,5 +1,6 @@
 import { buttonClass } from '@/components/ui/button';
 import { cn } from '@/lib/cn';
+import { usePresence } from '@/lib/use-presence';
 import { MoreHorizontal } from 'lucide-react';
 import { type ReactNode, useEffect, useId, useLayoutEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
@@ -44,6 +45,8 @@ export function Menu({
   const btn = useRef<HTMLButtonElement>(null);
   const list = useRef<HTMLDivElement>(null);
   const id = useId();
+  // закрытие с анимацией: список ещё виден EXIT_MS, но уже не принимает клики
+  const { shown, closing } = usePresence(open);
 
   const close = (focus = false) => {
     setOpen(false);
@@ -61,8 +64,6 @@ export function Menu({
 
   useEffect(() => {
     if (!open) return;
-    const first = list.current?.querySelector<HTMLElement>('[role="menuitem"]:not([disabled])');
-    first?.focus();
     const onDown = (e: PointerEvent) => {
       const t = e.target as Node;
       if (!list.current?.contains(t) && !btn.current?.contains(t)) setOpen(false);
@@ -80,6 +81,14 @@ export function Menu({
       window.removeEventListener('resize', onResize);
     };
   }, [open]);
+
+  // фокус на первый пункт - когда список уже на месте: пока он невидим (место не посчитано),
+  // focus() не срабатывает, и Esc и стрелки не доходили до меню
+  const placed = pos !== null;
+  useEffect(() => {
+    if (!open || !placed) return;
+    list.current?.querySelector<HTMLElement>('[role="menuitem"]:not([disabled])')?.focus();
+  }, [open, placed]);
 
   function onKey(e: React.KeyboardEvent) {
     const all = [
@@ -136,7 +145,7 @@ export function Menu({
       >
         {trigger ?? <MoreHorizontal className="size-4" />}
       </button>
-      {open &&
+      {shown &&
         createPortal(
           <div
             ref={list}
@@ -145,13 +154,21 @@ export function Menu({
             aria-label={label}
             tabIndex={-1}
             onKeyDown={onKey}
-            style={{ top: pos?.top ?? -9999, left: pos?.left ?? -9999, width: WIDTH }}
+            inert={closing}
+            style={{
+              top: pos?.top ?? -9999,
+              left: pos?.left ?? -9999,
+              width: WIDTH,
+              // растёт из кнопки: вниз от неё или вверх, если открылся над ней
+              transformOrigin: pos?.up ? 'bottom right' : 'top right',
+            }}
             className={cn(
-              'glass-strong fixed z-50 flex animate-pop-in flex-col rounded-xl border p-1 shadow-xl',
+              'glass-strong fixed z-50 flex flex-col rounded-xl border p-1 shadow-xl',
+              closing ? 'pointer-events-none animate-pop-out' : 'animate-pop-in',
               !pos && 'invisible',
             )}
           >
-            {items.map((it) => (
+            {items.map((it, i) => (
               <div key={it.key} className="contents">
                 {it.separator && <hr className="my-1 border-0 border-t border-border" />}
                 <button
@@ -160,8 +177,10 @@ export function Menu({
                   disabled={it.disabled}
                   title={it.title}
                   onClick={() => pick(it)}
+                  // пункты появляются каскадом сверху вниз
+                  style={{ '--i': i } as React.CSSProperties}
                   className={cn(
-                    'flex min-h-9 items-center gap-2.5 rounded-lg px-2.5 text-left text-[13px] outline-none',
+                    'stagger flex min-h-9 animate-fade-in items-center gap-2.5 rounded-lg px-2.5 text-left text-[13px] outline-none transition-colors',
                     'hover:bg-surface-2 focus-visible:bg-surface-2 disabled:cursor-not-allowed disabled:opacity-50',
                     it.danger ? 'text-bad' : 'text-text',
                   )}

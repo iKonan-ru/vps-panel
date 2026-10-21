@@ -8,6 +8,7 @@ import { Card } from '@/components/ui/card';
 import { Chip } from '@/components/ui/chip';
 import { Dialog } from '@/components/ui/dialog';
 import { InfoTip } from '@/components/ui/info-tip';
+import { Presence } from '@/components/ui/presence';
 import { Section } from '@/components/ui/section';
 import { Switch } from '@/components/ui/switch';
 import { TBody, THead, Table } from '@/components/ui/table';
@@ -316,14 +317,16 @@ export function FirewallTab({ s }: { s: ServerDetail }) {
       </Dialog>
 
       {/* окно монтируется при открытии: каждое открытие - с чистой формой, без прошлой ошибки */}
-      {ruleOpen && (
-        <RuleDialog
-          serverId={s.id}
-          open={ruleOpen}
-          onClose={() => setRuleOpen(false)}
-          onSaved={() => qc.invalidateQueries({ queryKey: ['servers'] })}
-        />
-      )}
+      <Presence value={ruleOpen}>
+        {() => (
+          <RuleDialog
+            serverId={s.id}
+            open
+            onClose={() => setRuleOpen(false)}
+            onSaved={() => qc.invalidateQueries({ queryKey: ['servers'] })}
+          />
+        )}
+      </Presence>
       <PortsyncDialog
         serverId={s.id}
         open={settingsOpen}

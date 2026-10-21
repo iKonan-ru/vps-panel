@@ -95,13 +95,19 @@ export function CountrySelect({
               <X className="size-3.5" />
             </button>
           )}
-          <ChevronDown className="pointer-events-none size-4 text-muted" aria-hidden="true" />
+          <ChevronDown
+            className={cn(
+              'pointer-events-none size-4 text-muted transition-transform duration-200',
+              open && 'rotate-180 text-accent',
+            )}
+            aria-hidden="true"
+          />
         </div>
       </div>
       {open && (
         <div
           id={listId}
-          className="absolute z-20 mt-1 max-h-[240px] animate-pop-in w-full overflow-auto rounded-lg border border-border bg-surface py-1 shadow-xl"
+          className="glass-strong absolute z-20 mt-1 max-h-[240px] w-full origin-top animate-pop-in overflow-auto rounded-lg border py-1 shadow-xl"
         >
           {items.length === 0 && (
             <div className="px-3 py-2 text-sm text-muted">Ничего не найдено</div>
@@ -116,7 +122,7 @@ export function CountrySelect({
               onMouseEnter={() => setActive(i)}
               onClick={() => pick(c.code)}
               className={cn(
-                'flex w-full items-center gap-2 px-3 py-1.5 text-left text-sm',
+                'flex w-full items-center gap-2 px-3 py-1.5 text-left text-sm transition-colors',
                 i === active && 'bg-surface-2',
                 c.code === value && 'text-accent',
               )}

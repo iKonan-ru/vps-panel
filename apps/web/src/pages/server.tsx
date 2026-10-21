@@ -368,7 +368,11 @@ function CopyText({ text }: { text: string }) {
       onClick={() => copy(text)}
     >
       {text}
-      {copied ? <Check className="size-3.5 text-ok" /> : <Copy className="size-3.5 opacity-60" />}
+      {copied ? (
+        <Check className="size-3.5 animate-check text-ok" />
+      ) : (
+        <Copy className="size-3.5 opacity-60" />
+      )}
     </Button>
   );
 }

@@ -9,6 +9,7 @@ import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { Dialog } from '@/components/ui/dialog';
 import { LinkButton } from '@/components/ui/link-button';
+import { Presence } from '@/components/ui/presence';
 import { actions } from '@/lib/actions';
 import { countryLabel } from '@/lib/countries';
 import { dateShort, daysUntil, daysWord, money, paymentSoon, perMonth } from '@/lib/format';
@@ -81,9 +82,11 @@ export function HostingCard({ serverId, hosting }: { serverId: string; hosting: 
         </div>
       )}
       {/* окно монтируется при открытии: каждое открытие - с чистой формой, без прошлой ошибки */}
-      {open && (
-        <HostingDialog serverId={serverId} hosting={h} open={open} onClose={() => setOpen(false)} />
-      )}
+      <Presence value={open}>
+        {() => (
+          <HostingDialog serverId={serverId} hosting={h} open onClose={() => setOpen(false)} />
+        )}
+      </Presence>
     </Card>
   );
 }

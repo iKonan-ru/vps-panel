@@ -6,6 +6,7 @@ import { Alert } from '@/components/ui/alert';
 import { Button, buttonClass } from '@/components/ui/button';
 import { Chip } from '@/components/ui/chip';
 import { useConfirm } from '@/components/ui/confirm';
+import { Presence } from '@/components/ui/presence';
 import { Section } from '@/components/ui/section';
 import { TBody, THead, Table } from '@/components/ui/table';
 import { api } from '@/lib/api';
@@ -209,17 +210,19 @@ export function BackupsTab({ s }: { s: ServerDetail }) {
         }}
       />
       {/* окно монтируется при открытии: каждое открытие - с чистой формой, без прошлой ошибки */}
-      {restore && (
-        <RestoreDialog
-          backup={restore}
-          defaultServerId={s.id}
-          onClose={() => setRestore(null)}
-          onStarted={(id, title) => {
-            setRestore(null);
-            setAction({ id, title });
-          }}
-        />
-      )}
+      <Presence value={restore}>
+        {(backup) => (
+          <RestoreDialog
+            backup={backup}
+            defaultServerId={s.id}
+            onClose={() => setRestore(null)}
+            onStarted={(id, title) => {
+              setRestore(null);
+              setAction({ id, title });
+            }}
+          />
+        )}
+      </Presence>
     </>
   );
 }

@@ -59,7 +59,7 @@ export function ServersPage() {
           type="search"
           placeholder="Имя, адрес или тег"
           aria-label="Поиск"
-          className="md:max-w-[360px]"
+          className="animate-reveal md:max-w-[360px]"
           autoFocus
           value={q}
           onChange={(e) => setQ(e.target.value)}
@@ -90,15 +90,15 @@ export function ServersPage() {
                 </tr>
               </thead>
               <tbody>
-                {servers.map((s) => (
-                  <ServerRow key={s.id} s={s} />
+                {servers.map((s, i) => (
+                  <ServerRow key={s.id} s={s} i={i} />
                 ))}
               </tbody>
             </table>
           </Card>
           <div className="flex flex-col gap-2.5 md:hidden">
-            {servers.map((s) => (
-              <ServerCard key={s.id} s={s} />
+            {servers.map((s, i) => (
+              <ServerCard key={s.id} s={s} i={i} />
             ))}
           </div>
         </>

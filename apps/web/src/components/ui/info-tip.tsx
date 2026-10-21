@@ -1,3 +1,5 @@
+import { cn } from '@/lib/cn';
+import { usePresence } from '@/lib/use-presence';
 import { Info } from 'lucide-react';
 import { type ReactNode, useEffect, useId, useLayoutEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
@@ -16,6 +18,8 @@ export function InfoTip({
   const [pos, setPos] = useState<{ top: number; left: number; width: number } | null>(null);
   const leave = useRef<number | undefined>(undefined);
   const shown = pinned || hover;
+  // гаснет плавно: пояснение ещё видно, пока идёт анимация закрытия
+  const presence = usePresence(shown);
 
   const onEnter = (e: React.PointerEvent) => {
     if (e.pointerType !== 'mouse') return;
@@ -81,7 +85,7 @@ export function InfoTip({
         aria-label={label}
         aria-expanded={shown}
         aria-describedby={shown ? id : undefined}
-        className="inline-flex size-5 shrink-0 items-center justify-center rounded-full align-middle text-muted hover:text-text focus-visible:outline-2 focus-visible:outline-accent"
+        className="inline-flex size-5 shrink-0 items-center justify-center rounded-full align-middle text-muted transition-[color,scale] hover:scale-110 hover:text-text focus-visible:outline-2 focus-visible:outline-accent"
         onClick={(e) => {
           e.preventDefault();
           e.stopPropagation();
@@ -92,7 +96,7 @@ export function InfoTip({
       >
         <Info className="size-3.5" />
       </button>
-      {shown &&
+      {presence.shown &&
         createPortal(
           <div
             ref={pop}
@@ -103,7 +107,11 @@ export function InfoTip({
             style={
               pos ? { top: pos.top, left: pos.left, width: pos.width } : { visibility: 'hidden' }
             }
-            className="fixed z-40 animate-fade-in rounded-lg border border-border bg-surface p-3 text-xs leading-relaxed font-normal text-text shadow-xl"
+            inert={presence.closing}
+            className={cn(
+              'fixed z-40 rounded-lg border border-border bg-surface p-3 text-xs leading-relaxed font-normal text-text shadow-xl',
+              presence.closing ? 'pointer-events-none animate-fade-out' : 'animate-pop-in',
+            )}
           >
             {children}
           </div>,

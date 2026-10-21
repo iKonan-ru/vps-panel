@@ -2,6 +2,7 @@ import { Alert } from '@/components/ui/alert';
 import { Button } from '@/components/ui/button';
 import { Chip } from '@/components/ui/chip';
 import { Dialog } from '@/components/ui/dialog';
+import { Presence } from '@/components/ui/presence';
 import { Section } from '@/components/ui/section';
 import { api } from '@/lib/api';
 import { cn } from '@/lib/cn';
@@ -394,7 +395,9 @@ export function ReachCard({ serverId, online }: { serverId: string; online: bool
       ) : (
         data.targets.map((t) => <Row key={t.key} t={t} now={now} onOpen={() => setOpen(t.key)} />)
       )}
-      {opened && <Details serverId={serverId} t={opened} now={now} onClose={() => setOpen(null)} />}
+      <Presence value={opened}>
+        {(t) => <Details serverId={serverId} t={t} now={now} onClose={() => setOpen(null)} />}
+      </Presence>
     </Section>
   );
 }

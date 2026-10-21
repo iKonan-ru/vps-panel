@@ -70,7 +70,11 @@ export function LinkButton({
         aria-label={copyTitle}
         onClick={() => copy(copyText)}
       >
-        {copied ? <Check className={cn(iconCls, 'text-ok')} /> : <Copy className={iconCls} />}
+        {copied ? (
+          <Check className={cn(iconCls, 'animate-check text-ok')} />
+        ) : (
+          <Copy className={iconCls} />
+        )}
       </Button>
     </span>
   );
