@@ -50,8 +50,8 @@ export function telegramInbound(id: string, port: number): Record<string, unknow
 
 /**
  * Правило Telegram каскада: весь трафик socks-inbound-а - на выход, без режимов и списков
- * (адреса Telegram зарубежные). Каскад не собрать - в блок: MTProxyL сочтёт этот путь мёртвым и
- * уйдёт на запасной, а не пойдёт к Telegram с адреса входа.
+ * (адреса Telegram зарубежные). Каскад не собрать - в блок, а не к Telegram с адреса входа; из
+ * маршрутов MTProxyL такой каскад панель убирает сама (tgUpstreams).
  */
 export function telegramRule(id: string, ok: boolean): Record<string, unknown> {
   return {
