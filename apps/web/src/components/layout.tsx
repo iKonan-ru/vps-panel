@@ -60,8 +60,17 @@ function readCollapsed(): boolean {
   }
 }
 
-/** Каркас: на широком экране боковое меню (сворачивается), на узком - полоса вкладок внизу. */
-export function AppLayout({ login }: { login: string }) {
+/** Две буквы для кружка аккаунта: инициалы имени из двух слов, иначе начало имени. */
+function initials(name: string): string {
+  const words = name.split(/\s+/).filter(Boolean);
+  return words.length > 1 ? `${words[0]?.[0] ?? ''}${words[1]?.[0] ?? ''}` : name.slice(0, 2);
+}
+
+/**
+ * Каркас: на широком экране боковое меню (сворачивается), на узком - полоса вкладок внизу. name -
+ * имя в интерфейсе (или логин, если имя не задано).
+ */
+export function AppLayout({ login, name }: { login: string; name: string }) {
   const [collapsed, setCollapsed] = useState(readCollapsed);
   const [more, setMore] = useState(false);
   const qc = useQueryClient();
@@ -155,10 +164,10 @@ export function AppLayout({ login }: { login: string }) {
           <Link
             to="/account"
             className="flex size-8 shrink-0 items-center justify-center rounded-full bg-surface-2 text-[13px] font-semibold uppercase hover:ring-1 hover:ring-accent"
-            title={`${login}: аккаунт`}
+            title={`${name === login ? login : `${name} (${login})`}: аккаунт`}
             aria-label="Аккаунт"
           >
-            {login.slice(0, 2)}
+            {initials(name)}
           </Link>
           {!collapsed && (
             <div className="min-w-0 grow">
@@ -167,7 +176,7 @@ export function AppLayout({ login }: { login: string }) {
                 className="block truncate text-sm hover:text-accent"
                 title="Аккаунт"
               >
-                {login}
+                {name}
               </Link>
               <div className="truncate text-[11px] text-muted" title="Адрес панели">
                 {location.hostname}
@@ -294,10 +303,10 @@ export function AppLayout({ login }: { login: string }) {
             aria-label="Аккаунт"
           >
             <div className="flex size-10 shrink-0 items-center justify-center rounded-full bg-surface-2 text-sm font-semibold uppercase">
-              {login.slice(0, 2)}
+              {initials(name)}
             </div>
             <div className="min-w-0 grow">
-              <div className="truncate text-sm">{login}</div>
+              <div className="truncate text-sm">{name}</div>
               <div className="truncate text-xs text-muted">
                 {location.hostname}, панель {version ?? '?'}
               </div>

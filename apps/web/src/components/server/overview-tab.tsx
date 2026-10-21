@@ -151,12 +151,20 @@ export function OverviewTab({ s, onTab }: { s: ServerDetail; onTab?: (tab: strin
                       </Chip>
                     )}
                   </div>
+                  {/* на телефоне описание - не длиннее двух строк (у OpenFlux портов десятки),
+                      целиком - в подсказке */}
                   {sv.details?.down === true && typeof sv.details.downReason === 'string' && (
-                    <div className="mt-0.5 break-words text-xs text-bad">
+                    <div
+                      className="mt-0.5 break-words text-xs text-bad max-md:line-clamp-2"
+                      title={sv.details.downReason}
+                    >
                       {sv.details.downReason}
                     </div>
                   )}
-                  <div className="mt-0.5 break-words text-xs text-muted">
+                  <div
+                    className="mt-0.5 break-words text-xs text-muted max-md:line-clamp-2"
+                    title={sv.ports.join(', ')}
+                  >
                     {sv.ports.join(', ') || 'порты не определены'}
                   </div>
                 </div>

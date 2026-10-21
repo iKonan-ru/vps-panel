@@ -151,7 +151,7 @@ export async function authRoutes(app: FastifyInstance, opts: { db: Db; secure: b
   app.get('/api/auth/me', async (req, reply) => {
     const s = await sessionOf(db, sessionToken(req));
     if (!s) return reply.code(401).send({ error: 'вход не выполнен' });
-    return { login: s.login, expiresAt: s.expiresAt };
+    return { login: s.login, displayName: s.displayName, expiresAt: s.expiresAt };
   });
 
   app.post('/api/auth/logout', async (req, reply) => {

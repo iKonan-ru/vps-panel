@@ -81,33 +81,39 @@ export function SyncPanel() {
       {data.progress.map((p) => {
         const pct = p.total ? Math.round((p.done / p.total) * 100) : 100;
         return (
+          // строки одного вида у всех серверов: имя, счётчик и плашки - первой строкой (имя
+          // обрезается), полоса - второй, "сейчас" и итоги - третьей
           <div key={p.server} className="border-b border-border px-4 py-2.5 last:border-b-0">
-            <div className="flex flex-wrap items-center gap-2 text-[13px]">
-              <span className="font-medium">{p.server}</span>
-              <Meter
-                pct={pct}
-                className="h-1.5 w-[120px] bg-border"
-                fill={p.errors ? 'bg-warn' : 'bg-ok'}
-              />
-              <span className="font-mono text-xs text-muted">
+            <div className="flex min-w-0 items-center gap-2 text-[13px]">
+              <span className="min-w-0 truncate font-medium" title={p.server}>
+                {p.server}
+              </span>
+              <div className="grow" />
+              <span className="shrink-0 font-mono text-xs text-muted">
                 <Num value={p.done} />/{p.total}
               </span>
-              {p.finished && <Chip tone="ok">готово</Chip>}
               {p.errors > 0 && <Chip tone="bad">ошибок {p.errors}</Chip>}
-              <div className="grow" />
-              {p.last.length > 0 && (
-                <Button
-                  variant="link"
-                  className="text-xs"
-                  onClick={() => setOpen(open === p.server ? null : p.server)}
-                >
-                  {open === p.server ? 'Скрыть' : 'Последние итоги'}
-                </Button>
-              )}
+              {p.finished && <Chip tone="ok">готово</Chip>}
             </div>
-            {!p.finished && p.current && (
-              <div className="mt-0.5 truncate text-xs text-muted" title={p.current}>
-                сейчас: {p.current}
+            <Meter
+              pct={pct}
+              className="mt-1.5 h-1.5 w-full bg-border"
+              fill={p.errors ? 'bg-warn' : 'bg-ok'}
+            />
+            {((!p.finished && p.current) || p.last.length > 0) && (
+              <div className="mt-1 flex min-w-0 items-center gap-2 text-xs">
+                <span className="min-w-0 grow truncate text-muted" title={p.current}>
+                  {!p.finished && p.current ? `сейчас: ${p.current}` : ''}
+                </span>
+                {p.last.length > 0 && (
+                  <Button
+                    variant="link"
+                    className="shrink-0 text-xs"
+                    onClick={() => setOpen(open === p.server ? null : p.server)}
+                  >
+                    {open === p.server ? 'Скрыть' : 'Последние итоги'}
+                  </Button>
+                )}
               </div>
             )}
             {open === p.server && (

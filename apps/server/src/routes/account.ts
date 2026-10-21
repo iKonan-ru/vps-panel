@@ -69,10 +69,20 @@ export async function accountRoutes(app: FastifyInstance, opts: { db: Db; secure
     const { admin } = await me(req);
     return {
       login: admin.login,
+      displayName: admin.displayName,
       totpEnabled: admin.totpEnabled,
       backupCodesLeft: admin.backupCodesHash.length,
       createdAt: admin.createdAt,
     };
+  });
+
+  /** Имя в интерфейсе: только для показа, вход по-прежнему по логину - пароль не нужен. */
+  app.put('/api/account/name', limited, async (req) => {
+    const { admin } = await me(req);
+    const b = z.object({ displayName: z.string().max(64) }).parse(req.body);
+    const displayName = b.displayName.replace(/\s+/g, ' ').trim();
+    await db.update(admins).set({ displayName }).where(eq(admins.id, admin.id));
+    return { ok: true, displayName };
   });
 
   app.put('/api/account/login', limited, async (req) => {

@@ -156,7 +156,11 @@ function Row({ t, now, onOpen }: { t: ReachTarget; now: number; onOpen: () => vo
           className="mt-px"
           title={`дошли ${t.ok} из ${t.total}\u00a0зондов`}
         >
-          {lv === 'ok' ? 'виден' : lv === 'partial' ? 'частично' : 'не виден'} {t.percent}%
+          {/* на телефоне - только процент: цвет плашки и так говорит, виден ли */}
+          <span className="max-sm:hidden">
+            {lv === 'ok' ? 'виден' : lv === 'partial' ? 'частично' : 'не виден'}
+          </span>
+          {t.percent}%
         </Chip>
       ) : (
         <Chip className="mt-px">нет данных</Chip>
@@ -352,11 +356,17 @@ export function ReachCard({ serverId, online }: { serverId: string; online: bool
     <Section
       title="Доступность из России"
       info={
-        'Каждые полчаса 10 зондов Globalping из домашних сетей России проверяют адрес и inbound 3X-UI. Виден\u00a0\u2014 от 80%, частично\u00a0\u2014 от 50%. Задержка\u00a0\u2014 время установки TCP-соединения, медиана по дошедшим зондам.'
+        'Каждые полчаса 10 зондов Globalping из домашних сетей России проверяют адрес и inbound 3X-UI из квоты сервера (250\u00a0зондов в час); не хватает квоты\u00a0\u2014 проверка пропускается. Виден\u00a0\u2014 от 80%, частично\u00a0\u2014 от 50%. Задержка\u00a0\u2014 время установки TCP-соединения, медиана по дошедшим зондам.'
       }
       extra={
         data?.remaining !== undefined && (
-          <span className="text-xs text-muted">квота Globalping: осталось {data.remaining}</span>
+          <span
+            className="text-xs text-muted"
+            title="Квота Globalping с адреса этого сервера на час; токен из настроек берётся, когда она кончилась"
+          >
+            квота: осталось {data.remaining}
+            {data.byToken ? ', часть\u00a0\u2014 по токену' : ''}
+          </span>
         )
       }
       actions={

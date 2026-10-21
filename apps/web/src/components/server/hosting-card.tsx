@@ -47,9 +47,10 @@ export function HostingCard({ serverId, hosting }: { serverId: string; hosting: 
       ) : (
         <div className="grid grid-cols-[120px_1fr] gap-x-3 gap-y-2 text-[13px]">
           <Row label="Провайдер">
-            <span className="flex flex-wrap items-center gap-2">
-              {h.provider || '-'}
-              {h.providerUrl && <LinkButton href={h.providerUrl}>Панель хостера</LinkButton>}
+            {/* на узком экране кнопка - значками у правого края, подпись - на широком */}
+            <span className="flex items-center gap-2">
+              <span className="min-w-0 grow break-words md:grow-0">{h.provider || '-'}</span>
+              {h.providerUrl && <LinkButton href={h.providerUrl} label="Панель хостера" />}
             </span>
           </Row>
           {h.providerServerName && <Row label="Сервер у хостера">{h.providerServerName}</Row>}

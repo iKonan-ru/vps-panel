@@ -12,8 +12,11 @@ import {
   buildWdttSubscription,
 } from '../lib/subscription.js';
 
-/** Название подписки в приложении (Happ, Hiddify): кириллица в заголовке - только base64. */
-const TITLE = 'VPN';
+/**
+ * Название подписки в приложении (Happ, Hiddify, qWDTT) - имя клиента; кириллица в заголовке -
+ * только base64. Пустое имя - "VPN".
+ */
+const title = (name: string) => name.trim() || 'VPN';
 
 /**
  * Подписка глобального клиента: GET /sub/<токен> без входа (вход
@@ -45,7 +48,7 @@ export async function subscriptionRoutes(
     if (!s) return reply.code(404).type('text/plain').send('not found');
     return reply
       .type('text/plain; charset=utf-8')
-      .header('profile-title', `base64:${Buffer.from(TITLE).toString('base64')}`)
+      .header('profile-title', `base64:${Buffer.from(title(s.name)).toString('base64')}`)
       .header('profile-update-interval', '12')
       .send(Buffer.from(s.links.join('\n')).toString('base64'));
   });
@@ -60,7 +63,7 @@ export async function subscriptionRoutes(
     const s = /^[0-9a-f]{32}$/.test(token) ? buildWdttSubscription(opts.db, token) : null;
     if (!s) return reply.code(404).type('text/plain').send('not found');
     return {
-      subscriptionName: TITLE,
+      subscriptionName: title(s.name),
       description: 'Серверы и пароли обновляются автоматически',
       updatedAt: new Date().toISOString(),
       version: 1,

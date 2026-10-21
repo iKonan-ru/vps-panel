@@ -25,7 +25,12 @@ export function useCascades(serverId: string) {
 }
 
 function CheckChip({ c }: { c: CascadeView }) {
-  if (c.error) return <Chip tone="bad">{c.error}</Chip>;
+  if (c.error)
+    return (
+      <Chip tone="bad" title={c.error} className="min-w-0 shrink">
+        <span className="truncate">{c.error}</span>
+      </Chip>
+    );
   if (!c.check) return <Chip>не проверен</Chip>;
   return c.check.ok ? (
     <Chip tone="ok" dot>
@@ -83,9 +88,10 @@ export function XuiCascades({
     });
     if (!ok) return;
     await op.run(async () => {
-      await api(`/api/cascades/${c.id}/delete`, { method: 'POST' });
-      await refresh();
-      void qc.invalidateQueries({ queryKey: ['xui-clients', serverId] });
+      const r = await api<{ actionId: string }>(`/api/cascades/${c.id}/delete`, {
+        method: 'POST',
+      });
+      setRun({ id: r.actionId, title: `Удаление каскада через ${c.exitServerName}` });
     });
   }
 
@@ -128,20 +134,21 @@ export function XuiCascades({
           <div className="px-4 py-3 text-[13px] text-muted">Каскадов нет</div>
         )}
         {list.map((c) => (
+          // строка выхода не переносится: длинное имя обрезается, плашка проверки - всегда рядом
           <div
             key={c.id}
-            className="flex items-center gap-3 border-b border-border px-4 py-2.5 last:border-b-0"
+            className="flex items-start gap-3 border-b border-border px-4 py-2.5 last:border-b-0"
           >
             <div className="min-w-0 grow">
-              <div className="flex flex-wrap items-center gap-2 text-[13px]">
+              <div className="flex min-w-0 items-center gap-2 text-[13px]">
                 <Link
                   to="/servers/$id/$tab"
                   params={{ id: c.exitServerId, tab: 'xui' }}
-                  className="font-medium hover:underline"
+                  className="min-w-0 truncate font-medium hover:underline"
                 >
                   {`\u2192 ${c.exitServerName || 'выход удалён'}`}
                 </Link>
-                <span className="font-mono text-xs text-muted">{c.entryPort ?? ''}</span>
+                <span className="shrink-0 font-mono text-xs text-muted">{c.entryPort ?? ''}</span>
                 <CheckChip c={c} />
               </div>
               <div className="text-xs text-muted">

@@ -41,14 +41,14 @@ export function linkPort(link: string): number {
  * Подписка клиента по токену: ссылки VLESS со всех серверов из кэша привязок (обновляет сверка),
  * без запросов к агентам. Нет клиента - null; выключен - пустой список.
  */
-export function buildSubscription(db: Db, token: string): { links: string[] } | null {
+export function buildSubscription(db: Db, token: string): { name: string; links: string[] } | null {
   const c = db
     .select()
     .from(gclients)
     .where(and(eq(gclients.token, token), isNull(gclients.deletedAt)))
     .get();
   if (!c) return null;
-  if (!c.enabled) return { links: [] };
+  if (!c.enabled) return { name: c.name, links: [] };
   const rows = db
     .select({ b: gclientBindings, s: servers })
     .from(gclientBindings)
@@ -72,12 +72,18 @@ export function buildSubscription(db: Db, token: string): { links: string[] } | 
   );
   // каскады: порт inbound-а входа -> выход (ссылка через вход подписывается по выходу)
   const via = new Map<string, Map<number, string>>();
+  // выход -> входы его каскадов: у выхода с несколькими входами в подписи - имя входа
+  const entriesOf = new Map<string, Set<string>>();
   for (const r of db.select().from(cascades).all()) {
     // каскад с ошибкой не ведёт через выход: такую ссылку "через РФ" не подписываем
     if (!r.entryPort || r.error) continue;
     const m = via.get(r.entryServerId) ?? new Map<number, string>();
     m.set(r.entryPort, r.exitServerId);
     via.set(r.entryServerId, m);
+    entriesOf.set(
+      r.exitServerId,
+      (entriesOf.get(r.exitServerId) ?? new Set()).add(r.entryServerId),
+    );
   }
   const items: { name: string; rank: number; link: string }[] = [];
   for (const { b, s } of rows) {
@@ -95,7 +101,9 @@ export function buildSubscription(db: Db, token: string): { links: string[] } | 
           country: exit.country,
           serverName: exit.name,
         }).title;
-        const through = s.country === 'RU' ? 'РФ' : s.name;
+        // один вход - "через РФ"; несколько - различимо: "через РФ (Вход)"
+        const several = (entriesOf.get(exit.id)?.size ?? 0) > 1;
+        const through = s.country !== 'RU' ? s.name : several ? `РФ (${s.name})` : 'РФ';
         items.push({
           name: exit.name,
           rank: 1,
@@ -122,7 +130,7 @@ export function buildSubscription(db: Db, token: string): { links: string[] } | 
   }
   items.sort((x, y) => x.name.localeCompare(y.name) || x.rank - y.rank);
   const links = items.map((i) => i.link);
-  return { links };
+  return { name: c.name, links };
 }
 
 /** Профиль qWDTT из ссылки qwdtt://config?... - её собирает сверка. */
@@ -145,14 +153,14 @@ export function wdttProfile(link: string) {
 export function buildWdttSubscription(
   db: Db,
   token: string,
-): { profiles: ReturnType<typeof wdttProfile>[] } | null {
+): { name: string; profiles: ReturnType<typeof wdttProfile>[] } | null {
   const c = db
     .select()
     .from(gclients)
     .where(and(eq(gclients.token, token), isNull(gclients.deletedAt)))
     .get();
   if (!c) return null;
-  if (!c.enabled) return { profiles: [] };
+  if (!c.enabled) return { name: c.name, profiles: [] };
   const rows = db
     .select({ b: gclientBindings, s: servers })
     .from(gclientBindings)
@@ -167,6 +175,7 @@ export function buildWdttSubscription(
     .all()
     .sort((x, y) => x.s.name.localeCompare(y.s.name));
   return {
+    name: c.name,
     profiles: rows.flatMap(({ b }) => (b.links[0] ? [wdttProfile(b.links[0])] : [])),
   };
 }

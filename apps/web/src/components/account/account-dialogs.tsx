@@ -14,6 +14,48 @@ import { type FormEvent, useState } from 'react';
 
 const PASSWORD_MIN = 12;
 
+/** Имя в интерфейсе (меню пользователя): только для показа, без пароля. */
+export function NameDialog({ current, onClose }: { current: string; onClose: () => void }) {
+  const qc = useQueryClient();
+  const act = useAction();
+  const [name, setName] = useState(current);
+  async function submit(e: FormEvent) {
+    e.preventDefault();
+    const ok = await act.run(async () => {
+      await api('/api/account/name', { method: 'PUT', json: { displayName: name } });
+      await Promise.all([
+        qc.invalidateQueries({ queryKey: ['account'] }),
+        qc.invalidateQueries({ queryKey: ['me'] }),
+      ]);
+    });
+    if (ok) onClose();
+  }
+  return (
+    <Dialog open onClose={onClose} title="Имя">
+      <form onSubmit={submit} className="flex flex-col gap-4">
+        <Field
+          label="Имя в панели"
+          htmlFor="acc-name"
+          hint={'пусто\u00a0\u2014 показывается логин'}
+        >
+          <Input
+            id="acc-name"
+            autoComplete="name"
+            value={name}
+            onChange={(e) => setName(e.target.value)}
+            maxLength={64}
+            autoFocus
+          />
+        </Field>
+        {act.error && <Alert tone="bad">{act.error}</Alert>}
+        <Button type="submit" variant="primary" disabled={act.busy || name.trim() === current}>
+          Сохранить
+        </Button>
+      </form>
+    </Dialog>
+  );
+}
+
 export function LoginDialog({ current, onClose }: { current: string; onClose: () => void }) {
   const qc = useQueryClient();
   const act = useAction();

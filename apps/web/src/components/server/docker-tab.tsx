@@ -7,6 +7,7 @@ import { Dialog } from '@/components/ui/dialog';
 import { Section } from '@/components/ui/section';
 import { TBody, THead, Table } from '@/components/ui/table';
 import { actions } from '@/lib/actions';
+import { stateTitle, statusTitle } from '@/lib/docker';
 import { serverLock, useServer } from '@/lib/servers';
 import { useAction } from '@/lib/use-action';
 import { useQueryClient } from '@tanstack/react-query';
@@ -212,9 +213,11 @@ function GroupRows({
             </td>
             <td>
               <Chip tone={stateTone[c.state]} dot>
-                {c.state}
+                {stateTitle[c.state]}
               </Chip>
-              <div className="mt-0.5 text-xs text-muted">{c.status}</div>
+              <div className="mt-0.5 text-xs text-muted" title={c.status}>
+                {statusTitle(c.status)}
+              </div>
             </td>
             <td className="font-mono text-xs">
               {c.published.join(', ') || (
@@ -329,14 +332,14 @@ function MobileList({ groups, ...actions }: ActionProps & { groups: Map<string, 
                 {isVpn(c) && <Chip tone="warn">VPN</Chip>}
                 <div className="grow" />
                 <Chip tone={stateTone[c.state]} dot>
-                  {c.state}
+                  {stateTitle[c.state]}
                 </Chip>
               </div>
               <div className="truncate font-mono text-xs text-muted" title={c.image}>
                 {c.image}
               </div>
               <div className="flex flex-wrap gap-x-3 gap-y-0.5 text-xs text-muted">
-                <span>{c.status}</span>
+                <span title={c.status}>{statusTitle(c.status)}</span>
                 <span className="font-mono">
                   {c.published.join(', ') || (c.networkMode === 'host' ? 'host' : 'без портов')}
                 </span>

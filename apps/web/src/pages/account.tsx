@@ -1,6 +1,7 @@
 import {
   CodesDialog,
   LoginDialog,
+  NameDialog,
   PasswordDialog,
   TotpDialog,
 } from '@/components/account/account-dialogs';
@@ -23,7 +24,7 @@ import { useServers } from '@/lib/servers';
 import { useAction } from '@/lib/use-action';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useNavigate } from '@tanstack/react-router';
-import { KeyRound, LogOut, ShieldCheck, User, X } from 'lucide-react';
+import { IdCard, KeyRound, LogOut, ShieldCheck, User, X } from 'lucide-react';
 import { type ReactNode, useState } from 'react';
 
 function Row({
@@ -63,7 +64,9 @@ export function AccountPage() {
   const ask = useConfirm();
   const logoutAll = useAction();
   const closing = useAction();
-  const [dialog, setDialog] = useState<'login' | 'password' | 'totp' | 'codes' | null>(null);
+  const [dialog, setDialog] = useState<'name' | 'login' | 'password' | 'totp' | 'codes' | null>(
+    null,
+  );
   const acc = useQuery({ queryKey: ['account'], queryFn: () => api<Account>('/api/account') });
   const sec = useQuery({
     queryKey: ['security'],
@@ -108,6 +111,16 @@ export function AccountPage() {
         title="Вход в панель"
         info="Сброс пароля и 2FA только из консоли сервера панели: vps-panel admin password, vps-panel admin 2fa. Все сессии при этом закрываются."
       >
+        <Row
+          icon={<IdCard className="size-4" />}
+          title="Имя"
+          value={a ? a.displayName || 'не задано, показывается логин' : '\u2026'}
+          action={
+            <Button size="sm" disabled={busy} onClick={() => setDialog('name')}>
+              Изменить
+            </Button>
+          }
+        />
         <Row
           icon={<User className="size-4" />}
           title="Логин"
@@ -159,6 +172,9 @@ export function AccountPage() {
         />
       </Section>
 
+      {dialog === 'name' && a && (
+        <NameDialog current={a.displayName} onClose={() => setDialog(null)} />
+      )}
       {dialog === 'login' && a && <LoginDialog current={a.login} onClose={() => setDialog(null)} />}
       {dialog === 'password' && <PasswordDialog onClose={() => setDialog(null)} />}
       {dialog === 'totp' && <TotpDialog onClose={() => setDialog(null)} />}

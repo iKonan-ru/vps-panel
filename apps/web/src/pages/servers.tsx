@@ -1,7 +1,6 @@
 import { useAgentsRollout } from '@/components/agents-rollout';
-import { MobileActions } from '@/components/mobile-actions';
+import { PageActions } from '@/components/page-actions';
 import { ServerCard, ServerRow } from '@/components/servers/server-row';
-import { Button, ButtonLink } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { Chip } from '@/components/ui/chip';
 import { Input } from '@/components/ui/input';
@@ -9,7 +8,7 @@ import { PageTitle } from '@/components/ui/page-title';
 import { countryName } from '@/lib/countries';
 import { cap } from '@/lib/format';
 import { useServers } from '@/lib/servers';
-import { Plus, Search } from 'lucide-react';
+import { Search } from 'lucide-react';
 import { useMemo, useState } from 'react';
 
 export function ServersPage() {
@@ -44,43 +43,23 @@ export function ServersPage() {
           {rollout.button}
         </div>
         <div className="grow" />
-        <Input
-          type="search"
-          placeholder="Имя, адрес или тег"
-          aria-label="Поиск"
-          className="hidden w-[260px] md:block"
-          value={q}
-          onChange={(e) => setQ(e.target.value)}
+        <PageActions
+          find={{
+            label: 'Поиск',
+            icon: Search,
+            open: searchOpen,
+            marked: q.trim() !== '',
+            onToggle: () => setSearchOpen(!searchOpen),
+          }}
+          add={{ label: 'Добавить сервер', to: '/servers/new' }}
         />
-        <ButtonLink
-          to="/servers/new"
-          variant="primary"
-          label="Добавить сервер"
-          className="max-md:hidden"
-        >
-          <Plus className="size-4" />
-        </ButtonLink>
       </div>
-      {/* на телефоне поиск и добавление - значками в верхней плашке, строка поиска - по клику */}
-      <MobileActions>
-        <Button
-          size="icon"
-          variant={searchOpen ? 'primary' : 'ghost'}
-          aria-label="Поиск"
-          onClick={() => setSearchOpen(!searchOpen)}
-        >
-          <Search className="size-4" />
-        </Button>
-        <ButtonLink to="/servers/new" size="icon" variant="primary" aria-label="Добавить сервер">
-          <Plus className="size-4" />
-        </ButtonLink>
-      </MobileActions>
       {searchOpen && (
         <Input
           type="search"
           placeholder="Имя, адрес или тег"
           aria-label="Поиск"
-          className="md:hidden"
+          className="md:max-w-[360px]"
           autoFocus
           value={q}
           onChange={(e) => setQ(e.target.value)}

@@ -84,10 +84,9 @@ export async function cascadeRoutes(app: FastifyInstance, opts: { cascades: Casc
     return { actionId };
   });
 
-  app.post('/api/cascades/:cid/delete', async (req) => {
-    await cascades.remove(Cid.parse(req.params).cid);
-    return { ok: true };
-  });
+  app.post('/api/cascades/:cid/delete', async (req) => ({
+    actionId: cascades.remove(Cid.parse(req.params).cid),
+  }));
 
   app.post('/api/cascades/:cid/check', async (req) => cascades.check(Cid.parse(req.params).cid));
 }

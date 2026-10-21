@@ -138,60 +138,67 @@ export function XuiInbounds({
           <div className="px-4 py-3 text-[13px] text-muted">Inbound нет</div>
         )}
         {list.map((i) => (
+          // всё по верхнему краю; плашки на узком экране - всегда своей строкой под именем, чтобы
+          // строки с разным числом плашек не выглядели по-разному
           <div
             key={i.id}
-            className="flex items-center gap-3 border-b border-border px-4 py-2.5 last:border-b-0"
+            className="flex items-start gap-3 border-b border-border px-4 py-2.5 last:border-b-0"
           >
             <Switch
               checked={i.enable}
               disabled={locked || i.node}
               label={`Inbound ${i.remark || `#${i.id}`}`}
+              className="mt-0.5"
               onChange={() => void save(i, { enable: !i.enable })}
             />
             <div className="min-w-0 grow">
-              <div className="flex flex-wrap items-center gap-2 text-[13px]">
-                <span className="font-medium">{i.remark || `#${i.id}`}</span>
-                <span className="font-mono text-xs text-muted">
-                  {i.listen && i.listen !== '0.0.0.0' ? `${i.listen}:` : ''}
-                  {i.port}
+              <div className="flex flex-wrap items-center gap-x-2 gap-y-1 text-[13px]">
+                <span className="flex min-w-0 items-baseline gap-2">
+                  <span className="min-w-0 truncate font-medium">{i.remark || `#${i.id}`}</span>
+                  <span className="shrink-0 font-mono text-xs text-muted">
+                    {i.listen && i.listen !== '0.0.0.0' ? `${i.listen}:` : ''}
+                    {i.port}
+                  </span>
                 </span>
-                <Chip>
-                  {[i.protocol, i.network, securityTitle[i.security] ?? i.security]
-                    .filter(Boolean)
-                    .join(' / ')}
-                </Chip>
-                {!i.enable && <Chip tone="muted">выключен</Chip>}
-                {i.node && <Chip title="inbound другого узла группы 3X-UI">другой узел</Chip>}
-                {i.excluded && (
-                  <Chip
-                    tone="warn"
-                    title={
-                      'Исключён в разделе \u00abКлиенты\u00bb: клиенты панели сюда не добавляются'
-                    }
-                  >
-                    без клиентов панели
+                <span className="flex flex-wrap items-center gap-1.5 max-md:basis-full">
+                  <Chip>
+                    {[i.protocol, i.network, securityTitle[i.security] ?? i.security]
+                      .filter(Boolean)
+                      .join(' / ')}
                   </Chip>
-                )}
-                {i.telegramExit && (
-                  <Chip
-                    tone={i.telegramExit === 'primary' ? 'accent' : 'muted'}
-                    title={
-                      i.telegramExit === 'primary'
-                        ? 'Через этот inbound панель отправляет уведомления в Telegram'
-                        : 'Запасной выход панели в Telegram'
-                    }
-                  >
-                    {i.telegramExit === 'primary'
-                      ? 'выход в Telegram'
-                      : 'запасной выход в Telegram'}
-                  </Chip>
-                )}
-                {i.excludeFromSub && <Chip tone="muted">не в подписке</Chip>}
-                {cascadeOf.has(i.id) && (
-                  <Chip tone="accent">{`каскад \u2192 ${cascadeOf.get(i.id) ?? ''}`}</Chip>
-                )}
+                  {!i.enable && <Chip tone="muted">выключен</Chip>}
+                  {i.node && <Chip title="inbound другого узла группы 3X-UI">другой узел</Chip>}
+                  {i.excluded && (
+                    <Chip
+                      tone="warn"
+                      title={
+                        'Исключён в разделе \u00abКлиенты\u00bb: клиенты панели сюда не добавляются'
+                      }
+                    >
+                      без клиентов панели
+                    </Chip>
+                  )}
+                  {i.telegramExit && (
+                    <Chip
+                      tone={i.telegramExit === 'primary' ? 'accent' : 'muted'}
+                      title={
+                        i.telegramExit === 'primary'
+                          ? 'Через этот inbound панель отправляет уведомления в Telegram'
+                          : 'Запасной выход панели в Telegram'
+                      }
+                    >
+                      {i.telegramExit === 'primary'
+                        ? 'выход в Telegram'
+                        : 'запасной выход в Telegram'}
+                    </Chip>
+                  )}
+                  {i.excludeFromSub && <Chip tone="muted">не в подписке</Chip>}
+                  {cascadeOf.has(i.id) && (
+                    <Chip tone="accent">{`каскад \u2192 ${cascadeOf.get(i.id) ?? ''}`}</Chip>
+                  )}
+                </span>
               </div>
-              <div className="text-xs text-muted">
+              <div className="mt-0.5 text-xs text-muted">
                 {[
                   i.sni && `SNI ${i.sni}`,
                   `клиентов: ${i.clients}${i.clientsOff ? ` (выключено: ${i.clientsOff})` : ''}`,

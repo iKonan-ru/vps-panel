@@ -126,6 +126,23 @@ export function inboundTargets(
   return out;
 }
 
+/** Отказ по квоте Globalping (агент: "квота Globalping исчерпана с адреса сервера..."). */
+export const isQuota = (error: string) => /квота Globalping|Globalping ответил 429/.test(error);
+
+/** Сколько зондов уйдёт на проверку сервера: каждая цель агента - PROBES зондов. */
+export const reachCost = (r: ServerReach) =>
+  r.targets.filter((t) => t.source === 'agent').length * PROBES;
+
+/**
+ * Плановую проверку пропускаем, если по последнему остатку квоты сервера (меньше часа назад) её не
+ * хватит, а токена нет: иначе зонды уйдут впустую и квота не восстановится к следующей проверке.
+ */
+export function quotaShort(r: ServerReach | undefined, now: number, token: boolean): boolean {
+  if (token || !r?.checkedAt || r.remaining === undefined) return false;
+  if (now - Date.parse(r.checkedAt) > 60 * 60_000) return false;
+  return r.remaining < reachCost(r);
+}
+
 /**
  * Ошибка проверки человеческим текстом: агент отдаёт "Globalping ответил <код>: <тело JSON,
  * обрезанное>" - вместо куска JSON понятная причина и что делать.
@@ -357,7 +374,10 @@ export class RuReach {
     putSetting(this.db, name, JSON.stringify(out));
   }
 
-  /** Токен Globalping (необязательно): с ним квота 500 зондов в час вместо 250. */
+  /**
+   * Токен Globalping (необязательно): одна квота 500 зондов в час на все серверы. Берётся, только
+   * когда кончилась своя квота сервера (250 в час с его адреса).
+   */
   tokenSet(): boolean {
     return Boolean(getSetting(this.db, TOKEN_KEY));
   }
@@ -383,7 +403,18 @@ export class RuReach {
   /** Проверка серверов на связи; staleMs - только тех, чей итог старше (пропущенные). */
   private async checkAll(staleMs?: number) {
     const rows = await this.db.select({ id: servers.id }).from(servers);
-    const store = staleMs ? this.load() : {};
+    const store = this.load();
+    const token = this.tokenSet();
+    const skipped = rows.filter(
+      (r) => this.registry.isOnline(r.id) && quotaShort(store[r.id], Date.now(), token),
+    );
+    for (const r of skipped) {
+      const e = store[r.id];
+      if (!e) continue;
+      e.error = `проверка пропущена: квоты Globalping сервера не хватит (осталось ${e.remaining ?? 0}, нужно ${reachCost(e)}), повтор через полчаса`;
+    }
+    if (skipped.length) this.save(store);
+    const skip = new Set(skipped.map((r) => r.id));
     const fresh = (id: string) => {
       const at = store[id]?.checkedAt;
       return (
@@ -395,7 +426,7 @@ export class RuReach {
     };
     await Promise.all(
       rows
-        .filter((r) => this.registry.isOnline(r.id) && !fresh(r.id))
+        .filter((r) => this.registry.isOnline(r.id) && !fresh(r.id) && !skip.has(r.id))
         .map((r) =>
           this.check(r.id).catch((e: Error) =>
             this.log.warn({ serverId: r.id, err: e.message }, 'ru-reach'),
@@ -539,18 +570,31 @@ export class RuReach {
       out.error = 'агент устарел: для проверки адреса и inbound нужно обновить агент';
     } else {
       try {
-        const token = this.token();
-        const r = (await this.registry.request(
-          serverId,
-          'reach.check',
-          {
-            ...(token ? { token } : {}),
-            probes: PROBES,
-            targets: agentTargets.map(({ title: _, ...t }) => t),
-          },
-          { timeoutMs: 120_000 },
-        )) as AgentReply;
+        const plain = agentTargets.map(({ title: _, ...t }) => t);
+        const call = async (list: AgentTarget[], token: string) =>
+          (await this.registry.request(
+            serverId,
+            'reach.check',
+            { ...(token ? { token } : {}), probes: PROBES, targets: list },
+            { timeoutMs: 120_000 },
+          )) as AgentReply;
+        // сначала - без токена: у каждого сервера своя квота по его адресу; токен (одна квота на
+        // все серверы) - только для целей, на которые квоты сервера не хватило
+        const r = await call(plain, '');
         if (r.remaining >= 0) out.remaining = r.remaining;
+        const token = this.token();
+        const limited = new Set(
+          token ? r.results.filter((x) => x.error && isQuota(x.error)).map((x) => x.key) : [],
+        );
+        if (limited.size) {
+          const again = await call(
+            plain.filter((t) => limited.has(t.key)),
+            token,
+          );
+          const byKey = new Map(again.results.map((x) => [x.key, x]));
+          r.results = r.results.map((x) => byKey.get(x.key) ?? x);
+          out.byToken = limited.size;
+        }
         for (const res of r.results) {
           const t = targets.find((x) => x.key === res.key);
           if (!t) continue;

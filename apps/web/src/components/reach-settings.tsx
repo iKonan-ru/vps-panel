@@ -7,9 +7,13 @@ import { Section } from '@/components/ui/section';
 import { api } from '@/lib/api';
 import { useAction } from '@/lib/use-action';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
+import { Trash2 } from 'lucide-react';
 import { type FormEvent, useState } from 'react';
 
-/** Токен Globalping (необязательно): поднимает квоту сервера с 250 до 500 зондов в час. */
+/**
+ * Токен Globalping (необязательно): запас на случай, когда кончилась квота сервера. Квота токена
+ * одна на все серверы, поэтому проверки сначала идут без него.
+ */
 export function ReachSettings() {
   const qc = useQueryClient();
   const { data } = useQuery({
@@ -38,7 +42,7 @@ export function ReachSettings() {
     <Section
       title="Доступность из России"
       info={
-        'Проверки идут через Globalping из домашних сетей России. Без токена\u00a0\u2014 250\u00a0проверок в час на сервер, с бесплатным токеном (dash.globalping.io)\u00a0\u2014 500.'
+        'Проверки идут через Globalping с адреса каждого сервера: у каждого своя квота, 250\u00a0зондов в час. Бесплатный токен (dash.globalping.io)\u00a0\u2014 500\u00a0зондов в час на все серверы вместе: панель берёт его, только когда квоты сервера не хватило.'
       }
       extra={
         data && (
@@ -48,11 +52,9 @@ export function ReachSettings() {
         )
       }
     >
-      <form
-        className="flex flex-wrap items-end gap-3 p-4"
-        onSubmit={(e) => void save(token.trim(), e)}
-      >
-        <Field label="Токен Globalping" htmlFor="gp-token" className="min-w-[240px] grow">
+      {/* одной строкой и на телефоне: удаление там - значком */}
+      <form className="flex items-end gap-2 p-4" onSubmit={(e) => void save(token.trim(), e)}>
+        <Field label="Токен Globalping" htmlFor="gp-token" className="min-w-0 grow">
           <Input
             id="gp-token"
             type="password"
@@ -66,8 +68,14 @@ export function ReachSettings() {
           Сохранить
         </Button>
         {data?.tokenSet && (
-          <Button variant="ghost" disabled={op.busy} onClick={() => void save('')}>
-            Удалить
+          <Button
+            variant="ghost"
+            disabled={op.busy}
+            onClick={() => void save('')}
+            label="Удалить"
+            className="text-bad hover:text-bad"
+          >
+            <Trash2 className="size-4" />
           </Button>
         )}
       </form>

@@ -58,7 +58,7 @@ function Gate() {
     const back = location.pathname + location.search;
     return <Navigate to="/login" search={back === '/' ? {} : { next: back }} />;
   }
-  return <AppLayout login={me.data.login} />;
+  return <AppLayout login={me.data.login} name={me.data.displayName || me.data.login} />;
 }
 
 const rootRoute = createRootRoute({ component: Root });

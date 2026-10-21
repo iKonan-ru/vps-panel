@@ -42,7 +42,34 @@ describe('database schema', () => {
       createDb(dir);
       createDb(dir);
       const db = new Database(join(dir, 'panel.db'), { readonly: true });
-      expect(db.pragma('user_version', { simple: true })).toBe(22);
+      expect(db.pragma('user_version', { simple: true })).toBe(23);
+      db.close();
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it('шаг 23: база версии 22 получает имя администратора, логин на месте', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'vps-s23-'));
+    try {
+      createDb(dir);
+      const raw = new Database(join(dir, 'panel.db'));
+      raw.exec(`create table admin2 as select id, login, password_hash, totp_secret, totp_enabled,
+        backup_codes_hash, created_at from admin`);
+      raw.exec('drop table admin');
+      raw.exec('alter table admin2 rename to admin');
+      raw.exec(
+        "insert into admin (id, login, password_hash, totp_enabled, backup_codes_hash, created_at) values ('a', 'boss', 'h', 0, '[]', 'x')",
+      );
+      raw.pragma('user_version = 22');
+      raw.close();
+      createDb(dir);
+      const db = new Database(join(dir, 'panel.db'), { readonly: true });
+      expect(db.pragma('user_version', { simple: true })).toBe(23);
+      expect(db.prepare('select login, display_name from admin').get()).toEqual({
+        login: 'boss',
+        display_name: '',
+      });
       db.close();
     } finally {
       rmSync(dir, { recursive: true, force: true });
@@ -59,7 +86,7 @@ describe('database schema', () => {
       raw.close();
       createDb(dir);
       const db = new Database(join(dir, 'panel.db'), { readonly: true });
-      expect(db.pragma('user_version', { simple: true })).toBe(22);
+      expect(db.pragma('user_version', { simple: true })).toBe(23);
       expect(columnsOf(join(dir, 'panel.db'), 'vless_cascade')).toContain('exit_inbound_id');
       db.close();
     } finally {
@@ -79,7 +106,7 @@ describe('database schema', () => {
       raw.close();
       createDb(dir);
       const db = new Database(join(dir, 'panel.db'), { readonly: true });
-      expect(db.pragma('user_version', { simple: true })).toBe(22);
+      expect(db.pragma('user_version', { simple: true })).toBe(23);
       expect(db.prepare('select host, client_host from server').get()).toEqual({
         host: '203.0.113.1',
         client_host: null,

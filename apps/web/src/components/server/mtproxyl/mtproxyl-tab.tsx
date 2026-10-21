@@ -20,6 +20,7 @@ import { LinkButton } from '@/components/ui/link-button';
 import { Num } from '@/components/ui/num';
 import { LoadState, Placeholder } from '@/components/ui/placeholder';
 import { Section } from '@/components/ui/section';
+import { StatusDot } from '@/components/ui/status-dot';
 import { api } from '@/lib/api';
 import { cn } from '@/lib/cn';
 import { ago, bytes, uptime } from '@/lib/format';
@@ -305,21 +306,16 @@ export function MtproxylTab({ s }: { s: ServerDetail }) {
           <div className="grid grid-cols-2 gap-2 p-3 sm:grid-cols-3 lg:grid-cols-4">
             {(data.secrets ?? []).map((u) => {
               const panel = owner('mtproxyl', u.label);
+              const online = (trafficByUser.get(u.label)?.connections ?? 0) > 0;
               return (
                 <button
                   key={u.label}
                   type="button"
-                  title={`${u.enabled ? 'включён' : 'выключен'}${panel ? `, клиент панели ${panel.client}` : ''}`}
+                  title={`${!u.enabled ? 'выключен' : online ? 'в сети' : 'включён, не в сети'}${panel ? `, клиент панели ${panel.client}` : ''}`}
                   onClick={() => setOpenLabel(u.label)}
                   className="flex min-w-0 items-center gap-2 rounded-lg border border-border bg-surface-2 px-3 py-2 text-left hover:border-accent"
                 >
-                  <span
-                    aria-label={u.enabled ? 'включён' : 'выключен'}
-                    className={cn(
-                      'size-2.5 shrink-0 rounded-full',
-                      u.enabled ? 'bg-ok' : 'bg-muted',
-                    )}
-                  />
+                  <StatusDot enabled={u.enabled} online={online} />
                   <span className="min-w-0 grow truncate font-mono text-[13px]">{u.label}</span>
                   {panel && (
                     <UserRound

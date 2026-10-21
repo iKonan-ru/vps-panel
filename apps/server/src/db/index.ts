@@ -81,6 +81,12 @@ const STEPS: ((sqlite: Database.Database) => void)[] = [
   created_at text not null default (strftime('%Y-%m-%dT%H:%M:%fZ','now'))
 )`);
   },
+  // 23: имя администратора в интерфейсе - только добавление столбца
+  (sqlite) => {
+    const cols = sqlite.prepare('pragma table_info(admin)').all() as { name: string }[];
+    if (!cols.some((c) => c.name === 'display_name'))
+      sqlite.exec("alter table admin add column display_name text not null default ''");
+  },
 ];
 
 /** Шаги, которых база ещё не видела, - по порядку, каждый с отметкой версии. */
@@ -106,7 +112,8 @@ function migrate(sqlite: Database.Database, existed: boolean) {
 
 const BOOTSTRAP_SQL = `
 create table if not exists admin (
-  id text primary key, login text not null unique, password_hash text not null,
+  id text primary key, login text not null unique, display_name text not null default '',
+  password_hash text not null,
   totp_secret text, totp_enabled integer not null default 0,
   backup_codes_hash text not null default '[]',
   created_at text not null default (strftime('%Y-%m-%dT%H:%M:%fZ','now'))

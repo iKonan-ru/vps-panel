@@ -20,6 +20,11 @@
   /* графики: две серии (к клиенту, от клиента), пара проверена на различимость и контраст */
   --series-1: #2a78d6;
   --series-2: #eb6834;
+  /* знак панели: в светлой теме - светлая плитка (тёмная выглядела бы пятном), стойка - accent */
+  --logo-bg-1: #e6eefc;
+  --logo-bg-2: #d3e0f8;
+  --logo-line: #2f6fe4;
+  --logo-dot: #1f9d6a;
   color-scheme: light;
 }
 .dark {
@@ -36,6 +41,10 @@
   --update: #a985ff;
   --series-1: #3987e5;
   --series-2: #d95926;
+  --logo-bg-1: #1a1f2b;
+  --logo-bg-2: #0f1115;
+  --logo-line: #4f8cff;
+  --logo-dot: #3ecf8e;
   color-scheme: dark;
 }
 

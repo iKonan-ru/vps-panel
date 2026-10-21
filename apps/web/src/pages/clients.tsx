@@ -8,7 +8,7 @@ import {
 } from '@/components/clients/clients-filter';
 import { SyncPanel, useSyncState } from '@/components/clients/sync-panel';
 import { DeviceSelect } from '@/components/device-select';
-import { ActionBar } from '@/components/ui/action-bar';
+import { PageActions } from '@/components/page-actions';
 import { Alert } from '@/components/ui/alert';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
@@ -25,7 +25,7 @@ import { useAction } from '@/lib/use-action';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { Link, useNavigate } from '@tanstack/react-router';
 import type { GClientAccess, GClientRow, GServer, XuiOwnInbound } from '@vps/protocol';
-import { ListChecks, Plus, RefreshCw, Server, SlidersHorizontal } from 'lucide-react';
+import { ListChecks, RefreshCw, Server, SlidersHorizontal } from 'lucide-react';
 import { type FormEvent, useState } from 'react';
 
 /**
@@ -62,36 +62,20 @@ export function ClientsPage() {
           <Chip>{shown && filtered(view) ? `${shown.length} из ${data.length}` : data.length}</Chip>
         )}
         <div className="grow" />
-        {data && data.length > 0 && (
-          <Button
-            variant={filtersOpen ? 'primary' : 'default'}
-            size="sm"
-            aria-expanded={filtersOpen}
-            aria-label="Фильтры и сортировка"
-            title="Фильтры и сортировка"
-            className="relative"
-            onClick={() => setFiltersOpen((v) => !v)}
-          >
-            <SlidersHorizontal className="size-3.5" />
-            <span className="hidden sm:inline">Фильтры</span>
-            {!filtersOpen && filtered(view) && (
-              <span className="absolute -top-1 -right-1 size-2.5 rounded-full bg-accent ring-2 ring-bg" />
-            )}
-          </Button>
-        )}
-        <ActionBar
-          topbar
-          actions={[
-            {
-              key: 'add',
-              label: 'Добавить клиента',
-              short: 'Добавить',
-              icon: <Plus className="size-3.5" />,
-              variant: 'primary',
-              onClick: () => setAdding(true),
-              mobile: true,
-              group: 'add',
-            },
+        <PageActions
+          {...(data && data.length > 0
+            ? {
+                find: {
+                  label: 'Фильтры',
+                  icon: SlidersHorizontal,
+                  open: filtersOpen,
+                  marked: filtered(view),
+                  onToggle: () => setFiltersOpen((v) => !v),
+                },
+              }
+            : {})}
+          add={{ label: 'Добавить клиента', onClick: () => setAdding(true) }}
+          more={[
             {
               key: 'servers',
               label: 'Серверы клиентов',
@@ -208,7 +192,7 @@ function AddClientForm({ onDone }: { onDone: (id: string) => void }) {
   }
   return (
     <form className="flex flex-col gap-3" onSubmit={submit}>
-      <Field label="Имя" htmlFor="gc-name" hint="клиент его не видит">
+      <Field label="Имя" htmlFor="gc-name" hint="название подписки в приложении клиента">
         <Input
           id="gc-name"
           value={name}

@@ -175,7 +175,12 @@ export async function createSession(db: Db, adminId: string, ip: string, userAge
 
 export async function findSession(db: Db, token: string) {
   const rows = await db
-    .select({ adminId: sessions.adminId, expiresAt: sessions.expiresAt, login: admins.login })
+    .select({
+      adminId: sessions.adminId,
+      expiresAt: sessions.expiresAt,
+      login: admins.login,
+      displayName: admins.displayName,
+    })
     .from(sessions)
     .innerJoin(admins, eq(admins.id, sessions.adminId))
     .where(and(eq(sessions.id, sha256(token)), gt(sessions.expiresAt, new Date().toISOString())))

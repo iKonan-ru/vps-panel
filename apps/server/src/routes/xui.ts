@@ -8,9 +8,10 @@ import { access, gclientBindings, gclients, servers } from '../db/schema.js';
 import { upsertAccess } from '../lib/access.js';
 import { actionJournal } from '../lib/action-journal.js';
 import { type ServerRouteOpts, actionRunners } from '../lib/action-runners.js';
+import { cascadeEntryOf, isCascadeClient } from '../lib/cascades.js';
 import { xuiTargets } from '../lib/gclient-services.js';
 import { type GClients, queued, resyncXui } from '../lib/gclients.js';
-import { type InboundExitHooks, telegramExitOf } from '../lib/xray-exits.js';
+import { EXIT_CLIENT, type InboundExitHooks, telegramExitOf } from '../lib/xray-exits.js';
 import {
   getInbound,
   inboundNode,
@@ -253,6 +254,24 @@ export async function xuiRoutes(
     );
   }
 
+  /** Служебный клиент панели (каскад, выход в Telegram): его ведёт панель, руками не трогают. */
+  const serviceOf = (email: string): XuiClientRow['service'] => {
+    if (email === EXIT_CLIENT) return { kind: 'telegram' };
+    return isCascadeClient(email) ? { kind: 'cascade', entry: cascadeEntryOf(db, email) } : null;
+  };
+  const refuseService = (email: string) => {
+    const s = serviceOf(email);
+    if (!s) return;
+    throw Object.assign(
+      new Error(
+        s.kind === 'telegram'
+          ? `\u00ab${email}\u00bb\u00a0\u2014 выход панели в Telegram: его ведёт панель`
+          : `\u00ab${email}\u00bb\u00a0\u2014 служебный клиент каскада${s.entry ? ` с ${s.entry.name}` : ''}: его ведёт панель, каскад меняется и удаляется на вкладке 3X-UI входа`,
+      ),
+      { statusCode: 409 },
+    );
+  };
+
   /** Клиенты 3X-UI для вкладки: inbound-ы, трафик, онлайн, клиент панели (без UUID и subId). */
   app.get('/api/servers/:id/xui/clients', async (req): Promise<XuiClientRow[]> => {
     const { id } = Id.parse(req.params);
@@ -287,6 +306,7 @@ export async function xuiRoutes(
         expiryTime: Number(c.expiryTime ?? 0),
         online: online.has(email),
         panel: p ? { clientId: p.c.id, name: p.c.name, custom: p.b.xuiInbounds !== null } : null,
+        service: serviceOf(email),
       };
     });
   });
@@ -306,6 +326,7 @@ export async function xuiRoutes(
         reset: z.boolean().optional(),
       })
       .parse(req.body ?? {});
+    refuseService(email);
     const row = db.select().from(servers).where(eq(servers.id, id)).get();
     if (!row) throw Object.assign(new Error('сервер не найден'), { statusCode: 404 });
     const api = apiFor(id);
@@ -378,6 +399,7 @@ export async function xuiRoutes(
     const { id, email } = z
       .object({ id: z.string(), email: z.string().min(1).max(200) })
       .parse(req.params);
+    refuseService(email);
     const p = xuiBindings(id).get(email);
     if (p)
       throw Object.assign(

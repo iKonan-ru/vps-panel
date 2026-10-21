@@ -1,5 +1,6 @@
 export interface Account {
   login: string;
+  displayName: string;
   totpEnabled: boolean;
   backupCodesLeft: number;
   createdAt: string;

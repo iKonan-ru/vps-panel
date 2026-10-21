@@ -3,6 +3,8 @@ import { ApiError, api } from './api';
 
 export interface Me {
   login: string;
+  /** Имя в интерфейсе; пусто - показывается логин. */
+  displayName: string;
   expiresAt: string;
 }
 

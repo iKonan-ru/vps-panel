@@ -303,7 +303,8 @@ describe('каскады', () => {
     const { db, c, xui, done, input } = await setup();
     await c.create('entry', input);
     await done();
-    await c.remove(db.select().from(cascades).get()?.id ?? '');
+    c.remove(db.select().from(cascades).get()?.id ?? '');
+    expect((await done())?.exitCode).toBe(0);
     expect(JSON.stringify(xui.entry?.template)).not.toContain('vp-cascade');
     expect(xui.entry?.inbounds).toEqual([]);
     expect(xui.exit?.clients.has(cascadeClientEmail('entry'))).toBe(false);
@@ -327,8 +328,8 @@ describe('каскады', () => {
     await done();
     const email = cascadeClientEmail('entry');
     online.delete('exit');
-    await c.remove(db.select().from(cascades).get()?.id ?? '');
-    const a = db.select().from(actionLog).all().at(-1);
+    c.remove(db.select().from(cascades).get()?.id ?? '');
+    const a = await done();
     expect(a?.output).toContain('плановой сверкой');
     expect(xui.exit?.clients.has(email)).toBe(true);
     online.add('exit');
@@ -383,6 +384,40 @@ describe('каскады', () => {
       '\u{1F1F8}\u{1F1EA} Швеция :: NetCore через РФ',
     ]);
     expect(links[1]).toContain('@198.51.100.5:20443');
+
+    // второй российский вход к тому же выходу: подписи различаются именем входа
+    db.insert(servers)
+      .values({ id: 'entry2', name: 'SkyHost', host: '198.51.100.9', country: 'RU' } as never)
+      .run();
+    db.insert(cascades)
+      .values({
+        id: 'c2',
+        entryServerId: 'entry2',
+        entryInboundId: 5,
+        entryPort: 30443,
+        exitServerId: 'exit',
+        exitInboundId: 7,
+      } as never)
+      .run();
+    db.insert(gclientBindings)
+      .values({
+        id: 'b-entry2',
+        clientId: 'g',
+        serverId: 'entry2',
+        service: 'xui',
+        ref: 'anna',
+        links: ['vless://u@localhost:30443?security=reality#x-anna'],
+        state: 'ok',
+      } as never)
+      .run();
+    const two = (buildSubscription(db, 'tk')?.links ?? []).map((l) =>
+      decodeURIComponent(l.split('#')[1] ?? ''),
+    );
+    expect(two).toEqual([
+      '\u{1F1F8}\u{1F1EA} Швеция :: NetCore',
+      '\u{1F1F8}\u{1F1EA} Швеция :: NetCore через РФ (Kappa)',
+      '\u{1F1F8}\u{1F1EA} Швеция :: NetCore через РФ (SkyHost)',
+    ]);
   });
 
   it('проверка: две неудачи подряд - уведомление, затем "снова работает"', async () => {
@@ -489,7 +524,10 @@ describe('каскады', () => {
     await c.create('entry', input);
     await done();
     if (xui.entry) xui.entry.breakAll = true;
-    await expect(c.remove(db.select().from(cascades).get()?.id ?? '')).rejects.toThrow(/Xray/);
+    c.remove(db.select().from(cascades).get()?.id ?? '');
+    const a = await done();
+    expect(a?.exitCode).toBe(1);
+    expect(a?.output).toMatch(/Xray/);
     expect(db.select().from(cascades).all()).toHaveLength(1);
     expect(xui.entry?.inbounds).toHaveLength(1);
   });

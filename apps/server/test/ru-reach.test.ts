@@ -212,3 +212,74 @@ describe('общее время графиков и MTProxyL', () => {
     expect(entry.targets).toHaveLength(0);
   });
 });
+
+describe('квота Globalping', () => {
+  it('сначала без токена; токен - только для целей, где квоты сервера не хватило', async () => {
+    const { RuReach } = await import('../src/lib/ru-reach.js');
+    const { createDb } = await import('../src/db/index.js');
+    const { servers } = await import('../src/db/schema.js');
+    const { SecretBox } = await import('../src/lib/secret-box.js');
+    const db = createDb(':memory:');
+    db.insert(servers)
+      .values({ id: 's', name: 'Hoster', host: '203.0.113.10', statusCache: null } as never)
+      .run();
+    const calls: { token?: string; keys: string[] }[] = [];
+    const registry = {
+      isOnline: () => true,
+      supports: () => true,
+      request: async (
+        _id: string,
+        _m: string,
+        p: { token?: string; targets: { key: string }[] },
+      ) => {
+        calls.push({ ...(p.token ? { token: p.token } : {}), keys: p.targets.map((t) => t.key) });
+        const res = (key: string) =>
+          p.token
+            ? { key, total: 10, ok: 10, percent: 100, errors: [], probes: [] }
+            : {
+                key,
+                total: 0,
+                ok: 0,
+                percent: 0,
+                errors: [],
+                error: 'квота Globalping исчерпана с адреса сервера',
+              };
+        return { results: p.targets.map((t) => res(t.key)), remaining: p.token ? 480 : 0 };
+      },
+    };
+    const r = new RuReach(
+      db,
+      new SecretBox('s'.repeat(40)),
+      registry as never,
+      { warn: () => {} },
+      async () => {},
+    );
+    // без токена - один вызов, цели с ошибкой квоты
+    const a = await r.check('s');
+    expect(calls).toEqual([{ keys: ['ip'] }]);
+    expect(a.targets[0]?.error).toMatch(/квота/);
+    r.setToken('tok');
+    const b = await r.check('s');
+    expect(calls.slice(1)).toEqual([{ keys: ['ip'] }, { token: 'tok', keys: ['ip'] }]);
+    expect(b.targets[0]?.percent).toBe(100);
+    expect(b).toMatchObject({ remaining: 0, byToken: 1 });
+  });
+
+  it('плановую проверку пропускаем, если квоты сервера не хватит и токена нет', async () => {
+    const { quotaShort, blank } = await import('../src/lib/ru-reach.js');
+    const now = Date.parse('2026-10-21T10:30:00Z');
+    const r: ServerReach = {
+      checkedAt: '2026-10-21T10:00:00Z',
+      remaining: 15,
+      targets: [
+        blank('ip', 'Адрес', 'tcp', 22, 'agent'),
+        blank('xui:1', 'VLESS', 'tls', 443, 'agent'),
+      ],
+    };
+    expect(quotaShort(r, now, false)).toBe(true);
+    expect(quotaShort(r, now, true)).toBe(false);
+    expect(quotaShort({ ...r, remaining: 20 }, now, false)).toBe(false);
+    // остаток старше часа - квота уже вернулась
+    expect(quotaShort(r, now + 3600_000, false)).toBe(false);
+  });
+});

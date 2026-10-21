@@ -88,6 +88,8 @@ export interface ServerReach {
   error?: string;
   /** Остаток квоты Globalping с адреса сервера после проверки. */
   remaining?: number;
+  /** Сколько целей проверено по токену панели: своей квоты сервера на них не хватило. */
+  byToken?: number;
   targets: ReachTarget[];
 }
 

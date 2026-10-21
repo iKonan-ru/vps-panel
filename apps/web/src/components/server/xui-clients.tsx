@@ -8,6 +8,7 @@ import { Input } from '@/components/ui/input';
 import { Pager, usePaged } from '@/components/ui/pager';
 import { Section } from '@/components/ui/section';
 import { Select } from '@/components/ui/select';
+import { StatusDot } from '@/components/ui/status-dot';
 import { TBody, THead, Table } from '@/components/ui/table';
 import { ApiError, api } from '@/lib/api';
 import { cn } from '@/lib/cn';
@@ -16,7 +17,7 @@ import { useAction } from '@/lib/use-action';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { Link } from '@tanstack/react-router';
 import type { XuiClientRow, XuiInboundRow } from '@vps/protocol';
-import { Pencil, Trash2, UserRound } from 'lucide-react';
+import { Cable, Pencil, Trash2, UserRound } from 'lucide-react';
 import { useState } from 'react';
 
 /** Inbound-ы, куда сверка заводит клиентов панели по умолчанию: свой VLESS, включён, не исключён. */
@@ -88,6 +89,41 @@ export function XuiClients({
     });
   }
 
+  /** Кнопки строки: набор inbound-ов и удаление (клиенты панели и служебные - не здесь). */
+  const RowButtons = ({ c }: { c: XuiClientRow }) => (
+    <div className="flex shrink-0 justify-end">
+      <Button
+        size="icon-sm"
+        variant="ghost"
+        title={c.service ? serviceTitle(c.service) : (reason ?? 'Inbound клиента')}
+        aria-label="Inbound клиента"
+        disabled={locked || !inbounds || Boolean(c.service)}
+        onClick={() => {
+          op.setError(null);
+          setEdit(c);
+        }}
+      >
+        <Pencil className="size-3.5" />
+      </Button>
+      <Button
+        size="icon-sm"
+        variant="ghost"
+        title={
+          c.service
+            ? serviceTitle(c.service)
+            : c.panel
+              ? 'Клиент панели удаляется в своей карточке'
+              : (reason ?? 'Удалить клиента')
+        }
+        aria-label="Удалить клиента"
+        disabled={locked || Boolean(c.panel) || Boolean(c.service)}
+        onClick={() => void remove(c)}
+      >
+        <Trash2 className={cn('size-3.5', !c.panel && !c.service && 'text-bad')} />
+      </Button>
+    </div>
+  );
+
   return (
     <Section
       title="Клиенты"
@@ -112,10 +148,13 @@ export function XuiClients({
         </div>
       )}
       {data && data.length > 0 && (
-        <div className="flex flex-wrap items-center gap-2 px-4 py-2">
+        // на телефоне фильтр и поиск - каждый во всю ширину: иначе их раскладка зависела бы от
+        // длины подписей inbound-ов и на разных серверах была бы разной
+        <div className="flex flex-col gap-2 px-4 py-2 sm:flex-row sm:items-center">
           <Select
             size="sm"
             aria-label="Inbound"
+            className="w-full sm:w-auto sm:max-w-[240px]"
             value={inb}
             onChange={(e) => setInb(e.target.value)}
           >
@@ -130,7 +169,7 @@ export function XuiClients({
             type="search"
             aria-label="Поиск"
             placeholder="Email, комментарий, клиент панели"
-            className="h-7 w-[240px] grow text-xs sm:grow-0"
+            className="h-7 w-full text-xs sm:w-[240px]"
             value={q}
             onChange={(e) => setQ(e.target.value)}
           />
@@ -142,109 +181,78 @@ export function XuiClients({
         </div>
       )}
       {paged.items.length > 0 && (
-        <Table>
-          <THead>
-            <tr>
-              <th>Клиент</th>
-              <th>Inbound</th>
-              <th className="text-right">Трафик</th>
-              <th className="w-0" />
-            </tr>
-          </THead>
-          <TBody className="[&>tr>td]:py-1">
+        <>
+          <div className="hidden md:block">
+            <Table>
+              <THead>
+                <tr>
+                  <th>Клиент</th>
+                  <th>Inbound</th>
+                  <th className="text-right">Трафик</th>
+                  <th className="w-0" />
+                </tr>
+              </THead>
+              <TBody className="[&>tr>td]:py-1">
+                {paged.items.map((c) => (
+                  <tr key={c.email} className={cn(!c.enable && 'opacity-60')}>
+                    <td className="max-w-[320px]">
+                      <div className="flex min-w-0 items-center gap-2">
+                        <StatusDot enabled={c.enable} online={c.online} />
+                        <span className="shrink-0 font-mono">{c.email}</span>
+                        <Who c={c} />
+                      </div>
+                    </td>
+                    <td className="max-w-[240px] whitespace-nowrap text-xs">
+                      <InboundNames ids={c.inboundIds} byId={byId} />
+                    </td>
+                    <td
+                      className="whitespace-nowrap text-right text-xs text-muted"
+                      title={limits(c)}
+                    >
+                      {traffic(c)}
+                    </td>
+                    <td className="whitespace-nowrap">
+                      <RowButtons c={c} />
+                    </td>
+                  </tr>
+                ))}
+              </TBody>
+            </Table>
+          </div>
+          {/* узкий экран: две строки на клиента всегда, у всех одинаково - email и кнопки, под
+              ним клиент панели (или служебный, комментарий), inbound-ы и трафик */}
+          <div className="md:hidden">
             {paged.items.map((c) => (
-              <tr key={c.email} className={cn(!c.enable && 'opacity-60')}>
-                <td className="max-w-[320px]">
-                  <div className="flex min-w-0 items-center gap-2">
+              <div
+                key={c.email}
+                className={cn(
+                  'flex items-start gap-2 border-t border-border px-4 py-1.5',
+                  !c.enable && 'opacity-60',
+                )}
+              >
+                <StatusDot enabled={c.enable} online={c.online} className="mt-[7px]" />
+                <div className="min-w-0 grow">
+                  <div className="flex h-7 items-center gap-2">
+                    <span className="min-w-0 truncate font-mono text-[13px]">{c.email}</span>
                     <span
-                      aria-label={c.online ? 'онлайн' : 'не онлайн'}
-                      title={c.online ? 'онлайн' : 'не онлайн'}
-                      className={cn(
-                        'size-2 shrink-0 rounded-full',
-                        c.online ? 'bg-ok' : 'bg-muted',
-                      )}
-                    />
-                    <span className="shrink-0 font-mono" title={c.enable ? undefined : 'выключен'}>
-                      {c.email}
+                      className="ml-auto shrink-0 text-xs tabular-nums text-muted"
+                      title={limits(c)}
+                    >
+                      {traffic(c)}
                     </span>
-                    {c.panel ? (
-                      <Link
-                        to="/clients/$id"
-                        params={{ id: c.panel.clientId }}
-                        title={`Клиент панели${c.panel.custom ? ', свой набор inbound' : ''}`}
-                        className="inline-flex min-w-0 items-center gap-1 text-xs text-accent hover:underline"
-                      >
-                        <UserRound className="size-3.5 shrink-0" />
-                        <span className="truncate">{c.panel.name}</span>
-                        {c.panel.custom && <span className="shrink-0">*</span>}
-                      </Link>
-                    ) : (
-                      c.comment && (
-                        <span className="truncate text-xs text-muted" title={c.comment}>
-                          {c.comment}
-                        </span>
-                      )
-                    )}
                   </div>
-                </td>
-                <td className="max-w-[240px] whitespace-nowrap text-xs">
-                  {c.inboundIds.length === 0 ? (
-                    <span className="text-warn">нет</span>
-                  ) : (
-                    <InboundNames
-                      names={c.inboundIds.map((id) => byId.get(id)?.remark || `#${id}`)}
-                    />
-                  )}
-                </td>
-                <td
-                  className="whitespace-nowrap text-right text-xs text-muted"
-                  title={
-                    [
-                      c.totalGB ? `лимит: ${bytes(c.totalGB)}` : '',
-                      c.expiryTime > 0 ? `до ${dateFull(c.expiryTime)}` : '',
-                    ]
-                      .filter(Boolean)
-                      .join(', ') || undefined
-                  }
-                >
-                  {bytes(c.up + c.down)}
-                  {c.totalGB ? ` / ${bytes(c.totalGB)}` : ''}
-                </td>
-                <td className="whitespace-nowrap">
-                  <div className="flex justify-end">
-                    <Button
-                      size="icon-sm"
-                      variant="ghost"
-                      title={reason ?? 'Inbound клиента'}
-                      aria-label="Inbound клиента"
-                      disabled={locked || !inbounds}
-                      onClick={() => {
-                        op.setError(null);
-                        setEdit(c);
-                      }}
-                    >
-                      <Pencil className="size-3.5" />
-                    </Button>
-                    <Button
-                      size="icon-sm"
-                      variant="ghost"
-                      title={
-                        c.panel
-                          ? 'Клиент панели удаляется в своей карточке'
-                          : (reason ?? 'Удалить клиента')
-                      }
-                      aria-label="Удалить клиента"
-                      disabled={locked || Boolean(c.panel)}
-                      onClick={() => void remove(c)}
-                    >
-                      <Trash2 className={cn('size-3.5', !c.panel && 'text-bad')} />
-                    </Button>
+                  <div className="flex min-w-0 items-center gap-2 text-xs">
+                    <Who c={c} />
+                    <span className="min-w-0 grow">
+                      <InboundNames ids={c.inboundIds} byId={byId} />
+                    </span>
                   </div>
-                </td>
-              </tr>
+                </div>
+                <RowButtons c={c} />
+              </div>
             ))}
-          </TBody>
-        </Table>
+          </div>
+        </>
       )}
       <Pager {...paged} />
       <Dialog
@@ -270,11 +278,80 @@ export function XuiClients({
 }
 
 /** Inbound-ы клиента одной строкой: не влезло - многоточие, весь список - в подсказке. */
-function InboundNames({ names }: { names: string[] }) {
-  const all = names.join(', ');
+function InboundNames({ ids, byId }: { ids: number[]; byId: Map<number, XuiInboundRow> }) {
+  if (ids.length === 0) return <span className="text-warn">нет inbound</span>;
+  const all = ids.map((id) => byId.get(id)?.remark || `#${id}`).join(', ');
   return (
     <span className="block truncate text-muted" title={all}>
       {all}
+    </span>
+  );
+}
+
+const traffic = (c: XuiClientRow) =>
+  `${bytes(c.up + c.down)}${c.totalGB ? ` / ${bytes(c.totalGB)}` : ''}`;
+
+const limits = (c: XuiClientRow) =>
+  [
+    c.totalGB ? `лимит: ${bytes(c.totalGB)}` : '',
+    c.expiryTime > 0 ? `до ${dateFull(c.expiryTime)}` : '',
+  ]
+    .filter(Boolean)
+    .join(', ') || undefined;
+
+function serviceTitle(s: NonNullable<XuiClientRow['service']>): string {
+  return s.kind === 'telegram'
+    ? 'Выход панели в Telegram: его ведёт панель'
+    : `Служебный клиент каскада${s.entry ? ` с ${s.entry.name}` : ''}: его ведёт панель`;
+}
+
+/**
+ * Кто это: клиент панели (значок и имя - ссылка на карточку), служебный клиент панели или
+ * комментарий 3X-UI. На узком экране - значком и коротким именем, длинное обрезается.
+ */
+function Who({ c }: { c: XuiClientRow }) {
+  if (c.panel)
+    return (
+      <Link
+        to="/clients/$id"
+        params={{ id: c.panel.clientId }}
+        title={`Клиент панели ${c.panel.name}${c.panel.custom ? ', свой набор inbound' : ''}`}
+        className="inline-flex min-w-0 max-w-[60%] shrink-0 items-center gap-1 text-xs text-accent hover:underline md:max-w-none md:shrink"
+      >
+        <UserRound className="size-3.5 shrink-0" />
+        <span className="truncate">{c.panel.name}</span>
+        {c.panel.custom && <span className="shrink-0">*</span>}
+      </Link>
+    );
+  if (c.service)
+    return (
+      <span
+        className="inline-flex min-w-0 shrink-0 items-center gap-1 text-xs text-accent"
+        title={serviceTitle(c.service)}
+      >
+        <Cable className="size-3.5 shrink-0" />
+        {c.service.kind === 'telegram' ? (
+          <span className="truncate">выход в Telegram</span>
+        ) : c.service.entry ? (
+          <Link
+            to="/servers/$id/$tab"
+            params={{ id: c.service.entry.id, tab: 'xui' }}
+            className="truncate hover:underline"
+          >
+            каскад с {c.service.entry.name}
+          </Link>
+        ) : (
+          <span className="truncate">каскад</span>
+        )}
+      </span>
+    );
+  if (!c.comment) return null;
+  return (
+    <span
+      className="min-w-0 max-w-[60%] shrink-0 truncate text-xs text-muted md:max-w-none md:shrink"
+      title={c.comment}
+    >
+      {c.comment}
     </span>
   );
 }

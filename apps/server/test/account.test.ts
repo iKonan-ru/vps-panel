@@ -69,6 +69,17 @@ describe('аккаунт', () => {
     expect((await call('GET', '/api/auth/me')).json().login).toBe('boss');
   });
 
+  it('имя в интерфейсе: без пароля, пробелы схлопываются, пустое - логин', async () => {
+    expect((await call('GET', '/api/auth/me')).json().displayName).toBe('');
+    const r = await call('PUT', '/api/account/name', { displayName: '  Иван   Петров ' });
+    expect(r.json()).toEqual({ ok: true, displayName: 'Иван Петров' });
+    expect((await call('GET', '/api/auth/me')).json().displayName).toBe('Иван Петров');
+    expect((await call('GET', '/api/account')).json().displayName).toBe('Иван Петров');
+    expect(
+      (await call('PUT', '/api/account/name', { displayName: 'x'.repeat(65) })).statusCode,
+    ).toBe(400);
+  });
+
   it('пароль: не короче 12, другие сессии закрываются, эта остаётся', async () => {
     expect(
       (

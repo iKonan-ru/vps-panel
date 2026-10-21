@@ -88,10 +88,15 @@ function Cell({
       ) : (
         chip
       )}
-      <span className="max-w-[180px] truncate text-xs text-muted">{cell.text}</span>
-      {/* подробности отклонения видны и без наведения (на телефоне его нет) */}
+      <span className="text-xs text-muted max-md:line-clamp-2 md:max-w-[180px] md:truncate">
+        {cell.text}
+      </span>
+      {/* подробности отклонения видны и без наведения (на телефоне его нет), но не больше двух
+          строк: длинное описание (OpenFlux) раздувало бы карточку сервера */}
       {cell.state === 'warn' && cell.hint && (
-        <span className="text-xs text-warn md:max-w-[180px] md:truncate">{cell.hint}</span>
+        <span className="text-xs text-warn max-md:line-clamp-2 md:max-w-[180px] md:truncate">
+          {cell.hint}
+        </span>
       )}
     </span>
   );

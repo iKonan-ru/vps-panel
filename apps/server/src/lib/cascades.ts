@@ -83,6 +83,16 @@ export function cascadeClientEmail(entryServerId: string): string {
   return `${SERVICE_EMAIL_PREFIX}${createHash('sha256').update(entryServerId).digest('hex').slice(0, 10)}`;
 }
 
+/** Служебный клиент каскада (любого входа, в том числе уже удалённого из панели). */
+export const isCascadeClient = (email: string) => email.startsWith(SERVICE_EMAIL_PREFIX);
+
+/** Вход каскада по email служебного клиента: сервер панели или null (вход удалён). */
+export function cascadeEntryOf(db: Db, email: string): { id: string; name: string } | null {
+  if (!isCascadeClient(email)) return null;
+  const all = db.select({ id: servers.id, name: servers.name }).from(servers).all();
+  return all.find((s) => cascadeClientEmail(s.id) === email) ?? null;
+}
+
 /** Свой VLESS Reality RAW inbound (через него ходит каскад). */
 function isRawReality(i: Json): boolean {
   if (i.protocol !== 'vless' || inboundNode(i)) return false;
@@ -764,62 +774,77 @@ export class Cascades {
    * Служебный клиент входа на выходе: отвязать от inbound-а, без привязок - удалить. Выход не в
    * сети - ошибка; клиента потом уберёт плановая сверка (sweepExits).
    */
-  private async releaseExitClient(entryId: string, exitId: string, inboundId: number) {
+  private async releaseExitClient(
+    entryId: string,
+    exitId: string,
+    inboundId: number,
+  ): Promise<string> {
     const mine = this.rows(eq(cascades.entryServerId, entryId)).filter(
       (r) => r.exitServerId === exitId,
     );
-    if (mine.some((r) => r.exitInboundId === inboundId)) return;
+    if (mine.some((r) => r.exitInboundId === inboundId))
+      return 'служебный клиент на выходе нужен другому каскаду этого входа';
     if (!this.d.registry.isOnline(exitId)) throw new Error('выход не в сети');
     const api = this.api(exitId);
     const email = encodeURIComponent(cascadeClientEmail(entryId));
-    if (mine.length)
+    if (mine.length) {
       unwrap(await api('POST', `clients/${email}/detach`, { inboundIds: [inboundId] }), 'detach');
-    else unwrap(await api('POST', `clients/del/${email}`), 'clients/del');
+      return 'служебный клиент на выходе отвязан от inbound-а';
+    }
+    unwrap(await api('POST', `clients/del/${email}`), 'clients/del');
+    return 'служебный клиент на выходе удалён';
   }
 
   /**
-   * Удаление каскада: сначала свои части шаблона (не вышло - каскад остаётся как был), затем
-   * inbound входа и служебный клиент на выходе.
+   * Удаление каскада (действие на входе, ход - в выводе): сначала свои части шаблона (не вышло -
+   * каскад остаётся как был), затем inbound входа и служебный клиент на выходе.
    */
-  async remove(cid: string): Promise<void> {
+  remove(cid: string): string {
     const { db, journal, gc } = this.d;
     const row = this.row(cid);
     this.requireForm(row.entryServerId);
     const api = this.api(row.entryServerId);
-    await journal.quick(
+    const exitName = (id: string) =>
+      db.select({ name: servers.name }).from(servers).where(eq(servers.id, id)).get()?.name ?? '';
+    let ok = false;
+    return journal.background(
       row.entryServerId,
       'cascade:remove',
       { cascade: cid },
-      async () => {
-        const notes: string[] = [];
+      async (action) => {
+        const say = (line: string) => action.stream('log', `${line}\n`);
+        say(`Каскад через ${exitName(row.exitServerId) || 'удалённый сервер'}: шаблон Xray входа`);
         db.delete(cascades).where(eq(cascades.id, cid)).run();
         try {
-          await this.apply(row.entryServerId, (l) => notes.push(l));
+          await this.apply(row.entryServerId, say);
         } catch (e) {
           db.insert(cascades).values(row).run();
           throw e;
         }
+        ok = true;
         this.fails.delete(cid);
         // нет порта - inbound входа уже удалён в 3X-UI
         if (row.entryInboundId && row.entryPort) {
+          say(`Inbound входа, порт ${row.entryPort}`);
           const del = await api('POST', `inbounds/del/${row.entryInboundId}`).catch(() => null);
-          notes.push(
+          say(
             del?.status === 200
-              ? `удалён inbound входа, порт ${row.entryPort ?? '?'}`
-              : 'inbound входа не удалён: удалить его можно в списке inbound-ов',
+              ? 'Inbound входа удалён'
+              : 'Inbound входа не удалён: удалить его можно в списке inbound-ов',
           );
         }
-        await this.releaseExitClient(row.entryServerId, row.exitServerId, row.exitInboundId).catch(
+        say('Служебный клиент на выходе');
+        await this.releaseExitClient(row.entryServerId, row.exitServerId, row.exitInboundId).then(
+          (note) => say(note.charAt(0).toUpperCase() + note.slice(1)),
           (e: Error) =>
-            notes.push(
-              `служебный клиент на выходе не убран (${e.message}): панель уберёт его плановой сверкой`,
+            say(
+              `Служебный клиент на выходе не убран (${e.message}): панель уберёт его плановой сверкой`,
             ),
         );
-        return notes;
+        say('Ссылки через этот каскад уйдут из подписок после синхронизации');
       },
-      (notes) => notes.join('\n'),
+      { after: () => ok && resyncXui(db, gc, row.entryServerId) },
     );
-    resyncXui(db, gc, row.entryServerId);
   }
 
   /** Проверка выхода с входа: testOutbound 3X-UI (временный Xray, запрос на адрес проверки). */

@@ -109,6 +109,14 @@ export interface XuiClientRow {
   expiryTime: number;
   online: boolean;
   panel: { clientId: string; name: string; custom: boolean } | null;
+  /**
+   * Служебный клиент панели: каскад (вход - entry, null - вход удалён из панели) или выход панели в
+   * Telegram. Его ведёт сама панель: здесь не удаляется и не перепривязывается.
+   */
+  service:
+    | { kind: 'cascade'; entry: { id: string; name: string } | null }
+    | { kind: 'telegram' }
+    | null;
 }
 
 export interface GClientDetail {

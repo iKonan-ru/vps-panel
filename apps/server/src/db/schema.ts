@@ -25,6 +25,8 @@ const now = sql`(strftime('%Y-%m-%dT%H:%M:%fZ','now'))`;
 export const admins = sqliteTable('admin', {
   id: text('id').primaryKey(),
   login: text('login').notNull().unique(),
+  /** Имя в интерфейсе (меню пользователя); пусто - логин. */
+  displayName: text('display_name').notNull().default(''),
   passwordHash: text('password_hash').notNull(),
   totpSecret: text('totp_secret'),
   totpEnabled: integer('totp_enabled', { mode: 'boolean' }).notNull().default(false),
