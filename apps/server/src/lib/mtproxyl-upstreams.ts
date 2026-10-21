@@ -59,7 +59,8 @@ export function tgUpstreams(
  * - middle proxy выключается: его ключи зависят от адреса выхода, а socks Xray его не отдаёт.
  * Что выключила панель, помнит файл vps-panel-telegram.conf: пустой WANT возвращает это назад
  * и убирает свои маршруты. Перезапуск движка - один раз в конце и только при изменениях.
- * CHECK=1 - только ответ, есть ли что менять. TESTS - маршруты для проверки (адрес выхода).
+ * CHECK=1 - только ответ, есть ли что менять. TESTS - "имя:порт" маршрутов для проверки (адрес
+ * выхода); маршрута нет в MTProxyL (запасной) - проверка напрямую через socks-inbound Xray.
  * Вывод для панели - строки TG:... и ERR:...
  */
 export const TG_SCRIPT = `set -eu
@@ -148,10 +149,18 @@ fi
 # снятие отметок при включённом WARP или доноре: прямой маршрут и ME - их, панель только
 # убирает свои маршруты
 cmds=("\${pre[@]}" "\${cmds[@]}" "\${post[@]}")
+# проверка пути: маршрут есть в MTProxyL - его проверкой; нет (запасной, пока отвечают основные) -
+# тем же путём напрямую: socks Xray входа -> outbound каскада -> выход
 run_tests() {
-  for n in \${TESTS:-}; do
-    out="$(mtproxyl upstream test "$n" </dev/null 2>&1 || true)"
-    ip="$(printf '%s\\n' "$out" | grep 'IP выхода' | grep -oE '([0-9]{1,3}\\.){3}[0-9]{1,3}' | tail -1 || true)"
+  for t in \${TESTS:-}; do
+    n=\${t%%:*}; port=\${t#*:}
+    if cur | awk -F'|' -v n="$n" '$1==n && $8!="false" {f=1} END {exit !f}'; then
+      out="$(mtproxyl upstream test "$n" </dev/null 2>&1 || true)"
+      ip="$(printf '%s\\n' "$out" | grep 'IP выхода' | grep -oE '([0-9]{1,3}\\.){3}[0-9]{1,3}' | tail -1 || true)"
+    else
+      ip="$(curl -s --max-time 15 --socks5-hostname "127.0.0.1:$port" https://api.ipify.org </dev/null 2>/dev/null |
+        grep -oE '^([0-9]{1,3}\\.){3}[0-9]{1,3}$' || true)"
+    fi
     echo "TG:test=$n=$ip"
   done
 }
@@ -203,7 +212,13 @@ export interface TgResult {
 export async function runTelegramUpstreams(
   registry: Pick<AgentRegistry, 'request'>,
   serverId: string,
-  opts: { want: TgUpstream[]; check?: boolean; tests?: string[]; onLine?: (line: string) => void },
+  opts: {
+    want: TgUpstream[];
+    check?: boolean;
+    /** Маршруты для проверки пути: имя и порт socks-inbound-а Xray. */
+    tests?: Pick<TgUpstream, 'name' | 'port'>[];
+    onLine?: (line: string) => void;
+  },
 ): Promise<TgResult> {
   let output = '';
   let buf = '';
@@ -219,7 +234,7 @@ export async function runTelegramUpstreams(
       env: {
         WANT: opts.want.map((u) => `${u.name}:${u.port}:${u.weight}`).join(' '),
         CHECK: opts.check ? '1' : '',
-        TESTS: (opts.tests ?? []).join(' '),
+        TESTS: (opts.tests ?? []).map((t) => `${t.name}:${t.port}`).join(' '),
       },
       files: {},
       cleanup: [],

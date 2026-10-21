@@ -42,6 +42,12 @@ function box() {
   execFileSync('mkdir', ['-p', bin]);
   writeFileSync(join(bin, 'mtproxyl'), FAKE);
   chmodSync(join(bin, 'mtproxyl'), 0o755);
+  // curl через socks-inbound Xray: на порту 2003 - выход 203.0.113.30, на прочих - тишина
+  writeFileSync(
+    join(bin, 'curl'),
+    `#!/bin/bash\necho "curl $*" >>"$MT_DIR/calls.log"\ncase "$*" in *127.0.0.1:2003*) echo 203.0.113.30 ;; *) exit 7 ;; esac\n`,
+  );
+  chmodSync(join(bin, 'curl'), 0o755);
   const run = (env: Record<string, string>) =>
     execFileSync('bash', ['-c', TG_SCRIPT], {
       env: { PATH: `${bin}:${process.env.PATH}`, MT_DIR: dir, ...env },
@@ -96,7 +102,7 @@ describe('маршруты MTProxyL каскада Telegram', () => {
 
   it('включение: свои маршруты, direct выключен, ME выключен, один перезапуск', () => {
     const b = box();
-    const out = b.run({ WANT, TESTS: 'vpc-a vpc-b' });
+    const out = b.run({ WANT, TESTS: 'vpc-a:2001 vpc-b:2002' });
     expect(out).toContain('TG:changed');
     expect(out).toContain('TG:test=vpc-a=203.0.113.20');
     expect(out).toContain('TG:test=vpc-b=');
@@ -212,6 +218,23 @@ describe('маршруты MTProxyL каскада Telegram', () => {
     ]);
     expect(b.file('expert.conf')).toContain('general|use_middle_proxy|false');
     expect(existsSync(join(b.dir, 'vps-panel-telegram.conf'))).toBe(false);
+  });
+
+  it('проверка пути запасного (его нет в маршрутах MTProxyL) - напрямую через socks Xray', () => {
+    const b = box();
+    const out = b.run({ WANT, TESTS: 'vpc-a:2001 vpc-c:2003 vpc-d:2004' });
+    // vpc-a в маршрутах - проверка MTProxyL, vpc-c и vpc-d - curl через свой порт
+    expect(out).toContain('TG:test=vpc-a=203.0.113.20');
+    expect(out).toContain('TG:test=vpc-c=203.0.113.30');
+    expect(out).toContain('TG:test=vpc-d=\n');
+    const calls = b.file('calls.log');
+    expect(calls).toContain('upstream test vpc-a');
+    expect(calls).not.toContain('upstream test vpc-c');
+    expect(calls).toContain('--socks5-hostname 127.0.0.1:2003');
+    // в режиме CHECK - так же
+    expect(b.run({ WANT, CHECK: '1', TESTS: 'vpc-c:2003' })).toContain(
+      'TG:test=vpc-c=203.0.113.30',
+    );
   });
 
   it('остановленный прокси не запускается: маршруты записаны, перезапуска нет', () => {

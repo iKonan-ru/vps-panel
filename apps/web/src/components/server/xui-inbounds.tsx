@@ -22,7 +22,7 @@ function exitNote(i: XuiInboundRow): string {
   if (i.telegramExit === 'primary')
     return ' Через него панель отправляет уведомления в Telegram: основной выход перейдёт на другой RAW этого сервера или на запасной выход.';
   if (i.telegramExit === 'spare')
-    return ' Запасной выход в Telegram перейдёт на другой RAW этого сервера.';
+    return ' Запасной выход панели в Telegram перейдёт на другой RAW этого сервера.';
   return '';
 }
 
@@ -188,8 +188,8 @@ export function XuiInbounds({
                       }
                     >
                       {i.telegramExit === 'primary'
-                        ? 'выход в Telegram'
-                        : 'запасной выход в Telegram'}
+                        ? 'выход панели в Telegram'
+                        : 'запасной выход панели в Telegram'}
                     </Chip>
                   )}
                   {i.excludeFromSub && <Chip tone="muted">не в подписке</Chip>}

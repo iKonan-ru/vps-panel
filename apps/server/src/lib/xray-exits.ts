@@ -2,7 +2,7 @@ import type { XrayOutbound } from '@vps/protocol';
 import { eq } from 'drizzle-orm';
 import type { AgentRegistry } from '../agents/registry.js';
 import type { Db } from '../db/index.js';
-import { servers } from '../db/schema.js';
+import { cascades, servers } from '../db/schema.js';
 import { panelAddresses } from './panel-host.js';
 import { schedule } from './schedule.js';
 import type { SecretBox } from './secret-box.js';
@@ -31,6 +31,22 @@ export interface ExitDeps {
   xray: XrayManager;
   log: { info: (o: unknown, m?: string) => void; warn: (o: unknown, m?: string) => void };
   panelUrl: string;
+}
+
+/**
+ * Inbound-ы сервера, которые служат входами каскадов VLESS: трафик из них уходит не с этого
+ * сервера, а дальше на выход каскада (и мог бы попасть на выход, исключённый из запасных).
+ */
+function cascadeEntries(db: Db, serverId: string): Set<number> {
+  return new Set(
+    db
+      .select({ id: cascades.entryInboundId })
+      .from(cascades)
+      .where(eq(cascades.entryServerId, serverId))
+      .all()
+      .map((r) => r.id)
+      .filter((id): id is number => id !== null),
+  );
 }
 
 /** Ошибка с HTTP-кодом для маршрута настройки. */
@@ -103,7 +119,8 @@ export async function prepareExit(
 /**
  * Запасные выходы: на каждом сервере на связи с 3X-UI, кроме сервера панели, сервера основного
  * выхода и выключенных владельцем (`spareOff`), - первый включённый VLESS Reality inbound по TCP
- * (свой, не узла группы).
+ * (свой, не узла группы, не вход каскада). Сервер, где такие inbound-ы - только входы каскадов,
+ * запасного не даёт (без ошибки): его выходы и так в списке своими серверами.
  * Сервер не на связи сохраняет прежний запасной выход: он мог вернуться к следующей отправке.
  * Основной выход выключен - запасных нет.
  */
@@ -160,9 +177,12 @@ export class XraySpares {
       }
       try {
         const api = xuiApi(registry, r.id, await xuiToken(db, box, registry, r.id));
-        const cands = (await realityInbounds(api)).filter((i) => i.enable && i.tcp && !i.nodeId);
+        const fit = (await realityInbounds(api)).filter((i) => i.enable && i.tcp && !i.nodeId);
+        const entries = cascadeEntries(db, r.id);
+        const cands = fit.filter((i) => !entries.has(i.id));
         // прежний inbound, если он ещё подходит: клиент vps-panel уже на нём
         const keep = cands.find((i) => i.id === prev.get(r.id)?.inboundId) ?? cands[0];
+        if (!keep && fit.length) continue;
         if (!keep) {
           errors.push({ server: r.name, error: 'нет включённого inbound VLESS Reality по TCP' });
           continue;
@@ -217,8 +237,9 @@ export async function exitsAfterInboundChange(
           serverId,
           await xuiToken(deps.db, deps.box, deps.registry, serverId),
         );
+        const entries = cascadeEntries(deps.db, serverId);
         const cand = (await realityInbounds(api)).find(
-          (i) => i.id !== inboundId && i.enable && i.tcp && !i.nodeId,
+          (i) => i.id !== inboundId && i.enable && i.tcp && !i.nodeId && !entries.has(i.id),
         );
         if (cand) {
           next = await prepareExit(deps, serverId, cand.id);

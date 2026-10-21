@@ -1,7 +1,7 @@
 import type { XrayOutbound } from '@vps/protocol';
 import { describe, expect, it } from 'vitest';
 import { createDb } from '../src/db/index.js';
-import { servers } from '../src/db/schema.js';
+import { cascades, servers } from '../src/db/schema.js';
 import { SecretBox } from '../src/lib/secret-box.js';
 import {
   exitsAfterInboundChange,
@@ -209,11 +209,13 @@ describe('запасные выходы: выбор владельца', () => {
       },
     };
     let spares: XrayOutbound[] = [];
+    let errors: unknown[] = [];
     const xray = {
       status: () => ({ outbound: exit('s1', 1, 443) }),
       exits: () => [exit('s1', 1, 443), ...spares],
-      setSpares: async (l: XrayOutbound[]) => {
+      setSpares: async (l: XrayOutbound[], e: unknown[]) => {
         spares = l;
+        errors = e;
         return false;
       },
       start: async () => {},
@@ -232,5 +234,18 @@ describe('запасные выходы: выбор владельца', () => {
     setSpareOff(db, ['s3', 's3']);
     await s.sync();
     expect(spares.map((x) => x.serverId)).toEqual(['s2', 's4']);
+    // на s4 единственный подходящий inbound - вход каскада: запасного с s4 нет, и это не ошибка
+    db.insert(cascades)
+      .values({
+        id: 'c1',
+        entryServerId: 's4',
+        entryInboundId: 1,
+        exitServerId: 's2',
+        exitInboundId: 1,
+      })
+      .run();
+    await s.sync();
+    expect(spares.map((x) => x.serverId)).toEqual(['s2']);
+    expect(errors).toEqual([]);
   });
 });

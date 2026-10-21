@@ -243,8 +243,9 @@ async function setup(o: { mtproxyl?: boolean; panelHost?: boolean } = {}) {
           mt.want = want;
           say('TG:changed');
         }
-        for (const n of (env.TESTS ?? '').split(' ').filter(Boolean))
-          say(`TG:test=${n}=${mt.want.includes(n) ? mt.ip : ''}`);
+        // путь проверяется и вне маршрутов MTProxyL (запасной - напрямую через socks Xray)
+        for (const t of (env.TESTS ?? '').split(' ').filter(Boolean))
+          say(`TG:test=${t.split(':')[0]}=${mt.ip}`);
         return { exitCode: 0 };
       }
       if (method !== 'xui.api' && method !== 'xui.form') throw new Error(method);
@@ -688,7 +689,7 @@ describe('каскад Telegram', () => {
     expect(a?.output).toContain('Telegram выходит через 203.0.113.20');
     // проверка по кнопке - и путь Telegram
     await c.check(row?.id ?? '');
-    expect(mt.runs.at(-1)).toMatchObject({ check: true, tests: `vpc-${row?.id}` });
+    expect(mt.runs.at(-1)).toMatchObject({ check: true, tests: `vpc-${row?.id}:${port}` });
   });
 
   it('два основных - поровну; запасной без трафика; роль меняется правкой', async () => {
@@ -713,6 +714,9 @@ describe('каскад Telegram', () => {
     );
     const v = (await c.list('entry')).cascades;
     expect(v.find((x) => x.id === sp?.id)?.telegramActive).toBe(false);
+    // путь запасного проверен, хотя в маршрутах MTProxyL его нет
+    expect(mt.runs.at(-1)?.tests).toBe(`vpc-${sp?.id}:${sp?.telegramPort}`);
+    expect(sp?.telegramCheck).toMatchObject({ ok: true, ip: '203.0.113.20' });
     // запасной стал основным - в маршрутах все три
     await c.edit(sp?.id ?? '', { telegramMain: true });
     expect((await done())?.exitCode).toBe(0);

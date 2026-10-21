@@ -333,7 +333,7 @@ function Who({ c }: { c: XuiClientRow }) {
       >
         <Cable className="size-3.5 shrink-0" />
         {c.service.kind === 'telegram' ? (
-          <span className="truncate">выход в Telegram</span>
+          <span className="truncate">выход панели в Telegram</span>
         ) : c.service.entry ? (
           <Link
             to="/servers/$id/$tab"

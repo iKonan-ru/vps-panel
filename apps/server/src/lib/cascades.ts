@@ -35,7 +35,12 @@ import {
 } from './cascade-build.js';
 import { type GClients, resyncXui } from './gclients.js';
 import { newId } from './ids.js';
-import { runTelegramUpstreams, tgUpstreamName, tgUpstreams } from './mtproxyl-upstreams.js';
+import {
+  type TgUpstream,
+  runTelegramUpstreams,
+  tgUpstreamName,
+  tgUpstreams,
+} from './mtproxyl-upstreams.js';
 import { schedule } from './schedule.js';
 import type { SecretBox } from './secret-box.js';
 import { deleteSetting, getJsonSetting, putSetting } from './settings.js';
@@ -670,7 +675,7 @@ export class Cascades {
   private async applyTelegram(
     entryId: string,
     say: Say,
-    tests: string[] = [],
+    tests: Pick<TgUpstream, 'name' | 'port'>[] = [],
   ): Promise<Map<string, string>> {
     const want = this.tgWant(entryId);
     const st = this.tgState(entryId);
@@ -758,9 +763,11 @@ export class Cascades {
     undo: () => void,
   ): Promise<void> {
     try {
-      const tests = await this.applyTelegram(entryId, say, cid ? [tgUpstreamName(cid)] : []);
+      const port = cid ? this.row(cid).telegramPort : null;
+      const name = cid ? tgUpstreamName(cid) : '';
+      const tests = await this.applyTelegram(entryId, say, port ? [{ name, port }] : []);
       if (cid) {
-        const tc = this.saveTelegramCheck(cid, tests.get(tgUpstreamName(cid)));
+        const tc = this.saveTelegramCheck(cid, tests.get(name));
         say(tc.ok ? `Telegram выходит через ${tc.ip}` : `Telegram: ${tc.error}`);
       }
     } catch (e) {
@@ -1164,7 +1171,7 @@ export class Cascades {
         const res = await runTelegramUpstreams(this.d.registry, r.entryServerId, {
           want: this.tgWant(r.entryServerId),
           check: true,
-          tests: [name],
+          tests: r.telegramPort ? [{ name, port: r.telegramPort }] : [],
         });
         this.saveTelegramCheck(cid, res.tests.get(name));
       } catch (e) {
