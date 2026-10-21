@@ -133,3 +133,23 @@ describe('buildWdttSubscription', () => {
     expect(buildWdttSubscription(db, 'tok')?.profiles).toEqual([]);
   });
 });
+
+describe('GET /sub/<токен>', () => {
+  it('название подписки - имя клиента (base64, до 25 символов)', async () => {
+    const Fastify = (await import('fastify')).default;
+    const { subscriptionRoutes } = await import('../src/routes/subscription.js');
+    const app = Fastify();
+    await app.register(subscriptionRoutes, { db });
+    const token = 'a'.repeat(32);
+    db.insert(gclients)
+      .values({ id: 'gt', name: 'Виктория Константинопольская', slug: 'vk', token } as never)
+      .run();
+    const r = await app.inject({ method: 'GET', url: `/sub/${token}` });
+    expect(r.statusCode).toBe(200);
+    const h = String(r.headers['profile-title'] ?? '');
+    expect(Buffer.from(h.replace(/^base64:/, ''), 'base64').toString()).toBe(
+      'Виктория Константинопольс',
+    );
+    await app.close();
+  });
+});

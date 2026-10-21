@@ -14,9 +14,9 @@ import {
 
 /**
  * Название подписки в приложении (Happ, Hiddify, qWDTT) - имя клиента; кириллица в заголовке -
- * только base64. Пустое имя - "VPN".
+ * только base64, Happ показывает до 25 символов. Пустое имя - "VPN".
  */
-const title = (name: string) => name.trim() || 'VPN';
+const title = (name: string) => [...(name.trim() || 'VPN')].slice(0, 25).join('');
 
 /**
  * Подписка глобального клиента: GET /sub/<токен> без входа (вход
