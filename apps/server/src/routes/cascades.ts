@@ -30,6 +30,8 @@ const AddBody = z.object({
   directList: List.default([]),
   exitList: List.default([]),
   blockQuic: z.boolean().default(false),
+  telegram: z.boolean().default(false),
+  telegramMain: z.boolean().default(false),
 });
 const EditBody = z.object({
   exitInboundId: z.number().int().positive().optional(),
@@ -40,6 +42,8 @@ const EditBody = z.object({
   target: Target.optional(),
   serverNames: z.array(Host).min(1).max(MAX_SERVER_NAMES).optional(),
   fingerprint: z.enum(FINGERPRINTS).optional(),
+  telegram: z.boolean().optional(),
+  telegramMain: z.boolean().optional(),
 });
 
 const clean = (l: string[]) => l.map((s) => s.trim()).filter(Boolean);

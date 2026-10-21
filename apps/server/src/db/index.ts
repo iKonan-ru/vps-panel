@@ -87,6 +87,18 @@ const STEPS: ((sqlite: Database.Database) => void)[] = [
     if (!cols.some((c) => c.name === 'display_name'))
       sqlite.exec("alter table admin add column display_name text not null default ''");
   },
+  // 24: каскад Telegram - отметки и порт socks-inbound-а у каскада, только добавление столбцов
+  (sqlite) => {
+    const cols = sqlite.prepare('pragma table_info(vless_cascade)').all() as { name: string }[];
+    const add = (name: string, def: string) => {
+      if (!cols.some((c) => c.name === name))
+        sqlite.exec(`alter table vless_cascade add column ${name} ${def}`);
+    };
+    add('telegram', 'integer not null default 0');
+    add('telegram_main', 'integer not null default 0');
+    add('telegram_port', 'integer');
+    add('telegram_check', 'text');
+  },
 ];
 
 /** Шаги, которых база ещё не видела, - по порядку, каждый с отметкой версии. */
@@ -193,7 +205,9 @@ create table if not exists vless_cascade (
   exit_inbound_id integer not null, mode text not null default 'ru-direct',
   direct_list text not null default '[]', exit_list text not null default '[]',
   block_quic integer not null default 0, check_result text, error text,
-  created_at text not null default (strftime('%Y-%m-%dT%H:%M:%fZ','now'))
+  created_at text not null default (strftime('%Y-%m-%dT%H:%M:%fZ','now')),
+  telegram integer not null default 0, telegram_main integer not null default 0,
+  telegram_port integer, telegram_check text
 );
 create table if not exists gclient_ext (
   id text primary key, client_id text not null references gclient(id) on delete cascade,

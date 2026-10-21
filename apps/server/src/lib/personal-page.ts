@@ -51,6 +51,7 @@ summary.devh .n{margin-left:auto;font-weight:400;color:var(--muted)}summary.devh
 .drow{flex-wrap:wrap}
 .drow{display:flex;align-items:center;gap:8px;padding:10px 12px;border-top:1px solid var(--border)}.drow .name{flex:1;min-width:0}
 .drow .name small{display:block;margin:0;font-size:12px;color:var(--muted)}
+.devblk>.drow:first-child{border-top:0}
 .go{display:flex;align-items:center;gap:8px;padding-top:12px;border-top:1px solid var(--border);color:var(--accent);text-decoration:none;font-size:13px}.go svg{width:16px;height:16px}.go .grow{flex:1}
 .appb{display:flex;flex-direction:column;gap:8px}.appb+.appb{padding-top:12px;border-top:1px solid var(--border)}
 .appb h3{font-size:15px;margin:0}

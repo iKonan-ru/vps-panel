@@ -42,6 +42,8 @@ function fakeXui(opts: { inbounds?: Record<string, unknown>[] } = {}) {
     /** inbound до первой правки (для проверки возврата). */
     original: new Map<number, unknown>(),
     testUrl: 'https://example.com/204',
+    /** Outbound-ы, проверка которых не проходит (выход лёг). */
+    deadOutbounds: new Set<string>(),
     handle(method: string, path: string, body: unknown, form?: Record<string, string>) {
       if (path === 'inbounds/list') return ok(inbounds);
       if (path.startsWith('inbounds/get/')) {
@@ -130,7 +132,12 @@ function fakeXui(opts: { inbounds?: Record<string, unknown>[] } = {}) {
         if (s.breakOnInboundUpdate) s.xray = restoring ? 'running' : 'error';
         return ok(null);
       }
-      if (path === 'xray/testOutbound') return ok({ success: true, delay: 87 });
+      if (path === 'xray/testOutbound') {
+        const tag = String((JSON.parse(form?.outbound ?? '{}') as { tag?: string }).tag);
+        return s.deadOutbounds.has(tag)
+          ? ok({ success: false, delay: 0, error: 'timeout' })
+          : ok({ success: true, delay: 87 });
+      }
       if (path === 'xray/geodata/validate')
         return ok(
           (form?.tokens ?? '')
@@ -162,7 +169,17 @@ const rawInbound = (id: number, port: number) => ({
   }),
 });
 
-async function setup() {
+/** MTProxyL входа для каскада Telegram: маршруты, которые поставил скрипт панели. */
+interface FakeMt {
+  want: string;
+  runs: { want: string; check: boolean; tests: string }[];
+  /** Ошибка скрипта (ERR:...). */
+  fail: string | null;
+  /** Адрес, который отдаёт проверка маршрута. */
+  ip: string;
+}
+
+async function setup(o: { mtproxyl?: boolean; panelHost?: boolean } = {}) {
   const db = createDb(':memory:');
   const box = new SecretBox('s'.repeat(40));
   for (const [id, name, host, country] of [
@@ -176,7 +193,15 @@ async function setup() {
         host,
         country,
         provider: name,
-        statusCache: { inventory: { services: [{ kind: 'xui' }], firewall: { listeners: [] } } },
+        statusCache: {
+          inventory: {
+            services: [
+              { kind: 'xui' },
+              ...(o.mtproxyl && id === 'entry' ? [{ kind: 'mtproxyl' }] : []),
+            ],
+            firewall: { listeners: [] },
+          },
+        },
       } as never)
       .run();
     await saveXuiToken(db, box, id, `tok-${id}`);
@@ -186,6 +211,7 @@ async function setup() {
     exit: fakeXui({ inbounds: [rawInbound(7, 443)] }),
   };
   const online = new Set(['entry', 'exit']);
+  const mt: FakeMt = { want: '', runs: [], fail: null, ip: '203.0.113.20' };
   const registry = {
     isOnline: (id: string) => online.has(id),
     supports: () => true,
@@ -193,8 +219,34 @@ async function setup() {
     request: async (
       id: string,
       method: string,
-      p: { method: string; path: string; body?: unknown; form?: Record<string, string> },
+      p: {
+        method: string;
+        path: string;
+        body?: unknown;
+        form?: Record<string, string>;
+        env?: Record<string, string>;
+      },
+      opts?: { onStream?: (ch: string, chunk: string) => void },
     ) => {
+      if (method === 'command.run' && id === 'entry') {
+        const env = p.env ?? {};
+        const want = env.WANT ?? '';
+        const check = env.CHECK === '1';
+        mt.runs.push({ want, check, tests: env.TESTS ?? '' });
+        const say = (l: string) => opts?.onStream?.('stdout', `${l}\n`);
+        if (mt.fail) {
+          say(`ERR:${mt.fail}`);
+          return { exitCode: 4 };
+        }
+        if (check) say(want === mt.want ? 'TG:same' : 'TG:diff');
+        else if (want !== mt.want) {
+          mt.want = want;
+          say('TG:changed');
+        }
+        for (const n of (env.TESTS ?? '').split(' ').filter(Boolean))
+          say(`TG:test=${n}=${mt.want.includes(n) ? mt.ip : ''}`);
+        return { exitCode: 0 };
+      }
       if (method !== 'xui.api' && method !== 'xui.form') throw new Error(method);
       return xui[id]?.handle(p.method, p.path, p.body, p.form);
     },
@@ -212,6 +264,8 @@ async function setup() {
     notify: (_id, text) => void notes.push(text),
     checksMs: [1],
     inboundChecksMs: [1],
+    panelHost: async () => Boolean(o.panelHost),
+    recheckMs: 1,
   });
   const done = async () => {
     for (let i = 0; i < 200; i++) {
@@ -237,7 +291,7 @@ async function setup() {
     exitList: [],
     blockQuic: false,
   };
-  return { db, c, xui, online, done, input, notes, kicks: () => kicks };
+  return { db, c, xui, online, done, input, notes, mt, kicks: () => kicks };
 }
 
 describe('каскады', () => {
@@ -606,5 +660,185 @@ describe('каскады', () => {
     await done();
     expect(xui.entry?.inbounds[0]?.remark).toBe('\u2192 NetCore');
     expect(db.select().from(cascades).get()?.entryRemark).toBe('\u2192 NetCore');
+  });
+});
+
+describe('каскад Telegram', () => {
+  const tpl = (x: ReturnType<typeof fakeXui> | undefined) =>
+    x?.template as {
+      inbounds?: Record<string, unknown>[];
+      routing: { rules: Record<string, unknown>[] };
+    };
+
+  it('создание с отметкой: socks-inbound на 127.0.0.1, правило на выход, маршрут MTProxyL', async () => {
+    const { db, c, xui, done, input, mt } = await setup({ mtproxyl: true });
+    await c.create('entry', { ...input, telegram: true });
+    const a = await done();
+    expect(a?.exitCode, a?.output).toBe(0);
+    const row = db.select().from(cascades).get();
+    expect(row).toMatchObject({ telegram: true, telegramMain: true });
+    const port = Number(row?.telegramPort);
+    expect(port).toBeGreaterThan(0);
+    const inb = tpl(xui.entry).inbounds?.find((i) => i.tag === `vp-cascade-${row?.id}-tg`);
+    expect(inb).toMatchObject({ listen: '127.0.0.1', port, protocol: 'socks' });
+    const rule = tpl(xui.entry).routing.rules.find((r) => r.ruleTag === `vp-cascade-${row?.id}-tg`);
+    expect(rule).toMatchObject({ outboundTag: `vp-cascade-${row?.id}` });
+    expect(mt.want).toBe(`vpc-${row?.id}:${port}:100`);
+    expect(row?.telegramCheck).toMatchObject({ ok: true, ip: '203.0.113.20' });
+    expect(a?.output).toContain('Telegram выходит через 203.0.113.20');
+    // проверка по кнопке - и путь Telegram
+    await c.check(row?.id ?? '');
+    expect(mt.runs.at(-1)).toMatchObject({ check: true, tests: `vpc-${row?.id}` });
+  });
+
+  it('второй выход - запасной; основным можно сделать его, веса меняются местами', async () => {
+    const { db, c, xui, done, input, mt } = await setup({ mtproxyl: true });
+    xui.exit?.inbounds.push(rawInbound(8, 8443));
+    await c.create('entry', { ...input, telegram: true });
+    await done();
+    await c.create('entry', { ...input, exitInboundId: 8, port: 20444, telegram: true });
+    expect((await done())?.exitCode).toBe(0);
+    const [first, second] = db.select().from(cascades).all();
+    expect(first?.telegramMain).toBe(true);
+    expect(second?.telegramMain).toBe(false);
+    expect(mt.want).toContain(`vpc-${second?.id}:${second?.telegramPort}:1`);
+    await c.edit(second?.id ?? '', { telegramMain: true });
+    expect((await done())?.exitCode).toBe(0);
+    const rows = db.select().from(cascades).all();
+    expect(rows.find((r) => r.id === first?.id)?.telegramMain).toBe(false);
+    expect(rows.find((r) => r.id === second?.id)?.telegramMain).toBe(true);
+    expect(mt.want).toContain(`vpc-${second?.id}:${second?.telegramPort}:100`);
+    expect(mt.want).toContain(`vpc-${first?.id}:${first?.telegramPort}:1`);
+    // основной удалён - основным становится оставшийся
+    c.remove(second?.id ?? '');
+    expect((await done())?.exitCode).toBe(0);
+    expect(db.select().from(cascades).get()?.telegramMain).toBe(true);
+    expect(mt.want).toBe(`vpc-${first?.id}:${first?.telegramPort}:100`);
+  });
+
+  it('снятие последней отметки - маршруты MTProxyL как были, socks-inbound-а нет', async () => {
+    const { db, c, xui, done, input, mt } = await setup({ mtproxyl: true });
+    await c.create('entry', { ...input, telegram: true });
+    await done();
+    const id = db.select().from(cascades).get()?.id ?? '';
+    await c.edit(id, { telegram: false });
+    expect((await done())?.exitCode).toBe(0);
+    expect(mt.want).toBe('');
+    expect(db.select().from(cascades).get()).toMatchObject({
+      telegram: false,
+      telegramMain: false,
+      telegramPort: null,
+    });
+    expect(JSON.stringify(xui.entry?.template)).not.toContain('-tg');
+    // MTProxyL больше не трогается
+    const runs = mt.runs.length;
+    await c.syncEntry('entry');
+    expect(mt.runs.length).toBe(runs);
+  });
+
+  it('нет MTProxyL или сервер панели - отметку не поставить', async () => {
+    const a = await setup();
+    await expect(a.c.create('entry', { ...a.input, telegram: true })).rejects.toThrow(
+      'нет MTProxyL',
+    );
+    expect((await a.c.list('entry')).telegram).toMatchObject({ available: false });
+    const b = await setup({ mtproxyl: true, panelHost: true });
+    await expect(b.c.create('entry', { ...b.input, telegram: true })).rejects.toThrow(
+      'сервере панели',
+    );
+  });
+
+  it('MTProxyL отказал - каскад есть, отметка снята, шаблон без пути Telegram', async () => {
+    const { db, c, xui, done, input, mt } = await setup({ mtproxyl: true });
+    mt.fail = 'в MTProxyL включён маршрут warp';
+    await c.create('entry', { ...input, telegram: true });
+    const a = await done();
+    expect(a?.exitCode).toBe(1);
+    expect(a?.output).toContain('Telegram через него не настроен');
+    expect(db.select().from(cascades).get()).toMatchObject({ telegram: false, telegramPort: null });
+    expect(JSON.stringify(xui.entry?.template)).not.toContain('-tg');
+    expect((await c.list('entry')).telegram.error).toContain('warp');
+  });
+
+  it('сверка: маршруты MTProxyL разошлись с отметками - ставятся заново', async () => {
+    const { c, done, input, mt } = await setup({ mtproxyl: true });
+    await c.create('entry', { ...input, telegram: true });
+    await done();
+    const want = mt.want;
+    mt.want = '';
+    await c.syncEntry('entry');
+    await done();
+    expect(mt.want).toBe(want);
+  });
+
+  it('основной выход лёг - Telegram через запасной; вернулся - снова основной', async () => {
+    const { db, c, xui, done, input, mt } = await setup({ mtproxyl: true });
+    xui.exit?.inbounds.push(rawInbound(8, 8443));
+    await c.create('entry', { ...input, telegram: true });
+    await done();
+    await c.create('entry', { ...input, exitInboundId: 8, port: 20444, telegram: true });
+    await done();
+    const [main, spare] = db.select().from(cascades).all();
+    xui.entry?.deadOutbounds.add(`vp-cascade-${main?.id}`);
+    await c.checkAll();
+    await done();
+    expect(mt.want).toBe(`vpc-${spare?.id}:${spare?.telegramPort}:100`);
+    const v = (await c.list('entry')).cascades;
+    expect(v.find((x) => x.id === main?.id)).toMatchObject({
+      telegramDown: true,
+      telegramMain: true,
+    });
+    expect(v.find((x) => x.id === spare?.id)).toMatchObject({ telegramActive: true });
+    xui.entry?.deadOutbounds.clear();
+    await c.checkAll();
+    await done();
+    expect(mt.want).toContain(`vpc-${main?.id}:${main?.telegramPort}:100`);
+    expect(mt.want).toContain(`vpc-${spare?.id}:${spare?.telegramPort}:1`);
+  });
+
+  it('один сбой проверки - Telegram не перестраивается', async () => {
+    const { db, c, xui, done, input, mt } = await setup({ mtproxyl: true });
+    await c.create('entry', { ...input, telegram: true });
+    await done();
+    const want = mt.want;
+    const runs = mt.runs.length;
+    const id = db.select().from(cascades).get()?.id;
+    // повторная проверка проходит: сбой разовый
+    let n = 0;
+    const orig = xui.entry?.handle.bind(xui.entry);
+    if (xui.entry && orig)
+      xui.entry.handle = (m, path, b, f) =>
+        path === 'xray/testOutbound' && n++ === 0
+          ? ok({ success: false, delay: 0, error: 'timeout' })
+          : orig(m, path, b, f);
+    await c.checkAll();
+    expect(mt.want).toBe(want);
+    expect(mt.runs.length).toBe(runs);
+    expect((await c.list('entry')).cascades.find((x) => x.id === id)?.telegramDown).toBe(false);
+  });
+
+  it('правка с режимом и отметкой: MTProxyL отказал - режим остался, отметка - как была', async () => {
+    const { db, c, done, input, mt } = await setup({ mtproxyl: true });
+    await c.create('entry', input);
+    await done();
+    const id = db.select().from(cascades).get()?.id ?? '';
+    mt.fail = 'в MTProxyL включён маршрут warp';
+    await c.edit(id, { mode: 'all', telegram: true });
+    const a = await done();
+    expect(a?.exitCode).toBe(1);
+    expect(db.select().from(cascades).get()).toMatchObject({ mode: 'all', telegram: false });
+  });
+
+  it('проверка: адрес входа вместо выхода - "не проходит"', async () => {
+    const { db, c, done, input, mt } = await setup({ mtproxyl: true });
+    await c.create('entry', { ...input, telegram: true });
+    await done();
+    mt.ip = '198.51.100.5';
+    const id = db.select().from(cascades).get()?.id ?? '';
+    await c.check(id);
+    expect(db.select().from(cascades).get()?.telegramCheck).toMatchObject({
+      ok: false,
+      ip: '198.51.100.5',
+    });
   });
 });

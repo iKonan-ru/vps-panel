@@ -1,6 +1,7 @@
 import type {
   CascadeCheck,
   CascadeMode,
+  CascadeTelegramCheck,
   GClientAccess,
   Inventory,
   Metrics,
@@ -267,6 +268,11 @@ export const cascades = sqliteTable('vless_cascade', {
   check: text('check_result', { mode: 'json' }).$type<CascadeCheck | null>(),
   error: text('error'),
   createdAt: text('created_at').notNull().default(now),
+  /** Telegram входа (MTProxyL) ходит через этот выход: socks-inbound на 127.0.0.1 в Xray входа. */
+  telegram: integer('telegram', { mode: 'boolean' }).notNull().default(false),
+  telegramMain: integer('telegram_main', { mode: 'boolean' }).notNull().default(false),
+  telegramPort: integer('telegram_port'),
+  telegramCheck: text('telegram_check', { mode: 'json' }).$type<CascadeTelegramCheck | null>(),
 });
 
 /**

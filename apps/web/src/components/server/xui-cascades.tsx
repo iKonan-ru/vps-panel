@@ -15,12 +15,13 @@ import { Pencil, Plus, RefreshCw, Trash2 } from 'lucide-react';
 import { useState } from 'react';
 
 /** Каскады сервера (кэш общий с inbound-ами: строки каскадов там помечены). */
-export function useCascades(serverId: string) {
+export function useCascades(serverId: string, enabled = true) {
   return useQuery({
     queryKey: ['cascades', serverId],
     queryFn: () => api<CascadesView>(`/api/servers/${serverId}/cascades`),
     staleTime: 20_000,
     retry: false,
+    enabled,
   });
 }
 
@@ -125,6 +126,11 @@ export function XuiCascades({
             <Alert tone="bad">{op.error}</Alert>
           </div>
         )}
+        {data?.telegram.error && list.some((c) => c.telegram) && (
+          <div className="p-4 pb-0">
+            <Alert tone="bad">{`MTProxyL: ${data.telegram.error}`}</Alert>
+          </div>
+        )}
         {error && (
           <div className="px-4 py-3 text-[13px] text-muted">
             {noToken ? 'Нужен API-токен 3X-UI' : `Не удалось получить каскады: ${error.message}`}
@@ -157,9 +163,25 @@ export function XuiCascades({
                   c.exitList.length ? `через выход: ${c.exitList.length}` : '',
                   c.directList.length ? `напрямую: ${c.directList.length}` : '',
                   c.blockQuic ? 'QUIC заблокирован' : '',
+                  c.telegram ? (c.telegramMain ? 'Telegram: основной' : 'Telegram: запасной') : '',
+                  c.telegram && !c.telegramMain && c.telegramActive && !c.telegramDown
+                    ? 'сейчас Telegram через него'
+                    : '',
                 ]
                   .filter(Boolean)
                   .join(', ')}
+                {/* выход не отвечает (Telegram ушёл на другие) или путь не прошёл проверку */}
+                {c.telegramDown ? (
+                  <span className="text-bad">{', выход не отвечает'}</span>
+                ) : (
+                  c.telegram &&
+                  c.telegramCheck &&
+                  !c.telegramCheck.ok && (
+                    <span className="text-bad" title={c.telegramCheck.error ?? ''}>
+                      {', не проходит'}
+                    </span>
+                  )
+                )}
               </div>
             </div>
             <Button
@@ -223,6 +245,8 @@ export function XuiCascades({
             <CascadeForm
               serverId={serverId}
               {...(form.cascade ? { cascade: form.cascade } : {})}
+              telegram={data?.telegram}
+              telegramOthers={list.filter((x) => x.telegram && x.id !== form.cascade?.id).length}
               disabled={locked}
               onCancel={() => setForm(null)}
               onStarted={(id) => {

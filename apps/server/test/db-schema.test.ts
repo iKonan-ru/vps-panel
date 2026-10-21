@@ -42,7 +42,49 @@ describe('database schema', () => {
       createDb(dir);
       createDb(dir);
       const db = new Database(join(dir, 'panel.db'), { readonly: true });
-      expect(db.pragma('user_version', { simple: true })).toBe(23);
+      expect(db.pragma('user_version', { simple: true })).toBe(24);
+      db.close();
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it('шаг 24: база версии 23 получает отметки Telegram у каскадов, каскады на месте', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'vps-s24-'));
+    try {
+      createDb(dir);
+      const raw = new Database(join(dir, 'panel.db'));
+      raw.exec('drop table vless_cascade');
+      raw.exec(`create table vless_cascade (
+  id text primary key, entry_server_id text not null,
+  entry_inbound_id integer, entry_port integer, entry_remark text not null default '',
+  exit_server_id text not null,
+  exit_inbound_id integer not null, mode text not null default 'ru-direct',
+  direct_list text not null default '[]', exit_list text not null default '[]',
+  block_quic integer not null default 0, check_result text, error text,
+  created_at text not null default (strftime('%Y-%m-%dT%H:%M:%fZ','now'))
+)`);
+      raw.exec(
+        "insert into vless_cascade (id, entry_server_id, exit_server_id, exit_inbound_id) values ('k', 'e', 'x', 7)",
+      );
+      raw.pragma('user_version = 23');
+      raw.close();
+      createDb(dir);
+      const db = new Database(join(dir, 'panel.db'), { readonly: true });
+      expect(db.pragma('user_version', { simple: true })).toBe(24);
+      expect(
+        db
+          .prepare(
+            'select id, telegram, telegram_main, telegram_port, telegram_check from vless_cascade',
+          )
+          .get(),
+      ).toEqual({
+        id: 'k',
+        telegram: 0,
+        telegram_main: 0,
+        telegram_port: null,
+        telegram_check: null,
+      });
       db.close();
     } finally {
       rmSync(dir, { recursive: true, force: true });
@@ -65,7 +107,7 @@ describe('database schema', () => {
       raw.close();
       createDb(dir);
       const db = new Database(join(dir, 'panel.db'), { readonly: true });
-      expect(db.pragma('user_version', { simple: true })).toBe(23);
+      expect(db.pragma('user_version', { simple: true })).toBe(24);
       expect(db.prepare('select login, display_name from admin').get()).toEqual({
         login: 'boss',
         display_name: '',
@@ -86,7 +128,7 @@ describe('database schema', () => {
       raw.close();
       createDb(dir);
       const db = new Database(join(dir, 'panel.db'), { readonly: true });
-      expect(db.pragma('user_version', { simple: true })).toBe(23);
+      expect(db.pragma('user_version', { simple: true })).toBe(24);
       expect(columnsOf(join(dir, 'panel.db'), 'vless_cascade')).toContain('exit_inbound_id');
       db.close();
     } finally {
@@ -106,7 +148,7 @@ describe('database schema', () => {
       raw.close();
       createDb(dir);
       const db = new Database(join(dir, 'panel.db'), { readonly: true });
-      expect(db.pragma('user_version', { simple: true })).toBe(23);
+      expect(db.pragma('user_version', { simple: true })).toBe(24);
       expect(db.prepare('select host, client_host from server').get()).toEqual({
         host: '203.0.113.1',
         client_host: null,

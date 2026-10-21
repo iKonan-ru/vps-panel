@@ -460,6 +460,34 @@ export interface CascadeView {
   /** Последняя ошибка применения на входе. */
   error: string | null;
   createdAt: string;
+  /** Telegram (MTProxyL входа) ходит через этот выход. */
+  telegram: boolean;
+  /** Основной выход Telegram: через него почти всё, остальные - запасные. */
+  telegramMain: boolean;
+  /** Последняя проверка пути Telegram: адрес, с которым MTProxyL входа выходит наружу. */
+  telegramCheck: CascadeTelegramCheck | null;
+  /** Сейчас Telegram идёт через этот выход (основной или запасной вместо него). */
+  telegramActive: boolean;
+  /** Выход не отвечает или каскад не собран: в маршрутах Telegram его нет. */
+  telegramDown: boolean;
+}
+
+export interface CascadeTelegramCheck {
+  at: string;
+  ok: boolean;
+  /** Внешний адрес через выход (должен быть адресом выхода). */
+  ip: string | null;
+  error: string | null;
+}
+
+/** Каскад Telegram на входе: MTProxyL входа ходит в Telegram через выходы отмеченных каскадов. */
+export interface CascadeTelegramState {
+  /** Можно ли отмечать каскады этого входа для Telegram. */
+  available: boolean;
+  /** Почему нельзя (нет MTProxyL, сервер панели). */
+  reason: string | null;
+  /** Последняя ошибка настройки MTProxyL входа. */
+  error: string | null;
 }
 
 /** Каскад, который выходит через этот сервер (строка на вкладке 3X-UI выхода). */
@@ -500,6 +528,7 @@ export interface CascadeNewInfo {
 export interface CascadesView {
   cascades: CascadeView[];
   via: CascadeVia[];
+  telegram: CascadeTelegramState;
 }
 
 /**

@@ -6,8 +6,11 @@ import {
   buildRules,
   entryInbound,
   mergeTemplate,
+  ownOf,
   ownParts,
   parseList,
+  telegramInbound,
+  telegramRule,
 } from '../src/lib/cascade-build.js';
 
 const base = {
@@ -210,4 +213,33 @@ it('inbound входа - со sniffing routeOnly', () => {
     routeOnly: true,
   });
   expect(i.port).toBe(20443);
+});
+
+describe('Telegram', () => {
+  it('Telegram: socks-inbound на 127.0.0.1 в шаблоне, чужие inbound-ы на месте', () => {
+    const t = {
+      inbounds: [{ tag: 'api', listen: '127.0.0.1', port: 62789, protocol: 'tunnel' }],
+      outbounds: [{ tag: 'direct', protocol: 'freedom' }],
+      routing: { rules: [{ type: 'field', inboundTag: ['api'], outboundTag: 'api' }] },
+    };
+    const next = mergeTemplate(t, [], [telegramRule('c1', true)], [telegramInbound('c1', 20001)]);
+    expect(next.inbounds?.map((i) => i.tag)).toEqual(['api', 'vp-cascade-c1-tg']);
+    expect(next.inbounds?.[1]).toMatchObject({
+      listen: '127.0.0.1',
+      port: 20001,
+      protocol: 'socks',
+      settings: { auth: 'noauth', udp: false },
+    });
+    expect(next.routing?.rules?.[1]).toMatchObject({
+      ruleTag: 'vp-cascade-c1-tg',
+      inboundTag: ['vp-cascade-c1-tg'],
+      outboundTag: 'vp-cascade-c1',
+    });
+    expect(telegramRule('c1', false).outboundTag).toBe('vp-cascade-blocked');
+    // своё уходит целиком, api остаётся
+    const back = mergeTemplate(next, [], []);
+    expect(back.inbounds?.map((i) => i.tag)).toEqual(['api']);
+    expect(ownParts(back)).toBe(ownParts(t));
+    expect(ownOf(next).inbounds).toHaveLength(1);
+  });
 });

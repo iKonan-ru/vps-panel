@@ -8,7 +8,7 @@ import { access, gclientBindings, gclients, servers } from '../db/schema.js';
 import { upsertAccess } from '../lib/access.js';
 import { actionJournal } from '../lib/action-journal.js';
 import { type ServerRouteOpts, actionRunners } from '../lib/action-runners.js';
-import { cascadeEntryOf, isCascadeClient } from '../lib/cascades.js';
+import { cascadeEntryOf, isCascadeClient, telegramListeners } from '../lib/cascades.js';
 import { xuiTargets } from '../lib/gclient-services.js';
 import { type GClients, queued, resyncXui } from '../lib/gclients.js';
 import { EXIT_CLIENT, type InboundExitHooks, telegramExitOf } from '../lib/xray-exits.js';
@@ -210,7 +210,10 @@ export async function xuiRoutes(
           const others = (await listInbounds(api)).filter(
             (x) => Number(x.id) !== iid && x.enable !== false,
           );
-          const ls = listenersOf(id).filter((l) => !/xray/i.test(l.process));
+          const ls = [
+            ...listenersOf(id).filter((l) => !/xray/i.test(l.process)),
+            ...telegramListeners(db, id),
+          ];
           const busy = portBusy(Number(got.port), others, ls);
           if (busy) throw Object.assign(new Error(busy), { statusCode: 409 });
         }

@@ -10,6 +10,7 @@ import {
 } from '@/components/server/mtproxyl/versions';
 import { UninstallBlock } from '@/components/server/uninstall-block';
 import { VersionsSection } from '@/components/server/versions-section';
+import { useCascades } from '@/components/server/xui-cascades';
 import { ActionBar } from '@/components/ui/action-bar';
 import { Alert } from '@/components/ui/alert';
 import { Button, ButtonLink } from '@/components/ui/button';
@@ -29,6 +30,7 @@ import { serverLock } from '@/lib/servers';
 import { useUpdatesCheck } from '@/lib/service-update';
 import { useAction } from '@/lib/use-action';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
+import { Link } from '@tanstack/react-router';
 import type { ServerDetail } from '@vps/protocol';
 import {
   ExternalLink,
@@ -80,6 +82,12 @@ export function MtproxylTab({ s }: { s: ServerDetail }) {
   });
 
   const refresh = () => qc.invalidateQueries({ queryKey: ['mtproxyl', s.id] });
+  // каскад Telegram: через какие выходы MTProxyL этого сервера ходит в Telegram (основной - первым)
+  const hasXui = s.services.some((x) => x.kind === 'xui');
+  const cascadeList = useCascades(s.id, hasXui && online);
+  const tgExits = (cascadeList.data?.cascades ?? [])
+    .filter((c) => c.telegram)
+    .sort((a, b) => Number(b.telegramMain) - Number(a.telegramMain));
   // после обновления версии перепроверяются сами
   const updates = useUpdatesCheck(s.id);
   // проверка версий идёт - обновлять и менять версию нельзя (решение по старым данным)
@@ -200,6 +208,36 @@ export function MtproxylTab({ s }: { s: ServerDetail }) {
           note={`вход: ${bytes(st?.traffic_in ?? 0)}, выход: ${bytes(st?.traffic_out ?? 0)}`}
         />
       </div>
+
+      {tgExits.length > 0 && (
+        <div className="text-xs text-muted">
+          {'В Telegram через: '}
+          {tgExits.map((c, i) => (
+            <span key={c.id}>
+              {i > 0 && ', '}
+              <Link
+                to="/servers/$id/$tab"
+                params={{ id: c.exitServerId, tab: 'xui' }}
+                className="text-accent hover:underline"
+              >
+                {c.exitServerName || 'выход удалён'}
+              </Link>
+              {c.telegramMain && tgExits.length > 1 ? ' (основной)' : ''}
+            </span>
+          ))}
+          {'. Выходы\u00a0\u2014 в блоке \u00abКаскад\u00bb '}
+          <Link
+            to="/servers/$id/$tab"
+            params={{ id: s.id, tab: 'xui' }}
+            className="text-accent hover:underline"
+          >
+            вкладки 3X-UI
+          </Link>
+        </div>
+      )}
+      {cascadeList.data?.telegram.error && tgExits.length > 0 && (
+        <Alert tone="bad">{`Каскад Telegram: ${cascadeList.data.telegram.error}`}</Alert>
+      )}
 
       {/* обновления версий - не здесь, а в блоке "Версии" */}
       <ActionBar

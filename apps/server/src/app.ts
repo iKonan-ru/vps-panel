@@ -7,7 +7,7 @@ import fastifyRateLimit from '@fastify/rate-limit';
 import fastifyStatic from '@fastify/static';
 import fastifyWebsocket from '@fastify/websocket';
 import type { PanelRelease } from '@vps/protocol';
-import { isNull, sql } from 'drizzle-orm';
+import { eq, isNull, sql } from 'drizzle-orm';
 import Fastify from 'fastify';
 import { ZodError } from 'zod';
 import { AgentRegistry } from './agents/registry.js';
@@ -30,7 +30,7 @@ import { EngineCatalog } from './lib/mtproxyl-engine.js';
 import { Notifier } from './lib/notify.js';
 import { PanelBackups } from './lib/panel-backup.js';
 import { PanelCerts } from './lib/panel-certs.js';
-import { panelAddresses } from './lib/panel-host.js';
+import { isPanelHost, panelAddresses } from './lib/panel-host.js';
 import { PanelProxy } from './lib/panel-proxy.js';
 import { PanelUpdates } from './lib/panel-updates.js';
 import { RuReach } from './lib/ru-reach.js';
@@ -388,6 +388,15 @@ export async function buildApp(opts: AppOptions) {
     gc,
     log: app.log,
     notify: (id, text, back) => void notifier.cascade(id, text, back),
+    panelHost: async (id) => {
+      const row = db.select().from(servers).where(eq(servers.id, id)).get();
+      if (!row) return false;
+      return isPanelHost(
+        row.host,
+        row.statusCache?.inventory,
+        await panelAddresses(env.PANEL_PUBLIC_URL),
+      );
+    },
   });
   stops.push(cascades.start());
   await app.register(cascadeRoutes, { cascades });

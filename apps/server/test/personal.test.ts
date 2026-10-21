@@ -4,7 +4,7 @@ import { join } from 'node:path';
 import Fastify from 'fastify';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { type Db, createDb } from '../src/db/index.js';
-import { gclientBindings, gclientDevices, gclients, servers } from '../src/db/schema.js';
+import { cascades, gclientBindings, gclientDevices, gclients, servers } from '../src/db/schema.js';
 import { personalRoutes } from '../src/routes/personal.js';
 
 const token = 'a'.repeat(32);
@@ -133,6 +133,50 @@ describe('личная страница', () => {
     // свёрнутые блоки: серверы прокси для Telegram и два устройства OpenFlux; развёрнутых нет
     expect(r.body.match(/<details class="devblk"/g)).toHaveLength(3);
     expect(r.body).not.toContain('<details class="devblk" open');
+    await app.close();
+  });
+
+  it('прокси Telegram: вход каскада Telegram - сразу виден, остальные - свёрнутым списком', async () => {
+    db.insert(servers)
+      .values({ id: 's2', name: 'a', host: '2.2.2.2', provider: 'Kappa', country: 'RU' } as never)
+      .run();
+    db.insert(gclientBindings)
+      .values({
+        id: 'b3',
+        clientId: 'c',
+        serverId: 's2',
+        service: 'mtproxyl',
+        ref: 'ivan-1',
+        links: ['tg://proxy?server=2.2.2.2&port=443&secret=ee11'],
+        state: 'ok',
+      })
+      .run();
+    db.insert(cascades)
+      .values({
+        id: 'k1',
+        entryServerId: 's2',
+        exitServerId: 's1',
+        exitInboundId: 1,
+        telegram: true,
+        telegramMain: true,
+        telegramPort: 20001,
+      })
+      .run();
+    const app = Fastify();
+    await app.register(personalRoutes, {
+      db,
+      registry: { isOnline: () => false } as never,
+      box: {} as never,
+      env: { PANEL_PUBLIC_URL: 'https://panel.example' } as never,
+      apps: apps as never,
+    });
+    const r = await app.inject({ method: 'GET', url: `/c/${token}` });
+    const entry = r.body.indexOf('server=2.2.2.2');
+    const fold = r.body.indexOf('<details class="devblk"');
+    expect(entry).toBeGreaterThan(0);
+    expect(entry).toBeLessThan(fold);
+    expect(r.body.indexOf('server=1.1.1.1')).toBeGreaterThan(fold);
+    expect(r.body).toContain('Другие серверы');
     await app.close();
   });
 });

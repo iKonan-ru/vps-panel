@@ -27,6 +27,7 @@ import { upsertAccess } from './access.js';
 import { type actionJournal, liveOutput } from './action-journal.js';
 import type { BackupRestorer } from './backup-restore.js';
 import { type BackupSetup, backupSnapshot, subnetOf } from './backup-setup.js';
+import { telegramListeners } from './cascades.js';
 import type { CatalogRunner } from './catalog-runner.js';
 import { checkClientHost } from './client-host.js';
 import { type GClients, queued } from './gclients.js';
@@ -1192,7 +1193,10 @@ export function serverSetup(deps: SetupDeps) {
         const api = xuiApi(registry, id, await xuiToken(db, box, registry, id));
         const list = await listInbounds(api);
         if (ownVlessInbounds(list).length) return null;
-        const listeners = () => inventory(id)?.firewall.listeners ?? [];
+        const listeners = () => [
+          ...(inventory(id)?.firewall.listeners ?? []),
+          ...telegramListeners(db, id),
+        ];
         const items: NewItem[] = [];
         const taken = list.map((i) => String(i.remark ?? ''));
         const busy = (p: number) => portBusy(p, list, listeners()) !== null;

@@ -30,6 +30,38 @@ export interface ExitParams {
   fingerprint: string;
 }
 
+/** Socks-inbound Telegram каскада: в него ходит MTProxyL входа (upstream socks5). */
+export const telegramTag = (id: string) => `${CASCADE_PREFIX}${id}-tg`;
+
+/**
+ * Вход для MTProxyL входа: socks5 без пароля только на 127.0.0.1 (снаружи недоступен, port-sync
+ * его не открывает). Inbound - в шаблоне, а не в базе 3X-UI: его не видно в списке inbound-ов и
+ * в него не попадают клиенты.
+ */
+export function telegramInbound(id: string, port: number): Record<string, unknown> {
+  return {
+    tag: telegramTag(id),
+    listen: '127.0.0.1',
+    port,
+    protocol: 'socks',
+    settings: { auth: 'noauth', udp: false },
+  };
+}
+
+/**
+ * Правило Telegram каскада: весь трафик socks-inbound-а - на выход, без режимов и списков
+ * (адреса Telegram зарубежные). Каскад не собрать - в блок: MTProxyL сочтёт этот путь мёртвым и
+ * уйдёт на запасной, а не пойдёт к Telegram с адреса входа.
+ */
+export function telegramRule(id: string, ok: boolean): Record<string, unknown> {
+  return {
+    type: 'field',
+    ruleTag: ruleTag(id, 'tg'),
+    inboundTag: [telegramTag(id)],
+    outboundTag: ok ? outboundTag(id) : CASCADE_BLOCKED,
+  };
+}
+
 /** Loopback каскада: возвращает трафик inbound-а входа в маршрутизацию под своим тегом. */
 export function loopOutbound(id: string): Record<string, unknown> {
   return { tag: loopTag(id), protocol: 'loopback', settings: { inboundTag: innerTag(id) } };
@@ -210,20 +242,24 @@ export function blockedRules(id: string, inboundTag: string): Record<string, unk
 }
 
 type Template = Record<string, unknown> & {
+  inbounds?: Record<string, unknown>[];
   outbounds?: Record<string, unknown>[];
   routing?: Record<string, unknown> & { rules?: Record<string, unknown>[] };
 };
 
 /**
- * Шаблон Xray с каскадами входа: свои outbound-ы и правила заменяются целиком, чужое остаётся
- * на месте. Свои правила - сразу после правил api (до правил владельца: иначе его "Базовые
- * соединения" перехватят трафик каскада). Каскадов нет - своего в шаблоне не остаётся.
+ * Шаблон Xray с каскадами входа: свои inbound-ы (socks для Telegram), outbound-ы и правила
+ * заменяются целиком, чужое остаётся на месте. Свои правила - сразу после правил api (до правил
+ * владельца: иначе его "Базовые соединения" перехватят трафик каскада). Каскадов нет - своего в
+ * шаблоне не остаётся.
  */
 export function mergeTemplate(
   template: Template,
   outbounds: Record<string, unknown>[],
   rules: Record<string, unknown>[],
+  inbounds: Record<string, unknown>[] = [],
 ): Template {
+  const keepIn = (template.inbounds ?? []).filter((i) => !own(i.tag));
   const keepOut = (template.outbounds ?? []).filter((o) => !own(o.tag));
   const routing = { ...(template.routing ?? {}) };
   const keepRules = (routing.rules ?? []).filter((r) => !own(r.ruleTag));
@@ -235,6 +271,7 @@ export function mergeTemplate(
   const ownOut = outbounds.length || rules.length ? [...SERVICE_OUTBOUNDS, ...outbounds] : [];
   return {
     ...template,
+    ...(template.inbounds || inbounds.length ? { inbounds: [...keepIn, ...inbounds] } : {}),
     outbounds: [...keepOut, ...ownOut],
     routing: { ...routing, rules: [...keepRules.slice(0, at), ...rules, ...keepRules.slice(at)] },
   };
@@ -252,9 +289,10 @@ function canonical(v: unknown): string {
   return JSON.stringify(v);
 }
 
-/** Свои части шаблона (outbound-ы и правила каскадов) - для сравнения "уже стоит". */
+/** Свои части шаблона (inbound-ы, outbound-ы и правила каскадов) - для сравнения "уже стоит". */
 export function ownParts(template: Template): string {
   return canonical({
+    i: (template.inbounds ?? []).filter((i) => own(i.tag)),
     o: (template.outbounds ?? []).filter((o) => own(o.tag)),
     r: (template.routing?.rules ?? []).filter((r) => own(r.ruleTag)),
   });
@@ -262,11 +300,13 @@ export function ownParts(template: Template): string {
 
 /** Свои части шаблона без служебных outbound-ов - для отката на свежий шаблон. */
 export function ownOf(template: Template): {
+  inbounds: Record<string, unknown>[];
   outbounds: Record<string, unknown>[];
   rules: Record<string, unknown>[];
 } {
   const service = new Set(SERVICE_OUTBOUNDS.map((o) => o.tag));
   return {
+    inbounds: (template.inbounds ?? []).filter((i) => own(i.tag)),
     outbounds: (template.outbounds ?? []).filter((o) => own(o.tag) && !service.has(o.tag)),
     rules: (template.routing?.rules ?? []).filter((r) => own(r.ruleTag)),
   };

@@ -4,8 +4,11 @@ import type {
   CascadeExitOption,
   CascadeMode,
   CascadeNewInfo,
+  CascadeTelegramCheck,
+  CascadeTelegramState,
   CascadeView,
   CascadesView,
+  Listener,
 } from '@vps/protocol';
 import { eq, or } from 'drizzle-orm';
 import type { AgentRegistry } from '../agents/registry.js';
@@ -27,11 +30,20 @@ import {
   ownOf,
   ownParts,
   parseList,
+  telegramInbound,
+  telegramRule,
 } from './cascade-build.js';
 import { type GClients, resyncXui } from './gclients.js';
 import { newId } from './ids.js';
+import {
+  TG_MAIN_WEIGHT,
+  runTelegramUpstreams,
+  tgUpstreamName,
+  tgUpstreams,
+} from './mtproxyl-upstreams.js';
 import { schedule } from './schedule.js';
 import type { SecretBox } from './secret-box.js';
+import { deleteSetting, getJsonSetting, putSetting } from './settings.js';
 import {
   type XuiCall,
   type XuiFormCall,
@@ -93,6 +105,20 @@ export function cascadeEntryOf(db: Db, email: string): { id: string; name: strin
   return all.find((s) => cascadeClientEmail(s.id) === email) ?? null;
 }
 
+/**
+ * Порты socks-inbound-ов Telegram на сервере как занятые: их слушает Xray из шаблона, а опись
+ * сервера узнаёт о них только со следующим снимком. Inbound на таком порту остановил бы Xray.
+ */
+export function telegramListeners(db: Db, serverId: string): Listener[] {
+  return db
+    .select({ port: cascades.telegramPort })
+    .from(cascades)
+    .where(eq(cascades.entryServerId, serverId))
+    .all()
+    .filter((r) => r.port)
+    .map((r) => ({ proto: 'tcp', port: Number(r.port), process: 'Telegram каскада', open: false }));
+}
+
 /** Свой VLESS Reality RAW inbound (через него ходит каскад). */
 function isRawReality(i: Json): boolean {
   if (i.protocol !== 'vless' || inboundNode(i)) return false;
@@ -108,6 +134,7 @@ interface Template {
 
 /** Свои части шаблона входа по базе и состояние каскадов. */
 interface Plan {
+  inbounds: Json[];
   outbounds: Json[];
   rules: Json[];
   /** Inbound-ы входа с подписью прежнего вида: переименовать. */
@@ -132,8 +159,22 @@ export interface CascadeDeps {
   notify: (entryServerId: string, text: string, back: boolean) => void;
   /** Паузы проверки Xray (тесты - короче). */
   checksMs?: number[];
+  /** Пауза перед повторной проверкой выхода Telegram после первой неудачи. */
+  recheckMs?: number;
   inboundChecksMs?: number[];
+  /** Сервер, на котором стоит сама панель: каскад Telegram на нём пока недоступен. */
+  panelHost?: (serverId: string) => Promise<boolean>;
 }
+
+/**
+ * Каскад Telegram на входе (setting cascade_tg:<вход>): on - панель настроила маршруты MTProxyL
+ * (нужно вернуть, когда отметок не останется), error - последняя ошибка их настройки.
+ */
+interface TgEntryState {
+  on: boolean;
+  error: string | null;
+}
+const tgKey = (entryId: string) => `cascade_tg:${entryId}`;
 
 export interface CascadeInput {
   exitServerId: string;
@@ -146,6 +187,9 @@ export interface CascadeInput {
   directList: string[];
   exitList: string[];
   blockQuic: boolean;
+  /** Telegram входа (MTProxyL) через этот выход; telegramMain - основной выход. */
+  telegram?: boolean;
+  telegramMain?: boolean;
 }
 
 export type CascadeEdit = {
@@ -157,7 +201,9 @@ export type CascadeEdit = {
     | 'blockQuic'
     | 'target'
     | 'serverNames'
-    | 'fingerprint']?: CascadeInput[K] | undefined;
+    | 'fingerprint'
+    | 'telegram'
+    | 'telegramMain']?: CascadeInput[K] | undefined;
 };
 
 /** Поля правки, которые меняют inbound входа, а не строку каскада. */
@@ -177,6 +223,8 @@ export class Cascades {
   /** Входы, которые надо сверить, когда закончится действие на них. */
   private pending = new Set<string>();
   private checking = false;
+  /** Каскады Telegram, выход которых не прошёл проверку: в маршрутах MTProxyL их нет. */
+  private tgDown = new Set<string>();
 
   constructor(private d: CascadeDeps) {}
 
@@ -223,6 +271,11 @@ export class Cascades {
       throw fail(409, 'агент входа устарел: нужно обновить агент');
   }
 
+  /** Маршруты MTProxyL входа: отметки, ошибки каскадов и не прошедшие проверку выходы. */
+  private tgWant(entryId: string) {
+    return tgUpstreams(this.rows(eq(cascades.entryServerId, entryId)), this.tgDown);
+  }
+
   private view(r: Row): CascadeView {
     const exit = this.d.db
       .select({ name: servers.name })
@@ -245,11 +298,39 @@ export class Cascades {
       check: r.check ?? null,
       error: r.error,
       createdAt: r.createdAt,
+      telegram: r.telegram,
+      telegramMain: r.telegramMain,
+      telegramCheck: r.telegramCheck ?? null,
+      telegramActive:
+        r.telegram &&
+        this.tgWant(r.entryServerId).some(
+          (u) => u.name === tgUpstreamName(r.id) && u.weight === TG_MAIN_WEIGHT,
+        ),
+      telegramDown: r.telegram && (Boolean(r.error) || this.tgDown.has(r.id)),
     };
   }
 
+  private tgState(entryId: string): TgEntryState {
+    return getJsonSetting<TgEntryState>(this.d.db, tgKey(entryId), { on: false, error: null });
+  }
+
+  /** Можно ли отмечать каскады входа для Telegram: нужен MTProxyL, сервер панели - пока нет. */
+  async telegramState(entryId: string): Promise<CascadeTelegramState> {
+    const error = this.tgState(entryId).error;
+    if (await this.d.panelHost?.(entryId))
+      return {
+        available: false,
+        reason: 'на сервере панели каскад Telegram пока недоступен',
+        error,
+      };
+    const inv = this.server(entryId).statusCache?.inventory;
+    if (!inv?.services.some((x) => x.kind === 'mtproxyl'))
+      return { available: false, reason: 'на сервере нет MTProxyL', error };
+    return { available: true, reason: null, error };
+  }
+
   /** Каскады входа и каскады, которые выходят через этот сервер. */
-  list(serverId: string): CascadesView {
+  async list(serverId: string): Promise<CascadesView> {
     const names = new Map(
       this.d.db
         .select({ id: servers.id, name: servers.name })
@@ -265,6 +346,7 @@ export class Cascades {
         entryServerName: names.get(r.entryServerId) ?? '',
         exitInboundId: r.exitInboundId,
       })),
+      telegram: await this.telegramState(serverId),
     };
   }
 
@@ -308,7 +390,10 @@ export class Cascades {
     const entry = this.server(entryId);
     const api = this.api(entryId);
     const list = await listInbounds(api);
-    const ls = entry.statusCache?.inventory?.firewall.listeners ?? [];
+    const ls = [
+      ...(entry.statusCache?.inventory?.firewall.listeners ?? []),
+      ...telegramListeners(db, entryId),
+    ];
     const port = randomFreePort((p) => portBusy(p, list, ls) !== null);
     const others = db
       .select()
@@ -431,12 +516,19 @@ export class Cascades {
     const inbounds = await listInbounds(api);
     const rows = this.rows(eq(cascades.entryServerId, entryId));
     const geoRu = rows.some((r) => r.mode !== 'all') ? await this.geoRu(api) : false;
-    const plan: Plan = { outbounds: [], rules: [], renames: [], state: [] };
+    const plan: Plan = { inbounds: [], outbounds: [], rules: [], renames: [], state: [] };
+    // socks-inbound Telegram: путь работает вместе с каскадом, сломан - в блок
+    const telegram = (r: Row, ok: boolean) => {
+      if (!r.telegram || !r.telegramPort) return;
+      plan.inbounds.push(telegramInbound(r.id, r.telegramPort));
+      plan.rules.push(telegramRule(r.id, ok));
+    };
     for (const r of rows) {
       const inb = inbounds.find((i) => Number(i.id) === r.entryInboundId);
       const label = r.entryRemark || r.id;
       if (!inb) {
         plan.state.push({ id: r.id, label, error: 'inbound входа удалён в 3X-UI', port: null });
+        telegram(r, false);
         continue;
       }
       const st = {
@@ -481,9 +573,11 @@ export class Cascades {
         });
         plan.outbounds.push(ob, loopOutbound(r.id));
         plan.rules.push(...rules);
+        telegram(r, true);
       } catch (e) {
         st.error = (e as Error).message;
         if (tag) plan.rules.push(...blockedRules(r.id, tag));
+        telegram(r, false);
       }
       plan.state.push(st);
     }
@@ -528,7 +622,7 @@ export class Cascades {
         say(`Подпись inbound-а входа: ${r.remark}`);
       }
       const tpl = await this.readTemplate(api);
-      const next = mergeTemplate(tpl.xraySetting, plan.outbounds, plan.rules);
+      const next = mergeTemplate(tpl.xraySetting, plan.outbounds, plan.rules, plan.inbounds);
       if (ownParts(next) === ownParts(tpl.xraySetting)) {
         say('Шаблон Xray входа уже такой');
         return false;
@@ -539,7 +633,7 @@ export class Cascades {
         const fresh = await this.readTemplate(api).catch(() => tpl);
         await this.writeTemplate(form, {
           ...fresh,
-          xraySetting: mergeTemplate(fresh.xraySetting, old.outbounds, old.rules),
+          xraySetting: mergeTemplate(fresh.xraySetting, old.outbounds, old.rules, old.inbounds),
         });
       };
       say('Записываю шаблон Xray входа');
@@ -562,6 +656,149 @@ export class Cascades {
     });
   }
 
+  private saveTg(entryId: string, st: TgEntryState) {
+    putSetting(this.d.db, tgKey(entryId), JSON.stringify(st));
+  }
+
+  /** Свободный порт socks-inbound-а Telegram на входе (127.0.0.1, но не занятый никем). */
+  private async telegramPort(entryId: string): Promise<number> {
+    const list = await listInbounds(this.api(entryId));
+    const ls = this.server(entryId).statusCache?.inventory?.firewall.listeners ?? [];
+    const taken = new Set(
+      this.rows(eq(cascades.entryServerId, entryId)).map((r) => r.telegramPort),
+    );
+    return randomFreePort((p) => taken.has(p) || portBusy(p, list, ls) !== null);
+  }
+
+  /**
+   * Основной выход Telegram на входе - ровно один среди отмеченных: prefer (только что
+   * выбранный), иначе прежний, иначе самый старый каскад.
+   */
+  private normalizeMain(entryId: string, prefer?: string) {
+    const rows = this.rows(eq(cascades.entryServerId, entryId)).sort((a, b) =>
+      a.createdAt.localeCompare(b.createdAt),
+    );
+    const tg = rows.filter((r) => r.telegram);
+    const main =
+      tg.find((r) => r.id === prefer && r.telegramMain)?.id ??
+      tg.find((r) => r.telegramMain)?.id ??
+      tg[0]?.id;
+    for (const r of rows) {
+      const want = r.telegram && r.id === main;
+      if (r.telegramMain !== want)
+        this.d.db.update(cascades).set({ telegramMain: want }).where(eq(cascades.id, r.id)).run();
+    }
+  }
+
+  /**
+   * Маршруты MTProxyL входа по отметкам Telegram (lib/mtproxyl-upstreams.ts). Отметок нет и
+   * панель маршрутов не настраивала - ничего. Отметок не осталось - прежние маршруты MTProxyL
+   * возвращаются. Возвращает адреса выхода по проверенным маршрутам.
+   */
+  private async applyTelegram(
+    entryId: string,
+    say: Say,
+    tests: string[] = [],
+  ): Promise<Map<string, string>> {
+    const want = this.tgWant(entryId);
+    const st = this.tgState(entryId);
+    if (!want.length && !st.on) return new Map();
+    const hasMt = this.server(entryId).statusCache?.inventory?.services.some(
+      (x) => x.kind === 'mtproxyl',
+    );
+    // MTProxyL удалили: возвращать некуда
+    if (!want.length && !hasMt) {
+      deleteSetting(this.d.db, tgKey(entryId));
+      return new Map();
+    }
+    if (want.length) {
+      const avail = await this.telegramState(entryId);
+      if (!avail.available) {
+        this.saveTg(entryId, { on: st.on, error: avail.reason });
+        throw new Error(`Telegram: ${avail.reason}`);
+      }
+    }
+    say(
+      want.length
+        ? 'MTProxyL входа: маршруты в Telegram через выходы'
+        : 'MTProxyL входа: прежние маршруты в Telegram',
+    );
+    try {
+      const r = await runTelegramUpstreams(this.d.registry, entryId, {
+        want,
+        tests,
+        onLine: say,
+      });
+      if (want.length) this.saveTg(entryId, { on: true, error: null });
+      else deleteSetting(this.d.db, tgKey(entryId));
+      if (!r.changed) say('MTProxyL входа: маршруты уже такие');
+      return r.tests;
+    } catch (e) {
+      this.saveTg(entryId, { on: st.on || want.length > 0, error: (e as Error).message });
+      throw e;
+    }
+  }
+
+  /** Отличаются ли маршруты MTProxyL входа от отметок (сверка); сбой - в состояние входа. */
+  private async telegramDiff(entryId: string): Promise<boolean> {
+    const want = this.tgWant(entryId);
+    const st = this.tgState(entryId);
+    if (!want.length && !st.on) return false;
+    if (!this.server(entryId).statusCache?.inventory?.services.some((x) => x.kind === 'mtproxyl'))
+      return !want.length || st.error !== 'на сервере нет MTProxyL';
+    try {
+      return (await runTelegramUpstreams(this.d.registry, entryId, { want, check: true })).changed;
+    } catch (e) {
+      this.saveTg(entryId, { on: st.on, error: (e as Error).message });
+      return false;
+    }
+  }
+
+  /**
+   * Итог проверки пути Telegram по адресу из скрипта: адрес входа - значит, мимо выхода (у выхода
+   * бывает другой адрес наружу, поэтому сравнение - с входом, а не с выходом).
+   */
+  private saveTelegramCheck(cid: string, ip: string | undefined, error?: string) {
+    const entryHost = this.server(this.row(cid).entryServerId).host;
+    const leak = Boolean(ip) && ip === entryHost;
+    const telegramCheck: CascadeTelegramCheck = {
+      at: new Date().toISOString(),
+      ok: Boolean(ip) && !leak,
+      ip: ip || null,
+      error: leak
+        ? 'Telegram выходит с адреса этого сервера, а не выхода'
+        : ip
+          ? null
+          : (error ?? 'MTProxyL входа не дошёл до выхода через Xray входа'),
+    };
+    this.d.db.update(cascades).set({ telegramCheck }).where(eq(cascades.id, cid)).run();
+    return telegramCheck;
+  }
+
+  /**
+   * Telegram после записи шаблона: маршруты MTProxyL и проверка нового пути. Не вышло - отметка
+   * снимается (undo), шаблон и маршруты - как без неё, ошибка - дальше.
+   */
+  private async telegramStep(
+    entryId: string,
+    cid: string | null,
+    say: Say,
+    undo: () => void,
+  ): Promise<void> {
+    try {
+      const tests = await this.applyTelegram(entryId, say, cid ? [tgUpstreamName(cid)] : []);
+      if (cid) {
+        const tc = this.saveTelegramCheck(cid, tests.get(tgUpstreamName(cid)));
+        say(tc.ok ? `Telegram выходит через ${tc.ip}` : `Telegram: ${tc.error}`);
+      }
+    } catch (e) {
+      undo();
+      await this.apply(entryId, say).catch(() => undefined);
+      await this.applyTelegram(entryId, say).catch(() => undefined);
+      throw e;
+    }
+  }
+
   /**
    * Новый каскад (действие на входе): служебный клиент на выходе, inbound входа (с проверкой
    * Xray), шаблон. Сбой - созданное убирается. Клиенты панели попадают в inbound синхронизацией.
@@ -574,11 +811,21 @@ export class Cascades {
     const api = this.api(entryId);
     const form = this.form(entryId);
     await this.checkLists(entryId, [body.directList, body.exitList]);
+    if (body.telegram) {
+      const tg = await this.telegramState(entryId);
+      if (!tg.available) throw fail(409, `Telegram: ${tg.reason}`);
+    }
     let ok = false;
     return journal.background(
       entryId,
       'cascade:add',
-      { exit: body.exitServerId, inbound: body.exitInboundId, port: body.port, mode: body.mode },
+      {
+        exit: body.exitServerId,
+        inbound: body.exitInboundId,
+        port: body.port,
+        mode: body.mode,
+        ...(body.telegram ? { telegram: true } : {}),
+      },
       async (action) => {
         const say = (line: string) => action.stream('log', `${line}\n`);
         const exit = this.server(body.exitServerId);
@@ -587,7 +834,10 @@ export class Cascades {
         const st = await xrayState(api);
         if (st.state !== 'running')
           throw new Error(`Xray входа не работает (${st.state}): сначала нужно его запустить`);
-        const ls = this.server(entryId).statusCache?.inventory?.firewall.listeners ?? [];
+        const ls = [
+          ...(this.server(entryId).statusCache?.inventory?.firewall.listeners ?? []),
+          ...telegramListeners(db, entryId),
+        ];
         const busy = portBusy(body.port, await listInbounds(api), ls);
         if (busy) throw new Error(busy);
         const remark = entryRemark(exit.name);
@@ -615,6 +865,7 @@ export class Cascades {
           throw new Error(`Xray остановился после добавления inbound-а, он удалён: ${bad}`);
         }
         const id = newId();
+        const tgPort = body.telegram ? await this.telegramPort(entryId) : null;
         db.insert(cascades)
           .values({
             id,
@@ -628,14 +879,19 @@ export class Cascades {
             directList: body.directList,
             exitList: body.exitList,
             blockQuic: body.blockQuic,
+            telegram: Boolean(body.telegram),
+            telegramMain: Boolean(body.telegram && body.telegramMain),
+            telegramPort: tgPort,
           })
           .run();
+        if (body.telegram) this.normalizeMain(entryId, body.telegramMain ? id : undefined);
         try {
           await this.apply(entryId, say);
           const row = this.rows(eq(cascades.id, id))[0];
           if (row?.error) throw new Error(row.error);
         } catch (e) {
           db.delete(cascades).where(eq(cascades.id, id)).run();
+          this.normalizeMain(entryId);
           await this.apply(entryId, say).catch(() => undefined);
           await api('POST', `inbounds/del/${iid}`).catch(() => undefined);
           throw e;
@@ -644,6 +900,16 @@ export class Cascades {
         say('Проверка выхода');
         const check = await this.checkOne(id, form);
         say(check.ok ? `Выход отвечает, ${check.ms} мс` : `Выход не ответил: ${check.error}`);
+        if (body.telegram)
+          await this.telegramStep(entryId, id, say, () => {
+            db.update(cascades)
+              .set({ telegram: false, telegramMain: false, telegramPort: null })
+              .where(eq(cascades.id, id))
+              .run();
+            this.normalizeMain(entryId);
+          }).catch((e: Error) => {
+            throw new Error(`Каскад создан, но Telegram через него не настроен: ${e.message}`);
+          });
         say('Клиенты панели добавятся синхронизацией, подписки обновятся сами');
       },
       { after: () => ok && resyncXui(db, gc, entryId) },
@@ -672,11 +938,15 @@ export class Cascades {
     this.requireForm(row.entryServerId);
     const api = this.api(row.entryServerId);
     await this.checkLists(row.entryServerId, [change.directList, change.exitList]);
+    const tgOn = change.telegram ?? row.telegram;
+    if (change.telegram && !row.telegram) {
+      const tg = await this.telegramState(row.entryServerId);
+      if (!tg.available) throw fail(409, `Telegram: ${tg.reason}`);
+    }
+    const tgChanged =
+      (change.telegram !== undefined && change.telegram !== row.telegram) ||
+      (change.telegramMain !== undefined && tgOn && change.telegramMain !== row.telegramMain);
     const rowChanged = Object.keys(change).length > 0;
-    // откат - только изменённых полей: проверка и ошибка могли обновиться за время действия
-    const back = Object.fromEntries(
-      Object.keys(change).map((k) => [k, row[k as keyof Row]]),
-    ) as CascadeEdit;
     let linksChanged = false;
     return journal.background(
       row.entryServerId,
@@ -686,6 +956,8 @@ export class Cascades {
         ...(change.mode ? { mode: change.mode } : {}),
         ...(target ? { target, serverNames: serverNames?.length } : {}),
         ...(fingerprint ? { fingerprint } : {}),
+        ...(change.telegram !== undefined ? { telegram: change.telegram } : {}),
+        ...(change.telegramMain ? { telegramMain: true } : {}),
       },
       async (action) => {
         const say = (line: string) => action.stream('log', `${line}\n`);
@@ -738,13 +1010,48 @@ export class Cascades {
           }
         }
         if (rowChanged) {
-          db.update(cascades).set(change).where(eq(cascades.id, cid)).run();
+          const entryId = row.entryServerId;
+          // change - без undefined (given отфильтрован выше)
+          const set = { ...change } as Partial<Row>;
+          if (!tgOn) Object.assign(set, { telegramMain: false, telegramPort: null });
+          if (change.telegram === false) set.telegramCheck = null;
+          if (tgOn && !row.telegramPort) set.telegramPort = await this.telegramPort(entryId);
+          // откат - только изменённых полей: проверка и ошибка могли обновиться за время действия
+          const back = Object.fromEntries(
+            Object.keys(set).map((k) => [k, row[k as keyof Row]]),
+          ) as Partial<Row>;
+          const mains = this.rows(eq(cascades.entryServerId, entryId)).map(
+            (r) => [r.id, r.telegramMain] as const,
+          );
+          const restoreMains = () => {
+            for (const [id, telegramMain] of mains)
+              db.update(cascades).set({ telegramMain }).where(eq(cascades.id, id)).run();
+          };
+          const undo = () => {
+            db.update(cascades).set(back).where(eq(cascades.id, cid)).run();
+            restoreMains();
+          };
+          // сбой Telegram после записи шаблона: назад - только отметки, прочая правка уже стоит
+          const undoTelegram = () => {
+            db.update(cascades)
+              .set({
+                telegram: row.telegram,
+                telegramMain: row.telegramMain,
+                telegramPort: row.telegramPort,
+                telegramCheck: row.telegramCheck,
+              })
+              .where(eq(cascades.id, cid))
+              .run();
+            restoreMains();
+          };
+          db.update(cascades).set(set).where(eq(cascades.id, cid)).run();
+          if (tgChanged) this.normalizeMain(entryId, set.telegramMain ? cid : undefined);
           try {
             await this.apply(row.entryServerId, say);
             const now = this.rows(eq(cascades.id, cid))[0];
             if (now?.error) throw new Error(now.error);
           } catch (e) {
-            db.update(cascades).set(back).where(eq(cascades.id, cid)).run();
+            undo();
             await this.apply(row.entryServerId, say).catch(() => undefined);
             if (restore) {
               await restore();
@@ -752,6 +1059,12 @@ export class Cascades {
             }
             throw e;
           }
+          if (tgChanged)
+            await this.telegramStep(entryId, tgOn ? cid : null, say, undoTelegram).catch(
+              (e: Error) => {
+                throw new Error(`Telegram не настроен, отметки - как были: ${e.message}`);
+              },
+            );
           if (change.exitInboundId !== undefined && change.exitInboundId !== row.exitInboundId)
             await this.releaseExitClient(
               row.entryServerId,
@@ -814,15 +1127,26 @@ export class Cascades {
       async (action) => {
         const say = (line: string) => action.stream('log', `${line}\n`);
         say(`Каскад через ${exitName(row.exitServerId) || 'удалённый сервер'}: шаблон Xray входа`);
+        const mains = this.rows(eq(cascades.entryServerId, row.entryServerId)).map(
+          (r) => [r.id, r.telegramMain] as const,
+        );
         db.delete(cascades).where(eq(cascades.id, cid)).run();
+        this.normalizeMain(row.entryServerId);
         try {
           await this.apply(row.entryServerId, say);
         } catch (e) {
           db.insert(cascades).values(row).run();
+          for (const [id, telegramMain] of mains)
+            db.update(cascades).set({ telegramMain }).where(eq(cascades.id, id)).run();
           throw e;
         }
         ok = true;
         this.fails.delete(cid);
+        this.tgDown.delete(cid);
+        if (row.telegram)
+          await this.applyTelegram(row.entryServerId, say).catch((e: Error) =>
+            say(`MTProxyL входа не перенастроен (${e.message}): панель повторит плановой сверкой`),
+          );
         // нет порта - inbound входа уже удалён в 3X-UI
         if (row.entryInboundId && row.entryPort) {
           say(`Inbound входа, порт ${row.entryPort}`);
@@ -877,27 +1201,53 @@ export class Cascades {
     return check;
   }
 
-  /** Проверка по кнопке. */
-  check(cid: string): Promise<CascadeCheck> {
-    return this.checkOne(cid);
+  /** Проверка по кнопке; у каскада Telegram - ещё и путь MTProxyL входа через выход. */
+  async check(cid: string): Promise<CascadeCheck> {
+    const check = await this.checkOne(cid);
+    const r = this.row(cid);
+    if (r.telegram) {
+      const name = tgUpstreamName(cid);
+      try {
+        const res = await runTelegramUpstreams(this.d.registry, r.entryServerId, {
+          want: this.tgWant(r.entryServerId),
+          check: true,
+          tests: [name],
+        });
+        this.saveTelegramCheck(cid, res.tests.get(name));
+      } catch (e) {
+        this.saveTelegramCheck(cid, undefined, (e as Error).message);
+      }
+    }
+    return check;
   }
 
   /**
    * Плановая проверка каскадов, вход которых на связи и свободен (во время действия 3X-UI может
    * перезапускаться - ложная тревога); уведомления при смене состояния. Прогоны не накладываются.
+   * Каскад Telegram: первая неудача - сразу повторная проверка, две подряд - выход уходит из
+   * маршрутов MTProxyL (основным становится живой запасной), снова отвечает - возвращается;
+   * маршруты входа пересобираются сверкой.
    */
   async checkAll() {
     if (this.checking) return;
     this.checking = true;
+    const changed = new Set<string>();
     try {
       const { registry, db } = this.d;
       for (const r of this.rows()) {
         if (!registry.isOnline(r.entryServerId) || !registry.supports(r.entryServerId, 'xui.form'))
           continue;
         if (busyAction(db, r.entryServerId)) continue;
-        const c = await this.checkOne(r.id);
+        let c = await this.checkOne(r.id);
         if (!this.rows(eq(cascades.id, r.id)).length) continue;
         const f = this.fails.get(r.id) ?? { count: 0, notified: false };
+        if (!c.ok && r.telegram && f.count === 0) {
+          // один сбой testOutbound - не повод перестраивать Telegram: проверка ещё раз
+          await new Promise((res) => setTimeout(res, this.d.recheckMs ?? 20_000));
+          if (!this.rows(eq(cascades.id, r.id)).length) continue;
+          c = await this.checkOne(r.id);
+          if (!c.ok) f.count += 1;
+        }
         const exit = db
           .select({ name: servers.name })
           .from(servers)
@@ -907,15 +1257,25 @@ export class Cascades {
         if (c.ok) {
           if (f.notified) this.d.notify(r.entryServerId, `${title} снова работает`, true);
           this.fails.delete(r.id);
+          if (this.tgDown.delete(r.id)) changed.add(r.entryServerId);
           continue;
         }
         f.count += 1;
+        if (f.count >= FAILS_TO_NOTIFY && r.telegram && !this.tgDown.has(r.id)) {
+          this.tgDown.add(r.id);
+          changed.add(r.entryServerId);
+        }
         if (f.count >= FAILS_TO_NOTIFY && !f.notified) {
           f.notified = true;
-          this.d.notify(r.entryServerId, `${title} не работает: ${c.error ?? ''}`, false);
+          const tg = r.telegram
+            ? '; Telegram - через другие отмеченные выходы, если они отвечают'
+            : '';
+          this.d.notify(r.entryServerId, `${title} не работает: ${c.error ?? ''}${tg}`, false);
         }
         this.fails.set(r.id, f);
       }
+      // выход Telegram ушёл или вернулся - маршруты MTProxyL входа
+      for (const id of changed) await this.syncEntry(id).catch(() => undefined);
     } finally {
       this.checking = false;
     }
@@ -924,6 +1284,9 @@ export class Cascades {
   /** Плановая сверка шаблонов всех входов. */
   async syncAll() {
     const entries = new Set(this.rows().map((r) => r.entryServerId));
+    // каскадов на входе не осталось, а маршруты MTProxyL ещё не возвращены
+    for (const s of this.d.db.select({ id: servers.id }).from(servers).all())
+      if (this.tgState(s.id).on) entries.add(s.id);
     for (const id of entries) await this.syncEntry(id).catch(() => undefined);
     await this.sweepExits().catch(() => undefined);
   }
@@ -1019,18 +1382,20 @@ export class Cascades {
         this.saveState(plan.state);
         return (
           plan.renames.length > 0 ||
-          ownParts(mergeTemplate(tpl.xraySetting, plan.outbounds, plan.rules)) !==
+          ownParts(mergeTemplate(tpl.xraySetting, plan.outbounds, plan.rules, plan.inbounds)) !==
             ownParts(tpl.xraySetting)
         );
       });
-      if (!changed) return;
+      const tgChanged = await this.telegramDiff(entryId);
+      if (!changed && !tgChanged) return;
       await journal.quick(
         entryId,
         'cascade:sync',
         {},
         async () => {
           const notes: string[] = [];
-          await this.apply(entryId, (l) => notes.push(l));
+          if (changed) await this.apply(entryId, (l) => notes.push(l));
+          if (tgChanged) await this.applyTelegram(entryId, (l) => notes.push(l));
           return notes;
         },
         (n) => n.join('\n'),
@@ -1078,7 +1443,11 @@ export class Cascades {
     db.delete(cascades)
       .where(or(eq(cascades.entryServerId, serverId), eq(cascades.exitServerId, serverId)))
       .run();
-    for (const r of [...asEntry, ...asExit]) this.fails.delete(r.id);
+    for (const r of [...asEntry, ...asExit]) {
+      this.fails.delete(r.id);
+      this.tgDown.delete(r.id);
+    }
+    deleteSetting(db, tgKey(serverId));
     const jobs: Promise<unknown>[] = asEntry.map((r) =>
       this.releaseExitClient(serverId, r.exitServerId, r.exitInboundId),
     );

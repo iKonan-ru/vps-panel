@@ -6,7 +6,7 @@ import type { FastifyInstance, FastifyReply } from 'fastify';
 import type { AgentRegistry } from '../agents/registry.js';
 import type { Env } from '../config.js';
 import type { Db } from '../db/index.js';
-import { gclientBindings, gclientDevices, gclients, servers } from '../db/schema.js';
+import { cascades, gclientBindings, gclientDevices, gclients, servers } from '../db/schema.js';
 import type { AppReleases } from '../lib/apps.js';
 import { awgClientConfigs } from '../lib/awg-clients.js';
 import { awgTunnelNames } from '../lib/awg-config.js';
@@ -110,18 +110,36 @@ export async function personalRoutes(
     const devTitle = (d: (typeof devices)[number]) =>
       [deviceOf(d.type)?.title, d.name].filter(Boolean).join(': ') || 'устройство';
     // порядок разделов: прокси для Telegram, подписка, AWG, WDTT, OpenFlux
-    // MTProxy: прокси для Telegram на каждом сервере
+    // MTProxy: прокси для Telegram на каждом сервере; входы каскада Telegram (сами переходят на
+    // запасной выход) - сразу видны, остальные - свёрнутым списком
     const mt = rows.filter((r) => r.b.service === 'mtproxyl' && r.b.links.length);
     if (mt.length) {
-      let items = '';
-      for (const { b, s } of mt) {
+      const entries = new Set(
+        db
+          .select({ id: cascades.entryServerId })
+          .from(cascades)
+          .where(eq(cascades.telegram, true))
+          .all()
+          .map((r) => r.id),
+      );
+      const row = async ({ b, s }: (typeof mt)[number]) => {
         const tg = b.links.find((l) => l.startsWith('tg://')) ?? b.links[0] ?? '';
         const web = b.links.find((l) => l.startsWith('https://t.me/'));
-        items += `<div class="drow"><span class="name">${esc(serverTitle(s))}</span>${await linkBtn({ href: tg, label: 'Подключить', icon: 'send', copy: web ?? tg, qr: tg, primary: true, sm: true })}</div>`;
+        return `<div class="drow"><span class="name">${esc(serverTitle(s))}</span>${await linkBtn({ href: tg, label: 'Подключить', icon: 'send', copy: web ?? tg, qr: tg, primary: true, sm: true })}</div>`;
+      };
+      let top = '';
+      let items = '';
+      let n = 0;
+      for (const r of mt) {
+        if (entries.has(r.s.id)) top += await row(r);
+        else {
+          items += await row(r);
+          n++;
+        }
       }
       body += card(
         'Прокси для Telegram',
-        `<p class="hint">Нажмите \u00abПодключить\u00bb: Telegram предложит добавить прокси</p>${fold({ head: 'Серверы', n: mt.length, body: items })}`,
+        `<p class="hint">Нажмите \u00abПодключить\u00bb: Telegram предложит добавить прокси</p>${top ? `<div class="devblk">${top}</div>` : ''}${n ? fold({ head: top ? 'Другие серверы' : 'Серверы', n, body: items }) : ''}`,
       );
     }
     // VLESS: одна подписка на все серверы

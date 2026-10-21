@@ -5,6 +5,7 @@ import { z } from 'zod';
 import { servers } from '../db/schema.js';
 import { actionJournal } from '../lib/action-journal.js';
 import type { ServerRouteOpts } from '../lib/action-runners.js';
+import { telegramListeners } from '../lib/cascades.js';
 import { type GClients, resyncXui } from '../lib/gclients.js';
 import { MAX_CUSTOM, realityScan } from '../lib/reality-scan.js';
 import type { RuReach } from '../lib/ru-reach.js';
@@ -101,7 +102,10 @@ export async function xuiInboundRoutes(app: FastifyInstance, opts: Deps) {
   const listeners = (id: string) => {
     const row = db.select().from(servers).where(eq(servers.id, id)).get();
     if (!row) throw Object.assign(new Error('сервер не найден'), { statusCode: 404 });
-    return row.statusCache?.inventory?.firewall.listeners ?? [];
+    return [
+      ...(row.statusCache?.inventory?.firewall.listeners ?? []),
+      ...telegramListeners(db, id),
+    ];
   };
   /**
    * Клиенты панели - в inbound-ы сервера сейчас, не через 5 минут. Вызывается после окончания
