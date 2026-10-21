@@ -13,7 +13,7 @@ import { useLiveUpdates } from '@/lib/live';
 import { toggleTheme } from '@/lib/theme';
 import { useSlider } from '@/lib/use-slider';
 import { useQueryClient } from '@tanstack/react-query';
-import { Link, Outlet, useLocation, useNavigate } from '@tanstack/react-router';
+import { Link, Outlet, useLocation, useNavigate, useRouterState } from '@tanstack/react-router';
 import {
   FileText,
   LayoutGrid,
@@ -77,6 +77,9 @@ export function AppLayout({ login, name }: { login: string; name: string }) {
   const qc = useQueryClient();
   const navigate = useNavigate();
   const pathname = useLocation({ select: (l) => l.pathname });
+  // страница, которая уже на экране: пока грузится код новой, роутер держит старую, а адрес уже
+  // новый - проявление по адресу перемонтировало бы старую страницу (мерцание при первом переходе)
+  const shownPath = useRouterState({ select: (s) => (s.resolvedLocation ?? s.location).pathname });
   const version = usePanelVersion();
   // живые события панели - одна подписка на всё приложение
   useLiveUpdates();
@@ -264,7 +267,7 @@ export function AppLayout({ login, name }: { login: string; name: string }) {
           <TelegramBanner />
           {/* новая страница проявляется (только прозрачность: transform сломал бы fixed внутри) */}
           <div
-            key={pathname}
+            key={shownPath}
             className="flex min-w-0 animate-fade-in flex-col gap-5 [&>*]:shrink-0"
           >
             <Outlet />

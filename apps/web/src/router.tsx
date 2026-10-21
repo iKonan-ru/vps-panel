@@ -239,7 +239,33 @@ export const router = createRouter({
   routeTree,
   scrollRestoration: true,
   scrollToTopSelectors: ['window', `#${APP_SCROLL_ID}`],
+  // наведение на ссылку - код страницы грузится заранее
+  defaultPreload: 'intent',
 });
+
+/**
+ * Код страниц - заранее, как только браузер свободен: первый переход (после открытия или
+ * обновления страницы) идёт без ожидания загрузки, как следующие. Не загрузилось - загрузится при
+ * переходе, как раньше.
+ */
+const PRELOAD = [
+  ServerPage,
+  ClientsPage,
+  ClientPage,
+  ServicesPage,
+  SettingsPage,
+  LogPage,
+  CommandsPage,
+  AppsPage,
+  AccountPage,
+];
+function preloadPages() {
+  for (const page of PRELOAD) page.preload?.()?.catch(() => undefined);
+}
+// requestIdleCallback нет в Safari - там через полторы секунды после загрузки
+const idle = (window as Partial<Pick<Window, 'requestIdleCallback'>>).requestIdleCallback;
+if (typeof idle === 'function') window.requestIdleCallback(preloadPages, { timeout: 3000 });
+else setTimeout(preloadPages, 1500);
 
 declare module '@tanstack/react-router' {
   interface Register {
