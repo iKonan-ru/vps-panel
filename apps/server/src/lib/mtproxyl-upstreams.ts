@@ -1,3 +1,4 @@
+import type { TelegramBalance } from '@vps/protocol';
 import type { AgentRegistry } from '../agents/registry.js';
 import { newId } from './ids.js';
 
@@ -5,9 +6,11 @@ import { newId } from './ids.js';
 export const TG_UPSTREAM_PREFIX = 'vpc-';
 export const tgUpstreamName = (cascadeId: string) => `${TG_UPSTREAM_PREFIX}${cascadeId}`;
 
-/** Вес основного выхода и запасных: telemt выбирает среди живых маршрутов по весу. */
+/** Вес основного выхода и запасных: telemt выбирает маршрут на каждое соединение по весу. */
 export const TG_MAIN_WEIGHT = 100;
 export const TG_SPARE_WEIGHT = 1;
+/** Распределение поровну: у всех отвечающих выходов один вес. */
+export const TG_EVEN_WEIGHT = 10;
 
 export interface TgUpstream {
   name: string;
@@ -31,10 +34,12 @@ export interface TgRow {
  * как дошёл до выхода, и проверка маршрутов telemt мёртвый выход не видит. Каскады с ошибкой и
  * выходы из down (проверка панели не прошла) в маршруты не идут; основной (вес 100) - отмеченный
  * основным, если он жив, иначе самый старый из живых. Живых нет - все отмеченные: лучше нет.
+ * even - у всех оставшихся один вес: telemt раскладывает соединения поровну.
  */
 export function tgUpstreams(
   rows: readonly TgRow[],
   down: ReadonlySet<string> = new Set(),
+  balance: TelegramBalance = 'main',
 ): TgUpstream[] {
   const all = rows
     .filter((r) => r.telegram && r.telegramPort)
@@ -45,7 +50,8 @@ export function tgUpstreams(
   return use.map((r) => ({
     name: tgUpstreamName(r.id),
     port: Number(r.telegramPort),
-    weight: r.id === main?.id ? TG_MAIN_WEIGHT : TG_SPARE_WEIGHT,
+    weight:
+      balance === 'even' ? TG_EVEN_WEIGHT : r.id === main?.id ? TG_MAIN_WEIGHT : TG_SPARE_WEIGHT,
   }));
 }
 

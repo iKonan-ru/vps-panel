@@ -91,6 +91,11 @@ describe('маршруты MTProxyL каскада Telegram', () => {
     ]);
     // живых нет - все отмеченные, как есть
     expect(tgUpstreams(rows, new Set(['a', 'b', 'c']))).toHaveLength(3);
+    // поровну: у всех отвечающих один вес, не отвечающий - вне маршрутов
+    expect(tgUpstreams(rows, new Set(['c']), 'even').map((u) => [u.name, u.weight])).toEqual([
+      ['vpc-a', 10],
+      ['vpc-b', 10],
+    ]);
   });
 
   it('включение: свои маршруты, direct выключен, ME выключен, один перезапуск', () => {

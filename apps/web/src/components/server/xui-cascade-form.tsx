@@ -304,7 +304,7 @@ export function CascadeForm({
         onChange={(e) => setTg(e.target.checked)}
       />
       {/* основной снимается выбором другого основного: иначе им снова стал бы этот же */}
-      {tg && telegramOthers > 0 && !cascade?.telegramMain && (
+      {tg && telegramOthers > 0 && !cascade?.telegramMain && telegram?.balance !== 'even' && (
         <Checkbox
           label="Основной выход Telegram"
           hint={'остальные отмеченные выходы\u00a0\u2014 запасные, на случай отказа основного'}
