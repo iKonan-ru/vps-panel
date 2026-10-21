@@ -3,6 +3,7 @@ import {
   DndContext,
   type DragEndEvent,
   DragOverlay,
+  type DropAnimation,
   KeyboardSensor,
   PointerSensor,
   closestCenter,
@@ -21,6 +22,52 @@ import { CSS } from '@dnd-kit/utilities';
 import { GripVertical } from 'lucide-react';
 import { type ReactNode, useState } from 'react';
 import { createPortal } from 'react-dom';
+
+const DROP_MS = 220;
+const DROP_EASE = 'cubic-bezier(0.22, 1, 0.36, 1)';
+
+/**
+ * Возврат поднятого элемента на место после отпускания. Стандартная анимация dnd-kit меряет копию
+ * под пальцем по её содержимому - увеличенному и наклонённому - и ставит по левому верхнему углу:
+ * копия приезжала со сдвигом и в конце прыгала. Здесь: обёртка копии (без масштаба) едет точно на
+ * место строки, а сама копия за то же время теряет масштаб, наклон, тень и фон - в конце она
+ * совпадает со строкой пиксель в пиксель. Строка всё это время скрыта и появляется сразу, без
+ * плавного проявления (иначе мигает: копия пропала, строка ещё прозрачная).
+ */
+const dropAnimation: DropAnimation = ({ active, dragOverlay, transform }) => {
+  const row = active.node;
+  if (window.matchMedia?.('(prefers-reduced-motion: reduce)').matches) return;
+  const box = dragOverlay.node.getBoundingClientRect();
+  const final = {
+    ...transform,
+    x: transform.x - (box.left - active.rect.left),
+    y: transform.y - (box.top - active.rect.top),
+    scaleX: 1,
+    scaleY: 1,
+  };
+  const opts = { duration: DROP_MS, easing: DROP_EASE, fill: 'forwards' as const };
+  const lifted = dragOverlay.node.firstElementChild;
+  if (lifted instanceof HTMLElement) {
+    lifted.animate(
+      { scale: '1', rotate: '0deg', boxShadow: 'none', backgroundColor: 'transparent' },
+      opts,
+    );
+  }
+  row.style.opacity = '0';
+  const move = dragOverlay.node.animate(
+    [
+      { transform: CSS.Transform.toString(transform) },
+      { transform: CSS.Transform.toString(final) },
+    ],
+    opts,
+  );
+  return new Promise<void>((resolve) => {
+    move.onfinish = () => {
+      row.style.opacity = '';
+      resolve();
+    };
+  });
+};
 
 /** Список с перетаскиванием за ручку; children получает элемент и ручку для разметки строки. */
 export function SortableList<T>({
@@ -69,10 +116,10 @@ export function SortableList<T>({
         ))}
       </SortableContext>
       {createPortal(
-        <DragOverlay>
+        <DragOverlay dropAnimation={dropAnimation}>
           {active !== undefined && (
             // поднятый элемент: чуть крупнее, с тенью и лёгким наклоном - видно, что он "в руке"
-            <div className="rotate-[0.6deg] scale-[1.02] rounded-lg bg-surface shadow-2xl ring-1 ring-accent/40 transition-transform">
+            <div className="rotate-[0.6deg] scale-[1.02] rounded-lg bg-surface shadow-2xl ring-1 ring-accent/40">
               {children(active, <Grip />, activeIndex)}
             </div>
           )}
@@ -125,7 +172,8 @@ function SortableItem({
     <div
       ref={setNodeRef}
       style={{ transform: CSS.Translate.toString(transform), transition }}
-      className={cn('transition-opacity duration-200', isDragging && 'opacity-30')}
+      // без плавной смены прозрачности: после отпускания строка должна появиться сразу
+      className={cn(isDragging && 'opacity-30')}
     >
       {children(handle)}
     </div>
