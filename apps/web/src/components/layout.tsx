@@ -77,9 +77,18 @@ export function AppLayout({ login, name }: { login: string; name: string }) {
   const qc = useQueryClient();
   const navigate = useNavigate();
   const pathname = useLocation({ select: (l) => l.pathname });
-  // страница, которая уже на экране: пока грузится код новой, роутер держит старую, а адрес уже
-  // новый - проявление по адресу перемонтировало бы старую страницу (мерцание при первом переходе)
-  const shownPath = useRouterState({ select: (s) => (s.resolvedLocation ?? s.location).pathname });
+  // Ключ страницы для проявления. Страница - та, что уже на экране: пока грузится код новой,
+  // роутер держит старую, а адрес уже новый - ключ по адресу перемонтировал бы старую страницу
+  // (мерцание при первом переходе). Вкладки сервера (/servers/<id>/<вкладка>) - одна страница:
+  // шапка сервера общая для всех вкладок и не проявляется заново (вкладка - сама, в server.tsx).
+  const shownPath = useRouterState({
+    select: (s) => {
+      const leaf = s.matches[s.matches.length - 1];
+      if (leaf?.routeId === '/app/servers/$id/$tab' || leaf?.routeId === '/app/servers/$id')
+        return `/servers/${leaf.params.id}`;
+      return (s.resolvedLocation ?? s.location).pathname;
+    },
+  });
   const version = usePanelVersion();
   // живые события панели - одна подписка на всё приложение
   useLiveUpdates();
