@@ -8,7 +8,7 @@ type Size = 'md' | 'sm' | 'icon' | 'icon-sm';
 // выпуклые кнопки при наведении приподнимаются (тень глубже - в gloss-button/gloss-primary)
 const lift = 'not-disabled:hover:-translate-y-px not-disabled:active:translate-y-0';
 const variants: Record<Variant, string> = {
-  default: `gloss-button border border-border bg-surface-2 text-text hover:bg-border/60 ${lift}`,
+  default: `gloss-button border border-border bg-surface-2 text-text hover:bg-track/60 ${lift}`,
   primary: `gloss-primary border border-accent bg-accent text-white hover:brightness-110 ${lift}`,
   danger: `gloss-button border border-bad/40 bg-surface-2 text-bad hover:bg-bad/10 ${lift}`,
   ghost: 'border border-transparent bg-transparent text-muted hover:bg-surface-2 hover:text-text',

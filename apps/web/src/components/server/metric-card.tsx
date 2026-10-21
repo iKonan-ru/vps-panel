@@ -30,7 +30,7 @@ export function MetricCard({
   children?: ReactNode;
 }) {
   const p = pct == null ? null : Math.max(0, Math.min(100, pct));
-  const bar = p == null ? 'bg-border' : p >= 90 ? 'bg-bad' : p >= 70 ? 'bg-warn' : 'bg-ok';
+  const bar = p == null ? 'bg-track' : p >= 90 ? 'bg-bad' : p >= 70 ? 'bg-warn' : 'bg-ok';
   return (
     <Card className="flex min-w-0 flex-col p-3 md:p-4">
       <div className="flex min-h-5 items-center gap-2 text-xs text-muted">

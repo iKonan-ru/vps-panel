@@ -98,7 +98,7 @@ export function SyncPanel() {
             </div>
             <Meter
               pct={pct}
-              className="mt-1.5 h-1.5 w-full bg-border"
+              className="mt-1.5 h-1.5 w-full bg-track"
               fill={p.errors ? 'bg-warn' : 'bg-ok'}
             />
             {((!p.finished && p.current) || p.last.length > 0) && (

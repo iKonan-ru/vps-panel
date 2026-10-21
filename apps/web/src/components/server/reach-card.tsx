@@ -76,7 +76,7 @@ function RttBars({ slots, picked }: { slots: ReachSlot[]; picked: number | null 
             <span
               className={cn(
                 'block w-full rounded-sm',
-                s.rtt !== null ? 'bg-accent/60' : 'bg-border',
+                s.rtt !== null ? 'bg-accent/60' : 'bg-track',
               )}
               style={{ height: s.rtt !== null ? `${Math.max(8, (s.rtt / top) * 100)}%` : '8%' }}
             />
@@ -91,7 +91,7 @@ function Bar({ s, className }: { s: ReachSlot; className?: string }) {
   const lv = s.percent === null ? null : (reachLevel(s.percent) ?? 'bad');
   return (
     <span
-      className={cn('block rounded-sm', lv ? barColor[lv] : 'bg-border', className)}
+      className={cn('block rounded-sm', lv ? barColor[lv] : 'bg-track', className)}
       style={{ height: s.percent === null ? '12%' : `${Math.max(12, s.percent)}%` }}
     />
   );

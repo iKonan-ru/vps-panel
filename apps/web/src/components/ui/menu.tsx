@@ -138,7 +138,7 @@ export function Menu({
           size: trigger ? size : size === 'sm' ? 'icon-sm' : 'icon',
           className: cn(
             !trigger && size === 'sm' && 'h-7.5 w-7.5',
-            open && 'bg-border/60',
+            open && 'bg-track/60',
             className,
           ),
         })}

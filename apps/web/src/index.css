@@ -8,7 +8,10 @@
   --bg: #f5f6f8;
   --surface: #ffffff;
   --surface-2: #eef0f3;
-  --border: #d9dee6;
+  /* рамка полупрозрачная: на полупрозрачных карточках она берёт оттенок фона под ними */
+  --border: rgb(28 30 33 / 0.1);
+  /* дорожки шкал и переключателей, подсветка наведения: плотный цвет, не зависит от фона */
+  --track: #d9dee6;
   --text: #1c1e21;
   --muted: #5f6975;
   --accent: #2f6fe4;
@@ -25,11 +28,9 @@
   --logo-bg-2: #d3e0f8;
   --logo-line: #2f6fe4;
   --logo-dot: #1f9d6a;
-  /* glossy: подсветка фона за стеклом, стекло, блик по верхней кромке, тень карточек */
-  --glow-1: rgb(47 111 228 / 0.16);
-  --glow-2: rgb(31 157 106 / 0.1);
-  --glow-3: rgb(108 63 204 / 0.08);
-  --card: rgb(255 255 255 / 0.78);
+  /* glossy: подсветка фона у верхнего края, стекло, блик по верхней кромке, тень карточек */
+  --glow: rgb(47 111 228 / 0.13);
+  --card: rgb(255 255 255 / 0.42);
   --glass: rgb(255 255 255 / 0.72);
   --glass-strong: rgb(255 255 255 / 0.9);
   --glass-border: rgb(28 30 33 / 0.08);
@@ -45,7 +46,8 @@
   --bg: #0f1115;
   --surface: #161a20;
   --surface-2: #1c2129;
-  --border: #2a313c;
+  --border: rgb(255 255 255 / 0.09);
+  --track: #2a313c;
   --text: #e8eaed;
   --muted: #9aa4b2;
   --accent: #4f8cff;
@@ -59,10 +61,8 @@
   --logo-bg-2: #0f1115;
   --logo-line: #4f8cff;
   --logo-dot: #3ecf8e;
-  --glow-1: rgb(79 140 255 / 0.26);
-  --glow-2: rgb(62 207 142 / 0.1);
-  --glow-3: rgb(169 133 255 / 0.12);
-  --card: rgb(22 26 32 / 0.72);
+  --glow: rgb(79 140 255 / 0.2);
+  --card: rgb(30 36 48 / 0.32);
   --glass: rgb(22 26 32 / 0.58);
   --glass-strong: rgb(24 28 35 / 0.78);
   --glass-border: rgb(255 255 255 / 0.08);
@@ -78,9 +78,11 @@
 /*
  * Glossy. glass - матовое стекло (шапка, меню, окна): полупрозрачный фон с размытием того, что
  * под ним; glass-strong - плотнее, для всплывающего поверх содержимого. gloss - карточка:
- * полупрозрачная поверх плавной подсветки фона (без размытия - оно там не нужно и дорого на
- * телефоне), блик по верхней кромке и мягкая тень. gloss-button/gloss-primary - выпуклые кнопки. gloss-fill -
- * блик на заливке шкал. glossy-dot - выпуклая точка состояния со свечением её цвета.
+ * сильно прозрачная, чтобы подсветка фона проступала сквозь неё и карточка была в тон фону, блик
+ * по верхней кромке и мягкая тень. Размытия у карточки нет: фон под ней плавный, размытие его не
+ * меняет, а на телефоне со многими карточками оно дорогое. gloss-button/gloss-primary -
+ * выпуклые кнопки. gloss-fill - блик на заливке шкал. glossy-dot - выпуклая точка состояния со
+ * свечением её цвета.
  */
 @utility glass {
   background-color: var(--glass);
@@ -144,6 +146,7 @@
   --color-surface: var(--surface);
   --color-surface-2: var(--surface-2);
   --color-border: var(--border);
+  --color-track: var(--track);
   --color-text: var(--text);
   --color-muted: var(--muted);
   --color-accent: var(--accent);
@@ -267,10 +270,15 @@ body,
 }
 body {
   margin: 0;
-  /* мягкая цветная подсветка по углам: стеклу шапки и меню есть что размывать */
-  background: radial-gradient(1100px 700px at 100% -10%, var(--glow-1), transparent 60%),
-    radial-gradient(700px 500px at -5% 0%, var(--glow-3), transparent 65%),
-    radial-gradient(900px 600px at 30% 115%, var(--glow-2), transparent 60%), var(--bg);
+  /*
+   * мягкая подсветка у верхнего края (стеклу шапки есть что размывать), ниже - ровный фон. Размер
+   * зависит от экрана: на телефоне подсветка не заливает весь экран.
+   */
+  background: radial-gradient(
+      min(1100px, 130vw) min(560px, 48vh) at 70% -12%,
+      var(--glow),
+      transparent 70%
+    ), var(--bg);
   color: var(--text);
   font-family: var(--font-sans);
   font-size: 14px;
