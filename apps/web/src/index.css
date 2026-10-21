@@ -30,7 +30,7 @@
   --logo-dot: #1f9d6a;
   /* glossy: подсветка фона у верхнего края, стекло, блик по верхней кромке, тень карточек */
   --glow: rgb(47 111 228 / 0.13);
-  --card: rgb(255 255 255 / 0.42);
+  --card: rgb(255 255 255 / 0.34);
   --glass: rgb(255 255 255 / 0.72);
   --glass-strong: rgb(255 255 255 / 0.9);
   --glass-border: rgb(28 30 33 / 0.08);
@@ -62,7 +62,7 @@
   --logo-line: #4f8cff;
   --logo-dot: #3ecf8e;
   --glow: rgb(79 140 255 / 0.2);
-  --card: rgb(30 36 48 / 0.32);
+  --card: rgb(30 36 48 / 0.25);
   --glass: rgb(22 26 32 / 0.58);
   --glass-strong: rgb(24 28 35 / 0.78);
   --glass-border: rgb(255 255 255 / 0.08);

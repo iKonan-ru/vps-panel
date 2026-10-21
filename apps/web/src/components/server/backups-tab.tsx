@@ -191,7 +191,7 @@ export function BackupsTab({ s }: { s: ServerDetail }) {
                 <span className="text-xs text-muted">{bytes(b.size)}</span>
               </div>
               <div className="flex flex-wrap gap-1">{components(b)}</div>
-              <div className="-ml-2 flex gap-1">{backupActions(b)}</div>
+              <div className="mt-1 flex gap-1">{backupActions(b)}</div>
             </div>
           ))}
           {mine.length === 0 && (

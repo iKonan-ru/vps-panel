@@ -348,7 +348,7 @@ function MobileList({ groups, ...actions }: ActionProps & { groups: Map<string, 
                 )}
                 {c.memMb !== undefined && <span>{Math.round(c.memMb)} МБ</span>}
               </div>
-              <ContainerActions c={c} {...actions} className="-ml-2" />
+              <ContainerActions c={c} {...actions} className="mt-1" />
             </div>
           ))}
         </div>
