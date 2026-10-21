@@ -62,7 +62,7 @@ export function Tabs<T extends string>({
         <span
           aria-hidden="true"
           className={cn(
-            'pointer-events-none absolute bottom-0 h-0.5 rounded-full bg-accent',
+            'pointer-events-none absolute bottom-0 h-0.5 rounded-full bg-accent shadow-[0_0_8px_var(--accent)]',
             line.animate &&
               'transition-[left,width] duration-300 ease-[cubic-bezier(0.22,1,0.36,1)] motion-reduce:transition-none',
           )}

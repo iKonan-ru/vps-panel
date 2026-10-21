@@ -25,7 +25,7 @@ export function Chip({ className, tone = 'muted', dot, pulse, children, ...rest 
   return (
     <span
       className={cn(
-        'inline-flex shrink-0 items-center gap-1.5 whitespace-nowrap rounded-full px-2.5 py-0.5 text-xs font-medium leading-[18px] transition-colors duration-300',
+        'inline-flex shrink-0 items-center gap-1.5 whitespace-nowrap rounded-full px-2.5 py-0.5 text-xs font-medium leading-[18px] shadow-[inset_0_1px_0_var(--gloss-hi)] transition-colors duration-300',
         tones[tone],
         className,
       )}
@@ -33,7 +33,10 @@ export function Chip({ className, tone = 'muted', dot, pulse, children, ...rest 
     >
       {dot && (
         <span
-          className={cn('size-2 shrink-0 rounded-full bg-current', pulse && 'animate-pulse')}
+          className={cn(
+            'glossy-dot size-2 shrink-0 rounded-full bg-current',
+            pulse && 'animate-pulse',
+          )}
           aria-hidden="true"
         />
       )}

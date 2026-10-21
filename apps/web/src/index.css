@@ -25,6 +25,20 @@
   --logo-bg-2: #d3e0f8;
   --logo-line: #2f6fe4;
   --logo-dot: #1f9d6a;
+  /* glossy: подсветка фона за стеклом, стекло, блик по верхней кромке, тень карточек */
+  --glow-1: rgb(47 111 228 / 0.16);
+  --glow-2: rgb(31 157 106 / 0.1);
+  --glow-3: rgb(108 63 204 / 0.08);
+  --card: rgb(255 255 255 / 0.78);
+  --glass: rgb(255 255 255 / 0.72);
+  --glass-strong: rgb(255 255 255 / 0.9);
+  --glass-border: rgb(28 30 33 / 0.08);
+  --gloss-hi: rgb(255 255 255 / 0.95);
+  --gloss-top: rgb(255 255 255 / 0);
+  --gloss-btn: rgb(255 255 255 / 0.85);
+  --shadow-card: 0 1px 2px rgb(16 24 40 / 0.06), 0 8px 24px -10px rgb(16 24 40 / 0.16);
+  --shadow-btn: 0 1px 2px rgb(16 24 40 / 0.1);
+  --well: inset 0 1px 2px rgb(16 24 40 / 0.12);
   color-scheme: light;
 }
 .dark {
@@ -45,7 +59,62 @@
   --logo-bg-2: #0f1115;
   --logo-line: #4f8cff;
   --logo-dot: #3ecf8e;
+  --glow-1: rgb(79 140 255 / 0.26);
+  --glow-2: rgb(62 207 142 / 0.1);
+  --glow-3: rgb(169 133 255 / 0.12);
+  --card: rgb(22 26 32 / 0.72);
+  --glass: rgb(22 26 32 / 0.58);
+  --glass-strong: rgb(24 28 35 / 0.78);
+  --glass-border: rgb(255 255 255 / 0.08);
+  --gloss-hi: rgb(255 255 255 / 0.1);
+  --gloss-top: rgb(255 255 255 / 0.05);
+  --gloss-btn: rgb(255 255 255 / 0.08);
+  --shadow-card: 0 1px 0 rgb(0 0 0 / 0.35), 0 10px 28px -12px rgb(0 0 0 / 0.55);
+  --shadow-btn: 0 1px 2px rgb(0 0 0 / 0.45);
+  --well: inset 0 1px 2px rgb(0 0 0 / 0.45);
   color-scheme: dark;
+}
+
+/*
+ * Glossy. glass - матовое стекло (шапка, меню, окна): полупрозрачный фон с размытием того, что
+ * под ним; glass-strong - плотнее, для всплывающего поверх содержимого. gloss - карточка:
+ * полупрозрачная поверх плавной подсветки фона (без размытия - оно там не нужно и дорого на
+ * телефоне), блик по верхней кромке и мягкая тень. gloss-button/gloss-primary - выпуклые кнопки. gloss-fill -
+ * блик на заливке шкал. glossy-dot - выпуклая точка состояния со свечением её цвета.
+ */
+@utility glass {
+  background-color: var(--glass);
+  border-color: var(--glass-border);
+  backdrop-filter: blur(20px) saturate(1.6);
+}
+@utility glass-strong {
+  background-color: var(--glass-strong);
+  border-color: var(--glass-border);
+  backdrop-filter: blur(24px) saturate(1.6);
+}
+@utility gloss {
+  background-color: var(--card);
+  background-image: linear-gradient(180deg, var(--gloss-top), transparent 120px);
+  box-shadow: inset 0 1px 0 var(--gloss-hi), var(--shadow-card);
+}
+@utility gloss-button {
+  background-image: linear-gradient(180deg, var(--gloss-btn), transparent);
+  box-shadow: inset 0 1px 0 var(--gloss-hi), var(--shadow-btn);
+}
+@utility gloss-primary {
+  background-image: linear-gradient(180deg, rgb(255 255 255 / 0.24), rgb(255 255 255 / 0) 60%);
+  box-shadow: inset 0 1px 0 rgb(255 255 255 / 0.35), 0 1px 2px rgb(0 0 0 / 0.25), 0 4px 14px -4px
+    color-mix(in srgb, var(--accent) 60%, transparent);
+}
+@utility gloss-fill {
+  background-image: linear-gradient(180deg, rgb(255 255 255 / 0.45), rgb(255 255 255 / 0) 70%);
+}
+@utility well {
+  box-shadow: var(--well);
+}
+@utility glossy-dot {
+  background-image: radial-gradient(circle at 35% 30%, rgb(255 255 255 / 0.7), transparent 60%);
+  box-shadow: 0 0 6px color-mix(in srgb, currentColor 60%, transparent);
 }
 
 @theme inline {
@@ -112,7 +181,10 @@ body,
 }
 body {
   margin: 0;
-  background: var(--bg);
+  /* мягкая цветная подсветка по углам: стеклу шапки и меню есть что размывать */
+  background: radial-gradient(1100px 700px at 100% -10%, var(--glow-1), transparent 60%),
+    radial-gradient(700px 500px at -5% 0%, var(--glow-3), transparent 65%),
+    radial-gradient(900px 600px at 30% 115%, var(--glow-2), transparent 60%), var(--bg);
   color: var(--text);
   font-family: var(--font-sans);
   font-size: 14px;

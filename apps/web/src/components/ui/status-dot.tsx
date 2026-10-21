@@ -21,7 +21,7 @@ export function StatusDot({
       title={label}
       className={cn(
         'inline-block size-2.5 shrink-0 rounded-full border-2',
-        !enabled ? 'border-muted' : online ? 'border-ok bg-ok' : 'border-ok',
+        !enabled ? 'border-muted' : online ? 'glossy-dot border-ok bg-ok text-ok' : 'border-ok',
         className,
       )}
     />

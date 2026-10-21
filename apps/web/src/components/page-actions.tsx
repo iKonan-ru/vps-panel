@@ -1,6 +1,7 @@
 import { MobileActions } from '@/components/mobile-actions';
 import { Button, ButtonLink } from '@/components/ui/button';
 import { Menu, type MenuItem } from '@/components/ui/menu';
+import { useFit } from '@/lib/use-fit';
 import type { LinkProps } from '@tanstack/react-router';
 import { type LucideIcon, Plus } from 'lucide-react';
 import type { ReactNode } from 'react';
@@ -18,7 +19,7 @@ export interface PageAction {
 /**
  * Действия страницы-списка (серверы, клиенты) - одинаково на всех таких страницах. Широкий экран:
  * в шапке страницы поиск или фильтры (переключатель блока под шапкой), "Добавить" и прочие
- * кнопки. Узкий: те же поиск и "Добавить" - значками в верхней плашке, прочее - в её меню.
+ * кнопки; прочие, что не поместились в ширину, - в меню "Ещё" в конце ряда. Узкий: те же поиск и "Добавить" - значками в верхней плашке, прочее - в её меню.
  */
 export function PageActions({
   find,
@@ -84,23 +85,55 @@ export function PageActions({
     ...(a.disabled !== undefined ? { disabled: a.disabled } : {}),
     title: a.title,
   }));
+  // поиск и "Добавить" - в ряду всегда; кнопка меню (h-7.5) и отступ gap-2
+  const fixed = (find ? 1 : 0) + 1;
+  const { row, measure, fit, full } = useFit(fixed + more.length, 30 + 8, fixed);
+  const moreButton = (a: PageAction) => (
+    <Button
+      key={a.key}
+      size="sm"
+      disabled={a.disabled}
+      title={a.title ?? a.label}
+      onClick={a.onClick}
+    >
+      {a.icon}
+      {a.label}
+    </Button>
+  );
   return (
     <>
-      <div className="flex items-center gap-2 max-md:hidden">
+      {/* не шире строки шапки: переносится на свою строку, лишнее уходит в меню */}
+      <div
+        ref={row}
+        style={full !== undefined ? { width: full } : undefined}
+        className="relative flex min-w-0 max-w-full items-center gap-2 max-md:hidden"
+      >
         {findButton(false)}
         {addButton(false)}
-        {more.map((a) => (
-          <Button
-            key={a.key}
-            size="sm"
-            disabled={a.disabled}
-            title={a.title ?? a.label}
-            onClick={a.onClick}
-          >
-            {a.icon}
-            {a.label}
-          </Button>
-        ))}
+        {more.slice(0, fit - fixed).map(moreButton)}
+        {fit - fixed < more.length && <Menu items={items.slice(fit - fixed)} />}
+        {/* невидимая копия ряда целиком: по ней видно, сколько кнопок помещается */}
+        <div
+          aria-hidden="true"
+          inert
+          className="pointer-events-none invisible absolute top-0 left-0 h-0 w-0 overflow-hidden"
+        >
+          <div ref={measure} className="flex w-max items-center gap-2">
+            {find && (
+              <span data-fit className="flex">
+                {findButton(false)}
+              </span>
+            )}
+            <span data-fit className="flex">
+              {addButton(false)}
+            </span>
+            {more.map((a) => (
+              <span key={a.key} data-fit className="flex">
+                {moreButton(a)}
+              </span>
+            ))}
+          </div>
+        </div>
       </div>
       <MobileActions>
         {findButton(true)}

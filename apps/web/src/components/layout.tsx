@@ -102,7 +102,7 @@ export function AppLayout({ login, name }: { login: string; name: string }) {
     <div className="flex h-full">
       <aside
         className={cn(
-          'hidden h-full shrink-0 flex-col gap-1.5 border-r border-border bg-surface transition-[width] duration-150 md:flex',
+          'glass hidden h-full shrink-0 flex-col gap-1.5 border-r transition-[width] duration-150 md:flex',
           collapsed ? 'w-[64px] p-2.5' : 'w-[232px] p-3.5',
         )}
       >
@@ -145,9 +145,11 @@ export function AppLayout({ login, name }: { login: string; name: string }) {
             to={n.to}
             title={collapsed ? n.label : undefined}
             className={cn(
-              'flex h-9.5 items-center gap-2.5 rounded-lg text-sm hover:bg-surface-2 hover:text-text',
+              'flex h-9.5 items-center gap-2.5 rounded-lg border text-sm hover:bg-surface-2/70 hover:text-text',
               collapsed ? 'justify-center px-0' : 'px-2.5',
-              isActive(n.to, pathname) ? 'bg-surface-2 text-text' : 'text-muted',
+              isActive(n.to, pathname)
+                ? 'gloss-button border-border bg-surface-2 text-text [&>svg]:text-accent'
+                : 'border-transparent text-muted',
             )}
           >
             {n.icon}
@@ -157,13 +159,13 @@ export function AppLayout({ login, name }: { login: string; name: string }) {
         <div className="grow" />
         <div
           className={cn(
-            'flex items-center gap-2 rounded-lg border-t border-border pt-2.5',
+            'flex items-center gap-2 rounded-lg border-t border-[var(--glass-border)] pt-2.5',
             collapsed ? 'flex-col' : '',
           )}
         >
           <Link
             to="/account"
-            className="flex size-8 shrink-0 items-center justify-center rounded-full bg-surface-2 text-[13px] font-semibold uppercase hover:ring-1 hover:ring-accent"
+            className="gloss-button flex size-8 shrink-0 items-center justify-center rounded-full bg-surface-2 text-[13px] font-semibold uppercase hover:ring-1 hover:ring-accent"
             title={`${name === login ? login : `${name} (${login})`}: аккаунт`}
             aria-label="Аккаунт"
           >
@@ -218,7 +220,7 @@ export function AppLayout({ login, name }: { login: string; name: string }) {
       <main className="flex min-w-0 grow flex-col">
         {/* в верхнюю плашку на узком экране - порталы Breadcrumbs и MobileActions */}
         {/* высота - 56px плюс вырез сверху (PWA на iPhone): иначе отступ съедает высоту плашки */}
-        <header className="fixed inset-x-0 top-0 z-20 flex h-[calc(56px+env(safe-area-inset-top))] items-center gap-2 border-b border-border bg-surface px-4 pt-[env(safe-area-inset-top)] md:hidden">
+        <header className="fixed inset-x-0 top-0 z-20 flex h-[calc(56px+env(safe-area-inset-top))] items-center gap-2 border-b glass px-4 pt-[env(safe-area-inset-top)] md:hidden">
           <Link to="/" aria-label="На главную" className="inline-flex">
             <Logo size={26} />
           </Link>
@@ -241,7 +243,7 @@ export function AppLayout({ login, name }: { login: string; name: string }) {
       </main>
 
       <nav
-        className="fixed inset-x-0 bottom-0 z-20 flex border-t border-border bg-surface pb-[env(safe-area-inset-bottom)] md:hidden"
+        className="glass fixed inset-x-0 bottom-0 z-20 flex border-t pb-[env(safe-area-inset-bottom)] md:hidden"
         aria-label="Разделы"
       >
         {nav
@@ -254,7 +256,7 @@ export function AppLayout({ login, name }: { login: string; name: string }) {
               className={cn(
                 'relative flex h-14 flex-1 flex-col items-center justify-center gap-1 text-[11px]',
                 isActive(n.to, pathname) && !more
-                  ? 'font-medium text-accent before:absolute before:inset-x-5 before:top-0 before:h-0.5 before:rounded-full before:bg-accent'
+                  ? 'font-medium text-accent before:absolute before:inset-x-5 before:top-0 before:h-0.5 before:rounded-full before:bg-accent before:shadow-[0_0_8px_var(--accent)]'
                   : 'text-muted',
               )}
             >
@@ -268,7 +270,7 @@ export function AppLayout({ login, name }: { login: string; name: string }) {
           className={cn(
             'relative flex h-14 flex-1 flex-col items-center justify-center gap-1 text-[11px]',
             more || nav.some((n) => n.more && isActive(n.to, pathname))
-              ? 'font-medium text-accent before:absolute before:inset-x-5 before:top-0 before:h-0.5 before:rounded-full before:bg-accent'
+              ? 'font-medium text-accent before:absolute before:inset-x-5 before:top-0 before:h-0.5 before:rounded-full before:bg-accent before:shadow-[0_0_8px_var(--accent)]'
               : 'text-muted',
           )}
           onClick={() => setMore(!more)}
@@ -302,7 +304,7 @@ export function AppLayout({ login, name }: { login: string; name: string }) {
             className="flex min-w-0 grow items-center gap-3"
             aria-label="Аккаунт"
           >
-            <div className="flex size-10 shrink-0 items-center justify-center rounded-full bg-surface-2 text-sm font-semibold uppercase">
+            <div className="gloss-button flex size-10 shrink-0 items-center justify-center rounded-full bg-surface-2 text-sm font-semibold uppercase">
               {initials(name)}
             </div>
             <div className="min-w-0 grow">

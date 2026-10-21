@@ -147,7 +147,7 @@ export function Menu({
             onKeyDown={onKey}
             style={{ top: pos?.top ?? -9999, left: pos?.left ?? -9999, width: WIDTH }}
             className={cn(
-              'fixed z-50 flex animate-pop-in flex-col rounded-xl border border-border bg-surface p-1 shadow-lg',
+              'glass-strong fixed z-50 flex animate-pop-in flex-col rounded-xl border p-1 shadow-xl',
               !pos && 'invisible',
             )}
           >

@@ -6,9 +6,9 @@ type Variant = 'default' | 'primary' | 'danger' | 'ghost' | 'link';
 type Size = 'md' | 'sm' | 'icon' | 'icon-sm';
 
 const variants: Record<Variant, string> = {
-  default: 'border border-border bg-surface-2 text-text hover:bg-border/60',
-  primary: 'border border-accent bg-accent text-white hover:brightness-110',
-  danger: 'border border-bad/40 bg-surface-2 text-bad hover:bg-bad/10',
+  default: 'gloss-button border border-border bg-surface-2 text-text hover:bg-border/60',
+  primary: 'gloss-primary border border-accent bg-accent text-white hover:brightness-110',
+  danger: 'gloss-button border border-bad/40 bg-surface-2 text-bad hover:bg-bad/10',
   ghost: 'border border-transparent bg-transparent text-muted hover:bg-surface-2 hover:text-text',
   // текстовая ссылка-кнопка внутри текста и таблиц: без рамки и высоты
   link: 'h-auto rounded-none border-0 bg-transparent p-0 text-accent hover:underline',
@@ -43,7 +43,7 @@ export function buttonClass({
   className?: string | undefined;
 } = {}) {
   return cn(
-    'inline-flex shrink-0 items-center whitespace-nowrap rounded-lg font-medium transition-[color,background-color,border-color,scale] enabled:active:scale-[0.97]',
+    'inline-flex shrink-0 items-center whitespace-nowrap rounded-lg font-medium transition-[color,background-color,border-color,scale,filter] enabled:active:scale-[0.97]',
     'disabled:cursor-not-allowed disabled:opacity-50 focus-visible:outline-2 focus-visible:outline-accent',
     sizes[size],
     variants[variant],

@@ -2,6 +2,7 @@ import { MobileActions } from '@/components/mobile-actions';
 import { Button } from '@/components/ui/button';
 import { Menu, type MenuItem } from '@/components/ui/menu';
 import { cn } from '@/lib/cn';
+import { useFit } from '@/lib/use-fit';
 import { Fragment, type ReactNode } from 'react';
 
 /**
@@ -42,7 +43,28 @@ function groups(list: BarAction[]): BarAction[][] {
   return out;
 }
 
-/** Панель действий: широкий экран - кнопки по группам, узкий - главные (mobile) и меню "Ещё". */
+/** Пункты меню "Ещё": между группами - черта. */
+function menuItems(list: BarAction[]): MenuItem[] {
+  return list.map((a, i) => ({
+    key: a.key,
+    label: a.label,
+    icon: a.icon,
+    ...(a.onClick ? { onSelect: a.onClick } : {}),
+    ...(a.href ? { href: a.href } : {}),
+    disabled: a.disabled || (!a.onClick && !a.href),
+    title: a.title,
+    danger: a.variant === 'danger',
+    separator: i > 0 && a.group !== list[i - 1]?.group,
+  }));
+}
+
+/** Кнопка меню "Ещё" и отступ перед ней (gap-x-5): место, которое она занимает в ряду. */
+const MENU_RESERVE = { sm: 30 + 20, md: 36 + 20 };
+
+/**
+ * Панель действий: широкий экран - кнопки по группам, а что не поместилось в ширину - в меню "Ещё"
+ * в конце ряда; узкий - главные (mobile) и меню "Ещё".
+ */
 export function ActionBar({
   actions,
   end,
@@ -66,17 +88,10 @@ export function ActionBar({
   const few = shown.length <= 2;
   const mobile = shown.filter((a) => few || a.mobile);
   const rest = shown.filter((a) => !few && !a.mobile);
-  const items: MenuItem[] = rest.map((a, i) => ({
-    key: a.key,
-    label: a.label,
-    icon: a.icon,
-    ...(a.onClick ? { onSelect: a.onClick } : {}),
-    ...(a.href ? { href: a.href } : {}),
-    disabled: a.disabled || (!a.onClick && !a.href),
-    title: a.title,
-    danger: a.variant === 'danger',
-    separator: i > 0 && a.group !== rest[i - 1]?.group,
-  }));
+  const items = menuItems(rest);
+  // строка списка (dense) - значками и с переносом, как раньше; иначе - сколько поместится
+  const { row, measure, fit, full } = useFit(shown.length, MENU_RESERVE[size], 0, !dense);
+  const overflow = menuItems(shown.slice(fit));
   const icon = (a: BarAction) =>
     a.node ?? (
       <Button
@@ -107,24 +122,52 @@ export function ActionBar({
   // на узком экране в странице ничего нет (всё в верхней плашке) - и пустой строки нет
   const narrowEmpty = mobile.length === 0 && (topbar || items.length === 0) && !end;
   return (
-    // не сжимается: иначе в строке списка рядом с длинным текстом кнопки уезжали бы за край
+    // не сжимается: иначе в строке списка рядом с длинным текстом кнопки уезжали бы за край; но не
+    // шире строки - в шапке страницы панель переносится на свою строку, лишнее уходит в меню
     <div
-      className={cn('flex shrink-0 items-center gap-2', narrowEmpty && 'max-md:hidden', className)}
+      className={cn(
+        'flex max-w-full shrink-0 items-center gap-2',
+        narrowEmpty && 'max-md:hidden',
+        className,
+      )}
     >
       {/* между группами - отступ, а не черта: черта на переносе оставалась бы в начале строки */}
       <div
+        ref={row}
+        style={full !== undefined ? { width: full } : undefined}
         className={cn(
-          'hidden min-w-0 flex-wrap items-center md:flex',
-          dense ? 'gap-1' : 'gap-x-5 gap-y-2',
+          'relative hidden min-w-0 items-center md:flex',
+          dense ? 'flex-wrap gap-1' : 'gap-x-5',
         )}
       >
-        {groups(shown).map((g) => (
+        {groups(shown.slice(0, fit)).map((g) => (
           <div key={g[0]?.key} className={cn('flex items-center', dense ? 'gap-1' : 'gap-2')}>
             {g.map((a) => (
               <Fragment key={a.key}>{dense && !a.mobile ? icon(a) : button(a, a.label)}</Fragment>
             ))}
           </div>
         ))}
+        {overflow.length > 0 && <Menu items={overflow} size={size} />}
+        {/* невидимая копия всего ряда в одну строку: по ней видно, сколько кнопок помещается */}
+        {!dense && (
+          <div
+            aria-hidden="true"
+            inert
+            className="pointer-events-none invisible absolute top-0 left-0 h-0 w-0 overflow-hidden"
+          >
+            <div ref={measure} className="flex w-max items-center gap-x-5">
+              {groups(shown).map((g) => (
+                <div key={g[0]?.key} className="flex items-center gap-2">
+                  {g.map((a) => (
+                    <span key={a.key} data-fit className="flex">
+                      {button(a, a.label)}
+                    </span>
+                  ))}
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
       </div>
       {/* узкий экран: главные с подписью и "Ещё" */}
       <div className="flex min-w-0 items-center gap-2 md:hidden">

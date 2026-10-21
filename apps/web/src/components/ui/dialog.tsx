@@ -33,7 +33,7 @@ export function Dialog({
   if (!open) return null;
   return (
     <div
-      className="fixed inset-0 z-30 flex animate-fade-in items-start justify-center overflow-y-auto bg-black/60 p-4 pt-[8vh]"
+      className="fixed inset-0 z-30 flex animate-fade-in items-start justify-center overflow-y-auto bg-black/45 p-4 backdrop-blur-[3px] pt-[8vh]"
       role="presentation"
     >
       <button
@@ -48,11 +48,11 @@ export function Dialog({
         aria-modal="true"
         aria-label={title}
         className={cn(
-          'relative z-10 w-full animate-pop-in rounded-xl border border-border bg-surface shadow-xl',
+          'glass-strong relative z-10 w-full animate-pop-in rounded-xl border shadow-2xl',
           wide ? 'max-w-[900px]' : 'max-w-[560px]',
         )}
       >
-        <div className="flex items-center gap-3 border-b border-border px-5 py-3.5">
+        <div className="flex items-center gap-3 border-b border-[var(--glass-border)] px-5 py-3.5">
           <div className="font-semibold">{title}</div>
           <div className="grow" />
           <Button size="icon" variant="ghost" aria-label="Закрыть" onClick={onClose}>

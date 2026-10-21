@@ -21,7 +21,7 @@ export function BottomSheet({
         tabIndex={-1}
         aria-label="Закрыть"
         className={cn(
-          'fixed inset-0 z-10 cursor-default bg-black/50 transition-opacity duration-200 md:hidden',
+          'fixed inset-0 z-10 cursor-default bg-black/40 backdrop-blur-[2px] transition-opacity duration-200 md:hidden',
           open ? 'opacity-100' : 'pointer-events-none opacity-0',
         )}
         onClick={onClose}
@@ -32,7 +32,7 @@ export function BottomSheet({
         aria-label={label}
         inert={!open}
         className={cn(
-          'fixed inset-x-0 bottom-[calc(56px+env(safe-area-inset-bottom))] z-10 rounded-t-xl border-t border-border bg-surface p-4 shadow-xl transition-transform duration-200 md:hidden',
+          'fixed inset-x-0 bottom-[calc(56px+env(safe-area-inset-bottom))] z-10 rounded-t-2xl border-t glass-strong p-4 shadow-xl transition-transform duration-200 md:hidden',
           // закрытая панель уезжает вниз за полосу вкладок и край экрана
           open ? 'translate-y-0' : 'translate-y-[calc(100%+56px+env(safe-area-inset-bottom))]',
         )}

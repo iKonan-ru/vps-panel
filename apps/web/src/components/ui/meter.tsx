@@ -12,8 +12,11 @@ export function Meter({
 }) {
   const p = Number.isFinite(pct) ? Math.max(0, Math.min(100, pct)) : 0;
   return (
-    <div className={cn('overflow-hidden rounded-full', className)}>
-      <div className={cn('meter-fill h-full rounded-full', fill)} style={{ width: `${p}%` }} />
+    <div className={cn('well overflow-hidden rounded-full', className)}>
+      <div
+        className={cn('meter-fill gloss-fill h-full rounded-full', fill)}
+        style={{ width: `${p}%` }}
+      />
     </div>
   );
 }
