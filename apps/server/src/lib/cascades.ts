@@ -9,7 +9,6 @@ import type {
   CascadeView,
   CascadesView,
   Listener,
-  TelegramBalance,
 } from '@vps/protocol';
 import { eq, or } from 'drizzle-orm';
 import type { AgentRegistry } from '../agents/registry.js';
@@ -36,15 +35,10 @@ import {
 } from './cascade-build.js';
 import { type GClients, resyncXui } from './gclients.js';
 import { newId } from './ids.js';
-import {
-  TG_MAIN_WEIGHT,
-  runTelegramUpstreams,
-  tgUpstreamName,
-  tgUpstreams,
-} from './mtproxyl-upstreams.js';
+import { runTelegramUpstreams, tgUpstreamName, tgUpstreams } from './mtproxyl-upstreams.js';
 import { schedule } from './schedule.js';
 import type { SecretBox } from './secret-box.js';
-import { deleteSetting, getJsonSetting, getSetting, putSetting } from './settings.js';
+import { deleteSetting, getJsonSetting, putSetting } from './settings.js';
 import {
   type XuiCall,
   type XuiFormCall,
@@ -176,8 +170,6 @@ interface TgEntryState {
   error: string | null;
 }
 const tgKey = (entryId: string) => `cascade_tg:${entryId}`;
-/** Распределение Telegram по выходам входа (нет - main). */
-const balanceKey = (entryId: string) => `cascade_tg_balance:${entryId}`;
 
 export interface CascadeInput {
   exitServerId: string;
@@ -190,7 +182,7 @@ export interface CascadeInput {
   directList: string[];
   exitList: string[];
   blockQuic: boolean;
-  /** Telegram входа (MTProxyL) через этот выход; telegramMain - основной выход. */
+  /** Telegram входа (MTProxyL) через этот выход; telegramMain - основной (иначе запасной). */
   telegram?: boolean;
   telegramMain?: boolean;
 }
@@ -276,15 +268,7 @@ export class Cascades {
 
   /** Маршруты MTProxyL входа: отметки, ошибки каскадов и не прошедшие проверку выходы. */
   private tgWant(entryId: string) {
-    return tgUpstreams(
-      this.rows(eq(cascades.entryServerId, entryId)),
-      this.tgDown,
-      this.tgBalance(entryId),
-    );
-  }
-
-  private tgBalance(entryId: string): TelegramBalance {
-    return getSetting(this.d.db, balanceKey(entryId)) === 'even' ? 'even' : 'main';
+    return tgUpstreams(this.rows(eq(cascades.entryServerId, entryId)), this.tgDown);
   }
 
   private view(r: Row): CascadeView {
@@ -312,14 +296,8 @@ export class Cascades {
       telegram: r.telegram,
       telegramMain: r.telegramMain,
       telegramCheck: r.telegramCheck ?? null,
-      // поровну - через все выходы в маршрутах, иначе - через тот, у кого вес основного
       telegramActive:
-        r.telegram &&
-        this.tgWant(r.entryServerId).some(
-          (u) =>
-            u.name === tgUpstreamName(r.id) &&
-            (this.tgBalance(r.entryServerId) === 'even' || u.weight === TG_MAIN_WEIGHT),
-        ),
+        r.telegram && this.tgWant(r.entryServerId).some((u) => u.name === tgUpstreamName(r.id)),
       telegramDown: r.telegram && (Boolean(r.error) || this.tgDown.has(r.id)),
     };
   }
@@ -331,51 +309,16 @@ export class Cascades {
   /** Можно ли отмечать каскады входа для Telegram: нужен MTProxyL, сервер панели - пока нет. */
   async telegramState(entryId: string): Promise<CascadeTelegramState> {
     const error = this.tgState(entryId).error;
-    const balance = this.tgBalance(entryId);
     if (await this.d.panelHost?.(entryId))
       return {
         available: false,
         reason: 'на сервере панели каскад Telegram пока недоступен',
         error,
-        balance,
       };
     const inv = this.server(entryId).statusCache?.inventory;
     if (!inv?.services.some((x) => x.kind === 'mtproxyl'))
-      return { available: false, reason: 'на сервере нет MTProxyL', error, balance };
-    return { available: true, reason: null, error, balance };
-  }
-
-  /**
-   * Распределение Telegram по выходам входа (действие на входе): маршруты MTProxyL с новыми
-   * весами, перезапуск движка - если есть отмеченные каскады. Сбой - прежнее распределение.
-   */
-  setBalance(entryId: string, balance: TelegramBalance): string {
-    const { db, journal } = this.d;
-    this.server(entryId);
-    const before = this.tgBalance(entryId);
-    if (before === balance) throw fail(400, 'распределение уже такое');
-    const save = (b: TelegramBalance) =>
-      b === 'even'
-        ? putSetting(db, balanceKey(entryId), 'even')
-        : deleteSetting(db, balanceKey(entryId));
-    return journal.background(entryId, 'cascade:telegram', { balance }, async (action) => {
-      const say = (line: string) => action.stream('log', `${line}\n`);
-      say(
-        balance === 'even'
-          ? 'Telegram: поровну между отвечающими выходами'
-          : 'Telegram: через основной выход, остальные - запасные',
-      );
-      save(balance);
-      try {
-        await this.applyTelegram(entryId, say);
-      } catch (e) {
-        save(before);
-        await this.applyTelegram(entryId, say).catch(() => undefined);
-        throw e;
-      }
-      if (!tgUpstreams(this.rows(eq(cascades.entryServerId, entryId))).length)
-        say('Отмеченных каскадов нет: распределение применится, когда они появятся');
-    });
+      return { available: false, reason: 'на сервере нет MTProxyL', error };
+    return { available: true, reason: null, error };
   }
 
   /** Каскады входа и каскады, которые выходят через этот сервер. */
@@ -720,26 +663,6 @@ export class Cascades {
   }
 
   /**
-   * Основной выход Telegram на входе - ровно один среди отмеченных: prefer (только что
-   * выбранный), иначе прежний, иначе самый старый каскад.
-   */
-  private normalizeMain(entryId: string, prefer?: string) {
-    const rows = this.rows(eq(cascades.entryServerId, entryId)).sort((a, b) =>
-      a.createdAt.localeCompare(b.createdAt),
-    );
-    const tg = rows.filter((r) => r.telegram);
-    const main =
-      tg.find((r) => r.id === prefer && r.telegramMain)?.id ??
-      tg.find((r) => r.telegramMain)?.id ??
-      tg[0]?.id;
-    for (const r of rows) {
-      const want = r.telegram && r.id === main;
-      if (r.telegramMain !== want)
-        this.d.db.update(cascades).set({ telegramMain: want }).where(eq(cascades.id, r.id)).run();
-    }
-  }
-
-  /**
    * Маршруты MTProxyL входа по отметкам Telegram (lib/mtproxyl-upstreams.ts). Отметок нет и
    * панель маршрутов не настраивала - ничего. Отметок не осталось - прежние маршруты MTProxyL
    * возвращаются. Возвращает адреса выхода по проверенным маршрутам.
@@ -929,18 +852,16 @@ export class Cascades {
             exitList: body.exitList,
             blockQuic: body.blockQuic,
             telegram: Boolean(body.telegram),
-            telegramMain: Boolean(body.telegram && body.telegramMain),
+            telegramMain: Boolean(body.telegram && (body.telegramMain ?? true)),
             telegramPort: tgPort,
           })
           .run();
-        if (body.telegram) this.normalizeMain(entryId, body.telegramMain ? id : undefined);
         try {
           await this.apply(entryId, say);
           const row = this.rows(eq(cascades.id, id))[0];
           if (row?.error) throw new Error(row.error);
         } catch (e) {
           db.delete(cascades).where(eq(cascades.id, id)).run();
-          this.normalizeMain(entryId);
           await this.apply(entryId, say).catch(() => undefined);
           await api('POST', `inbounds/del/${iid}`).catch(() => undefined);
           throw e;
@@ -955,7 +876,6 @@ export class Cascades {
               .set({ telegram: false, telegramMain: false, telegramPort: null })
               .where(eq(cascades.id, id))
               .run();
-            this.normalizeMain(entryId);
           }).catch((e: Error) => {
             throw new Error(`Каскад создан, но Telegram через него не настроен: ${e.message}`);
           });
@@ -1006,7 +926,7 @@ export class Cascades {
         ...(target ? { target, serverNames: serverNames?.length } : {}),
         ...(fingerprint ? { fingerprint } : {}),
         ...(change.telegram !== undefined ? { telegram: change.telegram } : {}),
-        ...(change.telegramMain ? { telegramMain: true } : {}),
+        ...(change.telegramMain !== undefined ? { telegramMain: change.telegramMain } : {}),
       },
       async (action) => {
         const say = (line: string) => action.stream('log', `${line}\n`);
@@ -1069,16 +989,8 @@ export class Cascades {
           const back = Object.fromEntries(
             Object.keys(set).map((k) => [k, row[k as keyof Row]]),
           ) as Partial<Row>;
-          const mains = this.rows(eq(cascades.entryServerId, entryId)).map(
-            (r) => [r.id, r.telegramMain] as const,
-          );
-          const restoreMains = () => {
-            for (const [id, telegramMain] of mains)
-              db.update(cascades).set({ telegramMain }).where(eq(cascades.id, id)).run();
-          };
           const undo = () => {
             db.update(cascades).set(back).where(eq(cascades.id, cid)).run();
-            restoreMains();
           };
           // сбой Telegram после записи шаблона: назад - только отметки, прочая правка уже стоит
           const undoTelegram = () => {
@@ -1091,10 +1003,8 @@ export class Cascades {
               })
               .where(eq(cascades.id, cid))
               .run();
-            restoreMains();
           };
           db.update(cascades).set(set).where(eq(cascades.id, cid)).run();
-          if (tgChanged) this.normalizeMain(entryId, set.telegramMain ? cid : undefined);
           try {
             await this.apply(row.entryServerId, say);
             const now = this.rows(eq(cascades.id, cid))[0];
@@ -1176,17 +1086,11 @@ export class Cascades {
       async (action) => {
         const say = (line: string) => action.stream('log', `${line}\n`);
         say(`Каскад через ${exitName(row.exitServerId) || 'удалённый сервер'}: шаблон Xray входа`);
-        const mains = this.rows(eq(cascades.entryServerId, row.entryServerId)).map(
-          (r) => [r.id, r.telegramMain] as const,
-        );
         db.delete(cascades).where(eq(cascades.id, cid)).run();
-        this.normalizeMain(row.entryServerId);
         try {
           await this.apply(row.entryServerId, say);
         } catch (e) {
           db.insert(cascades).values(row).run();
-          for (const [id, telegramMain] of mains)
-            db.update(cascades).set({ telegramMain }).where(eq(cascades.id, id)).run();
           throw e;
         }
         ok = true;
@@ -1497,7 +1401,6 @@ export class Cascades {
       this.tgDown.delete(r.id);
     }
     deleteSetting(db, tgKey(serverId));
-    deleteSetting(db, balanceKey(serverId));
     const jobs: Promise<unknown>[] = asEntry.map((r) =>
       this.releaseExitClient(serverId, r.exitServerId, r.exitInboundId),
     );

@@ -462,7 +462,10 @@ export interface CascadeView {
   createdAt: string;
   /** Telegram (MTProxyL входа) ходит через этот выход. */
   telegram: boolean;
-  /** Основной выход Telegram: через него почти всё, остальные - запасные. */
+  /**
+   * Роль выхода Telegram: основной - Telegram делится поровну между отвечающими основными;
+   * запасной - трафика нет, пока отвечает хоть один основной.
+   */
   telegramMain: boolean;
   /** Последняя проверка пути Telegram: адрес, с которым MTProxyL входа выходит наружу. */
   telegramCheck: CascadeTelegramCheck | null;
@@ -480,13 +483,6 @@ export interface CascadeTelegramCheck {
   error: string | null;
 }
 
-/**
- * Распределение Telegram по отмеченным выходам: main - почти всё через основной, остальные -
- * запасные; even - соединения поровну между всеми отвечающими выходами.
- */
-export type TelegramBalance = 'main' | 'even';
-export const TELEGRAM_BALANCES: readonly TelegramBalance[] = ['main', 'even'];
-
 /** Каскад Telegram на входе: MTProxyL входа ходит в Telegram через выходы отмеченных каскадов. */
 export interface CascadeTelegramState {
   /** Можно ли отмечать каскады этого входа для Telegram. */
@@ -495,7 +491,6 @@ export interface CascadeTelegramState {
   reason: string | null;
   /** Последняя ошибка настройки MTProxyL входа. */
   error: string | null;
-  balance: TelegramBalance;
 }
 
 /** Каскад, который выходит через этот сервер (строка на вкладке 3X-UI выхода). */

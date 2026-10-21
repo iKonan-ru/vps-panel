@@ -1,9 +1,4 @@
-import {
-  CASCADE_MODES,
-  type CascadeMode,
-  TELEGRAM_BALANCES,
-  type TelegramBalance,
-} from '@vps/protocol';
+import { CASCADE_MODES, type CascadeMode } from '@vps/protocol';
 import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
 import type { Cascades } from '../lib/cascades.js';
@@ -36,7 +31,8 @@ const AddBody = z.object({
   exitList: List.default([]),
   blockQuic: z.boolean().default(false),
   telegram: z.boolean().default(false),
-  telegramMain: z.boolean().default(false),
+  /** Роль выхода Telegram: основной (по умолчанию) или запасной. */
+  telegramMain: z.boolean().default(true),
 });
 const EditBody = z.object({
   exitInboundId: z.number().int().positive().optional(),
@@ -91,14 +87,6 @@ export async function cascadeRoutes(app: FastifyInstance, opts: { cascades: Casc
       ...(body.exitList ? { exitList: clean(body.exitList) } : {}),
     });
     return { actionId };
-  });
-
-  app.post('/api/servers/:id/cascades/telegram', async (req) => {
-    const { id } = Id.parse(req.params);
-    const { balance } = z
-      .object({ balance: z.enum(TELEGRAM_BALANCES as [TelegramBalance, ...TelegramBalance[]]) })
-      .parse(req.body ?? {});
-    return { actionId: cascades.setBalance(id, balance) };
   });
 
   app.post('/api/cascades/:cid/delete', async (req) => ({

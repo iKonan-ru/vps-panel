@@ -1,4 +1,3 @@
-import type { TelegramBalance } from '@vps/protocol';
 import type { AgentRegistry } from '../agents/registry.js';
 import { newId } from './ids.js';
 
@@ -6,11 +5,8 @@ import { newId } from './ids.js';
 export const TG_UPSTREAM_PREFIX = 'vpc-';
 export const tgUpstreamName = (cascadeId: string) => `${TG_UPSTREAM_PREFIX}${cascadeId}`;
 
-/** Вес основного выхода и запасных: telemt выбирает маршрут на каждое соединение по весу. */
-export const TG_MAIN_WEIGHT = 100;
-export const TG_SPARE_WEIGHT = 1;
-/** Распределение поровну: у всех отвечающих выходов один вес. */
-export const TG_EVEN_WEIGHT = 10;
+/** Вес маршрута: у всех, кто сейчас в маршрутах, один - telemt делит соединения поровну. */
+export const TG_WEIGHT = 10;
 
 export interface TgUpstream {
   name: string;
@@ -30,28 +26,26 @@ export interface TgRow {
 
 /**
  * Маршруты MTProxyL входа по каскадам с отметкой Telegram (порт - socks-inbound Xray входа).
- * Переключение на запасной - здесь, а не в telemt: socks Xray отвечает "соединение есть" до того,
- * как дошёл до выхода, и проверка маршрутов telemt мёртвый выход не видит. Каскады с ошибкой и
- * выходы из down (проверка панели не прошла) в маршруты не идут; основной (вес 100) - отмеченный
- * основным, если он жив, иначе самый старый из живых. Живых нет - все отмеченные: лучше нет.
- * even - у всех оставшихся один вес: telemt раскладывает соединения поровну.
+ * Основных выходов сколько угодно: Telegram делится поровну между отвечающими основными, запасные
+ * трафика не получают и входят в маршруты, только когда не отвечает ни один основной. Отвечает -
+ * каскад собран и не в down (проверка панели не прошла). Решает панель, а не telemt: socks Xray
+ * отвечает "соединение есть" до того, как дошёл до выхода, и проверка маршрутов telemt мёртвый
+ * выход не видит. Не отвечает никто - все отмеченные: лучше нет.
  */
 export function tgUpstreams(
   rows: readonly TgRow[],
   down: ReadonlySet<string> = new Set(),
-  balance: TelegramBalance = 'main',
 ): TgUpstream[] {
   const all = rows
     .filter((r) => r.telegram && r.telegramPort)
     .sort((a, b) => a.createdAt.localeCompare(b.createdAt));
   const live = all.filter((r) => !r.error && !down.has(r.id));
-  const use = live.length ? live : all;
-  const main = use.find((r) => r.telegramMain) ?? use[0];
+  const mains = live.filter((r) => r.telegramMain);
+  const use = mains.length ? mains : live.length ? live : all;
   return use.map((r) => ({
     name: tgUpstreamName(r.id),
     port: Number(r.telegramPort),
-    weight:
-      balance === 'even' ? TG_EVEN_WEIGHT : r.id === main?.id ? TG_MAIN_WEIGHT : TG_SPARE_WEIGHT,
+    weight: TG_WEIGHT,
   }));
 }
 

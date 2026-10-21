@@ -683,7 +683,7 @@ describe('каскад Telegram', () => {
     expect(inb).toMatchObject({ listen: '127.0.0.1', port, protocol: 'socks' });
     const rule = tpl(xui.entry).routing.rules.find((r) => r.ruleTag === `vp-cascade-${row?.id}-tg`);
     expect(rule).toMatchObject({ outboundTag: `vp-cascade-${row?.id}` });
-    expect(mt.want).toBe(`vpc-${row?.id}:${port}:100`);
+    expect(mt.want).toBe(`vpc-${row?.id}:${port}:10`);
     expect(row?.telegramCheck).toMatchObject({ ok: true, ip: '203.0.113.20' });
     expect(a?.output).toContain('Telegram выходит через 203.0.113.20');
     // проверка по кнопке - и путь Telegram
@@ -691,29 +691,47 @@ describe('каскад Telegram', () => {
     expect(mt.runs.at(-1)).toMatchObject({ check: true, tests: `vpc-${row?.id}` });
   });
 
-  it('второй выход - запасной; основным можно сделать его, веса меняются местами', async () => {
+  it('два основных - поровну; запасной без трафика; роль меняется правкой', async () => {
     const { db, c, xui, done, input, mt } = await setup({ mtproxyl: true });
-    xui.exit?.inbounds.push(rawInbound(8, 8443));
+    xui.exit?.inbounds.push(rawInbound(8, 8443), rawInbound(9, 9443));
     await c.create('entry', { ...input, telegram: true });
     await done();
     await c.create('entry', { ...input, exitInboundId: 8, port: 20444, telegram: true });
+    await done();
+    await c.create('entry', {
+      ...input,
+      exitInboundId: 9,
+      port: 20445,
+      telegram: true,
+      telegramMain: false,
+    });
     expect((await done())?.exitCode).toBe(0);
-    const [first, second] = db.select().from(cascades).all();
-    expect(first?.telegramMain).toBe(true);
-    expect(second?.telegramMain).toBe(false);
-    expect(mt.want).toContain(`vpc-${second?.id}:${second?.telegramPort}:1`);
-    await c.edit(second?.id ?? '', { telegramMain: true });
+    const [a, b, sp] = db.select().from(cascades).all();
+    expect([a?.telegramMain, b?.telegramMain, sp?.telegramMain]).toEqual([true, true, false]);
+    expect(mt.want).toBe(
+      [`vpc-${a?.id}:${a?.telegramPort}:10`, `vpc-${b?.id}:${b?.telegramPort}:10`].join(' '),
+    );
+    const v = (await c.list('entry')).cascades;
+    expect(v.find((x) => x.id === sp?.id)?.telegramActive).toBe(false);
+    // запасной стал основным - в маршрутах все три
+    await c.edit(sp?.id ?? '', { telegramMain: true });
     expect((await done())?.exitCode).toBe(0);
-    const rows = db.select().from(cascades).all();
-    expect(rows.find((r) => r.id === first?.id)?.telegramMain).toBe(false);
-    expect(rows.find((r) => r.id === second?.id)?.telegramMain).toBe(true);
-    expect(mt.want).toContain(`vpc-${second?.id}:${second?.telegramPort}:100`);
-    expect(mt.want).toContain(`vpc-${first?.id}:${first?.telegramPort}:1`);
-    // основной удалён - основным становится оставшийся
-    c.remove(second?.id ?? '');
+    expect(mt.want.split(' ')).toHaveLength(3);
+    // основной стал запасным - его нет в маршрутах, роль других не меняется
+    await c.edit(a?.id ?? '', { telegramMain: false });
     expect((await done())?.exitCode).toBe(0);
-    expect(db.select().from(cascades).get()?.telegramMain).toBe(true);
-    expect(mt.want).toBe(`vpc-${first?.id}:${first?.telegramPort}:100`);
+    expect(mt.want).not.toContain(`vpc-${a?.id}`);
+    expect(
+      db
+        .select()
+        .from(cascades)
+        .all()
+        .map((r) => r.telegramMain),
+    ).toEqual([false, true, true]);
+    // удаление основного - остальные как были
+    c.remove(b?.id ?? '');
+    expect((await done())?.exitCode).toBe(0);
+    expect(mt.want).toBe(`vpc-${sp?.id}:${sp?.telegramPort}:10`);
   });
 
   it('снятие последней отметки - маршруты MTProxyL как были, socks-inbound-а нет', async () => {
@@ -771,18 +789,25 @@ describe('каскад Telegram', () => {
     expect(mt.want).toBe(want);
   });
 
-  it('основной выход лёг - Telegram через запасной; вернулся - снова основной', async () => {
+  it('основной выход лёг - Telegram через запасной; вернулся - снова через основной', async () => {
     const { db, c, xui, done, input, mt } = await setup({ mtproxyl: true });
     xui.exit?.inbounds.push(rawInbound(8, 8443));
     await c.create('entry', { ...input, telegram: true });
     await done();
-    await c.create('entry', { ...input, exitInboundId: 8, port: 20444, telegram: true });
+    await c.create('entry', {
+      ...input,
+      exitInboundId: 8,
+      port: 20444,
+      telegram: true,
+      telegramMain: false,
+    });
     await done();
     const [main, spare] = db.select().from(cascades).all();
+    expect(mt.want).toBe(`vpc-${main?.id}:${main?.telegramPort}:10`);
     xui.entry?.deadOutbounds.add(`vp-cascade-${main?.id}`);
     await c.checkAll();
     await done();
-    expect(mt.want).toBe(`vpc-${spare?.id}:${spare?.telegramPort}:100`);
+    expect(mt.want).toBe(`vpc-${spare?.id}:${spare?.telegramPort}:10`);
     const v = (await c.list('entry')).cascades;
     expect(v.find((x) => x.id === main?.id)).toMatchObject({
       telegramDown: true,
@@ -792,8 +817,7 @@ describe('каскад Telegram', () => {
     xui.entry?.deadOutbounds.clear();
     await c.checkAll();
     await done();
-    expect(mt.want).toContain(`vpc-${main?.id}:${main?.telegramPort}:100`);
-    expect(mt.want).toContain(`vpc-${spare?.id}:${spare?.telegramPort}:1`);
+    expect(mt.want).toBe(`vpc-${main?.id}:${main?.telegramPort}:10`);
   });
 
   it('один сбой проверки - Telegram не перестраивается', async () => {
@@ -840,38 +864,5 @@ describe('каскад Telegram', () => {
       ok: false,
       ip: '198.51.100.5',
     });
-  });
-
-  it('поровну между выходами: веса одинаковые, обратно - основной и запасные', async () => {
-    const { db, c, xui, done, input, mt } = await setup({ mtproxyl: true });
-    xui.exit?.inbounds.push(rawInbound(8, 8443));
-    await c.create('entry', { ...input, telegram: true });
-    await done();
-    await c.create('entry', { ...input, exitInboundId: 8, port: 20444, telegram: true });
-    await done();
-    const [a, b] = db.select().from(cascades).all();
-    c.setBalance('entry', 'even');
-    expect((await done())?.exitCode).toBe(0);
-    expect(mt.want).toBe(
-      [`vpc-${a?.id}:${a?.telegramPort}:10`, `vpc-${b?.id}:${b?.telegramPort}:10`].join(' '),
-    );
-    const v = await c.list('entry');
-    expect(v.telegram.balance).toBe('even');
-    expect(v.cascades.every((x) => x.telegramActive)).toBe(true);
-    expect(() => c.setBalance('entry', 'even')).toThrow('уже такое');
-    c.setBalance('entry', 'main');
-    expect((await done())?.exitCode).toBe(0);
-    expect(mt.want).toContain(`vpc-${a?.id}:${a?.telegramPort}:100`);
-    expect((await c.list('entry')).telegram.balance).toBe('main');
-  });
-
-  it('распределение: MTProxyL отказал - прежнее', async () => {
-    const { c, done, input, mt } = await setup({ mtproxyl: true });
-    await c.create('entry', { ...input, telegram: true });
-    await done();
-    mt.fail = 'в MTProxyL включён маршрут warp';
-    c.setBalance('entry', 'even');
-    expect((await done())?.exitCode).toBe(1);
-    expect((await c.list('entry')).telegram.balance).toBe('main');
   });
 });

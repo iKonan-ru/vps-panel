@@ -59,7 +59,7 @@ function box() {
 const WANT = 'vpc-a:2001:100 vpc-b:2002:1';
 
 describe('маршруты MTProxyL каскада Telegram', () => {
-  it('tgUpstreams: отмеченные с портом, основной - 100; не отвечающий основной - замена', () => {
+  it('tgUpstreams: основные поровну, запасные - только когда не отвечает ни один основной', () => {
     const row = (id: string, main: boolean, port: number | null, at: string, tg = true) => ({
       id,
       telegram: tg,
@@ -70,32 +70,28 @@ describe('маршруты MTProxyL каскада Telegram', () => {
     });
     const rows = [
       row('b', true, 2002, '2'),
-      row('a', false, 2001, '1'),
+      row('a', true, 2001, '1'),
       row('c', false, 2003, '3'),
       row('d', false, null, '4', false),
     ];
-    expect(tgUpstreams(rows)).toEqual([
-      { name: 'vpc-a', port: 2001, weight: 1 },
-      { name: 'vpc-b', port: 2002, weight: 100 },
-      { name: 'vpc-c', port: 2003, weight: 1 },
-    ]);
-    // основной не отвечает: его нет в маршрутах, основной - самый старый живой
-    expect(tgUpstreams(rows, new Set(['b']))).toEqual([
-      { name: 'vpc-a', port: 2001, weight: 100 },
-      { name: 'vpc-c', port: 2003, weight: 1 },
-    ]);
-    // каскад с ошибкой - тоже вне маршрутов
-    const broken = rows.map((r) => (r.id === 'a' ? { ...r, error: 'нет inbound-а' } : r));
-    expect(tgUpstreams(broken, new Set(['b'])).map((u) => [u.name, u.weight])).toEqual([
-      ['vpc-c', 100],
-    ]);
-    // живых нет - все отмеченные, как есть
-    expect(tgUpstreams(rows, new Set(['a', 'b', 'c']))).toHaveLength(3);
-    // поровну: у всех отвечающих один вес, не отвечающий - вне маршрутов
-    expect(tgUpstreams(rows, new Set(['c']), 'even').map((u) => [u.name, u.weight])).toEqual([
+    const names = (u: { name: string; weight: number }[]) => u.map((x) => [x.name, x.weight]);
+    // два основных - поровну, запасного нет в маршрутах
+    expect(names(tgUpstreams(rows))).toEqual([
       ['vpc-a', 10],
       ['vpc-b', 10],
     ]);
+    // один основной не отвечает - всё через второй
+    expect(names(tgUpstreams(rows, new Set(['a'])))).toEqual([['vpc-b', 10]]);
+    // не отвечает ни один основной - запасной
+    expect(names(tgUpstreams(rows, new Set(['a', 'b'])))).toEqual([['vpc-c', 10]]);
+    // каскад с ошибкой - тоже как не отвечающий
+    const broken = rows.map((r) => (r.id === 'b' ? { ...r, error: 'нет inbound-а' } : r));
+    expect(names(tgUpstreams(broken, new Set(['a'])))).toEqual([['vpc-c', 10]]);
+    // основных нет вовсе - все отвечающие запасные поровну
+    const spares = rows.map((r) => ({ ...r, telegramMain: false }));
+    expect(tgUpstreams(spares)).toHaveLength(3);
+    // не отвечает никто - все отмеченные
+    expect(tgUpstreams(rows, new Set(['a', 'b', 'c']))).toHaveLength(3);
   });
 
   it('включение: свои маршруты, direct выключен, ME выключен, один перезапуск', () => {

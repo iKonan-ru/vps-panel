@@ -44,13 +44,12 @@ const lines = (s: string) =>
  * Окно каскада: новый - выход, его inbound, порт и цель Reality входа, режим и списки; правка -
  * режим, списки, QUIC, inbound того же выхода, цель Reality и fingerprint входа (по умолчанию
  * прежние, подбор - по кнопке). Отметка Telegram: MTProxyL этого сервера ходит в Telegram через
- * выход; "основной" - выбор, только если отмечены и другие каскады.
+ * выход; роль - основной (Telegram поровну между основными) или запасной.
  */
 export function CascadeForm({
   serverId,
   cascade,
   telegram,
-  telegramOthers,
   disabled,
   onCancel,
   onStarted,
@@ -58,8 +57,6 @@ export function CascadeForm({
   serverId: string;
   cascade?: CascadeView;
   telegram: CascadeTelegramState | undefined;
-  /** Другие каскады этого входа с отметкой Telegram. */
-  telegramOthers: number;
   disabled: boolean;
   onCancel: () => void;
   onStarted: (actionId: string) => void;
@@ -95,7 +92,8 @@ export function CascadeForm({
   const [viaExit, setViaExit] = useState((cascade?.exitList ?? []).join('\n'));
   const [quic, setQuic] = useState(cascade?.blockQuic ?? false);
   const [tg, setTg] = useState(cascade?.telegram ?? false);
-  const [tgMain, setTgMain] = useState(cascade?.telegramMain ?? false);
+  // новая отметка - основной; снятая и поставленная заново - тоже
+  const [tgMain, setTgMain] = useState(cascade?.telegram ? cascade.telegramMain : true);
   // снять отметку можно всегда; поставить - только если на сервере есть MTProxyL
   const tgBlocked = !cascade?.telegram && telegram?.available === false;
   const act = useAction();
@@ -159,7 +157,7 @@ export function CascadeForm({
         exitList: lines(viaExit),
         blockQuic: quic,
         telegram: tg,
-        telegramMain: tg && (tgMain || telegramOthers === 0),
+        telegramMain: tg && tgMain,
       };
       const r = cascade
         ? await api<{ actionId: string }>(`/api/cascades/${cascade.id}/edit`, {
@@ -303,15 +301,26 @@ export function CascadeForm({
         disabled={act.busy || tgBlocked}
         onChange={(e) => setTg(e.target.checked)}
       />
-      {/* основной снимается выбором другого основного: иначе им снова стал бы этот же */}
-      {tg && telegramOthers > 0 && !cascade?.telegramMain && telegram?.balance !== 'even' && (
-        <Checkbox
-          label="Основной выход Telegram"
-          hint={'остальные отмеченные выходы\u00a0\u2014 запасные, на случай отказа основного'}
-          checked={tgMain}
-          disabled={act.busy}
-          onChange={(e) => setTgMain(e.target.checked)}
-        />
+      {tg && (
+        <Field
+          label="Роль выхода в Telegram"
+          htmlFor="cascade-tg-role"
+          hint={
+            tgMain
+              ? 'Telegram делится поровну между отвечающими основными выходами'
+              : 'трафика нет, пока отвечает хоть один основной выход'
+          }
+        >
+          <Select
+            id="cascade-tg-role"
+            value={tgMain ? 'main' : 'spare'}
+            disabled={act.busy}
+            onChange={(e) => setTgMain(e.target.value === 'main')}
+          >
+            <option value="main">Основной</option>
+            <option value="spare">Запасной</option>
+          </Select>
+        </Field>
       )}
       <Checkbox
         label="Блокировать QUIC"

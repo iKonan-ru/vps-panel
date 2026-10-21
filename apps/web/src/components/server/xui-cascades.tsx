@@ -6,7 +6,6 @@ import { Chip } from '@/components/ui/chip';
 import { useConfirm } from '@/components/ui/confirm';
 import { Dialog } from '@/components/ui/dialog';
 import { Section } from '@/components/ui/section';
-import { Switch } from '@/components/ui/switch';
 import { ApiError, api } from '@/lib/api';
 import { useAction } from '@/lib/use-action';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
@@ -81,25 +80,6 @@ export function XuiCascades({
     });
   }
 
-  const tgList = list.filter((c) => c.telegram);
-  const even = data?.telegram.balance === 'even';
-
-  async function setBalance() {
-    const ok = await ask({
-      title: even ? 'Telegram через основной выход?' : 'Telegram поровну между выходами?',
-      text: 'Прокси MTProxyL этого сервера перезапустится, Telegram у клиентов переподключится через несколько секунд.',
-      okLabel: even ? 'Через основной' : 'Поровну',
-    });
-    if (!ok) return;
-    await op.run(async () => {
-      const r = await api<{ actionId: string }>(`/api/servers/${serverId}/cascades/telegram`, {
-        method: 'POST',
-        json: { balance: even ? 'main' : 'even' },
-      });
-      setRun({ id: r.actionId, title: 'Распределение Telegram' });
-    });
-  }
-
   async function remove(c: CascadeView) {
     const ok = await ask({
       title: `Удалить каскад через ${c.exitServerName}?`,
@@ -156,24 +136,6 @@ export function XuiCascades({
             {noToken ? 'Нужен API-токен 3X-UI' : `Не удалось получить каскады: ${error.message}`}
           </div>
         )}
-        {tgList.length > 1 && (
-          <div className="flex items-center gap-3 border-b border-border px-4 py-2.5 text-[13px]">
-            <div className="min-w-0 grow">
-              <div>Telegram поровну между выходами</div>
-              <div className="text-xs text-muted">
-                {even
-                  ? 'соединения делятся между отвечающими выходами'
-                  : 'почти всё через основной, остальные\u00a0\u2014 запасные'}
-              </div>
-            </div>
-            <Switch
-              checked={even}
-              disabled={locked}
-              label="Telegram поровну между выходами"
-              onChange={() => void setBalance()}
-            />
-          </div>
-        )}
         {data && list.length === 0 && via.length === 0 && (
           <div className="px-4 py-3 text-[13px] text-muted">Каскадов нет</div>
         )}
@@ -201,14 +163,8 @@ export function XuiCascades({
                   c.exitList.length ? `через выход: ${c.exitList.length}` : '',
                   c.directList.length ? `напрямую: ${c.directList.length}` : '',
                   c.blockQuic ? 'QUIC заблокирован' : '',
-                  c.telegram
-                    ? even
-                      ? 'Telegram'
-                      : c.telegramMain
-                        ? 'Telegram: основной'
-                        : 'Telegram: запасной'
-                    : '',
-                  c.telegram && !even && !c.telegramMain && c.telegramActive && !c.telegramDown
+                  c.telegram ? (c.telegramMain ? 'Telegram: основной' : 'Telegram: запасной') : '',
+                  c.telegram && !c.telegramMain && c.telegramActive && !c.telegramDown
                     ? 'сейчас Telegram через него'
                     : '',
                 ]
@@ -290,7 +246,6 @@ export function XuiCascades({
               serverId={serverId}
               {...(form.cascade ? { cascade: form.cascade } : {})}
               telegram={data?.telegram}
-              telegramOthers={list.filter((x) => x.telegram && x.id !== form.cascade?.id).length}
               disabled={locked}
               onCancel={() => setForm(null)}
               onStarted={(id) => {
