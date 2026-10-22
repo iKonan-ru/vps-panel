@@ -4,44 +4,62 @@ import { Button } from '@/components/ui/button';
 import { Dialog } from '@/components/ui/dialog';
 import { Field } from '@/components/ui/field';
 import { Input } from '@/components/ui/input';
+import { TagInput } from '@/components/ui/tag-input';
 import { actions } from '@/lib/actions';
+import { useTags } from '@/lib/tags';
 import { useAction } from '@/lib/use-action';
 import { useQueryClient } from '@tanstack/react-query';
 import { useNavigate } from '@tanstack/react-router';
 import { type FormEvent, useState } from 'react';
 
-export function RenameDialog({
+/** Имя и теги сервера. Монтируется на время открытия (Presence): каждый раз - текущие данные. */
+export function EditServerDialog({
   serverId,
   name,
-  open,
+  tags,
   onClose,
-}: { serverId: string; name: string; open: boolean; onClose: () => void }) {
+}: { serverId: string; name: string; tags: string[]; onClose: () => void }) {
   const qc = useQueryClient();
   const [v, setV] = useState(name);
+  const [t, setT] = useState(tags);
+  const { data: tagList } = useTags();
   const save = useAction();
   async function submit(e: FormEvent) {
     e.preventDefault();
     const ok = await save.run(async () => {
-      await actions.patchServer(serverId, { name: v.trim() });
-      await qc.invalidateQueries({ queryKey: ['servers'] });
+      await actions.patchServer(serverId, { name: v.trim(), tags: t });
+      await Promise.all([
+        qc.invalidateQueries({ queryKey: ['servers'] }),
+        qc.invalidateQueries({ queryKey: ['tags'] }),
+      ]);
     });
     if (ok) onClose();
   }
   return (
-    <Dialog open={open} onClose={onClose} title="Переименовать">
+    <Dialog open onClose={onClose} title="Изменить сервер">
       <form onSubmit={submit} className="flex flex-col gap-4">
-        <Field label="Имя сервера" htmlFor="rn-name">
+        <Field label="Имя сервера" htmlFor="ed-name">
           <Input
-            id="rn-name"
+            id="ed-name"
             value={v}
             onChange={(e) => setV(e.target.value)}
             required
             maxLength={64}
+            disabled={save.busy}
           />
+        </Field>
+        <Field
+          label="Теги"
+          htmlFor="ed-tags"
+          hint={'Цвет, переименование и удаление тегов\u00a0\u2014 в\u00a0настройках'}
+        >
+          <TagInput id="ed-tags" value={t} onChange={setT} tags={tagList} disabled={save.busy} />
         </Field>
         {save.error && <Alert tone="bad">{save.error}</Alert>}
         <div className="flex justify-end gap-2">
-          <Button onClick={onClose}>Отмена</Button>
+          <Button onClick={onClose} disabled={save.busy}>
+            Отмена
+          </Button>
           <Button type="submit" variant="primary" disabled={save.busy}>
             Сохранить
           </Button>

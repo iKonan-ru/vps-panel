@@ -12,10 +12,12 @@ import { Field } from '@/components/ui/field';
 import { InfoTip } from '@/components/ui/info-tip';
 import { Input } from '@/components/ui/input';
 import { PageTitle } from '@/components/ui/page-title';
+import { TagInput } from '@/components/ui/tag-input';
 import { api } from '@/lib/api';
 import { countryName } from '@/lib/countries';
 import { clampInt } from '@/lib/masks';
 import { useServer, useServers } from '@/lib/servers';
+import { useTags } from '@/lib/tags';
 import { useAction } from '@/lib/use-action';
 import { useQueryClient } from '@tanstack/react-query';
 import { useNavigate } from '@tanstack/react-router';
@@ -39,7 +41,8 @@ export function ServerNewPage() {
   const [customName, setCustomName] = useState<string | null>(null);
   const [host, setHost] = useState('');
   const [sshPort, setSshPort] = useState('22');
-  const [tags, setTags] = useState('');
+  const [tags, setTags] = useState<string[]>([]);
+  const { data: tagList } = useTags();
   const [hosting, setHosting] = useState<HostingForm>(emptyHostingForm);
   const setH = (patch: Partial<HostingForm>) => setHosting((h) => ({ ...h, ...patch }));
   const { data: servers } = useServers();
@@ -76,16 +79,16 @@ export function ServerNewPage() {
           name,
           host,
           sshPort: Number(sshPort) || 22,
-          tags: tags
-            .split(',')
-            .map((t) => t.trim())
-            .filter(Boolean),
+          tags,
           hosting: formToHosting(hosting),
         },
       });
       setCustomName(name); // список серверов обновится, и автоимя получило бы номер
       setCreated(res);
-      await qc.invalidateQueries({ queryKey: ['servers'] });
+      await Promise.all([
+        qc.invalidateQueries({ queryKey: ['servers'] }),
+        qc.invalidateQueries({ queryKey: ['tags'] }),
+      ]);
     });
   }
 
@@ -125,13 +128,7 @@ export function ServerNewPage() {
             />
           </Field>
           <Field label="Теги" htmlFor="srv-tags">
-            <Input
-              id="srv-tags"
-              value={tags}
-              onChange={(e) => setTags(e.target.value)}
-              placeholder="fi, hoster, vpn"
-              maxLength={200}
-            />
+            <TagInput id="srv-tags" value={tags} onChange={setTags} tags={tagList} />
           </Field>
         </div>
         <div className="grid grid-cols-1 gap-3 sm:grid-cols-[minmax(0,2fr)_minmax(0,1fr)]">

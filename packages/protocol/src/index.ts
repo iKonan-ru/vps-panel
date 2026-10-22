@@ -12,3 +12,4 @@ export * from './setup.js';
 export * from './services.js';
 export * from './api.js';
 export * from './host.js';
+export * from './tags.js';

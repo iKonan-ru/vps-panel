@@ -1,5 +1,6 @@
 import { ServerStatusChip } from '@/components/server-status';
 import { AttentionChips } from '@/components/servers/attention';
+import { ServerTags } from '@/components/servers/server-tags';
 import { ServiceChips } from '@/components/service-chips';
 import { Bar } from '@/components/ui/bar';
 import { Card } from '@/components/ui/card';
@@ -57,8 +58,14 @@ function Resources({ s }: { s: ServerSummary }) {
   );
 }
 
+/** Фильтр списка по тегу: выбранный тег и выбор по клику на плашку. */
+interface TagFilter {
+  tag?: string | undefined;
+  onTag?: (tag: string) => void;
+}
+
 /** Строка таблицы серверов (широкий экран); i - номер строки для каскада появления. */
-export function ServerRow({ s, i = 0 }: { s: ServerSummary; i?: number }) {
+export function ServerRow({ s, i = 0, tag, onTag }: { s: ServerSummary; i?: number } & TagFilter) {
   const navigate = useNavigate();
   const open = () => navigate({ to: '/servers/$id', params: { id: s.id } });
   return (
@@ -84,6 +91,7 @@ export function ServerRow({ s, i = 0 }: { s: ServerSummary; i?: number }) {
           {s.host}
           {s.panelHost && <PanelHostChip />}
         </div>
+        <ServerTags tags={s.tags} onPick={onTag} active={tag} className="mt-1.5" />
       </td>
       <td className="whitespace-nowrap">
         {s.hosting.country && <span>{countryLabel(s.hosting.country)} </span>}
@@ -126,7 +134,7 @@ function PanelHostChip() {
 }
 
 /** Карточка сервера в списке на узком экране. */
-export function ServerCard({ s, i = 0 }: { s: ServerSummary; i?: number }) {
+export function ServerCard({ s, i = 0, tag, onTag }: { s: ServerSummary; i?: number } & TagFilter) {
   const navigate = useNavigate();
   return (
     // не ссылка целиком: внутри - ссылки на панели сервисов, вложенная ссылка уводила бы на
@@ -164,6 +172,7 @@ export function ServerCard({ s, i = 0 }: { s: ServerSummary; i?: number }) {
             <RuRtt s={s} short />
           </div>
         )}
+        <ServerTags tags={s.tags} onPick={onTag} active={tag} />
         <div className="flex flex-wrap items-center gap-1.5">
           <ServiceChips services={s.services} links={s.panelLinks} max={3} />
         </div>

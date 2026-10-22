@@ -49,6 +49,14 @@ export const sessions = sqliteTable('session', {
   userAgent: text('user_agent').notNull().default(''),
 });
 
+/** Справочник тегов серверов: цвет и подсказки при вводе. Сами теги сервера - server.tags. */
+export const serverTags = sqliteTable('tag', {
+  /** Имя; сравнение без учёта регистра (collate nocase в базе). */
+  name: text('name').primaryKey(),
+  color: text('color').notNull(),
+  createdAt: text('created_at').notNull().default(now),
+});
+
 export const loginAttempts = sqliteTable('login_attempt', {
   id: integer('id').primaryKey({ autoIncrement: true }),
   ip: text('ip').notNull(),

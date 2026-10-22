@@ -40,6 +40,17 @@
   --shadow-card: 0 1px 2px rgb(16 24 40 / 0.06), 0 8px 24px -10px rgb(16 24 40 / 0.16);
   --shadow-btn: 0 1px 2px rgb(16 24 40 / 0.1);
   --well: inset 0 1px 2px rgb(16 24 40 / 0.12);
+  /* теги серверов: палитра под accent и тона состояний, текст на своей заливке 15% - от 4.5:1 */
+  --tag-sky: #09659b;
+  --tag-orange: #9e4715;
+  --tag-teal: #0a6960;
+  --tag-rose: #ab304c;
+  --tag-violet: #7043cb;
+  --tag-amber: #825907;
+  --tag-green: #306f28;
+  --tag-pink: #a13386;
+  --tag-indigo: #4651c4;
+  --tag-slate: #546377;
   color-scheme: light;
 }
 .dark {
@@ -72,6 +83,16 @@
   --shadow-card: 0 1px 0 rgb(0 0 0 / 0.35), 0 10px 28px -12px rgb(0 0 0 / 0.55);
   --shadow-btn: 0 1px 2px rgb(0 0 0 / 0.45);
   --well: inset 0 1px 2px rgb(0 0 0 / 0.45);
+  --tag-sky: #4db3ee;
+  --tag-orange: #f08c4e;
+  --tag-teal: #3cc5b5;
+  --tag-rose: #f4728f;
+  --tag-violet: #a98aff;
+  --tag-amber: #e9b649;
+  --tag-green: #7bcb5e;
+  --tag-pink: #e67ccf;
+  --tag-indigo: #8b93f6;
+  --tag-slate: #a3afc0;
   color-scheme: dark;
 }
 
@@ -154,6 +175,16 @@
   --color-warn: var(--warn);
   --color-bad: var(--bad);
   --color-update: var(--update);
+  --color-tag-sky: var(--tag-sky);
+  --color-tag-orange: var(--tag-orange);
+  --color-tag-teal: var(--tag-teal);
+  --color-tag-rose: var(--tag-rose);
+  --color-tag-violet: var(--tag-violet);
+  --color-tag-amber: var(--tag-amber);
+  --color-tag-green: var(--tag-green);
+  --color-tag-pink: var(--tag-pink);
+  --color-tag-indigo: var(--tag-indigo);
+  --color-tag-slate: var(--tag-slate);
   --font-sans: "IBM Plex Sans", system-ui, sans-serif;
   --font-mono: "JetBrains Mono", ui-monospace, monospace;
   --ease-out: cubic-bezier(0.22, 1, 0.36, 1);

@@ -1,6 +1,7 @@
 import { useAgentsRollout } from '@/components/agents-rollout';
 import { PageActions } from '@/components/page-actions';
 import { ServerCard, ServerRow } from '@/components/servers/server-row';
+import { ServerTags } from '@/components/servers/server-tags';
 import { Card } from '@/components/ui/card';
 import { Chip } from '@/components/ui/chip';
 import { Input } from '@/components/ui/input';
@@ -8,6 +9,8 @@ import { PageTitle } from '@/components/ui/page-title';
 import { countryName } from '@/lib/countries';
 import { cap } from '@/lib/format';
 import { useServers } from '@/lib/servers';
+import { tagKey, useTags } from '@/lib/tags';
+import { useNavigate, useSearch } from '@tanstack/react-router';
 import { Search } from 'lucide-react';
 import { useMemo, useState } from 'react';
 
@@ -15,8 +18,21 @@ export function ServersPage() {
   const { data, isLoading, error } = useServers();
   const [q, setQ] = useState('');
   const [searchOpen, setSearchOpen] = useState(false);
+  const { tag } = useSearch({ from: '/app/' });
+  const navigate = useNavigate();
+  // повторный выбор того же тега снимает фильтр
+  const pickTag = (t: string) =>
+    void navigate({
+      to: '/',
+      search: tag && tagKey(tag) === tagKey(t) ? {} : { tag: t },
+      replace: true,
+    });
+  const { data: tagList } = useTags();
+  // в ряду фильтров - теги, которые стоят хотя бы на одном сервере
+  const usedTags = (tagList ?? []).filter((t) => t.servers > 0).map((t) => t.name);
   const servers = useMemo(() => {
-    const list = data ?? [];
+    let list = data ?? [];
+    if (tag) list = list.filter((s) => s.tags.some((t) => tagKey(t) === tagKey(tag)));
     const needle = q.trim().toLowerCase();
     if (!needle) return list;
     return list.filter((s) =>
@@ -24,7 +40,7 @@ export function ServersPage() {
         v.toLowerCase().includes(needle),
       ),
     );
-  }, [data, q]);
+  }, [data, q, tag]);
   const online = (data ?? []).filter((s) => s.status === 'online').length;
   const rollout = useAgentsRollout((data ?? []).filter((s) => s.agentUpdateAvailable).length);
   const problems = (data ?? []).filter(
@@ -66,6 +82,10 @@ export function ServersPage() {
         />
       )}
 
+      {usedTags.length > 0 && (
+        <ServerTags tags={usedTags} onPick={pickTag} active={tag} className="gap-1.5" />
+      )}
+
       {rollout.card}
       {error && <Card className="p-4 text-bad">{cap(error.message)}</Card>}
       {isLoading && <Card className="p-8 text-muted">Загрузка&hellip;</Card>}
@@ -76,7 +96,10 @@ export function ServersPage() {
       )}
       {data && data.length > 0 && (
         <>
-          <Card className="hidden overflow-x-auto md:block">
+          {servers.length === 0 && (
+            <Card className="p-8 text-center text-muted">Ничего не найдено</Card>
+          )}
+          <Card className={servers.length ? 'hidden overflow-x-auto md:block' : 'hidden'}>
             <table className="w-full border-collapse text-[13px]">
               <thead>
                 <tr className="text-left text-xs text-muted [&>th]:whitespace-nowrap [&>th]:border-b [&>th]:border-border [&>th]:px-3 [&>th]:py-2.5 [&>th]:font-medium">
@@ -91,14 +114,14 @@ export function ServersPage() {
               </thead>
               <tbody>
                 {servers.map((s, i) => (
-                  <ServerRow key={s.id} s={s} i={i} />
+                  <ServerRow key={s.id} s={s} i={i} tag={tag} onTag={pickTag} />
                 ))}
               </tbody>
             </table>
           </Card>
           <div className="flex flex-col gap-2.5 md:hidden">
             {servers.map((s, i) => (
-              <ServerCard key={s.id} s={s} i={i} />
+              <ServerCard key={s.id} s={s} i={i} tag={tag} onTag={pickTag} />
             ))}
           </div>
         </>

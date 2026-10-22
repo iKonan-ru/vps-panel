@@ -4,6 +4,7 @@ import { PanelBackupSettings } from '@/components/panel-backup-settings';
 import { PANEL_VERSION_ANCHOR } from '@/components/panel-version-badge';
 import { PanelVersionSettings } from '@/components/panel-version-settings';
 import { ReachSettings } from '@/components/reach-settings';
+import { TagsSettings } from '@/components/tags-settings';
 import { TelegramSettings } from '@/components/telegram-settings';
 import { PageTitle } from '@/components/ui/page-title';
 import { WdttSettings } from '@/components/wdtt-settings';
@@ -24,6 +25,8 @@ export function SettingsPage() {
       <TelegramSettings />
 
       <ReachSettings />
+
+      <TagsSettings />
 
       <WdttSettings />
       <OpenfluxDocsSettings />

@@ -1,5 +1,6 @@
 import { mkdirSync } from 'node:fs';
 import { dirname, join } from 'node:path';
+import { nextTagColor, normTag } from '@vps/protocol';
 import Database from 'better-sqlite3';
 import { drizzle } from 'drizzle-orm/better-sqlite3';
 import * as schema from './schema.js';
@@ -29,6 +30,11 @@ export function createDb(dataDir: string) {
  * Базу старее этой версии панель не поднимет: шагов к ней нет.
  */
 const BASE_VERSION = 19;
+
+const TAG_SQL = `create table if not exists tag (
+  name text primary key collate nocase, color text not null,
+  created_at text not null default (strftime('%Y-%m-%dT%H:%M:%fZ','now'))
+);`;
 
 /**
  * Шаги после BASE_VERSION для уже созданных баз: шаг i в списке - версия BASE_VERSION + i + 1,
@@ -98,6 +104,40 @@ const STEPS: ((sqlite: Database.Database) => void)[] = [
     add('telegram_main', 'integer not null default 0');
     add('telegram_port', 'integer');
     add('telegram_check', 'text');
+  },
+  // 25: справочник тегов серверов - таблица tag (её же создаёт BOOTSTRAP_SQL) и теги, уже
+  // стоящие на серверах, с цветами палитры по порядку
+  (sqlite) => {
+    sqlite.exec(TAG_SQL);
+    const rows = sqlite.prepare('select tags from server order by name').all() as {
+      tags: string;
+    }[];
+    const used = (sqlite.prepare('select color from tag').all() as { color: string }[]).map(
+      (r) => r.color,
+    );
+    const has = sqlite.prepare('select 1 from tag where name = ?');
+    const add = sqlite.prepare('insert into tag (name, color) values (?, ?)');
+    const fix = sqlite.prepare('update server set tags = ? where tags = ?');
+    for (const r of rows) {
+      let list: unknown;
+      try {
+        list = JSON.parse(r.tags);
+      } catch {
+        list = [];
+      }
+      const names = Array.isArray(list)
+        ? [...new Set(list.filter((t): t is string => typeof t === 'string').map(normTag))].filter(
+            Boolean,
+          )
+        : [];
+      for (const n of names) {
+        if (has.get(n)) continue;
+        const color = nextTagColor(used);
+        used.push(color);
+        add.run(n, color);
+      }
+      fix.run(JSON.stringify(names), r.tags);
+    }
   },
 ];
 
@@ -238,4 +278,5 @@ create table if not exists action_log (
 create index if not exists action_log_server on action_log(server_id, started_at);
 create index if not exists action_log_started on action_log(started_at);
 create table if not exists setting (key text primary key, value text not null);
+${TAG_SQL}
 `;

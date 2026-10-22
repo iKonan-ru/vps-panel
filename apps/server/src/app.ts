@@ -80,6 +80,7 @@ import { setupRoutes } from './routes/setup.js';
 import { standardRoutes } from './routes/standard.js';
 import { subscriptionRoutes } from './routes/subscription.js';
 import { systemRoutes } from './routes/system.js';
+import { tagRoutes } from './routes/tags.js';
 import { terminalRoutes } from './routes/terminal.js';
 import { uiWsRoutes } from './routes/ui-ws.js';
 import { updateRoutes } from './routes/updates.js';
@@ -221,6 +222,7 @@ export async function buildApp(opts: AppOptions) {
   // версии движка MTProxyL: готовые образы в реестре (ghcr.io), чтобы не собирать на сервере
   const engines = new EngineCatalog(registry, outFetch);
   await app.register(serverRoutes, { db, registry, env, hub, proxy: panelProxy });
+  await app.register(tagRoutes, { db, hub });
   // действия над сервером через агента - по файлу на область
   const serverRouteOpts = { db, env, registry, hub, box, engines };
   // новые версии панели (релизы GitHub) и обновление через службу на хосте; уведомление -

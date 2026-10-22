@@ -94,6 +94,9 @@ const appRoute = createRoute({ getParentRoute: () => rootRoute, id: 'app', compo
 const serversRoute = createRoute({
   getParentRoute: () => appRoute,
   path: '/',
+  // tag - фильтр списка по тегу (в адресе: переживает обновление страницы и "назад")
+  validateSearch: (s: Record<string, unknown>): { tag?: string } =>
+    typeof s.tag === 'string' && s.tag ? { tag: s.tag } : {},
   component: ServersPage,
 });
 const newServerRoute = createRoute({

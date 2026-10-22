@@ -14,10 +14,15 @@ import { MtproxylTab } from '@/components/server/mtproxyl/mtproxyl-tab';
 import { OpenfluxTab } from '@/components/server/openflux-tab';
 import { OverviewTab } from '@/components/server/overview-tab';
 import { RebootDialog } from '@/components/server/reboot-dialog';
-import { ReinstallDialog, RemoveDialog, RenameDialog } from '@/components/server/server-dialogs';
+import {
+  EditServerDialog,
+  ReinstallDialog,
+  RemoveDialog,
+} from '@/components/server/server-dialogs';
 import { SshKeysTab } from '@/components/server/ssh-keys-tab';
 import { WdttTab } from '@/components/server/wdtt-tab';
 import { XuiTab } from '@/components/server/xui-tab';
+import { ServerTags } from '@/components/servers/server-tags';
 import { ActionBar } from '@/components/ui/action-bar';
 import { Alert } from '@/components/ui/alert';
 import { Button } from '@/components/ui/button';
@@ -25,6 +30,7 @@ import { Card } from '@/components/ui/card';
 import { Chip } from '@/components/ui/chip';
 import { PageTitle } from '@/components/ui/page-title';
 import { LoadState } from '@/components/ui/placeholder';
+import { Presence } from '@/components/ui/presence';
 import { Section } from '@/components/ui/section';
 import { Tabs } from '@/components/ui/tabs';
 import { actions } from '@/lib/actions';
@@ -155,12 +161,14 @@ export function ServerPage() {
             <Button
               size="sm"
               variant="ghost"
-              aria-label="Переименовать"
+              aria-label="Изменить имя и теги"
+              title="Изменить имя и теги"
               onClick={() => setRename(true)}
             >
               <Pencil className="size-3.5" />
             </Button>
           </div>
+          <ServerTags tags={s.tags} onPick={(tag) => void navigate({ to: '/', search: { tag } })} />
           <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-[13px] leading-7 text-muted [&>*]:inline-flex [&>*]:h-7 [&>*]:items-center">
             <CopyText text={s.host} />
             <span>SSH {s.sshPort}</span>
@@ -345,7 +353,16 @@ export function ServerPage() {
         open={ipChange}
         onClose={() => setIpChange(false)}
       />
-      <RenameDialog serverId={s.id} name={s.name} open={rename} onClose={() => setRename(false)} />
+      <Presence value={rename && s}>
+        {(x) => (
+          <EditServerDialog
+            serverId={x.id}
+            name={x.name}
+            tags={x.tags}
+            onClose={() => setRename(false)}
+          />
+        )}
+      </Presence>
       <ReinstallDialog
         serverId={s.id}
         host={s.host}

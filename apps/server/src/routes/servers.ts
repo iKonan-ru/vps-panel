@@ -1,4 +1,10 @@
-import { HostingSchema, type ServerDetail, type ServerSummary, actionTitle } from '@vps/protocol';
+import {
+  HostingSchema,
+  type ServerDetail,
+  type ServerSummary,
+  TAG_MAX,
+  actionTitle,
+} from '@vps/protocol';
 import { and, eq, isNull } from 'drizzle-orm';
 import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
@@ -14,13 +20,17 @@ import { newId } from '../lib/ids.js';
 import { panelAddresses } from '../lib/panel-host.js';
 import type { PanelProxy } from '../lib/panel-proxy.js';
 import { removeServer } from '../lib/server-remove.js';
+import { ensureTags } from '../lib/tags.js';
 import type { UiHub } from '../lib/ui-hub.js';
 
 const CreateSchema = z.object({
   name: z.string().min(1).max(64),
   host: z.string().min(1).max(253),
   sshPort: z.number().int().min(1).max(65535).default(22),
-  tags: z.array(z.string().max(32)).default([]),
+  tags: z
+    .array(z.string().max(TAG_MAX * 2))
+    .max(50)
+    .default([]),
   hosting: HostingSchema.partial().optional(),
 });
 
@@ -75,7 +85,7 @@ export async function serverRoutes(
       name: body.name,
       host: body.host,
       sshPort: body.sshPort,
-      tags: body.tags,
+      tags: ensureTags(db, body.tags),
       ...hostingToRow(body.hosting),
     });
     const registrationToken = (await issueRegistration(db, id)) ?? '';
@@ -127,7 +137,7 @@ export async function serverRoutes(
     if (body.name !== undefined) patch.name = body.name;
     if (body.host !== undefined) patch.host = body.host;
     if (body.sshPort !== undefined) patch.sshPort = body.sshPort;
-    if (body.tags !== undefined) patch.tags = body.tags;
+    if (body.tags !== undefined) patch.tags = ensureTags(db, body.tags);
     const res = await db
       .update(servers)
       .set(patch)
