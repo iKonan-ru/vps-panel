@@ -1,9 +1,8 @@
 import { Alert } from '@/components/ui/alert';
-import { Button } from '@/components/ui/button';
+import { Button, ButtonAnchor } from '@/components/ui/button';
 import { Chip } from '@/components/ui/chip';
 import { useConfirm } from '@/components/ui/confirm';
 import { Dialog } from '@/components/ui/dialog';
-import { LinkButton } from '@/components/ui/link-button';
 import { QrCode } from '@/components/ui/qr-code';
 import { Select } from '@/components/ui/select';
 import { Switch } from '@/components/ui/switch';
@@ -11,7 +10,7 @@ import { api } from '@/lib/api';
 import { useAction } from '@/lib/use-action';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import type { BotLevel, BotLink, BotView } from '@vps/protocol';
-import { Link2, Unlink } from 'lucide-react';
+import { Link2, Send, Unlink } from 'lucide-react';
 import { useEffect, useState } from 'react';
 
 const KEY = ['tg-bot'];
@@ -164,9 +163,10 @@ export function BotSettingsRow({ tokenSet }: { tokenSet: boolean }) {
               note="Откройте камерой телефона и запустите бота"
             />
             <div className="flex justify-center">
-              <LinkButton href={link.url} label="Открыть в Telegram">
+              <ButtonAnchor href={link.url} target="_blank" rel="noreferrer" variant="primary">
+                <Send className="size-4" />
                 Открыть в Telegram
-              </LinkButton>
+              </ButtonAnchor>
             </div>
             <div className="text-center text-xs text-muted">
               Ссылка одноразовая и действует 10&nbsp;минут
