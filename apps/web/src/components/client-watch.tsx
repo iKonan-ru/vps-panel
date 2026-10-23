@@ -26,7 +26,7 @@ import {
   type WatchRuleView,
   serviceByBinding,
 } from '@vps/protocol';
-import { Pencil, Plus, Trash2 } from 'lucide-react';
+import { Bell, Pencil, Plus, Trash2 } from 'lucide-react';
 import { useEffect, useId, useRef, useState } from 'react';
 
 const NB = '\u00a0';
@@ -218,6 +218,7 @@ function WatchRuleDialog({
   onClose,
   rule,
   clientId,
+  preset,
   clients,
   lockClient,
 }: {
@@ -227,6 +228,8 @@ function WatchRuleDialog({
   rule: WatchRuleView | null;
   /** клиент нового правила */
   clientId?: string;
+  /** сервер, сервис и устройство нового правила */
+  preset?: Partial<WatchRuleBody>;
   clients: WatchClientOption[];
   lockClient?: boolean;
 }) {
@@ -239,12 +242,12 @@ function WatchRuleDialog({
 
   // при каждом открытии - с правила или пустое; список перечитывается раз в 20 с, форму это не
   // сбрасывает: правило и клиенты - из ref на момент открытия
-  const src = useRef({ rule, clientId, clients });
-  src.current = { rule, clientId, clients };
+  const src = useRef({ rule, clientId, preset, clients });
+  src.current = { rule, clientId, preset, clients };
   useEffect(() => {
     if (!open) return;
-    const { rule: r, clientId: cid, clients: cs } = src.current;
-    const b = r ? bodyOf(r) : blank(cid ?? cs[0]?.id);
+    const { rule: r, clientId: cid, preset: p, clients: cs } = src.current;
+    const b = r ? bodyOf(r) : { ...blank(cid ?? cs[0]?.id), ...p };
     setV(b);
     setDelay(String(b.delayMinutes));
     setError(null);
@@ -470,40 +473,33 @@ export function ClientWatchSettings() {
   );
 }
 
-/** Число правил клиента: для кнопки в карточке клиента. */
-export function useClientWatchCount(clientId: string): number {
-  const { data } = useWatch();
-  return data?.rules.filter((r) => r.clientId === clientId).length ?? 0;
-}
-
-/** Окно карточки клиента: его уведомления о подключении и добавление нового. */
-export function ClientWatchDialog({
-  open,
-  onClose,
-  clientId,
-}: { open: boolean; onClose: () => void; clientId: string }) {
+/** Блок карточки клиента: его уведомления о подключении и добавление нового. */
+export function ClientWatchSection({ clientId }: { clientId: string }) {
   const { data } = useWatch();
   const [adding, setAdding] = useState(false);
   const tg = useTgReady();
+  const count = data?.rules.filter((r) => r.clientId === clientId).length ?? 0;
   return (
-    <Dialog open={open} onClose={onClose} title="Уведомления о подключении" wide>
-      {!tg && <Alert tone="info">Telegram не настроен: сообщения не уйдут</Alert>}
-      {data === undefined ? (
-        <div className="text-[13px] text-muted">Загрузка&hellip;</div>
-      ) : (
-        <div className="-mx-5 border-y border-border">
-          <WatchRules rules={data.rules} clients={data.clients} clientId={clientId} />
+    <Section
+      title="Уведомления"
+      info="Сообщение в Telegram, когда клиент пропадает со связи или снова появляется. Настроить можно и из окна подключения сервиса"
+      extra={count > 0 && <Chip>{count}</Chip>}
+      actions={
+        <Button size="sm" onClick={() => setAdding(true)} label="Добавить" disabled={!data}>
+          <Plus className="size-3.5" />
+        </Button>
+      }
+    >
+      {!tg && count > 0 && (
+        <div className="px-4 pt-3">
+          <Alert tone="info">Telegram не настроен: сообщения не уйдут</Alert>
         </div>
       )}
-      <div className="flex justify-end gap-2">
-        <Button onClick={() => setAdding(true)} disabled={!data}>
-          <Plus className="size-4" />
-          Добавить
-        </Button>
-        <Button variant="ghost" onClick={onClose}>
-          Закрыть
-        </Button>
-      </div>
+      {data === undefined ? (
+        <div className="px-4 py-3 text-[13px] text-muted">Загрузка&hellip;</div>
+      ) : (
+        <WatchRules rules={data.rules} clients={data.clients} clientId={clientId} />
+      )}
       <WatchRuleDialog
         open={adding}
         onClose={() => setAdding(false)}
@@ -512,6 +508,69 @@ export function ClientWatchDialog({
         clients={data?.clients ?? []}
         lockClient
       />
-    </Dialog>
+    </Section>
+  );
+}
+
+/** Привязка, на которую настраивают уведомление из окна подключения. */
+export interface WatchTarget {
+  serverId: string;
+  service: GService;
+  deviceId: string | null;
+}
+
+/** Правило ровно на эту привязку, если оно уже есть. */
+function ruleFor(rules: WatchRuleView[] | undefined, clientId: string, t: WatchTarget) {
+  return rules?.find(
+    (r) =>
+      r.clientId === clientId &&
+      r.serverId === t.serverId &&
+      r.service === t.service &&
+      r.deviceId === t.deviceId,
+  );
+}
+
+/**
+ * Кнопка в окне подключения сервиса: уведомление ровно на эту привязку (есть - правка). У
+ * сервисов, чьё подключение не видно (OpenFlux), кнопки нет.
+ */
+export function WatchTargetButton({
+  clientId,
+  target,
+  onClick,
+}: { clientId: string; target: WatchTarget; onClick: () => void }) {
+  const { data } = useWatch();
+  if (!WATCH_SERVICES.includes(target.service)) return null;
+  const rule = ruleFor(data?.rules, clientId, target);
+  return (
+    <Button size="sm" variant="ghost" className="self-center" onClick={onClick} disabled={!data}>
+      <Bell className="size-3.5" />
+      {rule ? 'Изменить уведомление о подключении' : 'Уведомлять о подключении'}
+    </Button>
+  );
+}
+
+/** Окно правила для привязки: правка существующего или новое с подставленной привязкой. */
+export function WatchTargetDialog({
+  clientId,
+  target,
+  onClose,
+}: { clientId: string; target: WatchTarget | null; onClose: () => void }) {
+  const { data } = useWatch();
+  // привязка запоминается на время закрытия: окно уходит с анимацией, не меняя содержимого
+  const last = useRef(target);
+  if (target) last.current = target;
+  const t = last.current;
+  const rule = (t && ruleFor(data?.rules, clientId, t)) || null;
+  return (
+    <WatchRuleDialog
+      open={target !== null && data !== undefined}
+      onClose={onClose}
+      rule={rule}
+      clientId={clientId}
+      preset={t ?? {}}
+      clients={data?.clients ?? []}
+      lockClient
+    />
   );
 }

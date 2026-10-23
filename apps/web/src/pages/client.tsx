@@ -1,5 +1,10 @@
 import { Breadcrumbs } from '@/components/breadcrumbs';
-import { ClientWatchDialog, useClientWatchCount } from '@/components/client-watch';
+import {
+  ClientWatchSection,
+  type WatchTarget,
+  WatchTargetButton,
+  WatchTargetDialog,
+} from '@/components/client-watch';
 import { BindingPill, byServer, pillLabel } from '@/components/clients/binding-pill';
 import { BindingStates, deviceTitle } from '@/components/clients/binding-states';
 import {
@@ -30,7 +35,6 @@ import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { Link, useNavigate, useParams } from '@tanstack/react-router';
 import { type GBinding, type GClientDetail, type GDevice, serviceByBinding } from '@vps/protocol';
 import {
-  Bell,
   ExternalLink,
   KeyRound,
   Pencil,
@@ -61,10 +65,20 @@ export function ClientPage() {
   const [device, setDevice] = useState<GDevice | 'new' | null>(null);
   const [awgConfigBinding, setAwgConfigBinding] = useState<GBinding | null>(null);
   const [linksBinding, setLinksBinding] = useState<GBinding | null>(null);
-  const [qr, setQr] = useState(false);
-  const [watchOpen, setWatchOpen] = useState(false);
-  const watchCount = useClientWatchCount(id);
+  // VLESS: подписка одна на все серверы, привязка - для кнопки уведомления
+  const [qr, setQr] = useState<GBinding | null>(null);
+  const [watchTarget, setWatchTarget] = useState<WatchTarget | null>(null);
   const refresh = () => qc.invalidateQueries({ queryKey: ['gclient', id] });
+  const watchButton = (b: GBinding, close: () => void) => (
+    <WatchTargetButton
+      clientId={id}
+      target={{ serverId: b.serverId, service: b.service, deviceId: b.deviceId }}
+      onClick={() => {
+        close();
+        setWatchTarget({ serverId: b.serverId, service: b.service, deviceId: b.deviceId });
+      }}
+    />
+  );
   const live = useClientLive(id, data?.bindings ?? []);
 
   // пока идёт правка клиента, его кнопки недоступны (двойной тап по вкл/выкл - два запроса)
@@ -235,6 +249,7 @@ export function ClientPage() {
               </div>
             ))}
           </Section>
+          <ClientWatchSection clientId={id} />
         </div>
 
         <Section
@@ -263,13 +278,6 @@ export function ClientPage() {
                   icon: <SlidersHorizontal className="size-3.5" />,
                   title: 'Серверы и сервисы клиента',
                   onClick: () => setAccessOpen(true),
-                },
-                {
-                  key: 'watch',
-                  label: watchCount ? `Уведомления: ${watchCount}` : 'Уведомления',
-                  icon: <Bell className="size-3.5" />,
-                  title: 'Уведомления в Telegram о подключении клиента',
-                  onClick: () => setWatchOpen(true),
                 },
                 {
                   key: 'sync',
@@ -316,7 +324,7 @@ export function ClientPage() {
                       live={live.binding(b.id)}
                       onOpen={
                         b.service === 'xui'
-                          ? () => setQr(true)
+                          ? () => setQr(b)
                           : b.state !== 'ok'
                             ? undefined
                             : b.service === 'mtproxyl' ||
@@ -360,6 +368,7 @@ export function ClientPage() {
             device={data.devices.find((d) => d.id === awgConfigBinding.deviceId)?.type}
           />
         )}
+        {awgConfigBinding && watchButton(awgConfigBinding, () => setAwgConfigBinding(null))}
       </Dialog>
       <Dialog
         open={linksBinding !== null}
@@ -371,8 +380,9 @@ export function ClientPage() {
         }
       >
         {linksBinding && <ProxyLinks clientId={id} binding={linksBinding} exts={data.browserExt} />}
+        {linksBinding && watchButton(linksBinding, () => setLinksBinding(null))}
       </Dialog>
-      <Dialog open={qr} onClose={() => setQr(false)} title="Подписка VLESS">
+      <Dialog open={qr !== null} onClose={() => setQr(null)} title="Подписка VLESS">
         <div className="flex flex-col items-center gap-3">
           <div className="flex items-center gap-1 self-stretch text-[13px] text-muted">
             Одна подписка на все серверы
@@ -394,8 +404,9 @@ export function ClientPage() {
             Добавить в Happ
           </LinkButton>
         </div>
+        {qr && watchButton(qr, () => setQr(null))}
       </Dialog>
-      <ClientWatchDialog open={watchOpen} onClose={() => setWatchOpen(false)} clientId={id} />
+      <WatchTargetDialog clientId={id} target={watchTarget} onClose={() => setWatchTarget(null)} />
       <Dialog open={accessOpen} onClose={() => setAccessOpen(false)} title="Доступ">
         {accessOpen && (
           <AccessForm
