@@ -12,6 +12,7 @@ import Fastify from 'fastify';
 import { ZodError } from 'zod';
 import { AgentRegistry } from './agents/registry.js';
 import { bindStateToDb } from './agents/state.js';
+import { Bot } from './bot/index.js';
 
 import { type Env, panelDomain } from './config.js';
 import { type Db, createDb } from './db/index.js';
@@ -56,6 +57,7 @@ import { authRoutes, requireAuth, useHostCookies } from './routes/auth.js';
 import { awgRoutes } from './routes/awg.js';
 import { backupRoutes } from './routes/backups.js';
 import { baselineFirewallRoutes } from './routes/baseline-firewall.js';
+import { botRoutes } from './routes/bot.js';
 import { cascadeRoutes } from './routes/cascades.js';
 import { clientHostRoutes } from './routes/client-host.js';
 import { commandRoutes } from './routes/commands.js';
@@ -488,6 +490,20 @@ export async function buildApp(opts: AppOptions) {
   // личная страница клиента (подписка, MTProxy, AWG, приложения) - без входа
   await app.register(personalRoutes, { db, registry, box, env, apps: appReleases });
   await app.register(panelBackupRoutes, { backups: panelBackups });
+  // управление через Telegram-бота: тот же бот, что для уведомлений; данные - из API панели
+  const bot = new Bot({
+    db,
+    telegram,
+    inject: (o) => app.inject(o),
+    panelUrl: env.PANEL_PUBLIC_URL,
+    version: PANEL_VERSION,
+    log: app.log,
+  });
+  await app.register(botRoutes, { bot });
+  if (env.NODE_ENV !== 'test')
+    app.addHook('onReady', async () => {
+      stops.push(bot.start());
+    });
   bindStateToDb(registry, db, app.log);
   // отброшенное сообщение агента - в журнал, не чаще раза в 10 минут на сервер: иначе снимок
   // теряется без следа

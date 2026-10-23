@@ -52,6 +52,18 @@ interface TgMsg {
   date: number;
 }
 
+/** Ответ Bot API для бота управления. */
+export type TgApiResult =
+  | { ok: true; result: unknown; via: string }
+  | {
+      ok: false;
+      error: string;
+      status?: number;
+      description?: string;
+      retryAfter?: number | undefined;
+      via?: string;
+    };
+
 /** Недоставленное сообщение: уйдёт после восстановления. */
 interface Pending {
   at: string;
@@ -334,9 +346,39 @@ export class Telegram {
   }
 
   /**
-   * Вызов Bot API с хоста панели: напрямую или через HTTP-прокси (xray рядом с панелью).
-   * Возвращает тело ответа; ошибка Telegram - строкой с префиксом "Telegram", сетевая - без него
-   * (тогда имеет смысл другой путь).
+   * Запрос к Bot API с хоста панели: напрямую или через HTTP-прокси (xray рядом с панелью).
+   * Ответ - статус и тело как есть; сетевая ошибка - net (тогда имеет смысл другой путь).
+   */
+  private async request(
+    token: string,
+    method: string,
+    params: Record<string, unknown>,
+    proxy: ProxyAgent | null,
+    timeoutMs = proxy ? 15_000 : 8_000,
+  ): Promise<{ status: number; raw: string } | { net: string }> {
+    try {
+      const init = {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify(params),
+        signal: AbortSignal.timeout(timeoutMs),
+      };
+      const url = `https://api.telegram.org/bot${token}/${method}`;
+      const res = proxy
+        ? await ufetch(url, { ...init, dispatcher: proxy })
+        : await fetch(url, init);
+      return { status: res.status, raw: await res.text() };
+    } catch (e) {
+      const err = e as Error & { cause?: Error };
+      return {
+        net: `${proxy ? 'через прокси' : 'с сервера панели'}: ${err.cause?.message ?? err.message}`,
+      };
+    }
+  }
+
+  /**
+   * Вызов Bot API с хоста панели. Возвращает тело ответа; ошибка Telegram - строкой с префиксом
+   * "Telegram", сетевая - без него (тогда имеет смысл другой путь).
    */
   private async direct(
     token: string,
@@ -344,26 +386,63 @@ export class Telegram {
     params: Record<string, unknown>,
     proxy: ProxyAgent | null,
   ): Promise<{ raw?: string; err?: string }> {
-    try {
-      const init = {
-        method: 'POST',
-        headers: { 'content-type': 'application/json' },
-        body: JSON.stringify(params),
-        signal: AbortSignal.timeout(proxy ? 15_000 : 8_000),
-      };
-      const url = `https://api.telegram.org/bot${token}/${method}`;
-      const res = proxy
-        ? await ufetch(url, { ...init, dispatcher: proxy })
-        : await fetch(url, init);
-      const raw = await res.text();
-      if (res.ok) return { raw };
-      return { err: this.explain(res.status, raw) };
-    } catch (e) {
-      const err = e as Error & { cause?: Error };
+    const r = await this.request(token, method, params, proxy);
+    if ('net' in r) return { err: r.net };
+    if (r.status === 200) return { raw: r.raw };
+    return { err: this.explain(r.status, r.raw) };
+  }
+
+  /**
+   * Вызов Bot API для бота управления: выходы xray, прокси из окружения, напрямую (агенты
+   * не годятся: они умеют только текст). Рабочий путь последней доставки - первым. Ответ
+   * Telegram - как есть: result, описание ошибки и retry_after при 429; сбой сети на всех путях -
+   * только error.
+   */
+  async api(
+    method: string,
+    params: Record<string, unknown>,
+    timeoutMs?: number,
+  ): Promise<TgApiResult> {
+    const st = await this.settings();
+    if (!st.token) return { ok: false, error: 'не задан токен бота' };
+    const paths: { via: string; dispatcher: ProxyAgent | null }[] = [
+      ...this.proxies(),
+      { via: 'direct', dispatcher: null },
+    ];
+    const pref = this.route?.via;
+    paths.sort((a, b) => Number(b.via === pref) - Number(a.via === pref));
+    const errors: string[] = [];
+    for (const p of paths) {
+      const r = await this.request(st.token, method, params, p.dispatcher, timeoutMs);
+      if ('net' in r) {
+        errors.push(r.net);
+        continue;
+      }
+      let body: {
+        ok?: boolean;
+        result?: unknown;
+        description?: string;
+        parameters?: { retry_after?: number };
+      } = {};
+      try {
+        body = JSON.parse(r.raw);
+      } catch {
+        // ответ не JSON: ошибка ниже
+      }
+      if (r.status === 200 && body.ok) {
+        this.route = { via: p.via, at: Date.now() };
+        return { ok: true, result: body.result, via: p.via };
+      }
       return {
-        err: `${proxy ? 'через прокси' : 'с сервера панели'}: ${err.cause?.message ?? err.message}`,
+        ok: false,
+        status: r.status,
+        description: body.description ?? r.raw.slice(0, 200),
+        retryAfter: body.parameters?.retry_after,
+        error: this.explain(r.status, r.raw),
+        via: p.via,
       };
     }
+    return { ok: false, error: `Telegram недоступен: ${errors.slice(0, 3).join('; ')}` };
   }
 
   private async viaAgent(
@@ -523,12 +602,20 @@ export class Telegram {
     return { err: r.err ?? null, via: r.via ?? null };
   }
 
+  /**
+   * Кто писал боту, по потоку бота управления, пока он принимает сообщения: свой getUpdates
+   * рядом с ним Telegram отклонил бы (409).
+   */
+  chatsFromBot: (() => { id: string; title: string; when: string }[]) | null = null;
+
   /** Кто писал боту: подбор chat id для настроек. Токен - из формы или сохранённый. */
   async detectChats(
     tokenFromForm?: string,
   ): Promise<{ chats?: { id: string; title: string; when: string }[]; err?: string }> {
-    const token = tokenFromForm || (await this.settings()).token;
+    const saved = (await this.settings()).token;
+    const token = tokenFromForm || saved;
     if (!token) return { err: 'не задан токен бота' };
+    if (this.chatsFromBot && token === saved) return { chats: this.chatsFromBot() };
     const r = await this.call(token, 'getUpdates', {
       limit: 100,
       allowed_updates: ['message', 'my_chat_member', 'channel_post'],

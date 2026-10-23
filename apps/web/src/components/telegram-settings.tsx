@@ -1,3 +1,4 @@
+import { BotSettingsRow } from '@/components/bot-settings';
 import { type NotifyChoice, NotifyDialog, notifySummary } from '@/components/notify-dialog';
 import { failingFor } from '@/components/telegram-banner';
 import { Alert } from '@/components/ui/alert';
@@ -239,6 +240,7 @@ export function TelegramSettings() {
               <Route className="size-3.5" />
             </Button>
           </div>
+          <BotSettingsRow tokenSet={st.tokenSet} />
         </div>
         {note && <Alert tone={note.tone}>{note.text}</Alert>}
         <div className="flex justify-end">

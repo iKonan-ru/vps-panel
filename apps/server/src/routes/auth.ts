@@ -17,6 +17,7 @@ import {
   verifyTotp,
 } from '../lib/auth.js';
 import { newToken } from '../lib/ids.js';
+import { isInternal } from '../lib/internal-auth.js';
 
 /**
  * Префикс имён cookie: на https - `__Host-`. Такую cookie браузер принимает только с Secure,
@@ -240,6 +241,7 @@ export function requireAuth(db: Db) {
     )
       return reply.code(403).send({ error: 'запрос с чужой страницы' });
     if (!url.startsWith('/api/') || OPEN_API.has(url)) return;
+    if (isInternal(req)) return;
     const s = await sessionOf(db, sessionToken(req));
     if (!s) return reply.code(401).send({ error: 'вход не выполнен' });
   };

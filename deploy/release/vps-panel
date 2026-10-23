@@ -5,6 +5,8 @@
 #                                                        него, по IP; подписки, почта, логин)
 #   vps-panel admin [show | password | 2fa | login <имя> | init [имя]] [-y]
 #                                                        администратор: сброс пароля и 2FA
+#   vps-panel bot off                                    отключить управление через Telegram-бота
+#                                                        и отвязать аккаунт (потерян телефон)
 #   vps-panel domain <имя> [--sub <имя>]                 домен панели (была по IP или другой)
 #   vps-panel restore <файл .enc> [-y]                   восстановить панель из резервной копии
 #                                                        (пароль - вопросом или BACKUP_PASSWORD)
@@ -756,6 +758,25 @@ cmd_admin() {
   esac
 }
 
+# Управление через Telegram-бота: выключить без входа в панель (аккаунт Telegram потерян).
+cmd_bot() {
+  need_root
+  [ -f "$ENV_FILE" ] || die "панель не установлена в $ROOT"
+  case "${1:-}" in
+    off)
+      local r
+      r="$(panel_cli bot-off)" || exit 1
+      if [ "$(echo "$r" | json_field unbound)" = True ]; then
+        echo "управление через бота отключено, аккаунт Telegram отвязан"
+      else
+        echo "управление через бота отключено"
+      fi
+      echo "привязать заново: \"Настройки\" - \"Уведомления в Telegram\""
+      ;;
+    *) die "vps-panel bot off" ;;
+  esac
+}
+
 # Домен панели: была по IP (или другой домен). Прежний адрес остаётся (PANEL_ALIAS): по нему
 # ходят агенты и подписки клиентов, выданные раньше; агенты сами переходят на новый адрес при
 # следующем подключении.
@@ -864,6 +885,7 @@ case "${1:-}" in
   install) shift; cmd_install "$@" ;;
   restore) shift; cmd_restore "$@" ;;
   admin) shift; cmd_admin "$@" ;;
+  bot) shift; cmd_bot "$@" ;;
   domain) shift; cmd_domain "$@" ;;
   update) shift; cmd_update "$@" ;;
   rollback) cmd_rollback ;;
@@ -875,6 +897,6 @@ case "${1:-}" in
   restart) need_root; compose restart ;;
   fail2ban) need_root; install_fail2ban ;;
   uninstall) shift; cmd_uninstall "$@" ;;
-  help | -h | --help) sed -n '2,25p' "$0" | sed 's/^# \{0,1\}//' ;;
-  *) sed -n '2,25p' "$0" | sed 's/^# \{0,1\}//'; exit 1 ;;
+  help | -h | --help) sed -n '2,27p' "$0" | sed 's/^# \{0,1\}//' ;;
+  *) sed -n '2,27p' "$0" | sed 's/^# \{0,1\}//'; exit 1 ;;
 esac

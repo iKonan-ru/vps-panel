@@ -8,6 +8,7 @@
  *   admin-password        новый случайный пароль; все сессии закрываются
  *   admin-2fa             сбросить 2FA: настраивается при следующем входе; сессии закрываются
  *   admin-login <логин>   сменить логин
+ *   bot-off               отключить управление через Telegram-бота и отвязать аккаунт
  */
 import { gt } from 'drizzle-orm';
 import { createDb } from './db/index.js';
@@ -23,6 +24,7 @@ import {
   setPassword,
   theAdmin,
 } from './lib/auth.js';
+import { deleteSetting, getSetting, putSetting } from './lib/settings.js';
 
 class CliError extends Error {
   constructor(
@@ -85,9 +87,16 @@ async function main(argv: string[]) {
       await setLogin(db, a.id, login);
       return { login };
     }
+    case 'bot-off': {
+      // панель читает эти настройки при каждом сообщении боту: действует сразу, без перезапуска
+      const admin = getSetting(db, 'tg_bot_admin');
+      putSetting(db, 'tg_bot_on', '0');
+      deleteSetting(db, 'tg_bot_admin');
+      return { unbound: Boolean(admin) };
+    }
     default:
       throw new CliError(
-        `неизвестная команда "${cmd}": admin-init, admin-show, admin-password, admin-2fa, admin-login`,
+        `неизвестная команда "${cmd}": admin-init, admin-show, admin-password, admin-2fa, admin-login, bot-off`,
       );
   }
 }
