@@ -585,16 +585,23 @@ export class Telegram {
    * пересылаются (они умеют только текст). caption - HTML (команды - в <pre>, текст через esc).
    * Возвращает ошибку текстом или null.
    */
-  async sendDocument(name: string, data: Buffer, caption: string): Promise<string | null> {
+  async sendDocument(
+    name: string,
+    data: Buffer,
+    caption: string,
+    /** другой чат (бот отвечает администратору); по умолчанию - чат уведомлений */
+    chatId?: string,
+  ): Promise<string | null> {
     const st = await this.settings();
-    if (!st.token || !st.chatId) return 'не заданы токен бота или chat id';
+    const chat = chatId ?? st.chatId;
+    if (!st.token || !chat) return 'не заданы токен бота или chat id';
     // multipart собираем сами: одинаково для undici с прокси и встроенного fetch
     const boundary = `----vps${randomBytes(12).toString('hex')}`;
     const field = (k: string, v: string) =>
       `--${boundary}\r\nContent-Disposition: form-data; name="${k}"\r\n\r\n${v}\r\n`;
     const body = Buffer.concat([
       Buffer.from(
-        `${field('chat_id', st.chatId)}${field('caption', caption)}${field('parse_mode', 'HTML')}--${boundary}\r\nContent-Disposition: form-data; name="document"; filename="${name}"\r\nContent-Type: application/octet-stream\r\n\r\n`,
+        `${field('chat_id', chat)}${field('caption', caption)}${field('parse_mode', 'HTML')}--${boundary}\r\nContent-Disposition: form-data; name="document"; filename="${name}"\r\nContent-Type: application/octet-stream\r\n\r\n`,
       ),
       data,
       Buffer.from(`\r\n--${boundary}--\r\n`),

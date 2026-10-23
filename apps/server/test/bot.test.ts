@@ -42,6 +42,7 @@ const fake: BotTelegram = {
   chatsFromBot: null,
   buttons: null,
   muteUntil: () => undefined,
+  sendDocument: async () => null,
 };
 let bot: Bot;
 
@@ -509,6 +510,28 @@ describe('bot actions', () => {
       .all()
       .find((r) => r.kind === 'system.upgrade');
     expect(row?.initiator).toBe('telegram');
+  });
+
+  it('maintenance and security screens from the server card', async () => {
+    await bot.handle(press(ADMIN, cb('sv', SID)));
+    const card = JSON.stringify(sent('editMessageText')[0]?.params.reply_markup);
+    expect(card).toContain(`mt:${SID}`);
+    expect(card).toContain(`sc:${SID}`);
+    expect(card).not.toContain(`dk:${SID}`);
+    calls.length = 0;
+    await bot.handle(press(ADMIN, cb('mt', SID)));
+    const mt = sent('editMessageText')[0]?.params;
+    expect(String(mt?.text)).toContain('Обновления безопасности: 3');
+    expect(JSON.stringify(mt?.reply_markup)).toContain(`cl:${SID}`);
+    calls.length = 0;
+    await bot.handle(press(ADMIN, cb('sc', SID)));
+    expect(JSON.stringify(sent('editMessageText')[0]?.params.reply_markup)).toContain(`fd:${SID}`);
+  });
+
+  it('cleanup without the agent: an error alert, nothing runs', async () => {
+    await bot.handle(press(ADMIN, cb('cl', SID)));
+    expect(sent('answerCallbackQuery')[0]?.params.show_alert).toBe(true);
+    expect(sent('sendMessage')).toEqual([]);
   });
 
   it('view level refuses actions', async () => {

@@ -1,6 +1,7 @@
 import { createHash, randomBytes, timingSafeEqual } from 'node:crypto';
 import type {
   ActionListRow,
+  BackupInfo,
   BaselinePlan,
   BotAdmin,
   BotLink,
@@ -14,6 +15,7 @@ import type {
   ServiceUpdate,
   Tag,
 } from '@vps/protocol';
+import { actionTitle } from '@vps/protocol';
 import { eq } from 'drizzle-orm';
 import type { InjectOptions, LightMyRequestResponse } from 'fastify';
 import type { Db } from '../db/index.js';
@@ -37,17 +39,23 @@ import {
   STALE_TEXT,
   type Screen,
   actionView,
+  backupsView,
   bansView,
   codeView,
   confirmView,
+  containerView,
+  dockerView,
   finalText,
   findServers,
   journalView,
+  logsView,
+  maintenanceView,
   offConfirmView,
   planView,
   progressText,
   reachView,
   searchView,
+  securityView,
   serverView,
   serversView,
   settingsView,
@@ -113,7 +121,10 @@ interface TgUpdate {
   my_chat_member?: { chat: TgChat; from: TgUser; date: number };
 }
 
-export type BotTelegram = Pick<Telegram, 'api' | 'settings' | 'health' | 'muteUntil'> & {
+export type BotTelegram = Pick<
+  Telegram,
+  'api' | 'settings' | 'health' | 'muteUntil' | 'sendDocument'
+> & {
   chatsFromBot: Telegram['chatsFromBot'];
   buttons: Telegram['buttons'];
 };
@@ -539,6 +550,7 @@ export class Bot {
     }
     if (ACTION_OPS.has(op)) return this.onAction(q, msg, op, args, answer);
     if (op === 'cf') return this.onConfirm(msg, args[0] ?? '', answer);
+    if (op === 'af') return this.outputFile(msg, args[0] ?? '', answer);
     if (op === 'cx') {
       this.confirms.delete(args[0] ?? '');
       if (this.codeWait?.token === args[0]) this.codeWait = null;
@@ -839,6 +851,26 @@ export class Bot {
     if (row?.finishedAt) await this.finishTracked(res.actionId);
   }
 
+  /** Вывод действия целиком - файлом в чат. */
+  private async outputFile(
+    msg: TgMessage,
+    id: string,
+    answer: (text?: string, alert?: boolean) => Promise<TgApiResult>,
+  ) {
+    const a = await this.get<ActionListRow & { output: string }>(
+      `/api/actions/${encodeURIComponent(id)}`,
+    ).catch(() => null);
+    if (!a) return answer('Действие не найдено', true);
+    await answer();
+    const err = await this.deps.telegram.sendDocument(
+      `action-${a.startedAt.slice(0, 16).replace(/[:T]/g, '-')}.txt`,
+      Buffer.from(a.output, 'utf8'),
+      esc(actionTitle(a.kind, a.params)),
+      String(msg.chat.id),
+    );
+    if (err) await this.reply(msg.chat.id, { text: `\u274c ${esc(err)}`, kb: [] }, msg.message_id);
+  }
+
   private onHub(ev: UiEvent) {
     if (ev.type !== 'action.stream' && ev.type !== 'action.finished') return;
     const t = this.tracked.get(ev.actionId);
@@ -987,6 +1019,45 @@ export class Bot {
           },
           c,
         );
+      case 'mt': {
+        const id = encodeURIComponent(args[0] ?? '');
+        const [s, updates] = await Promise.all([
+          this.get<ServerDetail>(`/api/servers/${id}`),
+          this.get<ServiceUpdate[]>(`/api/servers/${id}/updates`),
+        ]);
+        return maintenanceView({ s, updates });
+      }
+      case 'sc':
+        return securityView(
+          await this.get<ServerDetail>(`/api/servers/${encodeURIComponent(args[0] ?? '')}`),
+        );
+      case 'dk':
+        return dockerView(
+          await this.get<ServerDetail>(`/api/servers/${encodeURIComponent(args[0] ?? '')}`),
+        );
+      case 'dc': {
+        const s = await this.get<ServerDetail>(`/api/servers/${encodeURIComponent(args[0] ?? '')}`);
+        const v = containerView(s, args[1] ?? '');
+        if (!v) throw new NotFound(args[1] ?? '');
+        return v;
+      }
+      case 'dl': {
+        const id = encodeURIComponent(args[0] ?? '');
+        const s = await this.get<ServerDetail>(`/api/servers/${id}`);
+        const ct = s.inventory?.containers.find((x) => x.id === args[1]);
+        if (!ct) throw new NotFound(args[1] ?? '');
+        const r = await this.get<{ text: string }>(
+          `/api/servers/${id}/docker/${encodeURIComponent(ct.id)}/logs?tail=80`,
+        );
+        return logsView(s, ct, r.text ?? '');
+      }
+      case 'bk': {
+        const [s, list] = await Promise.all([
+          this.get<ServerDetail>(`/api/servers/${encodeURIComponent(args[0] ?? '')}`),
+          this.get<BackupInfo[]>('/api/backups'),
+        ]);
+        return backupsView(s, list, c);
+      }
       case 'bn':
         return bansView(
           await this.get<ServerDetail>(`/api/servers/${encodeURIComponent(args[0] ?? '')}`),

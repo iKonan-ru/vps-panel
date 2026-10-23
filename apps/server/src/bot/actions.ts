@@ -1,4 +1,5 @@
 import type {
+  BackupComponent,
   BaselinePlan,
   CascadeCheck,
   PanelUpdateView,
@@ -72,9 +73,31 @@ export const ACTION_OPS = new Set([
   'pv',
   'ck',
   'wo',
+  'cl',
+  'uc',
+  'au',
+  'dr',
+  'ds',
+  'dt',
+  'fe',
+  'fd',
+  'bc',
 ]);
 
 const enc = encodeURIComponent;
+
+const DONE: Record<string, string> = {
+  restart: ' перезапущен',
+  stop: ' остановлен',
+  start: ' запущен',
+};
+
+/** Размер: 1,2 ГБ, 340 МБ. */
+export function size(bytes: number): string {
+  if (bytes >= 1024 ** 3)
+    return `${(Math.round((bytes / 1024 ** 3) * 10) / 10).toString().replace('.', ',')}\u00a0ГБ`;
+  return `${Math.max(1, Math.round(bytes / 1024 ** 2))}\u00a0МБ`;
+}
 
 /**
  * Описание действия по кнопке. Состояние перечитывается сейчас: кнопка в старом уведомлении не
@@ -176,10 +199,7 @@ export async function actionSpec(
         title: 'обновление пакетов',
         serverId: s.id,
         serverName: s.name,
-        stale:
-          (s.audit?.pendingUpdates ?? 0) === 0
-            ? 'Обновления безопасности уже установлены'
-            : undefined,
+        stale: s.status !== 'online' ? 'Сервер не в сети' : undefined,
         run: () => d.api.post(`/api/servers/${enc(s.id)}/upgrade`),
         after: async (ok) => {
           if (!ok) return [];
@@ -333,6 +353,141 @@ export async function actionSpec(
             enabled: false,
           });
           return { text: `Уведомление о подключении ${esc(r.clientName)} выключено` };
+        },
+      };
+    }
+    case 'cl': {
+      const s = await server(a0);
+      const scan = await d.api.get<{
+        items: { id: string; title: string; bytes: number; safe: boolean }[];
+      }>(`/api/servers/${enc(s.id)}/cleanup`);
+      const items = (scan.items ?? []).filter((x) => x.safe);
+      const total = items.reduce((a, x) => a + x.bytes, 0);
+      return {
+        risk: 'change',
+        verb: 'Очистить',
+        question: `Очистить диск ${esc(s.name)}? Освободится около ${size(total)}:\n${items
+          .map((x) => `- ${esc(x.title)}: ${size(x.bytes)}`)
+          .join('\n')}`,
+        title: 'очистка диска',
+        serverId: s.id,
+        serverName: s.name,
+        stale: items.length ? undefined : 'Чистить нечего',
+        run: () => d.api.post(`/api/servers/${enc(s.id)}/cleanup`, { ids: items.map((x) => x.id) }),
+      };
+    }
+    case 'uc': {
+      const s = await server(a0);
+      return {
+        risk: 'safe',
+        verb: 'Проверить',
+        question: `Проверить новые версии сервисов на ${esc(s.name)}?`,
+        title: 'проверка обновлений',
+        serverId: s.id,
+        serverName: s.name,
+        run: async () => {
+          const list = await d.api.post<ServiceUpdate[]>(`/api/servers/${enc(s.id)}/updates/check`);
+          const text = list.length
+            ? `<b>${esc(s.name)}</b>: доступны ${list.map((u) => `${esc(u.title)} ${esc(u.latest)}`).join(', ')}`
+            : `<b>${esc(s.name)}</b>: новых версий сервисов нет`;
+          return {
+            text,
+            kb: list.flatMap((u) => {
+              const c = UPDATE[u.kind];
+              return c ? [[{ text: `Обновить ${c.title}`, data: `up:${s.id}:${c.code}` }]] : [];
+            }),
+          };
+        },
+      };
+    }
+    case 'au': {
+      const s = await server(a0);
+      return {
+        risk: 'change',
+        verb: 'Обновить',
+        question: `Обновить агент на ${esc(s.name)}? VPN не прерывается.`,
+        title: 'обновление агента',
+        serverId: s.id,
+        serverName: s.name,
+        stale: s.agentUpdating
+          ? 'Агент уже обновляется'
+          : !s.agentUpdateAvailable
+            ? 'Агент последней версии'
+            : undefined,
+        run: () => d.api.post(`/api/servers/${enc(s.id)}/agent/update`),
+      };
+    }
+    case 'dr':
+    case 'ds':
+    case 'dt': {
+      const s = await server(a0);
+      const c = s.inventory?.containers.find((x) => x.id === a1);
+      if (!c) return null;
+      const action = op === 'dr' ? 'restart' : op === 'ds' ? 'stop' : 'start';
+      const verb = op === 'dr' ? 'Перезапустить' : op === 'ds' ? 'Остановить' : 'Запустить';
+      const running = c.state === 'running';
+      return {
+        risk: op === 'ds' ? 'change' : 'safe',
+        verb,
+        question: `${verb} контейнер ${esc(c.name)} на ${esc(s.name)}?`,
+        title: `${verb.toLowerCase()} ${c.name}`,
+        serverId: s.id,
+        serverName: s.name,
+        stale:
+          op === 'ds' && !running
+            ? 'Контейнер уже остановлен'
+            : op === 'dt' && running
+              ? 'Контейнер уже запущен'
+              : undefined,
+        run: async () => {
+          await d.api.post(`/api/servers/${enc(s.id)}/docker/${enc(c.id)}/${action}`);
+          return { text: `<b>${esc(s.name)}</b>: ${esc(c.name)}${DONE[action]}` };
+        },
+      };
+    }
+    case 'fe':
+    case 'fd': {
+      const s = await server(a0);
+      const on = s.firewall?.ufwActive === true;
+      return {
+        risk: op === 'fe' ? 'change' : 'danger',
+        verb: op === 'fe' ? 'Включить' : 'Выключить',
+        question:
+          op === 'fe'
+            ? `Включить firewall на ${esc(s.name)}? Открытыми останутся порты сервисов.`
+            : `Выключить firewall на ${esc(s.name)}? Сервер останется без защиты портов.`,
+        title: op === 'fe' ? 'включение firewall' : 'выключение firewall',
+        serverId: s.id,
+        serverName: s.name,
+        stale:
+          op === 'fe' && on
+            ? 'Firewall уже включён'
+            : op === 'fd' && !on
+              ? 'Firewall уже выключен'
+              : undefined,
+        run: () =>
+          op === 'fe'
+            ? d.api.post(`/api/servers/${enc(s.id)}/firewall/enable`)
+            : d.api.post(`/api/servers/${enc(s.id)}/firewall/disable`, { restartDocker: false }),
+      };
+    }
+    case 'bc': {
+      const s = await server(a0);
+      return {
+        risk: 'change',
+        verb: 'Создать',
+        question: `Создать резервную копию ${esc(s.name)}? Все найденные сервисы.`,
+        title: 'резервная копия',
+        serverId: s.id,
+        serverName: s.name,
+        stale: s.status !== 'online' ? 'Сервер не в сети' : undefined,
+        run: async () => {
+          const comps = await d.api.get<BackupComponent[]>(
+            `/api/servers/${enc(s.id)}/backups/components`,
+          );
+          return d.api.post(`/api/servers/${enc(s.id)}/backups`, {
+            components: comps.map((x) => x.id),
+          });
         },
       };
     }

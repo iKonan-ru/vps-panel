@@ -1,5 +1,6 @@
 import {
   type ActionListRow,
+  type BackupInfo,
   type BaselinePlan,
   type BotAdmin,
   type GClientRow,
@@ -474,10 +475,20 @@ export function serverView(
     lines.push(`<b>Сейчас:</b> ${s.activeActions.map((a) => esc(a.title)).join('; ')}`);
 
   const kb: Btn[][] = [];
+  if (s.status === 'online')
+    kb.push([
+      { text: 'Обслуживание', data: cb('mt', s.id) },
+      { text: 'Безопасность', data: cb('sc', s.id) },
+    ]);
   const row: Btn[] = [];
+  if (s.status === 'online' && (s.inventory?.containers.length ?? 0) > 0)
+    row.push({ text: 'Docker', data: cb('dk', s.id) });
   if (targets.length) row.push({ text: 'Доступность', data: cb('rc', s.id) });
-  row.push({ text: 'Журнал', data: cb('lg', s.id, 0) });
-  kb.push(row);
+  if (row.length) kb.push(row);
+  kb.push([
+    { text: 'Резервные копии', data: cb('bk', s.id) },
+    { text: 'Журнал', data: cb('lg', s.id, 0) },
+  ]);
   const link = panelLink(c, `/servers/${encodeURIComponent(s.id)}`);
   if (link.length) kb.push(link);
   kb.push([
@@ -600,7 +611,10 @@ export function actionView(
       : { text: `${I.back} Журнал`, data: cb('lg', '-', 0) };
   const row: Btn[] = [back];
   if (!a.finishedAt) row.push({ text: 'Обновить', data: cb('ac', a.id, d.from) });
-  return { text: lines.join('\n'), kb: [row] };
+  const kb: Btn[][] = [row];
+  if (a.finishedAt && a.output.trim().length > out.length)
+    kb.unshift([{ text: 'Вывод файлом', data: cb('af', a.id) }]);
+  return { text: lines.join('\n'), kb };
 }
 
 // ---- управление ботом ----
@@ -749,4 +763,175 @@ export function finalText(
     : `${I.fail} ошибка${a.exitCode !== null ? `, код ${a.exitCode}` : ''}`;
   const t = tail(a.output, 1500);
   return `${header} ${res}${dur}${t ? `\n<pre>${esc(t)}</pre>` : ''}`;
+}
+
+// ---- обслуживание, безопасность, Docker, резервные копии ----
+
+const back = (s: { id: string; name: string }): Btn[] => [
+  { text: `${I.back} ${cut(s.name, 20)}`, data: cb('sv', s.id) },
+];
+
+const UPD_CODE: Record<string, string> = {
+  xui: 'x',
+  xray: 'y',
+  mtproxyl: 'm',
+  'mtproxyl-panel': 'p',
+};
+
+export function maintenanceView(d: { s: ServerDetail; updates: ServiceUpdate[] }): Screen {
+  const { s } = d;
+  const lines = [`<b>${esc(s.name)}</b>${DASH}обслуживание`, ''];
+  const pending = s.audit?.pendingUpdates ?? 0;
+  lines.push(pending ? `Обновления безопасности: ${pending}` : 'Обновлений безопасности нет');
+  if (s.audit?.rebootRequired) lines.push('Нужна перезагрузка: обновлено ядро или библиотеки');
+  for (const u of d.updates)
+    lines.push(
+      `${esc(u.title)}: ${esc(u.latest)}${u.current ? ` (сейчас ${esc(u.current)})` : ''}`,
+    );
+  if (s.metrics)
+    lines.push(
+      `Диск: ${Math.round(s.metrics.diskUsedGb)} из ${Math.round(s.metrics.diskTotalGb)}${NB}ГБ`,
+    );
+  lines.push(
+    `Агент: ${esc(s.agentVersion ?? '')}${s.agentUpdateAvailable ? ', есть новая версия' : ''}`,
+  );
+  const kb: Btn[][] = [
+    [
+      { text: 'Обновить пакеты', data: cb('pu', s.id) },
+      { text: 'Перезагрузить', data: cb('rb', s.id) },
+    ],
+    [
+      { text: 'Очистить диск', data: cb('cl', s.id) },
+      { text: 'Проверить обновления', data: cb('uc', s.id) },
+    ],
+  ];
+  for (const u of d.updates) {
+    const code = UPD_CODE[u.kind];
+    if (code) kb.push([{ text: `Обновить ${u.title} до ${u.latest}`, data: cb('up', s.id, code) }]);
+  }
+  if (s.agentUpdateAvailable && !s.agentUpdating)
+    kb.push([{ text: 'Обновить агент', data: cb('au', s.id) }]);
+  kb.push(back(s));
+  return { text: lines.join('\n'), kb };
+}
+
+export function securityView(s: ServerDetail): Screen {
+  const lines = [`<b>${esc(s.name)}</b>${DASH}безопасность`, ''];
+  const f = s.audit?.findings ?? [];
+  const sev = { high: I.bad, medium: I.warn, info: I.none } as const;
+  for (const x of f.slice(0, 15)) lines.push(`${sev[x.severity]} ${esc(x.text)}`);
+  if (!f.length) lines.push('Замечаний нет');
+  lines.push('');
+  if (s.firewall) lines.push(`Firewall: ${s.firewall.ufwActive ? 'включён' : 'выключен'}`);
+  if (s.audit) {
+    const banned = s.audit.jails.reduce((a, j) => a + j.banned, 0);
+    lines.push(
+      `fail2ban: ${s.audit.fail2banRunning ? `работает, в бане ${banned}` : 'не работает'}`,
+      `SSH: порт ${s.audit.sshPort}, вход по паролю ${s.audit.sshPasswordAuth ? 'включён' : 'выключен'}`,
+    );
+  }
+  const kb: Btn[][] = [
+    [
+      { text: 'План исправления', data: cb('pl', s.id) },
+      { text: 'Баны', data: cb('bn', s.id) },
+    ],
+  ];
+  if (s.firewall)
+    kb.push([
+      s.firewall.ufwActive
+        ? { text: 'Выключить firewall', data: cb('fd', s.id) }
+        : { text: 'Включить firewall', data: cb('fe', s.id) },
+    ]);
+  kb.push(back(s));
+  return { text: lines.join('\n'), kb };
+}
+
+const STATE: Record<string, string> = {
+  running: 'работает',
+  exited: 'остановлен',
+  restarting: 'перезапускается',
+  paused: 'приостановлен',
+  created: 'создан',
+  removing: 'удаляется',
+  dead: 'сбой',
+};
+
+export function dockerView(s: ServerDetail): Screen {
+  const list = s.inventory?.containers ?? [];
+  const lines = [`<b>${esc(s.name)}</b>${DASH}Docker`, ''];
+  for (const c of list)
+    lines.push(
+      `${c.state === 'running' ? I.ok : I.bad} ${esc(c.name)}${SEP}${STATE[c.state] ?? c.state}`,
+    );
+  if (!list.length) lines.push('Контейнеров нет');
+  const kb: Btn[][] = [];
+  for (let i = 0; i < Math.min(list.length, 30); i += 2)
+    kb.push(
+      list.slice(i, i + 2).map((c) => ({ text: cut(c.name, 24), data: cb('dc', s.id, c.id) })),
+    );
+  kb.push(back(s));
+  return { text: lines.join('\n'), kb };
+}
+
+export function containerView(s: ServerDetail, cid: string): Screen | null {
+  const c = s.inventory?.containers.find((x) => x.id === cid);
+  if (!c) return null;
+  const lines = [
+    `<b>${esc(s.name)}</b>${DASH}${esc(c.name)}`,
+    `${c.state === 'running' ? I.ok : I.bad} ${STATE[c.state] ?? c.state}${SEP}${esc(c.status)}`,
+    `Образ: <code>${esc(c.image)}</code>`,
+  ];
+  if (c.published.length) lines.push(`Порты: ${esc(c.published.join(', '))}`);
+  if (c.cpuPercent !== undefined || c.memMb !== undefined)
+    lines.push(
+      [
+        c.cpuPercent !== undefined ? `CPU ${Math.round(c.cpuPercent)}%` : '',
+        c.memMb !== undefined ? `RAM ${Math.round(c.memMb)}${NB}МБ` : '',
+      ]
+        .filter(Boolean)
+        .join(SEP),
+    );
+  const running = c.state === 'running';
+  const kb: Btn[][] = [
+    running
+      ? [
+          { text: 'Перезапустить', data: cb('dr', s.id, c.id) },
+          { text: 'Остановить', data: cb('ds', s.id, c.id) },
+        ]
+      : [{ text: 'Запустить', data: cb('dt', s.id, c.id) }],
+    [{ text: 'Журнал контейнера', data: cb('dl', s.id, c.id) }],
+    [{ text: `${I.back} Docker`, data: cb('dk', s.id) }],
+  ];
+  return { text: lines.join('\n'), kb };
+}
+
+export function logsView(
+  s: { id: string; name: string },
+  c: { id: string; name: string },
+  text: string,
+): Screen {
+  const t = tail(text, 3200);
+  return {
+    text: `<b>${esc(s.name)}</b>${DASH}${esc(c.name)}, журнал${t ? `\n<pre>${esc(t)}</pre>` : '\nпусто'}`,
+    kb: [
+      [
+        { text: `${I.back} ${cut(c.name, 20)}`, data: cb('dc', s.id, c.id) },
+        { text: 'Обновить', data: cb('dl', s.id, c.id) },
+      ],
+    ],
+  };
+}
+
+export function backupsView(s: ServerDetail, list: BackupInfo[], c: Ctx): Screen {
+  const mine = list.filter((b) => b.serverId === s.id).slice(0, 10);
+  const lines = [`<b>${esc(s.name)}</b>${DASH}резервные копии`, ''];
+  for (const b of mine)
+    lines.push(
+      `${tgWhen(b.createdAt, c.now)}${SEP}${Math.max(1, Math.round(b.size / 1024 ** 2))}${NB}МБ`,
+    );
+  if (!mine.length) lines.push('Копий нет');
+  const kb: Btn[][] = [];
+  if (s.status === 'online') kb.push([{ text: 'Создать резервную копию', data: cb('bc', s.id) }]);
+  kb.push(back(s));
+  return { text: lines.join('\n'), kb };
 }
