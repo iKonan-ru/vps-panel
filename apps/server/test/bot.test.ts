@@ -27,6 +27,7 @@ const fake: BotTelegram = {
   api: async (method, params): Promise<TgApiResult> => {
     calls.push({ method, params });
     if (method === 'getMe') return { ok: true, result: { username: 'test_bot' }, via: 'direct' };
+    if (method === 'sendMessage') return { ok: true, result: { message_id: 500 }, via: 'direct' };
     return { ok: true, result: true, via: 'direct' };
   },
   settings: async () => ({ token: '1:x' }) as Awaited<ReturnType<BotTelegram['settings']>>,
@@ -43,6 +44,7 @@ const fake: BotTelegram = {
   buttons: null,
   muteUntil: () => undefined,
   sendDocument: async () => null,
+  sendFile: async () => ({ err: null, messageId: 77 }),
 };
 let bot: Bot;
 
@@ -532,6 +534,79 @@ describe('bot actions', () => {
     await bot.handle(press(ADMIN, cb('cl', SID)));
     expect(sent('answerCallbackQuery')[0]?.params.show_alert).toBe(true);
     expect(sent('sendMessage')).toEqual([]);
+  });
+
+  it('clients: wizard creates a client with a device', async () => {
+    await bot.handle(press(ADMIN, cb('nc')));
+    const ask = sent('sendMessage')[0]?.params;
+    expect(String(ask?.text)).toContain('Имя клиента');
+    calls.length = 0;
+    await bot.handle(msg(ADMIN, 'Борис'));
+    expect(String(sent('editMessageText')[0]?.params.text)).toContain('Тип устройства');
+    const flowMsg = { message_id: 500, date: 0, chat: { id: ADMIN, type: 'private' } };
+    calls.length = 0;
+    await bot.handle({
+      update_id: 5,
+      callback_query: { id: 'q', from: { id: ADMIN }, data: cb('fy', 'android'), message: flowMsg },
+    });
+    expect(String(sent('editMessageText')[0]?.params.text)).toContain('Имя устройства');
+    calls.length = 0;
+    await bot.handle(msg(ADMIN, 'pixel'));
+    expect(String(sent('editMessageText')[0]?.params.text)).toContain('создан');
+    const list = (
+      await app.inject({ method: 'GET', url: '/api/gclients', headers: internalHeaders() })
+    ).json() as {
+      name: string;
+      devices: { name: string; type: string }[];
+    }[];
+    const b = list.find((c) => c.name === 'Борис');
+    expect(b?.devices).toEqual([expect.objectContaining({ name: 'pixel', type: 'android' })]);
+  });
+
+  it('clients: card, links with copy buttons and later removal', async () => {
+    const list = (
+      await app.inject({ method: 'GET', url: '/api/gclients', headers: internalHeaders() })
+    ).json() as {
+      id: string;
+      name: string;
+    }[];
+    const id = list.find((c) => c.name === 'Борис')?.id ?? '';
+    await bot.handle(msg(ADMIN, 'Клиенты'));
+    expect(String(sent('sendMessage')[0]?.params.text)).toContain('<b>Борис</b>');
+    calls.length = 0;
+    await bot.handle(press(ADMIN, cb('gc', id)));
+    expect(JSON.stringify(sent('editMessageText')[0]?.params.reply_markup)).toContain(`gk:${id}`);
+    calls.length = 0;
+    await bot.handle(press(ADMIN, cb('gk', id)));
+    const links = sent('sendMessage')[0]?.params;
+    expect(String(links?.text)).toContain('tg-spoiler');
+    expect(JSON.stringify(links?.reply_markup)).toContain('copy_text');
+    expect(getSetting(db, 'tg_bot_delete')).toContain('"chat":"155"');
+  });
+
+  it('clients: turning off needs confirmation', async () => {
+    const list = (
+      await app.inject({ method: 'GET', url: '/api/gclients', headers: internalHeaders() })
+    ).json() as {
+      id: string;
+      name: string;
+      enabled: boolean;
+    }[];
+    const id = list.find((c) => c.name === 'Борис')?.id ?? '';
+    await bot.handle(press(ADMIN, cb('ge', id, 0)));
+    const confirm = sent('sendMessage')[0]?.params;
+    expect(String(confirm?.text)).toContain('Выключить клиента Борис?');
+    const ok =
+      (confirm?.reply_markup as { inline_keyboard: { callback_data?: string }[][] })
+        .inline_keyboard[0]?.[0]?.callback_data ?? '';
+    await bot.handle(press(ADMIN, ok));
+    const after = (
+      await app.inject({ method: 'GET', url: '/api/gclients', headers: internalHeaders() })
+    ).json() as {
+      name: string;
+      enabled: boolean;
+    }[];
+    expect(after.find((c) => c.name === 'Борис')?.enabled).toBe(false);
   });
 
   it('view level refuses actions', async () => {

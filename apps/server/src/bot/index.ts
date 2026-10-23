@@ -7,6 +7,8 @@ import type {
   BotLink,
   BotPoll,
   BotView,
+  GClientDetail,
+  GClientLive,
   GClientRow,
   PanelUpdateView,
   ServerDetail,
@@ -14,10 +16,12 @@ import type {
   ServerSummary,
   ServiceUpdate,
   Tag,
+  WatchList,
 } from '@vps/protocol';
-import { actionTitle } from '@vps/protocol';
+import { DEVICES, actionTitle, deviceOf } from '@vps/protocol';
 import { eq } from 'drizzle-orm';
 import type { InjectOptions, LightMyRequestResponse } from 'fastify';
+import QRCode from 'qrcode';
 import type { Db } from '../db/index.js';
 import { actionLog, servers } from '../db/schema.js';
 import { theAdmin, verifyTotp } from '../lib/auth.js';
@@ -28,6 +32,19 @@ import { esc } from '../lib/telegram.js';
 import type { NotifyMeta, Telegram, TgApiResult } from '../lib/telegram.js';
 import type { UiEvent } from '../lib/ui-hub.js';
 import { ACTION_OPS, type ActionSpec, ApiError, type PanelApi, actionSpec } from './actions.js';
+import {
+  askDeviceName,
+  askName,
+  askType,
+  clientView,
+  clientsView,
+  created,
+  deviceView,
+  devicesView,
+  linksView,
+  liveView,
+  watchesView,
+} from './client-views.js';
 import { Refs, parseCb } from './codec.js';
 import { type BotLevel, notifyButtons } from './notify-buttons.js';
 import {
@@ -75,6 +92,11 @@ const CODE_FAILS = 5;
 const CODE_LOCK_MS = 15 * 60_000;
 /** Ход действия правится не чаще. */
 const PROGRESS_EDIT_MS = 3_000;
+/** Ссылки и конфиги клиентов удаляются из чата через 10 минут (решение Konan). */
+const SECRET_TTL_MS = 10 * 60_000;
+const DELETE_KEY = 'tg_bot_delete';
+/** Мастер (новый клиент, устройство) забывается через 15 минут. */
+const FLOW_TTL_MS = 15 * 60_000;
 const ADMIN_KEY = 'tg_bot_admin';
 /** Номер следующего обновления вместе с отпечатком токена: у другого бота свои номера. */
 const OFFSET_KEY = 'tg_bot_offset';
@@ -123,7 +145,7 @@ interface TgUpdate {
 
 export type BotTelegram = Pick<
   Telegram,
-  'api' | 'settings' | 'health' | 'muteUntil' | 'sendDocument'
+  'api' | 'settings' | 'health' | 'muteUntil' | 'sendDocument' | 'sendFile'
 > & {
   chatsFromBot: Telegram['chatsFromBot'];
   buttons: Telegram['buttons'];
@@ -142,6 +164,25 @@ export interface BotDeps {
 }
 
 class NotFound extends Error {}
+
+/** Мастер: новый клиент или устройство; mid - сообщение, которое правится по шагам. */
+interface Flow {
+  kind: 'client' | 'device';
+  step: 'name' | 'type' | 'device';
+  chat: number;
+  mid: number;
+  clientId?: string;
+  name?: string;
+  type?: string;
+  expires: number;
+}
+
+/** Сообщение со ссылками клиента: когда удалить. */
+interface Pending {
+  chat: string;
+  id: number;
+  at: number;
+}
 
 /** Ход действия, запущенного из бота: в каком сообщении он показывается. */
 interface Tracked {
@@ -187,6 +228,9 @@ export class Bot {
   private lockedUntil = 0;
   private usedCodes = new Map<string, number>();
   private tracked = new Map<string, Tracked>();
+  /** мастер: новый клиент или устройство */
+  private flow: Flow | null = null;
+  private deleteTimer: NodeJS.Timeout | null = null;
   private unlisten: (() => void) | null = null;
 
   constructor(private deps: BotDeps) {
@@ -296,10 +340,12 @@ export class Bot {
   start(): () => void {
     this.running = true;
     this.unlisten = this.deps.hub?.listen((ev) => this.onHub(ev)) ?? null;
+    this.scheduleDeletes();
     void this.loop();
     return () => {
       this.running = false;
       this.unlisten?.();
+      if (this.deleteTimer) clearTimeout(this.deleteTimer);
       this.deps.telegram.chatsFromBot = null;
       this.wake();
     };
@@ -464,8 +510,14 @@ export class Bot {
       const w = this.codeWait;
       this.codeWait = null;
       if (w) await this.editText(w.chat, w.mid, 'Отменено');
+      const f = this.flow;
+      this.flow = null;
+      if (f) await this.editText(f.chat, f.mid, 'Отменено');
       return;
     }
+    if (this.flow && Date.now() > this.flow.expires) this.flow = null;
+    if (this.flow && text && !text.startsWith('/') && !Object.values(MENU).includes(text))
+      return this.onFlowText(m, text);
     if (cmd === '/start') {
       await this.send('sendMessage', {
         chat_id: chat,
@@ -478,20 +530,33 @@ export class Bot {
       return this.reply(chat, await this.screen('m', []));
     if (cmd === '/servers' || text === MENU.servers)
       return this.reply(chat, await this.screen('sl', ['-', '0']));
+    if (cmd === '/clients' || text === MENU.clients)
+      return this.reply(chat, await this.screen('gl', ['0', '0']));
     if (cmd === '/log' || text === MENU.log)
       return this.reply(chat, await this.screen('lg', ['-', '0']));
     if (cmd === '/settings' || text === MENU.more)
       return this.reply(chat, await this.screen('st', []));
     if (text.startsWith('/'))
       return this.reply(chat, {
-        text: 'Команды: /menu, /servers, /log, /settings',
+        text: 'Команды: /menu, /servers, /clients, /log, /settings',
         kb: [],
       });
     if (!text) return;
-    const found = findServers(await this.get<ServerSummary[]>('/api/servers'), text);
-    if (found.length === 1 && found[0])
+    const [list, rows] = await Promise.all([
+      this.get<ServerSummary[]>('/api/servers'),
+      this.get<GClientRow[]>('/api/gclients'),
+    ]);
+    const found = findServers(list, text);
+    const qq = text.toLocaleLowerCase('ru');
+    const exact = rows.filter((r) => r.name.toLocaleLowerCase('ru') === qq);
+    const clients = exact.length
+      ? exact
+      : rows.filter((r) => r.name.toLocaleLowerCase('ru').includes(qq));
+    if (found.length === 1 && !clients.length && found[0])
       return this.reply(chat, await this.screen('sv', [found[0].id]));
-    return this.reply(chat, searchView(text, found));
+    if (clients.length === 1 && !found.length && clients[0])
+      return this.reply(chat, await this.screen('gc', [clients[0].id]));
+    return this.reply(chat, searchView(text, found, clients));
   }
 
   private async bind(from: TgUser) {
@@ -551,6 +616,9 @@ export class Bot {
     if (ACTION_OPS.has(op)) return this.onAction(q, msg, op, args, answer);
     if (op === 'cf') return this.onConfirm(msg, args[0] ?? '', answer);
     if (op === 'af') return this.outputFile(msg, args[0] ?? '', answer);
+    if (op === 'gk' || op === 'gq' || op === 'ga') return this.secrets(msg, op, args, answer);
+    if (op === 'nc' || op === 'nd' || op === 'fy' || op === 'fs' || op === 'fx')
+      return this.onFlowButton(msg, op, args, answer);
     if (op === 'cx') {
       this.confirms.delete(args[0] ?? '');
       if (this.codeWait?.token === args[0]) this.codeWait = null;
@@ -588,9 +656,10 @@ export class Bot {
     get: (url) => this.get(url),
     post: (url, body) => this.call('POST', url, body),
     put: (url, body) => this.call('PUT', url, body),
+    patch: (url, body) => this.call('PATCH', url, body),
   };
 
-  private async call<T>(method: 'POST' | 'PUT', url: string, body?: unknown): Promise<T> {
+  private async call<T>(method: 'POST' | 'PUT' | 'PATCH', url: string, body?: unknown): Promise<T> {
     const res = await this.deps.inject({
       method,
       url,
@@ -827,6 +896,12 @@ export class Bot {
       await show(res.screen.text, res.screen);
       return;
     }
+    if ('reopen' in res) {
+      const target = editMid ?? replyTo;
+      const sc = await this.screen(res.reopen.op, res.reopen.args).catch(() => null);
+      if (sc && target) await this.editText(chat, target, sc.text, sc);
+      return;
+    }
     if ('text' in res) {
       await show(res.text, res.kb ? { text: res.text, kb: res.kb } : undefined);
       return;
@@ -904,6 +979,201 @@ export class Bot {
     const kb = [...extra, [{ text: 'Подробнее', data: `ac:${actionId}:s` }]];
     const text = finalText(t.header, a);
     await this.editText(t.chat, t.mid, text, { text, kb });
+  }
+
+  // ---- ссылки и конфиги клиентов: удаляются из чата через 10 минут ----
+
+  private async secrets(
+    msg: TgMessage,
+    op: string,
+    args: string[],
+    answer: (text?: string, alert?: boolean) => Promise<TgApiResult>,
+  ) {
+    const g = await this.get<GClientDetail>(
+      `/api/gclients/${encodeURIComponent(args[0] ?? '')}`,
+    ).catch(() => null);
+    if (!g) return answer('Клиент не найден', true);
+    const chat = msg.chat.id;
+    if (op === 'gk') {
+      await answer();
+      const r = await this.reply(chat, linksView(g), msg.message_id);
+      if (r?.ok) this.forgetLater(chat, (r.result as { message_id: number }).message_id);
+      return;
+    }
+    if (op === 'gq') {
+      await answer();
+      const png = await QRCode.toBuffer(g.subscription.url, { margin: 2, width: 720 });
+      const r = await this.deps.telegram.sendFile(
+        'photo',
+        'subscription.png',
+        png,
+        `<b>${esc(g.client.name)}</b>: QR подписки (удалится через 10 мин)`,
+        String(chat),
+      );
+      if (r.messageId) this.forgetLater(chat, r.messageId);
+      else if (r.err)
+        await this.reply(chat, { text: `\u274c ${esc(r.err)}`, kb: [] }, msg.message_id);
+      return;
+    }
+    // ga: .conf AWG по привязке устройства - тот же файл, что на личной странице
+    const b = g.bindings.find((x) => x.id === args[1] && x.service === 'awg');
+    if (!b) return answer('Привязка не найдена', true);
+    const res = await this.deps.inject({
+      method: 'GET',
+      url: `/c/${encodeURIComponent(g.client.token)}/awg/${encodeURIComponent(b.id)}/conf`,
+    });
+    if (res.statusCode !== 200) return answer('Конфиг недоступен: у привязки нет ключа', true);
+    await answer();
+    const dev = g.devices.find((x) => x.id === b.deviceId);
+    const name =
+      /filename="([^"]+)"/.exec(String(res.headers['content-disposition'] ?? ''))?.[1] ??
+      'awg.conf';
+    const who = dev ? `, ${esc(dev.name || deviceOf(dev.type)?.title || '')}` : '';
+    const r = await this.deps.telegram.sendFile(
+      'document',
+      name,
+      Buffer.from(res.body, 'utf8'),
+      `<b>${esc(g.client.name)}</b>${who}: AWG ${esc(b.serverName)} (удалится через 10 мин)`,
+      String(chat),
+    );
+    if (r.messageId) this.forgetLater(chat, r.messageId);
+    else if (r.err)
+      await this.reply(chat, { text: `\u274c ${esc(r.err)}`, kb: [] }, msg.message_id);
+  }
+
+  /** Удалить сообщение через 10 минут; очередь в базе переживает перезапуск панели. */
+  private forgetLater(chat: number | string, id: number) {
+    const list = getJsonSetting<Pending[]>(this.deps.db, DELETE_KEY, []);
+    list.push({ chat: String(chat), id, at: Date.now() + SECRET_TTL_MS });
+    putSetting(this.deps.db, DELETE_KEY, JSON.stringify(list.slice(-200)));
+    this.scheduleDeletes();
+  }
+
+  private scheduleDeletes() {
+    if (this.deleteTimer) clearTimeout(this.deleteTimer);
+    const list = getJsonSetting<Pending[]>(this.deps.db, DELETE_KEY, []);
+    if (!list.length) return;
+    const next = Math.min(...list.map((x) => x.at));
+    this.deleteTimer = setTimeout(() => void this.runDeletes(), Math.max(1_000, next - Date.now()));
+    this.deleteTimer.unref?.();
+  }
+
+  private async runDeletes() {
+    const now = Date.now();
+    const list = getJsonSetting<Pending[]>(this.deps.db, DELETE_KEY, []);
+    putSetting(this.deps.db, DELETE_KEY, JSON.stringify(list.filter((x) => x.at > now)));
+    for (const x of list.filter((v) => v.at <= now))
+      await this.send('deleteMessage', { chat_id: x.chat, message_id: x.id });
+    this.scheduleDeletes();
+  }
+
+  // ---- мастера: новый клиент, новое устройство ----
+
+  private async onFlowButton(
+    msg: TgMessage,
+    op: string,
+    args: string[],
+    answer: (text?: string, alert?: boolean) => Promise<TgApiResult>,
+  ) {
+    const chat = msg.chat.id;
+    if (op === 'nc' || op === 'nd') {
+      const no = this.allowed('change');
+      if (no) return answer(no, true);
+      await answer();
+      const now = Date.now();
+      if (op === 'nc') {
+        const r = await this.reply(chat, askName(), msg.message_id);
+        const mid = r?.ok ? (r.result as { message_id: number }).message_id : 0;
+        this.flow = { kind: 'client', step: 'name', chat, mid, expires: now + FLOW_TTL_MS };
+        return;
+      }
+      const g = await this.get<GClientDetail>(
+        `/api/gclients/${encodeURIComponent(args[0] ?? '')}`,
+      ).catch(() => null);
+      if (!g) return;
+      const r = await this.reply(chat, askType('Новое устройство', g.client.name), msg.message_id);
+      const mid = r?.ok ? (r.result as { message_id: number }).message_id : 0;
+      this.flow = {
+        kind: 'device',
+        step: 'type',
+        chat,
+        mid,
+        clientId: g.client.id,
+        name: g.client.name,
+        expires: now + FLOW_TTL_MS,
+      };
+      return;
+    }
+    const f = this.flow;
+    if (!f || f.mid !== msg.message_id || Date.now() > f.expires) {
+      this.flow = null;
+      await answer(STALE_TEXT, true);
+      return;
+    }
+    await answer();
+    if (op === 'fx') {
+      this.flow = null;
+      await this.editText(chat, f.mid, 'Отменено');
+      return;
+    }
+    if (op === 'fy' && f.step === 'type') {
+      const type = args[0] ?? '-';
+      if (type === '-') {
+        // клиент без устройств: VLESS, MTProxy и WDTT у него всё равно будут
+        if (f.kind === 'client') return this.finishFlow(f, null);
+        this.flow = null;
+        await this.editText(chat, f.mid, 'Отменено');
+        return;
+      }
+      if (!DEVICES.some((d) => d.id === type)) return;
+      f.type = type;
+      f.step = 'device';
+      const v = askDeviceName(
+        f.kind === 'client' ? 'Новый клиент' : 'Новое устройство',
+        deviceOf(type)?.title ?? type,
+      );
+      await this.editText(chat, f.mid, v.text, v);
+      return;
+    }
+    if (op === 'fs' && f.step === 'device') return this.finishFlow(f, '');
+  }
+
+  private async onFlowText(m: TgMessage, text: string) {
+    const f = this.flow;
+    if (!f) return;
+    await this.send('deleteMessage', { chat_id: m.chat.id, message_id: m.message_id });
+    if (f.step === 'name' && f.kind === 'client') {
+      f.name = text.slice(0, 64);
+      f.step = 'type';
+      const v = askType('Новый клиент', f.name);
+      await this.editText(f.chat, f.mid, v.text, v);
+      return;
+    }
+    if (f.step === 'device') return this.finishFlow(f, text.slice(0, 64));
+  }
+
+  private async finishFlow(f: Flow, deviceName: string | null) {
+    this.flow = null;
+    const device =
+      f.type && deviceName !== null ? { name: deviceName, type: f.type, awg20: false } : null;
+    try {
+      if (f.kind === 'client') {
+        const r = await this.api.post<{ id: string }>('/api/gclients', {
+          name: f.name ?? '',
+          devices: device ? [device] : [],
+          access: null,
+        });
+        const v = created(f.name ?? '', r.id);
+        await this.editText(f.chat, f.mid, v.text, v);
+        return;
+      }
+      if (!device || !f.clientId) return;
+      await this.api.post(`/api/gclients/${encodeURIComponent(f.clientId)}/devices`, device);
+      const v = await this.screen('gd', [f.clientId]);
+      if (v) await this.editText(f.chat, f.mid, v.text, v);
+    } catch (e) {
+      await this.editText(f.chat, f.mid, `\u274c ${esc((e as Error).message)}`);
+    }
   }
 
   // ---- экраны ----
@@ -1019,6 +1289,52 @@ export class Bot {
           },
           c,
         );
+      case 'gl':
+        return clientsView(await this.get<GClientRow[]>('/api/gclients'), {
+          page: Number(args[0]) || 0,
+          problems: args[1] === '1',
+        });
+      case 'gc': {
+        const id = encodeURIComponent(args[0] ?? '');
+        const [g, w] = await Promise.all([
+          this.get<GClientDetail>(`/api/gclients/${id}`),
+          this.get<WatchList>('/api/watch'),
+        ]);
+        return clientView(
+          g,
+          w.rules.filter((r) => r.clientId === g.client.id),
+          c,
+        );
+      }
+      case 'gd':
+        return devicesView(
+          await this.get<GClientDetail>(`/api/gclients/${encodeURIComponent(args[0] ?? '')}`),
+        );
+      case 'gv': {
+        const v = deviceView(
+          await this.get<GClientDetail>(`/api/gclients/${encodeURIComponent(args[0] ?? '')}`),
+          args[1] ?? '',
+        );
+        if (!v) throw new NotFound(args[1] ?? '');
+        return v;
+      }
+      case 'gn': {
+        const id = encodeURIComponent(args[0] ?? '');
+        const g = await this.get<GClientDetail>(`/api/gclients/${id}`);
+        const live = await this.get<GClientLive>(`/api/gclients/${id}/live`);
+        return liveView(g, live, c);
+      }
+      case 'gw': {
+        const id = encodeURIComponent(args[0] ?? '');
+        const [g, w] = await Promise.all([
+          this.get<GClientDetail>(`/api/gclients/${id}`),
+          this.get<WatchList>('/api/watch'),
+        ]);
+        return watchesView(
+          g,
+          w.rules.filter((r) => r.clientId === g.client.id),
+        );
+      }
       case 'mt': {
         const id = encodeURIComponent(args[0] ?? '');
         const [s, updates] = await Promise.all([
@@ -1102,7 +1418,11 @@ export class Bot {
     return {
       inline_keyboard: s.kb.map((row) =>
         row.map((b) =>
-          b.url ? { text: b.text, url: b.url } : { text: b.text, callback_data: b.data ?? 'noop' },
+          b.url
+            ? { text: b.text, url: b.url }
+            : b.copy
+              ? { text: b.text, copy_text: { text: b.copy } }
+              : { text: b.text, callback_data: b.data ?? 'noop' },
         ),
       ),
     };

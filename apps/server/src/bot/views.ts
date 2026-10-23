@@ -26,6 +26,8 @@ export interface Btn {
   text: string;
   data?: string;
   url?: string;
+  /** кнопка копирования текста (до 256 символов) */
+  copy?: string;
 }
 export interface Screen {
   text: string;
@@ -53,15 +55,22 @@ export const I = {
   back: '\u2190',
   prev: '\u2039',
   next: '\u203a',
+  user: '\u{1F464}',
 };
 export const q = (s: string) => `\u00ab${s}\u00bb`;
 
 /** Кнопки постоянного меню: их текст приходит сообщением. */
-export const MENU = { summary: 'Сводка', servers: 'Серверы', log: 'Журнал', more: 'Ещё' };
+export const MENU = {
+  summary: 'Сводка',
+  servers: 'Серверы',
+  clients: 'Клиенты',
+  log: 'Журнал',
+  more: 'Ещё',
+};
 export const MENU_KEYBOARD = {
   keyboard: [
     [{ text: MENU.summary }, { text: MENU.servers }],
-    [{ text: MENU.log }, { text: MENU.more }],
+    [{ text: MENU.clients }, { text: MENU.log }, { text: MENU.more }],
   ],
   is_persistent: true,
   resize_keyboard: true,
@@ -71,6 +80,7 @@ export const MENU_KEYBOARD = {
 export const COMMANDS = [
   { command: 'menu', description: 'Сводка' },
   { command: 'servers', description: 'Серверы' },
+  { command: 'clients', description: 'Клиенты' },
   { command: 'log', description: 'Журнал действий' },
   { command: 'settings', description: 'Управление через бота' },
 ];
@@ -300,9 +310,12 @@ export function summaryView(d: SummaryData, c: Ctx): Screen {
     );
   kb.push([
     { text: 'Серверы', data: cb('sl', '-', 0) },
-    { text: 'Журнал', data: cb('lg', '-', 0) },
+    { text: 'Клиенты', data: cb('gl', 0, 0) },
   ]);
-  kb.push([{ text: 'Обновить', data: cb('m') }]);
+  kb.push([
+    { text: 'Журнал', data: cb('lg', '-', 0) },
+    { text: 'Обновить', data: cb('m') },
+  ]);
   return { text: lines.join('\n'), kb };
 }
 
@@ -657,13 +670,25 @@ export const OFF_TEXT = `Управление через бота отключе
 
 // ---- поиск ----
 
-export function searchView(query: string, found: ServerSummary[]): Screen {
-  if (!found.length)
+export function searchView(
+  query: string,
+  found: ServerSummary[],
+  clients: { id: string; name: string }[] = [],
+): Screen {
+  if (!found.length && !clients.length)
     return { text: `Ничего не найдено по запросу ${q(esc(cut(query, 60)))}`, kb: [] };
   const kb: Btn[][] = [];
-  for (let i = 0; i < Math.min(found.length, 20); i += 2)
-    kb.push(found.slice(i, i + 2).map((s) => ({ text: cut(s.name, 24), data: cb('sv', s.id) })));
-  return { text: `Найдено серверов: ${found.length}`, kb };
+  const all: Btn[] = [
+    ...found.slice(0, 12).map((s) => ({ text: cut(s.name, 24), data: cb('sv', s.id) })),
+    ...clients
+      .slice(0, 12)
+      .map((c) => ({ text: `${I.user} ${cut(c.name, 22)}`, data: cb('gc', c.id) })),
+  ];
+  for (let i = 0; i < all.length; i += 2) kb.push(all.slice(i, i + 2));
+  const parts = [];
+  if (found.length) parts.push(`серверов: ${found.length}`);
+  if (clients.length) parts.push(`клиентов: ${clients.length}`);
+  return { text: `Найдено ${parts.join(', ')}`, kb };
 }
 
 /** Поиск сервера по имени или адресу, без учёта регистра. */

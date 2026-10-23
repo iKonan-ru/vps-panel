@@ -592,20 +592,36 @@ export class Telegram {
     /** другой чат (бот отвечает администратору); по умолчанию - чат уведомлений */
     chatId?: string,
   ): Promise<string | null> {
+    return (await this.sendFile('document', name, data, caption, chatId)).err;
+  }
+
+  /**
+   * Файл или фото в чат: через прокси xray, затем напрямую (агенты файлы не передают).
+   * caption - HTML. Итог - ошибка текстом и номер сообщения.
+   */
+  async sendFile(
+    kind: 'document' | 'photo',
+    name: string,
+    data: Buffer,
+    caption: string,
+    chatId?: string,
+  ): Promise<{ err: string | null; messageId: number | null }> {
     const st = await this.settings();
     const chat = chatId ?? st.chatId;
-    if (!st.token || !chat) return 'не заданы токен бота или chat id';
+    if (!st.token || !chat) return { err: 'не заданы токен бота или chat id', messageId: null };
     // multipart собираем сами: одинаково для undici с прокси и встроенного fetch
     const boundary = `----vps${randomBytes(12).toString('hex')}`;
     const field = (k: string, v: string) =>
       `--${boundary}\r\nContent-Disposition: form-data; name="${k}"\r\n\r\n${v}\r\n`;
+    const type = kind === 'photo' ? 'image/png' : 'application/octet-stream';
     const body = Buffer.concat([
       Buffer.from(
-        `${field('chat_id', chat)}${field('caption', caption)}${field('parse_mode', 'HTML')}--${boundary}\r\nContent-Disposition: form-data; name="document"; filename="${name}"\r\nContent-Type: application/octet-stream\r\n\r\n`,
+        `${field('chat_id', chat)}${field('caption', caption)}${field('parse_mode', 'HTML')}--${boundary}\r\nContent-Disposition: form-data; name="${kind}"; filename="${name}"\r\nContent-Type: ${type}\r\n\r\n`,
       ),
       data,
       Buffer.from(`\r\n--${boundary}--\r\n`),
     ]);
+    const method = kind === 'photo' ? 'sendPhoto' : 'sendDocument';
     const errors: string[] = [];
     for (const p of [...this.proxies(), null]) {
       try {
@@ -615,18 +631,29 @@ export class Telegram {
           body,
           signal: AbortSignal.timeout(120_000),
         };
-        const url = `https://api.telegram.org/bot${st.token}/sendDocument`;
+        const url = `https://api.telegram.org/bot${st.token}/${method}`;
         const res = p
           ? await ufetch(url, { ...init, dispatcher: p.dispatcher })
           : await fetch(url, init);
         const raw = await res.text();
         // ответ самого Telegram окончательный: другой путь не поможет
-        return res.ok ? null : this.explain(res.status, raw);
+        if (!res.ok) return { err: this.explain(res.status, raw), messageId: null };
+        let messageId: number | null = null;
+        try {
+          const id = (JSON.parse(raw) as { result?: { message_id?: unknown } }).result?.message_id;
+          if (typeof id === 'number') messageId = id;
+        } catch {
+          // без номера
+        }
+        return { err: null, messageId };
       } catch (e) {
         errors.push(`${p ? 'через прокси' : 'с сервера панели'}: ${(e as Error).message}`);
       }
     }
-    return `Telegram недоступен: ${errors.join('; ')} (через агенты файлы не передаются)`;
+    return {
+      err: `Telegram недоступен: ${errors.join('; ')} (через агенты файлы не передаются)`,
+      messageId: null,
+    };
   }
 
   private async deliver(

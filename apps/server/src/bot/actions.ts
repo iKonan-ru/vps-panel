@@ -2,6 +2,7 @@ import type {
   BackupComponent,
   BaselinePlan,
   CascadeCheck,
+  GClientDetail,
   PanelUpdateView,
   ServerDetail,
   ServerReach,
@@ -27,12 +28,18 @@ export interface PanelApi {
   get<T>(url: string): Promise<T>;
   post<T>(url: string, body?: unknown): Promise<T>;
   put<T>(url: string, body?: unknown): Promise<T>;
+  patch<T>(url: string, body?: unknown): Promise<T>;
 }
 
 /** Риск действия: безопасное - сразу, изменение - с подтверждением, опасное - ещё и с кодом 2FA. */
 export type Risk = 'safe' | 'change' | 'danger';
 
-export type RunResult = { actionId: string } | { text: string; kb?: Btn[][] } | { screen: Screen };
+export type RunResult =
+  | { actionId: string }
+  | { text: string; kb?: Btn[][] }
+  | { screen: Screen }
+  /** открыть экран заново на месте нажатого сообщения (переключатели в списках) */
+  | { reopen: { op: string; args: string[] } };
 
 export interface ActionSpec {
   risk: Risk;
@@ -82,6 +89,10 @@ export const ACTION_OPS = new Set([
   'fe',
   'fd',
   'bc',
+  'ge',
+  'gt',
+  'wt',
+  'wn',
 ]);
 
 const enc = encodeURIComponent;
@@ -488,6 +499,98 @@ export async function actionSpec(
           return d.api.post(`/api/servers/${enc(s.id)}/backups`, {
             components: comps.map((x) => x.id),
           });
+        },
+      };
+    }
+    case 'ge': {
+      const g = await d.api.get<GClientDetail>(`/api/gclients/${enc(a0)}`);
+      const on = a1 === '1';
+      return {
+        risk: 'change',
+        verb: on ? 'Включить' : 'Выключить',
+        question: on
+          ? `Включить клиента ${esc(g.client.name)}? Доступ вернётся на всех его серверах.`
+          : `Выключить клиента ${esc(g.client.name)}? VPN и прокси перестанут работать, ссылки останутся прежними.`,
+        title: on ? 'включение клиента' : 'выключение клиента',
+        serverId: null,
+        serverName: g.client.name,
+        stale:
+          g.client.enabled === on ? (on ? 'Клиент уже включён' : 'Клиент уже выключен') : undefined,
+        run: async () => {
+          await d.api.patch(`/api/gclients/${enc(g.client.id)}`, { enabled: on });
+          return {
+            text: `Клиент <b>${esc(g.client.name)}</b> ${on ? 'включён' : 'выключен'}: синхронизация запущена`,
+            kb: [[{ text: 'Открыть клиента', data: `gc:${g.client.id}` }]],
+          };
+        },
+      };
+    }
+    case 'gt': {
+      const g = await d.api.get<GClientDetail>(`/api/gclients/${enc(a0)}`);
+      return {
+        risk: 'change',
+        verb: 'Выдать новую',
+        question: `Новая ссылка подписки и личной страницы для ${esc(g.client.name)}?\nСтарые перестанут работать сразу: клиенту нужно будет добавить новую подписку.`,
+        title: 'новая ссылка',
+        serverId: null,
+        serverName: g.client.name,
+        run: async () => {
+          await d.api.post(`/api/gclients/${enc(g.client.id)}/rotate-token`);
+          return {
+            text: `<b>${esc(g.client.name)}</b>: новая ссылка выдана, старые не работают`,
+            kb: [[{ text: 'Ссылки', data: `gk:${g.client.id}` }]],
+          };
+        },
+      };
+    }
+    case 'wt': {
+      const list = await d.api.get<WatchList>('/api/watch');
+      const r = list.rules.find((x) => x.id === a0);
+      const on = a1 === '1';
+      return {
+        risk: 'safe',
+        verb: on ? 'Включить' : 'Выключить',
+        question: 'Правило уведомления',
+        title: 'правило уведомления',
+        serverId: null,
+        serverName: r?.clientName ?? null,
+        stale: !r ? 'Правило удалено' : r.enabled === on ? 'Уже так' : undefined,
+        run: async () => {
+          if (!r) throw new ApiError(404, 'правило удалено');
+          const { clientId, serverId, service, deviceId, event, delayMinutes } = r;
+          await d.api.put(`/api/watch/${enc(r.id)}`, {
+            clientId,
+            serverId,
+            service,
+            deviceId,
+            event,
+            delayMinutes,
+            enabled: on,
+          });
+          return { reopen: { op: 'gw', args: [clientId] } };
+        },
+      };
+    }
+    case 'wn': {
+      const g = await d.api.get<GClientDetail>(`/api/gclients/${enc(a0)}`);
+      return {
+        risk: 'safe',
+        verb: 'Создать',
+        question: 'Уведомление о подключении',
+        title: 'уведомление о подключении',
+        serverId: null,
+        serverName: g.client.name,
+        run: async () => {
+          await d.api.post('/api/watch', {
+            clientId: g.client.id,
+            serverId: null,
+            service: null,
+            deviceId: null,
+            event: 'both',
+            delayMinutes: 10,
+            enabled: true,
+          });
+          return { reopen: { op: 'gw', args: [g.client.id] } };
         },
       };
     }
