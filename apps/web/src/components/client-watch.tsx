@@ -143,63 +143,79 @@ function WatchRules({
       {list.length === 0 ? (
         <div className="px-4 py-3 text-[13px] text-muted">Уведомлений нет</div>
       ) : (
-        list.map((r, i) => {
-          const event = WATCH_EVENTS.find((e) => e.id === r.event)?.title ?? r.event;
-          return (
-            <div
-              key={r.id}
-              style={{ '--i': i } as React.CSSProperties}
-              className="stagger flex animate-rise flex-wrap items-center gap-x-3 gap-y-1.5 border-b border-border px-4 py-2.5 last:border-b-0"
-            >
-              <div className="flex min-w-0 grow basis-60 flex-col gap-0.5">
-                <div className={cn('truncate text-[13px]', !r.enabled && 'text-muted')}>
-                  {clientId ? (
-                    scope(r)
-                  ) : (
-                    <>
-                      <Link
-                        to="/clients/$id"
-                        params={{ id: r.clientId }}
-                        className="font-medium hover:text-accent"
-                      >
-                        {r.clientName}
-                      </Link>
-                      {r.deviceName !== null && `, ${r.deviceName || 'устройство удалено'}`}
-                    </>
-                  )}
-                </div>
-                <div className="truncate text-xs text-muted">
-                  {clientId
-                    ? r.deviceName !== null && `${r.deviceName || 'устройство удалено'}, `
-                    : `${scope(r)}\u00a0\u2014 `}
-                  {event.toLocaleLowerCase('ru')}, {r.delayMinutes}
-                  {NB}мин
-                </div>
-              </div>
-              <StatusChip r={r} />
-              <div className="flex items-center gap-1">
+        <div className="@container">
+          {list.map((r, i) => {
+            const event = WATCH_EVENTS.find((e) => e.id === r.event)?.title ?? r.event;
+            return (
+              // переключатель слева, действия справа. Блок от 32rem (настройки, карточка клиента на
+              // широком экране) - плашка состояния справа перед кнопками, одним столбцом во всех
+              // строках; уже - строкой под текстом. Ширина - блока, а не экрана.
+              <div
+                key={r.id}
+                style={{ '--i': i } as React.CSSProperties}
+                className="stagger flex animate-rise items-start gap-3 border-b border-border px-4 py-2.5 last:border-b-0 @lg:items-center"
+              >
                 <Switch
                   label={`${r.clientName}: ${scope(r)}`}
                   checked={r.enabled}
                   disabled={op.busy}
+                  className="mt-0.5 @lg:mt-0"
                   onChange={() => void toggle(r)}
                 />
-                <Button size="icon-sm" variant="ghost" title="Изменить" onClick={() => setEdit(r)}>
-                  <Pencil className="size-3.5" />
-                </Button>
-                <Button
-                  size="icon-sm"
-                  variant="ghost"
-                  title="Удалить"
-                  disabled={op.busy}
-                  onClick={() => void remove(r)}
-                >
-                  <Trash2 className="size-3.5 text-bad" />
-                </Button>
+                <div className="min-w-0 grow">
+                  <div className={cn('break-words text-[13px]', !r.enabled && 'text-muted')}>
+                    {clientId ? (
+                      scope(r)
+                    ) : (
+                      <>
+                        <Link
+                          to="/clients/$id"
+                          params={{ id: r.clientId }}
+                          className="font-medium hover:text-accent"
+                        >
+                          {r.clientName}
+                        </Link>
+                        {r.deviceName !== null && `, ${r.deviceName || 'устройство удалено'}`}
+                      </>
+                    )}
+                  </div>
+                  <div className="mt-0.5 break-words text-xs text-muted">
+                    {clientId
+                      ? r.deviceName !== null && `${r.deviceName || 'устройство удалено'}, `
+                      : `${scope(r)}\u00a0\u2014 `}
+                    {event.toLocaleLowerCase('ru')}, {r.delayMinutes}
+                    {NB}мин
+                  </div>
+                  <div className="mt-1.5 flex @lg:hidden">
+                    <StatusChip r={r} />
+                  </div>
+                </div>
+                <div className="hidden shrink-0 @lg:flex">
+                  <StatusChip r={r} />
+                </div>
+                <div className="flex shrink-0 items-center gap-1">
+                  <Button
+                    size="icon-sm"
+                    variant="ghost"
+                    title="Изменить"
+                    onClick={() => setEdit(r)}
+                  >
+                    <Pencil className="size-3.5" />
+                  </Button>
+                  <Button
+                    size="icon-sm"
+                    variant="ghost"
+                    title="Удалить"
+                    disabled={op.busy}
+                    onClick={() => void remove(r)}
+                  >
+                    <Trash2 className="size-3.5 text-bad" />
+                  </Button>
+                </div>
               </div>
-            </div>
-          );
-        })
+            );
+          })}
+        </div>
       )}
       <WatchRuleDialog
         open={edit !== null}
