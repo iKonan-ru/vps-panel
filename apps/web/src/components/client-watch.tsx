@@ -51,7 +51,7 @@ function scope(r: WatchRuleView): string {
   return 'все сервисы и серверы';
 }
 
-/** Когда: сегодня - 09:05, раньше - 22.10 09:05. */
+/** Когда: сегодня - только время, раньше - ещё день и месяц. */
 const when = (iso: string) =>
   new Date(iso).toDateString() === new Date().toDateString() ? hm(iso) : dateTime(iso);
 
