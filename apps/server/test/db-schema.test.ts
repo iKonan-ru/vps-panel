@@ -42,7 +42,7 @@ describe('database schema', () => {
       createDb(dir);
       createDb(dir);
       const db = new Database(join(dir, 'panel.db'), { readonly: true });
-      expect(db.pragma('user_version', { simple: true })).toBe(25);
+      expect(db.pragma('user_version', { simple: true })).toBe(26);
       db.close();
     } finally {
       rmSync(dir, { recursive: true, force: true });
@@ -63,7 +63,7 @@ describe('database schema', () => {
       raw.close();
       createDb(dir);
       const db = new Database(join(dir, 'panel.db'), { readonly: true });
-      expect(db.pragma('user_version', { simple: true })).toBe(25);
+      expect(db.pragma('user_version', { simple: true })).toBe(26);
       expect(db.prepare('select name, color from tag order by rowid').all()).toEqual([
         { name: 'fi', color: 'sky' },
         { name: 'vpn main', color: 'orange' },
@@ -102,7 +102,7 @@ describe('database schema', () => {
       raw.close();
       createDb(dir);
       const db = new Database(join(dir, 'panel.db'), { readonly: true });
-      expect(db.pragma('user_version', { simple: true })).toBe(25);
+      expect(db.pragma('user_version', { simple: true })).toBe(26);
       expect(
         db
           .prepare(
@@ -138,7 +138,7 @@ describe('database schema', () => {
       raw.close();
       createDb(dir);
       const db = new Database(join(dir, 'panel.db'), { readonly: true });
-      expect(db.pragma('user_version', { simple: true })).toBe(25);
+      expect(db.pragma('user_version', { simple: true })).toBe(26);
       expect(db.prepare('select login, display_name from admin').get()).toEqual({
         login: 'boss',
         display_name: '',
@@ -159,7 +159,7 @@ describe('database schema', () => {
       raw.close();
       createDb(dir);
       const db = new Database(join(dir, 'panel.db'), { readonly: true });
-      expect(db.pragma('user_version', { simple: true })).toBe(25);
+      expect(db.pragma('user_version', { simple: true })).toBe(26);
       expect(columnsOf(join(dir, 'panel.db'), 'vless_cascade')).toContain('exit_inbound_id');
       db.close();
     } finally {
@@ -179,7 +179,7 @@ describe('database schema', () => {
       raw.close();
       createDb(dir);
       const db = new Database(join(dir, 'panel.db'), { readonly: true });
-      expect(db.pragma('user_version', { simple: true })).toBe(25);
+      expect(db.pragma('user_version', { simple: true })).toBe(26);
       expect(db.prepare('select host, client_host from server').get()).toEqual({
         host: '203.0.113.1',
         client_host: null,

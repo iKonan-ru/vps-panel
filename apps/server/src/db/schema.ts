@@ -6,6 +6,7 @@ import type {
   Inventory,
   Metrics,
   PortsyncConfig,
+  WatchEvent,
 } from '@vps/protocol';
 import { sql } from 'drizzle-orm';
 import { integer, real, sqliteTable, text } from 'drizzle-orm/sqlite-core';
@@ -313,3 +314,37 @@ export const openfluxDocs = sqliteTable('openflux_doc', {
   bindingId: text('binding_id').references(() => gclientBindings.id, { onDelete: 'set null' }),
   createdAt: text('created_at').notNull().default(now),
 });
+
+/**
+ * Правило уведомления о подключении клиента (WatchRuleBody): server_id, service и device_id -
+ * null значит "любой". state - что панель видела на последней проверке (WatchState).
+ */
+export const clientWatches = sqliteTable('client_watch', {
+  id: text('id').primaryKey(),
+  clientId: text('client_id')
+    .notNull()
+    .references(() => gclients.id, { onDelete: 'cascade' }),
+  serverId: text('server_id').references(() => servers.id, { onDelete: 'cascade' }),
+  service: text('service'),
+  deviceId: text('device_id'),
+  event: text('event').$type<WatchEvent>().notNull().default('both'),
+  delayMinutes: integer('delay_minutes').notNull().default(5),
+  enabled: integer('enabled', { mode: 'boolean' }).notNull().default(true),
+  state: text('state', { mode: 'json' }).$type<WatchState | null>(),
+  createdAt: text('created_at').notNull().default(now),
+});
+
+/** Наблюдение по правилу: переживает перезапуск панели, чтобы не повторять сообщения. */
+export interface WatchState {
+  /** первая проверка прошла: дальше - сообщения о переходах */
+  primed: boolean;
+  status: 'up' | 'down' | 'unknown';
+  /** не на связи дольше задержки */
+  offline: boolean;
+  /** последняя активность клиента, ISO */
+  lastSeen: string | null;
+  /** начало текущего отрезка "не на связи" по наблюдению панели, ISO */
+  downSince: string | null;
+  checkedAt: string;
+  note: string;
+}

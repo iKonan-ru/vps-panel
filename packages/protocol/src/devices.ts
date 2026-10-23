@@ -19,3 +19,8 @@ export const DEVICE_IDS = DEVICES.map((d) => d.id) as [DeviceId, ...DeviceId[]];
 export function deviceOf(id: string | undefined) {
   return DEVICES.find((d) => d.id === id);
 }
+
+/** Подпись устройства: "роутер: дача", без имени - тип, без типа - имя. */
+export function deviceLabel(d: { type: string; name: string }): string {
+  return [deviceOf(d.type)?.title, d.name].filter(Boolean).join(': ') || 'устройство';
+}

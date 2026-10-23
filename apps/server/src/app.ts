@@ -21,6 +21,8 @@ import { AppReleases } from './lib/apps.js';
 import { BackupRestorer } from './lib/backup-restore.js';
 import { Cascades } from './lib/cascades.js';
 import { catalogRunner } from './lib/catalog-runner.js';
+import { createClientStatsHub } from './lib/client-live.js';
+import { ClientWatch } from './lib/client-watch.js';
 import { startFail2banIgnore } from './lib/fail2ban-ignore.js';
 import { FirefoxSigner } from './lib/firefox.js';
 import { GClients } from './lib/gclients.js';
@@ -84,6 +86,7 @@ import { tagRoutes } from './routes/tags.js';
 import { terminalRoutes } from './routes/terminal.js';
 import { uiWsRoutes } from './routes/ui-ws.js';
 import { updateRoutes } from './routes/updates.js';
+import { watchRoutes } from './routes/watch.js';
 import { wdttRoutes } from './routes/wdtt.js';
 import { xrayRoutes } from './routes/xray.js';
 import { xuiInboundRoutes } from './routes/xui-inbounds.js';
@@ -371,7 +374,20 @@ export async function buildApp(opts: AppOptions) {
   stops.push(startFail2banIgnore(db, registry, env.DATA_DIR, app.log));
   // метрики агентов раз в 2 с, пока открыта вкладка панели, иначе раз в 30 с
   stops.push(startMetricsPace(registry, hub, app.log));
-  await app.register(gclientRoutes, { db, registry, box, gc, env });
+  // снимки clients.stats серверов: общие для карточек клиентов и уведомлений о подключении
+  const liveHub = createClientStatsHub(db, box, registry);
+  await app.register(gclientRoutes, { db, registry, box, gc, env, liveHub });
+  // уведомления о подключении клиентов: правила, проверка раз в минуту
+  const clientWatch = new ClientWatch({
+    db,
+    box,
+    hub: liveHub,
+    telegram,
+    panelUrl: env.PANEL_PUBLIC_URL,
+    log: app.log,
+  });
+  stops.push(clientWatch.start());
+  await app.register(watchRoutes, { db, watch: clientWatch });
   // добавление и удаление inbound-ов VLESS: после изменений - синхронизация клиентов сразу
   await app.register(xuiInboundRoutes, {
     ...serverRouteOpts,

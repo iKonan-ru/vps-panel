@@ -20,8 +20,9 @@ import type { AgentRegistry } from '../agents/registry.js';
 import type { Env } from '../config.js';
 import type { Db } from '../db/index.js';
 import { gclientBindings, gclientDevices, gclients, openfluxDocs, servers } from '../db/schema.js';
-import { extServers, extsByClient } from '../lib/browser-ext.js';
-import { ClientStatsHub, liveOnServer } from '../lib/client-stats.js';
+import { extsByClient } from '../lib/browser-ext.js';
+import { clientLive } from '../lib/client-live.js';
+import type { ClientStatsHub } from '../lib/client-stats.js';
 import { extensionVersion } from '../lib/extension.js';
 import { clientSlug, newClientToken, newXuiSubId } from '../lib/gclient-names.js';
 import { awgRef, wdttKey } from '../lib/gclient-services.js';
@@ -30,7 +31,6 @@ import { newId } from '../lib/ids.js';
 import { addOfDocs } from '../lib/openflux-docs.js';
 import type { SecretBox } from '../lib/secret-box.js';
 import { putSetting } from '../lib/settings.js';
-import { savedXuiToken } from '../lib/xui-token.js';
 
 const Id = z.object({ id: z.string() });
 const Name = z.string().trim().min(1, 'имя обязательно').max(64);
@@ -60,9 +60,17 @@ const AccessBody = z
 /** Глобальные клиенты: люди, устройства, привязки; сверку делает GClients. */
 export async function gclientRoutes(
   app: FastifyInstance,
-  opts: { db: Db; registry: AgentRegistry; box: SecretBox; gc: GClients; env: Env },
+  opts: {
+    db: Db;
+    registry: AgentRegistry;
+    box: SecretBox;
+    gc: GClients;
+    env: Env;
+    /** снимки clients.stats - общие с уведомлениями о подключении */
+    liveHub: ClientStatsHub;
+  },
 ) {
-  const { db, registry, box, gc, env } = opts;
+  const { db, registry, box, gc, env, liveHub } = opts;
   /** Адрес подписок: отдельное имя (SUB_PUBLIC_URL) или временно - адрес панели. */
   const subBase = (env.SUB_PUBLIC_URL ?? env.PANEL_PUBLIC_URL).replace(/\/+$/, '');
 
@@ -223,18 +231,6 @@ export async function gclientRoutes(
     };
   });
 
-  /** Снимки clients.stats серверов: общие для всех карточек клиентов. */
-  const live = new ClientStatsHub({
-    registry,
-    xuiToken: (serverId) => {
-      try {
-        return savedXuiToken(db, box, serverId);
-      } catch {
-        return '';
-      }
-    },
-  });
-
   /**
    * Живая статистика клиента: подключение и трафик по привязкам. Карточка опрашивает раз в 3 с,
    * пока открыта; агента спрашивают не чаще раза в 2,5 с на сервер. Чтение - в журнал действий
@@ -250,43 +246,9 @@ export async function gclientRoutes(
       .where(eq(gclientBindings.clientId, c.id))
       .all()
       .filter((b) => !server || b.serverId === server);
-    const ids = [...new Set(rows.map((b) => b.serverId))];
-    const snaps = new Map(
-      await Promise.all(ids.map(async (id) => [id, await live.server(id)] as const)),
-    );
+    const live = await clientLive({ db, box, hub: liveHub }, c, rows);
     reply.header('Cache-Control', 'no-store');
-    const bindings = rows.flatMap((b) => {
-      const s = snaps.get(b.serverId);
-      if (!s) return [];
-      let key = b.ref;
-      if (b.service === 'wdtt') {
-        try {
-          key = b.secret ? wdttKey(box.open(b.secret)) : '';
-        } catch {
-          key = '';
-        }
-      }
-      return [liveOnServer({ id: b.id, service: b.service as GService, ref: b.ref, key }, s)];
-    });
-    // прокси для браузера: подключений сервер не показывает - "на связи" по отчёту расширения
-    const naive = new Map(
-      rows
-        .filter((b) => b.service === 'naive')
-        .map((b) => [b.serverId, bindings.find((l) => l.bindingId === b.id)] as const),
-    );
-    const exts = extServers(db, c.id, c.token, (sid) => naive.get(sid)?.state === 'running');
-    for (const [sid, e] of exts) {
-      const l = naive.get(sid);
-      if (l?.state !== 'running') continue;
-      l.state = 'online';
-      l.lastSeen = e.seenAt;
-      l.note = `расширение ${e.browser === 'firefox' ? 'Firefox' : 'Chrome'} ${e.version} включено${e.auto ? ' (\u00abАвто\u00bb: первый доступный сервер)' : ''}`;
-    }
-    return {
-      at: new Date().toISOString(),
-      servers: [...snaps.values()].map((s) => s.info),
-      bindings,
-    };
+    return { at: new Date().toISOString(), ...live };
   });
 
   /** Ссылки привязки из кэша (MTProxy - tg:// и t.me): в них секрет, не кэшируются браузером. */

@@ -1,3 +1,4 @@
+import { ClientWatchSettings } from '@/components/client-watch';
 import { FirefoxSettings } from '@/components/firefox-settings';
 import { OpenfluxDocsSettings } from '@/components/openflux-docs-settings';
 import { PanelBackupSettings } from '@/components/panel-backup-settings';
@@ -23,6 +24,8 @@ export function SettingsPage() {
       <PanelBackupSettings />
 
       <TelegramSettings />
+
+      <ClientWatchSettings />
 
       <ReachSettings />
 

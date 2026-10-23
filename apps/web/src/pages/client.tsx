@@ -1,4 +1,5 @@
 import { Breadcrumbs } from '@/components/breadcrumbs';
+import { ClientWatchDialog, useClientWatchCount } from '@/components/client-watch';
 import { BindingPill, byServer, pillLabel } from '@/components/clients/binding-pill';
 import { BindingStates, deviceTitle } from '@/components/clients/binding-states';
 import {
@@ -29,6 +30,7 @@ import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { Link, useNavigate, useParams } from '@tanstack/react-router';
 import { type GBinding, type GClientDetail, type GDevice, serviceByBinding } from '@vps/protocol';
 import {
+  Bell,
   ExternalLink,
   KeyRound,
   Pencil,
@@ -60,6 +62,8 @@ export function ClientPage() {
   const [awgConfigBinding, setAwgConfigBinding] = useState<GBinding | null>(null);
   const [linksBinding, setLinksBinding] = useState<GBinding | null>(null);
   const [qr, setQr] = useState(false);
+  const [watchOpen, setWatchOpen] = useState(false);
+  const watchCount = useClientWatchCount(id);
   const refresh = () => qc.invalidateQueries({ queryKey: ['gclient', id] });
   const live = useClientLive(id, data?.bindings ?? []);
 
@@ -261,6 +265,13 @@ export function ClientPage() {
                   onClick: () => setAccessOpen(true),
                 },
                 {
+                  key: 'watch',
+                  label: watchCount ? `Уведомления: ${watchCount}` : 'Уведомления',
+                  icon: <Bell className="size-3.5" />,
+                  title: 'Уведомления в Telegram о подключении клиента',
+                  onClick: () => setWatchOpen(true),
+                },
+                {
                   key: 'sync',
                   label: 'Синхронизировать',
                   icon: <RefreshCw className={cn('size-3.5', syncing && 'animate-spin')} />,
@@ -384,6 +395,7 @@ export function ClientPage() {
           </LinkButton>
         </div>
       </Dialog>
+      <ClientWatchDialog open={watchOpen} onClose={() => setWatchOpen(false)} clientId={id} />
       <Dialog open={accessOpen} onClose={() => setAccessOpen(false)} title="Доступ">
         {accessOpen && (
           <AccessForm

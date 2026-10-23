@@ -82,6 +82,27 @@ function tgTime(iso: string): string {
   });
 }
 
+/** Время события для текста сообщений: часы и минуты, в другой день - ещё день и месяц (по Москве). */
+export function tgWhen(iso: string, now = Date.now()): string {
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return '';
+  const zone = { timeZone: 'Europe/Moscow' } as const;
+  const time = d.toLocaleTimeString('ru-RU', { ...zone, hour: '2-digit', minute: '2-digit' });
+  const day = (v: Date) =>
+    v.toLocaleDateString('ru-RU', { ...zone, day: '2-digit', month: '2-digit' });
+  return day(d) === day(new Date(now)) ? time : `${day(d)} ${time}`;
+}
+
+/** Длительность для текста сообщений: 10 мин, 1 ч 12 мин, 2 дн. 3 ч. */
+export function tgSpan(ms: number): string {
+  const min = Math.max(1, Math.round(ms / 60_000));
+  if (min < 60) return `${min}\u00a0мин`;
+  const h = Math.floor(min / 60);
+  if (h < 24) return `${h}\u00a0ч${min % 60 ? ` ${min % 60}\u00a0мин` : ''}`;
+  const d = Math.floor(h / 24);
+  return `${d}\u00a0дн.${h % 24 ? ` ${h % 24}\u00a0ч` : ''}`;
+}
+
 /**
  * Telegram Bot API: настройки бота (token, chat id, события) и доставка - выходы xray, прокси из
  * окружения, напрямую, через агентов на серверах. Недоставленное копится и уходит после
