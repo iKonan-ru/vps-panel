@@ -609,6 +609,17 @@ describe('bot actions', () => {
     expect(after.find((c) => c.name === 'Борис')?.enabled).toBe(false);
   });
 
+  it('service screens: 3X-UI with forced restart, services in the card', async () => {
+    await bot.handle(press(ADMIN, cb('sv', SID)));
+    expect(JSON.stringify(sent('editMessageText')[0]?.params.reply_markup)).toContain(`xu:${SID}`);
+    calls.length = 0;
+    await bot.handle(press(ADMIN, cb('xu', SID)));
+    const e = sent('editMessageText')[0]?.params;
+    expect(String(e?.text)).toContain('3X-UI');
+    expect(JSON.stringify(e?.reply_markup)).toContain(`rs:${SID}:x:f`);
+    expect(JSON.stringify(e?.reply_markup)).toContain(`cs:${SID}`);
+  });
+
   it('view level refuses actions', async () => {
     bot.setLevel('view');
     await bot.handle(notif(cb('pu', SID)));

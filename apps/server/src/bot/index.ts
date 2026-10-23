@@ -7,6 +7,7 @@ import type {
   BotLink,
   BotPoll,
   BotView,
+  CascadesView,
   GClientDetail,
   GClientLive,
   GClientRow,
@@ -17,6 +18,7 @@ import type {
   ServiceUpdate,
   Tag,
   WatchList,
+  XuiInboundRow,
 } from '@vps/protocol';
 import { DEVICES, actionTitle, deviceOf } from '@vps/protocol';
 import { eq } from 'drizzle-orm';
@@ -47,6 +49,20 @@ import {
 } from './client-views.js';
 import { Refs, parseCb } from './codec.js';
 import { type BotLevel, notifyButtons } from './notify-buttons.js';
+import {
+  type AwgInstanceRow,
+  type IpStep,
+  askIp,
+  awgUsersView,
+  awgView,
+  cascadesView,
+  ipCheckView,
+  mtView,
+  ofView,
+  serviceButtons,
+  wdttView,
+  xuiView,
+} from './service-views.js';
 import {
   COMMANDS,
   type Ctx,
@@ -167,8 +183,9 @@ class NotFound extends Error {}
 
 /** Мастер: новый клиент или устройство; mid - сообщение, которое правится по шагам. */
 interface Flow {
-  kind: 'client' | 'device';
-  step: 'name' | 'type' | 'device';
+  kind: 'client' | 'device' | 'ip';
+  step: 'name' | 'type' | 'device' | 'ip' | 'check';
+  serverId?: string;
   chat: number;
   mid: number;
   clientId?: string;
@@ -619,6 +636,7 @@ export class Bot {
     if (op === 'gk' || op === 'gq' || op === 'ga') return this.secrets(msg, op, args, answer);
     if (op === 'nc' || op === 'nd' || op === 'fy' || op === 'fs' || op === 'fx')
       return this.onFlowButton(msg, op, args, answer);
+    if (op === 'ic' || op === 'iy') return this.onIpButton(msg, op, args, answer);
     if (op === 'cx') {
       this.confirms.delete(args[0] ?? '');
       if (this.codeWait?.token === args[0]) this.codeWait = null;
@@ -1142,6 +1160,7 @@ export class Bot {
     const f = this.flow;
     if (!f) return;
     await this.send('deleteMessage', { chat_id: m.chat.id, message_id: m.message_id });
+    if (f.kind === 'ip' && f.serverId) return this.ipCheck(f, text.trim());
     if (f.step === 'name' && f.kind === 'client') {
       f.name = text.slice(0, 64);
       f.step = 'type';
@@ -1173,6 +1192,78 @@ export class Bot {
       if (v) await this.editText(f.chat, f.mid, v.text, v);
     } catch (e) {
       await this.editText(f.chat, f.mid, `\u274c ${esc((e as Error).message)}`);
+    }
+  }
+
+  // ---- смена IP: адрес сообщением, проверка, переключение (опасное, с кодом 2FA) ----
+
+  private async onIpButton(
+    msg: TgMessage,
+    op: string,
+    args: string[],
+    answer: (text?: string, alert?: boolean) => Promise<TgApiResult>,
+  ) {
+    const no = this.allowed('danger');
+    if (no) return answer(no, true);
+    if (op === 'ic') {
+      const s = await this.get<ServerDetail>(
+        `/api/servers/${encodeURIComponent(args[0] ?? '')}`,
+      ).catch(() => null);
+      if (!s) return answer('Сервер не найден', true);
+      await answer();
+      const r = await this.reply(msg.chat.id, askIp(s), msg.message_id);
+      const mid = r?.ok ? (r.result as { message_id: number }).message_id : 0;
+      this.flow = {
+        kind: 'ip',
+        step: 'ip',
+        serverId: s.id,
+        chat: msg.chat.id,
+        mid,
+        expires: Date.now() + FLOW_TTL_MS,
+      };
+      return;
+    }
+    const raw = this.refs.get(args[0] ?? '');
+    if (!raw) return answer(STALE_TEXT, true);
+    const r = JSON.parse(raw) as { sid: string; ip: string };
+    await answer();
+    await this.ipCheck(
+      {
+        kind: 'ip',
+        step: 'check',
+        serverId: r.sid,
+        chat: msg.chat.id,
+        mid: msg.message_id,
+        expires: Date.now() + FLOW_TTL_MS,
+      },
+      r.ip,
+    );
+  }
+
+  private async ipCheck(f: Flow, ip: string) {
+    const sid = f.serverId ?? '';
+    const s = await this.get<ServerDetail>(`/api/servers/${encodeURIComponent(sid)}`).catch(
+      () => null,
+    );
+    if (!s) return;
+    this.flow = { ...f, step: 'check', expires: Date.now() + FLOW_TTL_MS };
+    try {
+      const r = await this.api.post<{ steps: IpStep[]; canSwitch: boolean }>(
+        `/api/servers/${encodeURIComponent(sid)}/ip-change/check`,
+        { ip },
+      );
+      const v = ipCheckView(
+        s,
+        ip,
+        r.steps,
+        r.canSwitch,
+        this.refs.put(JSON.stringify({ sid, ip })),
+      );
+      await this.editText(f.chat, f.mid, v.text, v);
+    } catch (e) {
+      const v = askIp(s);
+      await this.editText(f.chat, f.mid, `${v.text}\n\n\u274c ${esc((e as Error).message)}`, v);
+      this.flow = { ...f, step: 'ip' };
     }
   }
 
@@ -1249,7 +1340,7 @@ export class Bot {
           this.get<ServerReach | null>(`/api/servers/${id}/reach`),
           this.get<ServiceUpdate[]>(`/api/servers/${id}/updates`),
         ]);
-        return serverView({ s, reach, updates }, c);
+        return serverView({ s, reach, updates, services: serviceButtons(s) }, c);
       }
       case 'rc': {
         const id = encodeURIComponent(args[0] ?? '');
@@ -1334,6 +1425,68 @@ export class Bot {
           g,
           w.rules.filter((r) => r.clientId === g.client.id),
         );
+      }
+      case 'xu': {
+        const id = encodeURIComponent(args[0] ?? '');
+        const s = await this.get<ServerDetail>(`/api/servers/${id}`);
+        const [info, inbounds, updates] = await Promise.all([
+          this.get<{ active?: boolean; version?: string }>(`/api/servers/${id}/xui`).catch(
+            () => null,
+          ),
+          this.get<XuiInboundRow[]>(`/api/servers/${id}/xui/inbound-list`).catch(() => []),
+          this.get<ServiceUpdate[]>(`/api/servers/${id}/updates`).catch(() => []),
+        ]);
+        return xuiView(s, info, inbounds, updates);
+      }
+      case 'mp': {
+        const id = encodeURIComponent(args[0] ?? '');
+        const s = await this.get<ServerDetail>(`/api/servers/${id}`);
+        const [st, updates] = await Promise.all([
+          this.get<Parameters<typeof mtView>[1]>(`/api/servers/${id}/mtproxyl`).catch(() => null),
+          this.get<ServiceUpdate[]>(`/api/servers/${id}/updates`).catch(() => []),
+        ]);
+        return mtView(s, st, updates);
+      }
+      case 'aw':
+      case 'ai': {
+        const id = encodeURIComponent(args[0] ?? '');
+        const s = await this.get<ServerDetail>(`/api/servers/${id}`);
+        const st = await this.get<{ instances?: AwgInstanceRow[] }>(`/api/servers/${id}/awg`).catch(
+          () => null,
+        );
+        if (op === 'aw') return awgView(s, st, c);
+        const inst = st?.instances?.[Number(args[1]) || 0];
+        if (!inst) throw new NotFound(args[1] ?? '');
+        return awgUsersView(s, inst, Number(args[1]) || 0, Number(args[2]) || 0, c);
+      }
+      case 'wd': {
+        const id = encodeURIComponent(args[0] ?? '');
+        const s = await this.get<ServerDetail>(`/api/servers/${id}`);
+        return wdttView(
+          s,
+          await this.get<Parameters<typeof wdttView>[1]>(`/api/servers/${id}/wdtt`).catch(
+            () => null,
+          ),
+          c,
+        );
+      }
+      case 'of': {
+        const id = encodeURIComponent(args[0] ?? '');
+        const s = await this.get<ServerDetail>(`/api/servers/${id}`);
+        return ofView(
+          s,
+          await this.get<Parameters<typeof ofView>[1]>(`/api/servers/${id}/openflux`).catch(
+            () => null,
+          ),
+        );
+      }
+      case 'cs': {
+        const id = encodeURIComponent(args[0] ?? '');
+        const [s, v] = await Promise.all([
+          this.get<ServerDetail>(`/api/servers/${id}`),
+          this.get<CascadesView>(`/api/servers/${id}/cascades`),
+        ]);
+        return cascadesView(s, v, c);
       }
       case 'mt': {
         const id = encodeURIComponent(args[0] ?? '');

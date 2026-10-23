@@ -390,7 +390,13 @@ export function tagsView(
 // ---- карточка сервера ----
 
 export function serverView(
-  d: { s: ServerDetail; reach: ServerReach | null; updates: ServiceUpdate[] },
+  d: {
+    s: ServerDetail;
+    reach: ServerReach | null;
+    updates: ServiceUpdate[];
+    /** кнопки сервисов, что стоят на сервере */
+    services?: Btn[];
+  },
   c: Ctx,
 ): Screen {
   const { s } = d;
@@ -488,6 +494,8 @@ export function serverView(
     lines.push(`<b>Сейчас:</b> ${s.activeActions.map((a) => esc(a.title)).join('; ')}`);
 
   const kb: Btn[][] = [];
+  const svc = s.status === 'online' ? (d.services ?? []) : [];
+  for (let i = 0; i < svc.length; i += 3) kb.push(svc.slice(i, i + 3));
   if (s.status === 'online')
     kb.push([
       { text: 'Обслуживание', data: cb('mt', s.id) },
@@ -530,6 +538,7 @@ export function reachView(d: { s: ServerSummary; r: ServerReach | null }, c: Ctx
   return {
     text: lines.join('\n'),
     kb: [
+      [{ text: 'Сменить IP', data: cb('ic', d.s.id) }],
       [
         { text: `${I.back} ${cut(d.s.name, 20)}`, data: cb('sv', d.s.id) },
         { text: 'Обновить', data: cb('rc', d.s.id) },

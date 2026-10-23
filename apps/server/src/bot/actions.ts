@@ -8,6 +8,7 @@ import type {
   ServerReach,
   ServiceUpdate,
   WatchList,
+  XuiInboundRow,
 } from '@vps/protocol';
 import { esc, tgWhen } from '../lib/telegram.js';
 import { RESTART, UPDATE } from './notify-buttons.js';
@@ -93,6 +94,10 @@ export const ACTION_OPS = new Set([
   'gt',
   'wt',
   'wn',
+  'rx',
+  'ib',
+  'ae',
+  'ix',
 ]);
 
 const enc = encodeURIComponent;
@@ -135,9 +140,10 @@ export async function actionSpec(
         title: `перезапуск ${title}`,
         serverId: s.id,
         serverName: s.name,
+        // с экрана сервиса (f) - перезапуск и работающего
         stale: !svc
           ? `${title} на сервере нет`
-          : svc.details?.down !== true
+          : svc.details?.down !== true && args[2] !== 'f'
             ? `${title} уже работает`
             : undefined,
         run: () =>
@@ -591,6 +597,88 @@ export async function actionSpec(
             enabled: true,
           });
           return { reopen: { op: 'gw', args: [g.client.id] } };
+        },
+      };
+    }
+    case 'rx': {
+      const s = await server(a0);
+      return {
+        risk: 'safe',
+        verb: 'Перезапустить',
+        question: `Перезапустить Xray на ${esc(s.name)}?`,
+        title: 'перезапуск Xray',
+        serverId: s.id,
+        serverName: s.name,
+        run: () => d.api.post(`/api/servers/${enc(s.id)}/xui/service`, { action: 'restart-xray' }),
+      };
+    }
+    case 'ib': {
+      const s = await server(a0);
+      const list = await d.api.get<XuiInboundRow[]>(`/api/servers/${enc(s.id)}/xui/inbound-list`);
+      const ib = list.find((x) => String(x.id) === a1);
+      const on = args[2] === '1';
+      const name = ib?.remark || String(ib?.port ?? a1);
+      return {
+        risk: 'change',
+        verb: on ? 'Включить' : 'Выключить',
+        question: on
+          ? `Включить inbound ${esc(name)} на ${esc(s.name)}?`
+          : `Выключить inbound ${esc(name)} на ${esc(s.name)}? Клиенты этого inbound потеряют связь.`,
+        title: on ? `включение ${name}` : `выключение ${name}`,
+        serverId: s.id,
+        serverName: s.name,
+        stale: !ib ? 'Inbound не найден' : ib.enable === on ? 'Уже так' : undefined,
+        run: async () => {
+          await d.api.post(`/api/servers/${enc(s.id)}/xui/inbounds/${enc(a1)}`, { enable: on });
+          return { reopen: { op: 'xu', args: [s.id] } };
+        },
+      };
+    }
+    case 'ae': {
+      const raw = d.refValue(a0);
+      if (!raw) return null;
+      const r = JSON.parse(raw) as { sid: string; ct: string; pk: string; n: string };
+      const s = await server(r.sid);
+      const on = a1 === '1';
+      return {
+        risk: 'change',
+        verb: on ? 'Включить' : 'Выключить',
+        question: `${on ? 'Включить' : 'Выключить'} пользователя AWG ${esc(r.n || r.pk.slice(0, 8))} на ${esc(s.name)}?`,
+        title: on ? 'включение пользователя AWG' : 'выключение пользователя AWG',
+        serverId: s.id,
+        serverName: s.name,
+        run: async () => {
+          await d.api.post(`/api/servers/${enc(s.id)}/awg/exec`, {
+            op: on ? 'client.enable' : 'client.disable',
+            container: r.ct,
+            publicKey: r.pk,
+          });
+          return {
+            text: `<b>${esc(s.name)}</b>: пользователь AWG ${esc(r.n || r.pk.slice(0, 8))} ${on ? 'включён' : 'выключен'}`,
+            kb: [[{ text: 'AWG', data: `aw:${s.id}` }]],
+          };
+        },
+      };
+    }
+    case 'ix': {
+      const raw = d.refValue(a0);
+      if (!raw) return null;
+      const r = JSON.parse(raw) as { sid: string; ip: string };
+      const s = await server(r.sid);
+      return {
+        risk: 'danger',
+        verb: 'Сменить IP',
+        question: `Сменить адрес ${esc(s.name)} на ${esc(r.ip)}?\nПанель переключит сервер, маршрут до Telegram и проверки на новый адрес.`,
+        title: 'смена IP',
+        serverId: s.id,
+        serverName: s.name,
+        stale: s.host === r.ip ? 'Адрес уже сменён' : undefined,
+        run: async () => {
+          await d.api.post(`/api/servers/${enc(s.id)}/ip-change`, { ip: r.ip });
+          return {
+            text: `<b>${esc(s.name)}</b>: адрес сменён на <code>${esc(r.ip)}</code>, синхронизация клиентов запущена`,
+            kb: [[{ text: 'Сервер', data: `sv:${s.id}` }]],
+          };
         },
       };
     }
