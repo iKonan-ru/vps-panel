@@ -38,6 +38,9 @@ export async function notifyRoutes(app: FastifyInstance, opts: { telegram: Teleg
         banThreshold: param('banThreshold'),
         paymentDays: param('paymentDays'),
         offlineMinutes: param('offlineMinutes'),
+        diskPercent: param('diskPercent'),
+        cpuPercent: param('cpuPercent'),
+        loginFails: param('loginFails'),
       })
       .parse(req.body ?? {});
     // пустой токен с формы = "не менять"; явное удаление токена - пустая строка через clearToken

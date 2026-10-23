@@ -620,6 +620,23 @@ describe('bot actions', () => {
     expect(JSON.stringify(e?.reply_markup)).toContain(`cs:${SID}`);
   });
 
+  it('settings: version, notifications toggles, sessions', async () => {
+    await bot.handle(msg(ADMIN, 'Ещё'));
+    const st = JSON.stringify(sent('sendMessage')[0]?.params.reply_markup);
+    expect(st).toContain('"vs"');
+    expect(st).toContain('"ns"');
+    calls.length = 0;
+    await bot.handle(press(ADMIN, cb('ns')));
+    const ns = sent('editMessageText')[0]?.params;
+    expect(String(ns?.text)).toContain('Заканчивается место на диске');
+    calls.length = 0;
+    await bot.handle(press(ADMIN, cb('ss')));
+    expect(String(sent('editMessageText')[0]?.params.text)).toContain('Сессии панели');
+    calls.length = 0;
+    await bot.handle(press(ADMIN, cb('vs')));
+    expect(String(sent('editMessageText')[0]?.params.text)).toContain('Версия панели');
+  });
+
   it('view level refuses actions', async () => {
     bot.setLevel('view');
     await bot.handle(notif(cb('pu', SID)));

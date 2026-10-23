@@ -657,7 +657,21 @@ export function settingsView(
       ? `Уведомления: ${I.bad} не доходят${h.failingSince ? ` с ${tgWhen(h.failingSince, c.now)}` : ''}${h.pending ? `, отложено ${h.pending}` : ''}`
       : `Уведомления: ${I.ok} доходят`,
   );
-  const kb: Btn[][] = [[{ text: 'Отключить управление', data: cb('off') }]];
+  const kb: Btn[][] = [
+    [
+      { text: 'Версия панели', data: cb('vs') },
+      { text: 'Резервная копия', data: cb('pb') },
+    ],
+    [
+      { text: 'Уведомления', data: cb('ns') },
+      { text: 'Синхронизация', data: cb('sy') },
+    ],
+    [
+      { text: 'Маршрут до Telegram', data: cb('tr') },
+      { text: 'Сессии', data: cb('ss') },
+    ],
+    [{ text: 'Отключить управление', data: cb('off') }],
+  ];
   const link = panelLink(c, '/settings');
   if (link.length) kb.push([{ text: 'Настройки панели', url: link[0]?.url ?? '' }]);
   return { text: lines.join('\n'), kb };

@@ -1,18 +1,21 @@
 import {
+  CPU_HIGH_MINUTES,
   type Inventory,
+  type Metrics,
   type NotifyEvent,
   type PanelRelease,
   type ServiceUpdate,
   type ServiceUpdateKind,
   serviceByKind,
 } from '@vps/protocol';
-import { eq } from 'drizzle-orm';
+import { and, desc, eq, gt, sql } from 'drizzle-orm';
 import type { AgentRegistry } from '../agents/registry.js';
 import type { StatusCache } from '../agents/state.js';
 import type { Db } from '../db/index.js';
-import { servers } from '../db/schema.js';
+import { loginAttempts, servers } from '../db/schema.js';
 import { daysToPayment, rollPaymentDate } from './billing.js';
 import { schedule } from './schedule.js';
+import { getJsonSetting, putSetting } from './settings.js';
 import { type Telegram, esc, tgSpan } from './telegram.js';
 
 const STARTUP_QUIET_MS = 2 * 60_000;
@@ -73,6 +76,11 @@ export class Notifier {
   private pendingUpdates = new Map<string, number>();
   private updatesNotifiedAt = new Map<string, number>();
   private paymentNotified = new Map<string, string>(); // serverId -> дата платежа, о которой сказали
+  /** Загрузка CPU выше порога: с какого момента (по метрикам подряд). */
+  private cpuSince = new Map<string, number>();
+  private loginNotifiedAt = 0;
+  /** Настройки на 30 с: метрики приходят часто (раз в 2 с, пока открыта панель). */
+  private stCache: { at: number; v: Awaited<ReturnType<Telegram['settings']>> } | null = null;
   /** serverId -> сервис (kind:title) -> с какого момента down и сказали ли. */
   private downs = new Map<string, Map<string, { since: number; notified: boolean }>>();
 
@@ -112,9 +120,16 @@ export class Notifier {
       if (this.notifiedOffline.delete(id)) void this.notifyOnline(id);
     });
     this.registry.on('inventory', (id, inv) => void this.onInventory(id, inv));
+    this.registry.on('metrics', (id, m) => void this.onMetrics(id, m).catch(() => undefined));
     const stopPayments = schedule(() => void this.checkPayments(), 30_000, 60 * 60_000);
+    const stopLogins = schedule(
+      () => void this.checkLogins().catch(() => undefined),
+      60_000,
+      5 * 60_000,
+    );
     return () => {
       stopPayments();
+      stopLogins();
       for (const t of this.offlineTimers.values()) clearTimeout(t);
     };
   }
@@ -137,6 +152,9 @@ export class Notifier {
     this.updatesNotifiedAt.delete(id);
     this.paymentNotified.delete(id);
     this.downs.delete(id);
+    this.cpuSince.delete(id);
+    this.setFlag('disk', id, false);
+    this.setFlag('cpu', id, false);
   }
 
   private exists(id: string): boolean {
@@ -312,6 +330,105 @@ export class Notifier {
         { meta: { event: 'pkgUpdates', serverId: id } },
       );
     }
+  }
+
+  private async cachedSettings() {
+    if (!this.stCache || Date.now() - this.stCache.at > 30_000)
+      this.stCache = { at: Date.now(), v: await this.tg.settings() };
+    return this.stCache.v;
+  }
+
+  /** О каких серверах уже сказано "диск" и "CPU": переживает перезапуск панели. */
+  private flags(): { disk: string[]; cpu: string[] } {
+    return { disk: [], cpu: [], ...getJsonSetting(this.db, 'tg_notified', {}) };
+  }
+  private setFlag(kind: 'disk' | 'cpu', id: string, on: boolean) {
+    const f = this.flags();
+    const set = new Set(f[kind]);
+    if (on) set.add(id);
+    else set.delete(id);
+    f[kind] = [...set];
+    putSetting(this.db, 'tg_notified', JSON.stringify(f));
+  }
+
+  /**
+   * Диск и CPU по метрикам: диск заполнен выше порога - одно сообщение, освободился (на 3%
+   * ниже порога) - правка исходного; CPU выше порога CPU_HIGH_MINUTES минут подряд - одно
+   * сообщение, спала - правка.
+   */
+  private async onMetrics(id: string, m: Metrics) {
+    if (this.quiet()) return;
+    const st = await this.cachedSettings();
+    if (!st.token || !st.chatId) return;
+    const f = this.flags();
+    const pct = m.diskTotalGb > 0 ? Math.round((m.diskUsedGb / m.diskTotalGb) * 100) : 0;
+    const diskOn = f.disk.includes(id);
+    if (!diskOn && pct >= st.diskPercent) {
+      this.setFlag('disk', id, true);
+      if (await this.tg.wants('diskFull', id))
+        await this.tg.send(
+          `${await this.serverName(id)}: диск заполнен на ${pct}% (${Math.round(m.diskUsedGb)}/${Math.round(m.diskTotalGb)}"""+NBSP+"""ГБ)`,
+          { meta: { event: 'diskFull', serverId: id, ref: `disk:${id}` } },
+        );
+    } else if (diskOn && pct < st.diskPercent - 3) {
+      this.setFlag('disk', id, false);
+      if (await this.tg.wants('diskFull', id)) {
+        const name = await this.serverName(id);
+        await this.tg.resolve(
+          `disk:${id}`,
+          () => `"""+OK+""" ${name}: место на диске освободилось, занято ${pct}%`,
+        );
+      }
+    }
+    const now = Date.now();
+    const cpuOn = f.cpu.includes(id);
+    if (m.cpuPercent >= st.cpuPercent) {
+      const since = this.cpuSince.get(id) ?? now;
+      this.cpuSince.set(id, since);
+      if (!cpuOn && now - since >= CPU_HIGH_MINUTES * 60_000) {
+        this.setFlag('cpu', id, true);
+        if (await this.tg.wants('cpuHigh', id))
+          await this.tg.send(
+            `${await this.serverName(id)}: загрузка CPU выше ${st.cpuPercent}% уже ${CPU_HIGH_MINUTES}"""+NBSP+"""мин, сейчас ${Math.round(m.cpuPercent)}%, load ${m.load1.toFixed(2)}`,
+            { meta: { event: 'cpuHigh', serverId: id, ref: `cpu:${id}` } },
+          );
+      }
+    } else {
+      this.cpuSince.delete(id);
+      if (cpuOn) {
+        this.setFlag('cpu', id, false);
+        if (await this.tg.wants('cpuHigh', id)) {
+          const name = await this.serverName(id);
+          await this.tg.resolve(
+            `cpu:${id}`,
+            () => `"""+OK+""" ${name}: загрузка CPU спала, сейчас ${Math.round(m.cpuPercent)}%`,
+          );
+        }
+      }
+    }
+  }
+
+  /** Неудачные входы в панель за час: порог - одно сообщение, не чаще раза в час. */
+  private async checkLogins() {
+    if (!(await this.tg.wants('loginFails'))) return;
+    const st = await this.tg.settings();
+    const hour = new Date(Date.now() - 3600_000).toISOString();
+    const rows = await this.db
+      .select({ ip: loginAttempts.ip, n: sql<number>`count(*)` })
+      .from(loginAttempts)
+      .where(and(eq(loginAttempts.ok, false), gt(loginAttempts.at, hour)))
+      .groupBy(loginAttempts.ip)
+      .orderBy(desc(sql`count(*)`));
+    const total = rows.reduce((a, r) => a + Number(r.n), 0);
+    if (!total || !(total >= st.loginFails) || Date.now() - this.loginNotifiedAt < 3600_000) return;
+    this.loginNotifiedAt = Date.now();
+    const ips = rows
+      .slice(0, 5)
+      .map((r) => `<code>${esc(r.ip)}</code> (${r.n})`)
+      .join(', ');
+    await this.tg.send(`VPS Panel: неудачных попыток входа за час: ${total}\nАдреса: ${ips}`, {
+      meta: { event: 'loginFails' },
+    });
   }
 
   /** Доступность из России: цель не видна две проверки подряд или снова видна. */

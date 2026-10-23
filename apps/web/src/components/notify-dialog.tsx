@@ -10,6 +10,7 @@ import { useAction } from '@/lib/use-action';
 import { useQueryClient } from '@tanstack/react-query';
 import {
   NOTIFY_GROUPS,
+  NOTIFY_PARAM_DEFAULTS,
   NOTIFY_PARAM_LIMITS,
   type NotifyEvent,
   type NotifyEvents,
@@ -68,9 +69,9 @@ export function NotifyDialog({
         json: {
           events: ev,
           mutedServers: muted,
-          offlineMinutes: Number(params.offlineMinutes),
-          banThreshold: Number(params.banThreshold),
-          paymentDays: Number(params.paymentDays),
+          ...Object.fromEntries(
+            (Object.keys(params) as (keyof NotifyParams)[]).map((k) => [k, Number(params[k])]),
+          ),
         },
       });
       await qc.invalidateQueries({ queryKey: ['tg-settings'] });
@@ -186,11 +187,12 @@ export function NotifyDialog({
 }
 
 function strParams(v: NotifyParams): Record<keyof NotifyParams, string> {
-  return {
-    offlineMinutes: String(v.offlineMinutes),
-    banThreshold: String(v.banThreshold),
-    paymentDays: String(v.paymentDays),
-  };
+  return Object.fromEntries(
+    (Object.keys(NOTIFY_PARAM_DEFAULTS) as (keyof NotifyParams)[]).map((k) => [
+      k,
+      String(v[k] ?? NOTIFY_PARAM_DEFAULTS[k]),
+    ]),
+  ) as Record<keyof NotifyParams, string>;
 }
 
 function ParamInput({

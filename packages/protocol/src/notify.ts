@@ -23,6 +23,9 @@ export const NOTIFY_EVENTS = [
   'payment',
   'backupFail',
   'updPanel',
+  'diskFull',
+  'cpuHigh',
+  'loginFails',
 ] as const;
 export type NotifyEvent = (typeof NOTIFY_EVENTS)[number];
 
@@ -31,17 +34,31 @@ export interface NotifyParams {
   offlineMinutes: number;
   banThreshold: number;
   paymentDays: number;
+  /** диск заполнен на столько процентов */
+  diskPercent: number;
+  /** загрузка CPU выше этого процента CPU_HIGH_MINUTES минут подряд */
+  cpuPercent: number;
+  /** неудачных входов в панель за час */
+  loginFails: number;
 }
 export const NOTIFY_PARAM_DEFAULTS: NotifyParams = {
   offlineMinutes: 3,
   banThreshold: 10,
   paymentDays: 3,
+  diskPercent: 90,
+  cpuPercent: 90,
+  loginFails: 10,
 };
 export const NOTIFY_PARAM_LIMITS: Record<keyof NotifyParams, [number, number]> = {
   offlineMinutes: [1, 120],
   banThreshold: [1, 10_000],
   paymentDays: [0, 60],
+  diskPercent: [50, 99],
+  cpuPercent: [50, 100],
+  loginFails: [1, 1000],
 };
+/** Сколько минут подряд загрузка CPU должна быть выше порога. */
+export const CPU_HIGH_MINUTES = 15;
 
 export interface NotifyEventInfo {
   key: NotifyEvent;
@@ -83,6 +100,18 @@ export const NOTIFY_GROUPS: NotifyGroup[] = [
         title: 'Сервис снова работает',
         hint: 'после уведомления \u00abСервис упал\u00bb',
       },
+      {
+        key: 'diskFull',
+        title: 'Заканчивается место на диске',
+        hint: 'и когда место освободилось',
+        param: { key: 'diskPercent', label: 'занято, %' },
+      },
+      {
+        key: 'cpuHigh',
+        title: 'Долго высокая загрузка CPU',
+        hint: '15\u00a0минут подряд выше порога; и когда спала',
+        param: { key: 'cpuPercent', label: 'выше, %' },
+      },
     ],
   },
   {
@@ -110,6 +139,12 @@ export const NOTIFY_GROUPS: NotifyGroup[] = [
         title: 'Рост блокировок fail2ban',
         hint: 'не чаще раза в час на сервер',
         param: { key: 'banThreshold', label: 'блокировок в час' },
+      },
+      {
+        key: 'loginFails',
+        title: 'Неудачные попытки входа в панель',
+        hint: 'не чаще раза в час',
+        param: { key: 'loginFails', label: 'попыток в час' },
       },
       {
         key: 'pkgUpdates',

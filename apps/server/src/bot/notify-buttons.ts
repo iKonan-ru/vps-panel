@@ -96,6 +96,23 @@ export function notifyButtons(n: NotifyInfo, level: BotLevel, ref: (v: string) =
         server,
       ]);
       break;
+    case 'diskFull':
+      rows.push([
+        act ? { text: 'Очистить диск', data: cb('cl', sid) } : null,
+        { text: 'Docker', data: cb('o', 'dk', sid) },
+      ]);
+      rows.push([server]);
+      break;
+    case 'cpuHigh':
+      rows.push([server, { text: 'Docker', data: cb('o', 'dk', sid) }]);
+      if (act) rows.push([{ text: 'Перезагрузить', data: cb('rb', sid) }]);
+      break;
+    case 'loginFails':
+      rows.push([
+        { text: 'Сессии', data: cb('o', 'ss') },
+        act ? { text: 'Завершить все сессии', data: cb('sx') } : null,
+      ]);
+      break;
     case 'watch':
       if (act && n.data?.rule)
         rows.push([{ text: 'Выключить правило', data: cb('wo', n.data.rule) }]);

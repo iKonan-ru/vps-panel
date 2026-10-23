@@ -240,6 +240,9 @@ export class Telegram {
     out.banThreshold = num('tg_ban_threshold', 'banThreshold');
     out.paymentDays = num('tg_payment_days', 'paymentDays');
     out.offlineMinutes = num('tg_offline_minutes', 'offlineMinutes');
+    out.diskPercent = num('tg_disk_percent', 'diskPercent');
+    out.cpuPercent = num('tg_cpu_percent', 'cpuPercent');
+    out.loginFails = num('tg_login_fails', 'loginFails');
     return out;
   }
 
@@ -262,6 +265,9 @@ export class Telegram {
     if (patch.paymentDays !== undefined) await put('tg_payment_days', String(patch.paymentDays));
     if (patch.offlineMinutes !== undefined)
       await put('tg_offline_minutes', String(patch.offlineMinutes));
+    if (patch.diskPercent !== undefined) await put('tg_disk_percent', String(patch.diskPercent));
+    if (patch.cpuPercent !== undefined) await put('tg_cpu_percent', String(patch.cpuPercent));
+    if (patch.loginFails !== undefined) await put('tg_login_fails', String(patch.loginFails));
   }
 
   /** Кто последний раз успешно доставил: 'direct' или id сервера-ретранслятора. */

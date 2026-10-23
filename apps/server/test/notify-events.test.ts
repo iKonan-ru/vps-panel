@@ -116,4 +116,40 @@ describe('события уведомлений', () => {
     expect(ctx.sent[1]).toMatch(/WDTT снова работает/);
     stop();
   });
+
+  it('диск и CPU по метрикам: одно сообщение на переход, флаги переживают перезапуск', async () => {
+    vi.useFakeTimers({ toFake: ['Date'] });
+    vi.setSystemTime(new Date('2026-10-12T10:00:00Z'));
+    const ctx = await make();
+    const stop = ctx.n.bind([]);
+    const m = (cpu: number, disk: number) =>
+      ctx.reg.emit('metrics', 's1', {
+        cpuPercent: cpu,
+        memTotalMb: 1000,
+        memUsedMb: 100,
+        diskTotalGb: 100,
+        diskUsedGb: disk,
+        netRxBps: 0,
+        netTxBps: 0,
+        uptimeSec: 1,
+        load1: 1,
+      });
+    const flush = () => new Promise((r) => setTimeout(r, 20));
+    vi.setSystemTime(new Date('2026-10-12T10:05:00Z'));
+    m(95, 92);
+    await flush();
+    m(95, 93);
+    await flush();
+    expect(ctx.sent).toHaveLength(1);
+    expect(ctx.sent[0]).toMatch(/диск заполнен на 92%/);
+    vi.setSystemTime(new Date('2026-10-12T10:21:00Z'));
+    m(96, 93);
+    await flush();
+    expect(ctx.sent[1]).toMatch(/загрузка CPU выше 90% уже 15/);
+    m(20, 80);
+    await flush();
+    expect(ctx.sent.slice(2).join('\n')).toMatch(/место на диске освободилось/);
+    expect(ctx.sent.slice(2).join('\n')).toMatch(/загрузка CPU спала/);
+    stop();
+  });
 });

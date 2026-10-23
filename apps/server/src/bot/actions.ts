@@ -12,6 +12,7 @@ import type {
 } from '@vps/protocol';
 import { esc, tgWhen } from '../lib/telegram.js';
 import { RESTART, UPDATE } from './notify-buttons.js';
+import { eventAt } from './panel-views.js';
 import { type Btn, type Screen, reachView } from './views.js';
 
 /** Ошибка API панели: статус и текст ответа. */
@@ -64,6 +65,8 @@ export interface ActionDeps {
   /** значение короткой ссылки (null - устарела) */
   refValue: (key: string) => string | null;
   muteUntil: (serverId: string, until: Date) => void;
+  /** завершить все сессии панели (маршрут API требует сессию, а у бота её нет) */
+  logoutAll: () => Promise<number>;
   now: () => number;
 }
 
@@ -98,6 +101,14 @@ export const ACTION_OPS = new Set([
   'ib',
   'ae',
   'ix',
+  'vc',
+  'vh',
+  'va',
+  'nt',
+  'nx',
+  'sn',
+  'so',
+  'sx',
 ]);
 
 const enc = encodeURIComponent;
@@ -682,6 +693,116 @@ export async function actionSpec(
         },
       };
     }
+    case 'vc':
+      return {
+        risk: 'safe',
+        verb: 'Проверить',
+        question: 'Проверить новые версии панели?',
+        title: 'проверка версии',
+        serverId: null,
+        serverName: null,
+        run: async () => {
+          await d.api.post('/api/panel/update/check');
+          return { reopen: { op: 'vs', args: [] } };
+        },
+      };
+    case 'vh': {
+      const ch = a0 === 'beta' ? 'beta' : 'stable';
+      return {
+        risk: 'change',
+        verb: 'Сменить',
+        question:
+          ch === 'beta'
+            ? 'Канал обновлений: предварительный? Панель будет получать предварительные версии.'
+            : 'Канал обновлений: стабильный? Предварительные версии больше не придут.',
+        title: 'канал обновлений',
+        serverId: null,
+        serverName: null,
+        run: async () => {
+          await d.api.put('/api/panel/update/settings', { channel: ch });
+          return {
+            text: `Канал обновлений: ${ch === 'beta' ? 'предварительный' : 'стабильный'}`,
+            kb: [[{ text: 'Версия панели', data: 'vs' }]],
+          };
+        },
+      };
+    }
+    case 'va': {
+      const on = a0 === '1';
+      return {
+        risk: 'change',
+        verb: on ? 'Включить' : 'Выключить',
+        question: on
+          ? 'Включить автоматическое обновление панели?'
+          : 'Выключить автоматическое обновление панели?',
+        title: 'автоматическое обновление',
+        serverId: null,
+        serverName: null,
+        run: async () => {
+          await d.api.put('/api/panel/update/settings', { autoUpdate: on });
+          return {
+            text: `Автоматическое обновление панели ${on ? 'включено' : 'выключено'}`,
+            kb: [[{ text: 'Версия панели', data: 'vs' }]],
+          };
+        },
+      };
+    }
+    case 'nt': {
+      const key = eventAt(Number(a0));
+      if (!key) return null;
+      return {
+        risk: 'safe',
+        verb: 'Сменить',
+        question: 'Уведомление',
+        title: 'уведомления',
+        serverId: null,
+        serverName: null,
+        run: async () => {
+          await d.api.put('/api/notify/telegram', { events: { [key]: a1 === '1' } });
+          return { reopen: { op: 'ns', args: [] } };
+        },
+      };
+    }
+    case 'nx':
+      return {
+        risk: 'safe',
+        verb: 'Отправить',
+        question: 'Отправить тестовое сообщение?',
+        title: 'тестовое сообщение',
+        serverId: null,
+        serverName: null,
+        run: async () => {
+          await d.api.post('/api/notify/telegram/test');
+          return { text: 'Тестовое сообщение отправлено в чат уведомлений' };
+        },
+      };
+    case 'sn':
+    case 'so':
+      return {
+        risk: 'safe',
+        verb: op === 'sn' ? 'Синхронизировать' : 'Остановить',
+        question: 'Синхронизация клиентов',
+        title: 'синхронизация клиентов',
+        serverId: null,
+        serverName: null,
+        run: async () => {
+          await d.api.post(op === 'sn' ? '/api/gclients/sync' : '/api/gclients/sync/stop');
+          return { reopen: { op: 'sy', args: [] } };
+        },
+      };
+    case 'sx':
+      return {
+        risk: 'danger',
+        verb: 'Завершить',
+        question: 'Завершить все сессии панели? Во всех браузерах понадобится войти заново.',
+        title: 'завершение сессий',
+        serverId: null,
+        serverName: null,
+        run: async () => {
+          const n = await d.logoutAll();
+          return { text: `Сессии панели завершены: ${n}` };
+        },
+      };
     default:
       return null;
   }

@@ -11,6 +11,8 @@ import type {
   GClientDetail,
   GClientLive,
   GClientRow,
+  GSyncState,
+  NotifyEvents,
   PanelUpdateView,
   ServerDetail,
   ServerReach,
@@ -18,6 +20,7 @@ import type {
   ServiceUpdate,
   Tag,
   WatchList,
+  XrayStatus,
   XuiInboundRow,
 } from '@vps/protocol';
 import { DEVICES, actionTitle, deviceOf } from '@vps/protocol';
@@ -25,8 +28,8 @@ import { eq } from 'drizzle-orm';
 import type { InjectOptions, LightMyRequestResponse } from 'fastify';
 import QRCode from 'qrcode';
 import type { Db } from '../db/index.js';
-import { actionLog, servers } from '../db/schema.js';
-import { theAdmin, verifyTotp } from '../lib/auth.js';
+import { actionLog, servers, sessions } from '../db/schema.js';
+import { deleteAllSessions, theAdmin, verifyTotp } from '../lib/auth.js';
 import { newId } from '../lib/ids.js';
 import { internalHeaders } from '../lib/internal-auth.js';
 import { deleteSetting, getJsonSetting, getSetting, putSetting } from '../lib/settings.js';
@@ -49,6 +52,14 @@ import {
 } from './client-views.js';
 import { Refs, parseCb } from './codec.js';
 import { type BotLevel, notifyButtons } from './notify-buttons.js';
+import {
+  backupView,
+  notifyView,
+  routeView,
+  sessionsView,
+  syncView,
+  versionView,
+} from './panel-views.js';
 import {
   type AwgInstanceRow,
   type IpStep,
@@ -725,6 +736,17 @@ export class Bot {
       api: this.api,
       refValue: (k: string) => this.refs.get(k),
       muteUntil: (id: string, until: Date) => this.deps.telegram.muteUntil(id, until),
+      logoutAll: async () => {
+        const a = await theAdmin(this.deps.db);
+        if (!a) return 0;
+        const n = this.deps.db
+          .select({ id: sessions.id })
+          .from(sessions)
+          .where(eq(sessions.adminId, a.id))
+          .all().length;
+        await deleteAllSessions(this.deps.db, a.id);
+        return n;
+      },
       now: () => Date.now(),
     };
   }
@@ -1488,6 +1510,20 @@ export class Bot {
         ]);
         return cascadesView(s, v, c);
       }
+      case 'vs':
+        return versionView(await this.get<PanelUpdateView>('/api/panel/update'), c);
+      case 'pb':
+        return backupView(await this.get<Parameters<typeof backupView>[0]>('/api/panel-backup'), c);
+      case 'ns': {
+        const t = await this.get<{ events: NotifyEvents }>('/api/notify/telegram');
+        return notifyView(t.events);
+      }
+      case 'sy':
+        return syncView(await this.get<GSyncState>('/api/gclients/syncing'), c);
+      case 'tr':
+        return routeView(await this.get<XrayStatus>('/api/xray'), this.deps.telegram.health(), c);
+      case 'ss':
+        return sessionsView(await this.get<Parameters<typeof sessionsView>[0]>('/api/security'), c);
       case 'mt': {
         const id = encodeURIComponent(args[0] ?? '');
         const [s, updates] = await Promise.all([
