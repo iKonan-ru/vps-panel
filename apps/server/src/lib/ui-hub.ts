@@ -2,7 +2,7 @@ import type { Metrics } from '@vps/protocol';
 import type { WebSocket } from 'ws';
 
 /** События для интерфейса: браузер по ним обновляет данные. */
-type UiEvent =
+export type UiEvent =
   | { type: 'server.online'; serverId: string }
   | { type: 'server.offline'; serverId: string }
   | { type: 'server.metrics'; serverId: string; metrics: Metrics }
@@ -17,6 +17,15 @@ type UiEvent =
 export class UiHub {
   private clients = new Set<WebSocket>();
   private watchers = new Set<(count: number) => void>();
+  private listeners = new Set<(ev: UiEvent) => void>();
+
+  /** Подписка изнутри панели (бот Telegram следит за ходом своих действий); возвращает отписку. */
+  listen(fn: (ev: UiEvent) => void): () => void {
+    this.listeners.add(fn);
+    return () => {
+      this.listeners.delete(fn);
+    };
+  }
 
   add(ws: WebSocket) {
     this.clients.add(ws);
@@ -40,6 +49,13 @@ export class UiHub {
   }
 
   broadcast(ev: UiEvent) {
+    for (const fn of this.listeners) {
+      try {
+        fn(ev);
+      } catch {
+        // подписчик не должен ломать рассылку в браузеры
+      }
+    }
     const msg = JSON.stringify(ev);
     for (const ws of this.clients) {
       if (ws.readyState === ws.OPEN) ws.send(msg);

@@ -108,6 +108,8 @@ export interface ActionListRow {
   startedAt: string;
   finishedAt: string | null;
   exitCode: number | null;
+  /** admin - из интерфейса, telegram - из бота */
+  initiator: string;
 }
 
 /** Название действия для человека; у команд каталога - её заголовок из параметров. */

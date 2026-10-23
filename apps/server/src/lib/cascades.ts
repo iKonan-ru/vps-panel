@@ -156,7 +156,7 @@ export interface CascadeDeps {
   gc: Pick<GClients, 'kick'>;
   log: { info: (o: unknown, m?: string) => void; warn: (o: unknown, m?: string) => void };
   /** Уведомление: каскад не работает (back=false) или снова работает. */
-  notify: (entryServerId: string, text: string, back: boolean) => void;
+  notify: (entryServerId: string, text: string, back: boolean, cascadeId: string) => void;
   /** Паузы проверки Xray (тесты - короче). */
   checksMs?: number[];
   /** Пауза перед повторной проверкой выхода Telegram после первой неудачи. */
@@ -1215,7 +1215,7 @@ export class Cascades {
           .get();
         const title = `каскад через ${exit?.name ?? 'выход'} (порт ${r.entryPort ?? '?'})`;
         if (c.ok) {
-          if (f.notified) this.d.notify(r.entryServerId, `${title} снова работает`, true);
+          if (f.notified) this.d.notify(r.entryServerId, `${title} снова работает`, true, r.id);
           this.fails.delete(r.id);
           if (this.tgDown.delete(r.id)) changed.add(r.entryServerId);
           continue;
@@ -1230,7 +1230,12 @@ export class Cascades {
           const tg = r.telegram
             ? '; Telegram - через другие отмеченные выходы, если они отвечают'
             : '';
-          this.d.notify(r.entryServerId, `${title} не работает: ${c.error ?? ''}${tg}`, false);
+          this.d.notify(
+            r.entryServerId,
+            `${title} не работает: ${c.error ?? ''}${tg}`,
+            false,
+            r.id,
+          );
         }
         this.fails.set(r.id, f);
       }

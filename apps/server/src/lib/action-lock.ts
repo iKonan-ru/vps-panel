@@ -1,3 +1,4 @@
+import { AsyncLocalStorage } from 'node:async_hooks';
 import { actionTitle, isBlockingAction } from '@vps/protocol';
 import { and, eq, isNull } from 'drizzle-orm';
 import type { Db } from '../db/index.js';
@@ -9,6 +10,12 @@ import { actionLog } from '../db/schema.js';
  * предела команды каталога у агента (4 часа) с запасом.
  */
 const STALE_MS = 4 * 60 * 60_000 + 10 * 60_000;
+
+/**
+ * Кто запустил действие: запросы бота к API панели (хук onRequest в app.ts) идут внутри
+ * initiator.run('telegram', ...), остальное - администратор в интерфейсе или фоновые задачи.
+ */
+export const initiator = new AsyncLocalStorage<string>();
 
 /** Действие, которое сейчас занимает сервер, или null. */
 export function busyAction(db: Db, serverId: string) {
@@ -41,5 +48,7 @@ export function beginAction(
         { statusCode: 409 },
       );
   }
-  db.insert(actionLog).values(a).run();
+  db.insert(actionLog)
+    .values({ ...a, initiator: initiator.getStore() ?? 'admin' })
+    .run();
 }

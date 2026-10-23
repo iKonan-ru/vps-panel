@@ -7,10 +7,12 @@ import type { FastifyRequest } from 'fastify';
  * ключ неизвестен и меняется с каждым перезапуском.
  */
 export const INTERNAL_HEADER = 'x-vps-internal';
+/** Кто из внутренних: telegram - бот (пометка в журнале действий). */
+export const INITIATOR_HEADER = 'x-vps-initiator';
 const KEY = randomBytes(32).toString('hex');
 
-export function internalHeaders(): Record<string, string> {
-  return { [INTERNAL_HEADER]: KEY };
+export function internalHeaders(initiator?: string): Record<string, string> {
+  return { [INTERNAL_HEADER]: KEY, ...(initiator ? { [INITIATOR_HEADER]: initiator } : {}) };
 }
 
 export function isInternal(req: FastifyRequest): boolean {

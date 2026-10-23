@@ -18,6 +18,7 @@ import { type Env, panelDomain } from './config.js';
 import { type Db, createDb } from './db/index.js';
 import { actionLog, servers } from './db/schema.js';
 import { actionJournal } from './lib/action-journal.js';
+import { initiator } from './lib/action-lock.js';
 import { AppReleases } from './lib/apps.js';
 import { BackupRestorer } from './lib/backup-restore.js';
 import { Cascades } from './lib/cascades.js';
@@ -28,6 +29,7 @@ import { startFail2banIgnore } from './lib/fail2ban-ignore.js';
 import { FirefoxSigner } from './lib/firefox.js';
 import { GClients } from './lib/gclients.js';
 import { startHousekeeping } from './lib/housekeeping.js';
+import { INITIATOR_HEADER, isInternal } from './lib/internal-auth.js';
 import { startMetricsPace } from './lib/metrics-pace.js';
 import { EngineCatalog } from './lib/mtproxyl-engine.js';
 import { Notifier } from './lib/notify.js';
@@ -197,6 +199,13 @@ export async function buildApp(opts: AppOptions) {
       .send({ error: message, ...(typeof e.code === 'string' ? { code: e.code } : {}) });
   });
 
+  // внутренний запрос бота: действия, которые он запустит, помечаются в журнале "из Telegram"
+  // (остаток обработки запроса идёт внутри initiator.run)
+  app.addHook('onRequest', (req, _reply, done) => {
+    if (req.headers[INITIATOR_HEADER] === 'telegram' && isInternal(req))
+      initiator.run('telegram', done);
+    else done();
+  });
   app.addHook('preHandler', requireAuth(db));
   // ничто из панели (страницы, подписки, личные страницы, панели сервисов через неё) не
   // индексируется поисковиками; Caddy ставит тот же заголовок и отдаёт robots.txt
@@ -407,7 +416,7 @@ export async function buildApp(opts: AppOptions) {
     journal,
     gc,
     log: app.log,
-    notify: (id, text, back) => void notifier.cascade(id, text, back),
+    notify: (id, text, back, cid) => void notifier.cascade(id, text, back, cid),
     panelHost: async (id) => {
       const row = db.select().from(servers).where(eq(servers.id, id)).get();
       if (!row) return false;
@@ -474,7 +483,10 @@ export async function buildApp(opts: AppOptions) {
     {
       sendDocument: (name, data, caption) => telegram.sendDocument(name, data, caption),
       // сбой бэкапа - событие backupFail в настройках уведомлений
-      send: async (text) => ((await telegram.wants('backupFail')) ? telegram.send(text) : null),
+      send: async (text) =>
+        (await telegram.wants('backupFail'))
+          ? telegram.send(text, { meta: { event: 'backupFail' } })
+          : null,
     },
     app.log,
   );
@@ -498,6 +510,7 @@ export async function buildApp(opts: AppOptions) {
     panelUrl: env.PANEL_PUBLIC_URL,
     version: PANEL_VERSION,
     log: app.log,
+    hub,
   });
   await app.register(botRoutes, { bot });
   if (env.NODE_ENV !== 'test')
@@ -539,5 +552,5 @@ export async function buildApp(opts: AppOptions) {
     });
   }
 
-  return { app, db, registry };
+  return { app, db, registry, hub };
 }

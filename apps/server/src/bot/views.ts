@@ -1,5 +1,6 @@
 import {
   type ActionListRow,
+  type BaselinePlan,
   type BotAdmin,
   type GClientRow,
   type ServerDetail,
@@ -667,4 +668,85 @@ export const STALE_TEXT = 'Кнопка устарела, экран откры�
 
 export function welcomeText(name: string): string {
   return `Аккаунт ${esc(name)} привязан к VPS Panel. Меню${DASH}кнопками внизу, поиск сервера${DASH}его имя сообщением.`;
+}
+
+// ---- баны и план исправления ----
+
+export function bansView(s: ServerDetail, c: Ctx): Screen {
+  const lines = [`<b>${esc(s.name)}</b>${DASH}баны fail2ban`, ''];
+  const kb: Btn[][] = [];
+  const jails = s.audit?.jails ?? [];
+  for (const j of jails) {
+    lines.push(`<b>${esc(j.name)}</b>: сейчас ${j.banned}, всего ${j.totalBanned}`);
+    for (const ip of j.bannedIps.slice(0, 15)) {
+      if (kb.length < 20)
+        kb.push([
+          {
+            text: `Снять бан ${ip}`,
+            data: cb('ub', c.ref(JSON.stringify({ sid: s.id, jail: j.name, ip }))),
+          },
+        ]);
+    }
+    if (j.bannedIps.length > 15) lines.push(`и ещё ${j.bannedIps.length - 15}`);
+  }
+  if (!jails.length) lines.push('fail2ban не настроен');
+  kb.push([{ text: `${I.back} ${cut(s.name, 20)}`, data: cb('sv', s.id) }]);
+  return { text: lines.join('\n'), kb };
+}
+
+export function planView(s: { id: string; name: string }, plan: BaselinePlan, c: Ctx): Screen {
+  const need = plan.steps.filter((x) => x.needed);
+  const lines = [`<b>${esc(s.name)}</b>${DASH}исправление проблем`, ''];
+  for (const st of need) lines.push(`- ${esc(st.title)}${st.detail ? `: ${esc(st.detail)}` : ''}`);
+  if (!need.length) lines.push('Исправлять нечего');
+  const ports = plan.ports.map(
+    (p) => `${p.action === 'open' ? 'открыть' : 'закрыть'} ${p.port}/${p.proto}`,
+  );
+  if (ports.length) lines.push('', `Порты: ${esc(ports.join(', '))}`);
+  if (plan.blockers.length) lines.push('', `Нельзя: ${esc(plan.blockers.join('; '))}`);
+  const kb: Btn[][] = [];
+  if (need.length && plan.canApply) kb.push([{ text: 'Исправить', data: cb('bf', s.id) }]);
+  kb.push([{ text: `${I.back} ${cut(s.name, 20)}`, data: cb('sv', s.id) }]);
+  void c;
+  return { text: lines.join('\n'), kb };
+}
+
+// ---- подтверждение, код 2FA, ход действия ----
+
+export function confirmView(question: string, verb: string, token: string): Screen {
+  return {
+    text: question,
+    kb: [
+      [
+        { text: verb, data: cb('cf', token) },
+        { text: 'Отмена', data: cb('cx', token) },
+      ],
+    ],
+  };
+}
+
+export function codeView(question: string, token: string, note = ''): Screen {
+  return {
+    text: `${question}\n\n${note ? `${note}\n` : ''}Код двухфакторной аутентификации${DASH}сообщением. Следующие 10${NB}минут код не понадобится.`,
+    kb: [[{ text: 'Отмена', data: cb('cx', token) }]],
+  };
+}
+
+/** Ход действия: заголовок, сколько идёт, хвост вывода. */
+export function progressText(header: string, startedAt: number, out: string, now: number): string {
+  const t = tail(out, 1200);
+  return `${header} ${I.run} идёт ${tgSpan(now - startedAt)}${t ? `\n<pre>${esc(t)}</pre>` : ''}`;
+}
+
+export function finalText(
+  header: string,
+  a: { exitCode: number | null; startedAt: string; finishedAt: string | null; output: string },
+): string {
+  const ok = a.exitCode === 0;
+  const dur = a.finishedAt ? `, ${tgSpan(Date.parse(a.finishedAt) - Date.parse(a.startedAt))}` : '';
+  const res = ok
+    ? `${I.done} готово`
+    : `${I.fail} ошибка${a.exitCode !== null ? `, код ${a.exitCode}` : ''}`;
+  const t = tail(a.output, 1500);
+  return `${header} ${res}${dur}${t ? `\n<pre>${esc(t)}</pre>` : ''}`;
 }

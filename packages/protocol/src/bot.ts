@@ -28,7 +28,11 @@ export interface BotView {
   poll: BotPoll;
   /** имя бота (без @), если известно */
   username: string | null;
+  /** что можно из бота: только просмотр, безопасные действия, все (опасные - с кодом 2FA) */
+  level: BotLevel;
 }
+
+export type BotLevel = 'view' | 'safe' | 'all';
 
 /** POST /api/notify/bot/link: ссылка привязки, одноразовая. */
 export interface BotLink {

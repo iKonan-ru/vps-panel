@@ -208,6 +208,11 @@ describe('наблюдатель', () => {
           sent.push(t);
           return null;
         },
+        // исходного сообщения в тесте нет: восстановление уходит новым
+        resolve: async (_ref, text) => {
+          sent.push(text(null));
+          return null;
+        },
       },
       panelUrl: 'https://panel.example.com',
       log: { warn: () => undefined },

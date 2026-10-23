@@ -16,7 +16,10 @@ import {
 } from '../db/schema.js';
 import { type LiveDeps, clientLive } from './client-live.js';
 import { schedule } from './schedule.js';
-import { esc, tgSpan, tgWhen } from './telegram.js';
+import { type Telegram, esc, tgSpan, tgWhen } from './telegram.js';
+
+/** Значок восстановления в правленом сообщении. */
+const UP_MARK = '\u2705';
 
 /** Как часто проверять связь клиентов с правилами. */
 export const WATCH_POLL_MS = 60_000;
@@ -126,7 +129,7 @@ export function watchStep(
 type Rule = typeof clientWatches.$inferSelect;
 
 interface WatchDeps extends LiveDeps {
-  telegram: { send: (text: string) => Promise<string | null> };
+  telegram: Pick<Telegram, 'send' | 'resolve'>;
   /** адрес панели для ссылки на карточку клиента; пусто - без ссылки */
   panelUrl: string;
   log: { warn: (o: unknown, m?: string) => void };
@@ -221,7 +224,15 @@ export class ClientWatch {
       .where(eq(clientWatches.id, r.id))
       .run();
     if (!step.send) return;
-    const err = await this.deps.telegram.send(this.message(r, step.send, now));
+    // снова на связи - правится сообщение об отключении (если было), иначе - новое
+    const ref = `watch:${r.id}`;
+    const text = this.message(r, step.send, now);
+    const err =
+      step.send.kind === 'up'
+        ? await this.deps.telegram.resolve(ref, () => `${UP_MARK} ${text}`)
+        : await this.deps.telegram.send(text, {
+            meta: { event: 'watch', ref, data: { rule: r.id, client: r.clientId } },
+          });
     if (err) this.deps.log.warn({ err, rule: r.id }, 'client-watch: не отправлено');
   }
 

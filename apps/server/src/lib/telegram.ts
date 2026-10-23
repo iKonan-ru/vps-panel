@@ -52,6 +52,32 @@ interface TgMsg {
   date: number;
 }
 
+/**
+ * Что за уведомление: по нему бот добавляет кнопки действий, а ref связывает пару "пропал -
+ * вернулся": восстановление правит исходное сообщение (resolve).
+ */
+export interface NotifyMeta {
+  /** событие каталога (offline, serviceDown, ...) или watch, cascade */
+  event: string;
+  serverId?: string;
+  ref?: string;
+  /** данные для кнопок: вид сервиса, версия, id каскада, id правила */
+  data?: Record<string, string>;
+}
+
+/** Отправленное уведомление с ref: чат и номер сообщения, чтобы поправить его при восстановлении. */
+interface Sent {
+  chat: string;
+  id: number;
+  at: string;
+}
+const SENT_KEY = 'tg_sent';
+/** Сколько помнить отправленные уведомления с ref. */
+const SENT_TTL_MS = 14 * 86_400_000;
+const SENT_MAX = 300;
+/** Серверы, отключённые в уведомлениях на время: id - до какого момента (ISO). */
+const MUTE_UNTIL_KEY = 'tg_mute_until';
+
 /** Ответ Bot API для бота управления. */
 export type TgApiResult =
   | { ok: true; result: unknown; via: string }
@@ -221,7 +247,7 @@ export class Telegram {
   async wants(event: NotifyEvent, serverId?: string): Promise<boolean> {
     const st = await this.settings();
     if (!st.token || !st.chatId || !st.events[event]) return false;
-    return !serverId || !st.mutedServers.includes(serverId);
+    return !serverId || (!st.mutedServers.includes(serverId) && !this.mutedNow(serverId));
   }
 
   async save(patch: { [K in keyof TgSettings]?: TgSettings[K] | undefined }) {
@@ -247,7 +273,7 @@ export class Telegram {
    * запоминаем на час. Возвращает ошибку текстом или null - каждому вызову свою: второй вызов
    * во время отправки не получает чужой "успех", а ошибка не выбрасывает всю очередь.
    */
-  send(text: string, opts: { keep?: boolean } = {}): Promise<string | null> {
+  send(text: string, opts: { keep?: boolean; meta?: NotifyMeta } = {}): Promise<string | null> {
     const keep = opts.keep ?? true;
     const run = async () => {
       const st = await this.settings();
@@ -259,7 +285,14 @@ export class Telegram {
         this.setPending([...pending, { at: new Date().toISOString(), text }]);
         return 'уведомления сейчас не доходят: сообщение отложено';
       }
-      const r = await this.deliver(st, text);
+      const markup = opts.meta && this.buttons ? await this.buttons(opts.meta) : null;
+      const r = await this.deliver(st, text, markup);
+      if (!r.err && r.messageId && opts.meta?.ref)
+        this.remember(opts.meta.ref, {
+          chat: st.chatId,
+          id: r.messageId,
+          at: new Date().toISOString(),
+        });
       if (r.err) {
         this.log.warn({ err: r.err }, 'telegram: не отправлено');
         this.record(false, null, r.err);
@@ -592,14 +625,98 @@ export class Telegram {
   private async deliver(
     st: TgSettings,
     msg: string,
-  ): Promise<{ err: string | null; via: string | null }> {
+    markup: unknown = null,
+  ): Promise<{ err: string | null; via: string | null; messageId: number | null }> {
     const r = await this.call(st.token, 'sendMessage', {
       chat_id: st.chatId,
       text: msg,
       parse_mode: 'HTML',
       disable_web_page_preview: true,
+      ...(markup ? { reply_markup: markup } : {}),
     });
-    return { err: r.err ?? null, via: r.via ?? null };
+    let messageId: number | null = null;
+    try {
+      const id = (JSON.parse(r.raw ?? '{}') as { result?: { message_id?: unknown } }).result
+        ?.message_id;
+      if (typeof id === 'number') messageId = id;
+    } catch {
+      // ответ агента - без номера сообщения
+    }
+    return { err: r.err ?? null, via: r.via ?? null, messageId };
+  }
+
+  /**
+   * Кнопки к уведомлению (их задаёт бот управления, когда он включён); null - без кнопок.
+   * Результат - reply_markup для sendMessage.
+   */
+  buttons: ((meta: NotifyMeta) => Promise<unknown | null>) | null = null;
+
+  private sentMap(): Record<string, Sent> {
+    return getJsonSetting<Record<string, Sent>>(this.db, SENT_KEY, {});
+  }
+
+  private remember(ref: string, sent: Sent) {
+    const now = Date.now();
+    const all = Object.entries({ ...this.sentMap(), [ref]: sent })
+      .filter(([, v]) => now - Date.parse(v.at) < SENT_TTL_MS)
+      .sort((a, b) => a[1].at.localeCompare(b[1].at))
+      .slice(-SENT_MAX);
+    putSetting(this.db, SENT_KEY, JSON.stringify(Object.fromEntries(all)));
+  }
+
+  /** Отправленное уведомление по ref (или null) и забыть его, если forget. */
+  sentOf(ref: string, forget = false): Sent | null {
+    const all = this.sentMap();
+    const v = all[ref] ?? null;
+    if (v && forget) {
+      delete all[ref];
+      putSetting(this.db, SENT_KEY, JSON.stringify(all));
+    }
+    return v;
+  }
+
+  /**
+   * Восстановление ("снова в сети", "снова работает"): исходное сообщение правится - текст
+   * восстановления, кнопки снимаются. Исходного нет (не отправлялось, забыто) или править нельзя -
+   * обычным сообщением. text получает время исходного сообщения.
+   */
+  async resolve(ref: string, text: (sentAt: string | null) => string): Promise<string | null> {
+    const sent = this.sentOf(ref, true);
+    const body = text(sent?.at ?? null);
+    if (sent) {
+      const r = await this.api('editMessageText', {
+        chat_id: sent.chat,
+        message_id: sent.id,
+        text: body,
+        parse_mode: 'HTML',
+        link_preview_options: { is_disabled: true },
+        reply_markup: { inline_keyboard: [] },
+      });
+      if (r.ok) return null;
+    }
+    return this.send(body);
+  }
+
+  /** Не уведомлять о сервере до момента until (кнопка бота "Не уведомлять 1 ч"). */
+  muteUntil(serverId: string, until: Date) {
+    const now = Date.now();
+    const map = Object.fromEntries(
+      Object.entries(getJsonSetting<Record<string, string>>(this.db, MUTE_UNTIL_KEY, {})).filter(
+        ([, v]) => Date.parse(v) > now,
+      ),
+    );
+    map[serverId] = until.toISOString();
+    putSetting(this.db, MUTE_UNTIL_KEY, JSON.stringify(map));
+  }
+
+  /** Сервер отключён в уведомлениях: насовсем (настройки) или на время (кнопка бота). */
+  async isMuted(serverId: string): Promise<boolean> {
+    return (await this.settings()).mutedServers.includes(serverId) || this.mutedNow(serverId);
+  }
+
+  private mutedNow(serverId: string): boolean {
+    const v = getJsonSetting<Record<string, string>>(this.db, MUTE_UNTIL_KEY, {})[serverId];
+    return Boolean(v && Date.parse(v) > Date.now());
   }
 
   /**

@@ -5,15 +5,22 @@ import { useConfirm } from '@/components/ui/confirm';
 import { Dialog } from '@/components/ui/dialog';
 import { LinkButton } from '@/components/ui/link-button';
 import { QrCode } from '@/components/ui/qr-code';
+import { Select } from '@/components/ui/select';
 import { Switch } from '@/components/ui/switch';
 import { api } from '@/lib/api';
 import { useAction } from '@/lib/use-action';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import type { BotLink, BotView } from '@vps/protocol';
+import type { BotLevel, BotLink, BotView } from '@vps/protocol';
 import { Link2, Unlink } from 'lucide-react';
 import { useEffect, useState } from 'react';
 
 const KEY = ['tg-bot'];
+
+const LEVELS: { id: BotLevel; title: string }[] = [
+  { id: 'view', title: 'Только просмотр' },
+  { id: 'safe', title: 'Безопасные действия' },
+  { id: 'all', title: 'Все действия' },
+];
 
 function useBot(fast: boolean) {
   return useQuery({
@@ -56,6 +63,13 @@ export function BotSettingsRow({ tokenSet }: { tokenSet: boolean }) {
   async function toggle() {
     await op.run(async () => {
       await api('/api/notify/bot', { method: 'PATCH', json: { on: !bot?.on } });
+      await qc.invalidateQueries({ queryKey: KEY });
+    });
+  }
+
+  async function setLevel(level: BotLevel) {
+    await op.run(async () => {
+      await api('/api/notify/bot', { method: 'PATCH', json: { level } });
       await qc.invalidateQueries({ queryKey: KEY });
     });
   }
@@ -116,6 +130,27 @@ export function BotSettingsRow({ tokenSet }: { tokenSet: boolean }) {
           onChange={toggle}
         />
       </div>
+      {bot.admin && (
+        <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
+          <div className="min-w-0 grow text-xs text-muted">
+            действия через бота; опасные&nbsp;&mdash; с кодом 2FA
+          </div>
+          <Select
+            size="sm"
+            className="w-52 shrink-0"
+            aria-label="Действия через бота"
+            value={bot.level}
+            disabled={busy || isFetching}
+            onChange={(e) => setLevel(e.target.value as BotLevel)}
+          >
+            {LEVELS.map((l) => (
+              <option key={l.id} value={l.id}>
+                {l.title}
+              </option>
+            ))}
+          </Select>
+        </div>
+      )}
       {bot.on && bot.poll.ok === false && bot.poll.error && (
         <Alert tone="bad">{bot.poll.error}</Alert>
       )}

@@ -10,8 +10,11 @@ export async function botRoutes(app: FastifyInstance, opts: { bot: Bot }) {
   app.get('/api/notify/bot', async (): Promise<BotView> => bot.view());
 
   app.patch('/api/notify/bot', async (req): Promise<BotView> => {
-    const body = z.object({ on: z.boolean() }).parse(req.body ?? {});
-    await bot.setOn(body.on);
+    const body = z
+      .object({ on: z.boolean().optional(), level: z.enum(['view', 'safe', 'all']).optional() })
+      .parse(req.body ?? {});
+    if (body.level) bot.setLevel(body.level);
+    if (body.on !== undefined) await bot.setOn(body.on);
     return bot.view();
   });
 

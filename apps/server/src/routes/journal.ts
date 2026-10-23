@@ -22,6 +22,7 @@ export async function journalRoutes(app: FastifyInstance, opts: ServerRouteOpts)
     startedAt: actionLog.startedAt,
     finishedAt: actionLog.finishedAt,
     exitCode: actionLog.exitCode,
+    initiator: actionLog.initiator,
   };
   app.get('/api/servers/:id/actions', async (req): Promise<ActionListRow[]> => {
     const { id } = Id.parse(req.params);

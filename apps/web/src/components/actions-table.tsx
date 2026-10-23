@@ -56,7 +56,9 @@ export function ActionsTable({
                 </td>
                 {serverNames && (
                   <td>
-                    {r.serverId && serverNames.has(r.serverId) ? (
+                    {r.serverId === null ? (
+                      <span className="text-muted">панель</span>
+                    ) : serverNames.has(r.serverId) ? (
                       <Link
                         to="/servers/$id"
                         params={{ id: r.serverId }}
@@ -69,7 +71,14 @@ export function ActionsTable({
                     )}
                   </td>
                 )}
-                <td>{actionName(r)}</td>
+                <td>
+                  {actionName(r)}
+                  {r.initiator === 'telegram' && (
+                    <Chip className="ml-2" title="Запущено из Telegram-бота">
+                      Telegram
+                    </Chip>
+                  )}
+                </td>
                 <td>
                   <ActionStatusChip finishedAt={r.finishedAt} exitCode={r.exitCode} />
                 </td>

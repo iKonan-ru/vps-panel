@@ -13,7 +13,7 @@ import type { Db } from '../db/index.js';
 import { servers } from '../db/schema.js';
 import { daysToPayment, rollPaymentDate } from './billing.js';
 import { schedule } from './schedule.js';
-import { type Telegram, esc } from './telegram.js';
+import { type Telegram, esc, tgSpan } from './telegram.js';
 
 const STARTUP_QUIET_MS = 2 * 60_000;
 /** Сервис считаем упавшим, если он down в снимках агента дольше этого (перезапуск - не падение). */
@@ -163,12 +163,22 @@ export class Notifier {
     if (this.registry.isOnline(id) || this.registry.isUpdating(id)) return;
     if (!(await this.tg.wants('offline', id))) return;
     this.notifiedOffline.add(id);
-    await this.tg.send(`Сервер ${await this.serverName(id)} не в сети ${minutes}\u00a0мин`);
+    await this.tg.send(`Сервер ${await this.serverName(id)} не в сети ${minutes}\u00a0мин`, {
+      meta: { event: 'offline', serverId: id, ref: `off:${id}` },
+    });
   }
 
+  /** Снова в сети: правится сообщение "не в сети" (без кнопок), время перерыва - от его отправки. */
   private async notifyOnline(id: string) {
     if (!(await this.tg.wants('online', id))) return;
-    await this.tg.send(`Сервер ${await this.serverName(id)} снова в сети`);
+    const name = await this.serverName(id);
+    const { offlineMinutes } = await this.tg.settings();
+    await this.tg.resolve(`off:${id}`, (at) => {
+      const span = at
+        ? `, не был в сети ${tgSpan(Date.now() - Date.parse(at) + offlineMinutes * 60_000)}`
+        : '';
+      return `\u2705 Сервер ${name} снова в сети${span}`;
+    });
   }
 
   /** Сервисы из снимка: упал (down дольше SERVICE_DOWN_MS) и снова работает. */
@@ -190,12 +200,24 @@ export class Notifier {
           const why =
             typeof s.details.downReason === 'string' ? `: ${esc(s.details.downReason)}` : '';
           const name = await this.serverName(id, serviceByKind(s.kind)?.tab);
-          await this.tg.send(`${name}: ${esc(s.title)} не работает${why}`);
+          await this.tg.send(`${name}: ${esc(s.title)} не работает${why}`, {
+            meta: {
+              event: 'serviceDown',
+              serverId: id,
+              ref: `svc:${id}:${key}`,
+              data: { kind: s.kind, title: s.title },
+            },
+          });
         }
         next.set(key, d);
       } else if (was?.notified && (await this.tg.wants('serviceUp', id))) {
         const name = await this.serverName(id, serviceByKind(s.kind)?.tab);
-        await this.tg.send(`${name}: ${esc(s.title)} снова работает`);
+        await this.tg.resolve(`svc:${id}:${key}`, (at) => {
+          const span = at
+            ? `, не работал ${tgSpan(Date.now() - Date.parse(at) + SERVICE_DOWN_MS)}`
+            : '';
+          return `\u2705 ${name}: ${esc(s.title)} снова работает${span}`;
+        });
       }
     }
     this.downs.set(id, next);
@@ -228,7 +250,7 @@ export class Notifier {
       return;
     }
     const st = await this.tg.settings();
-    if (!st.token || !st.chatId || st.mutedServers.includes(id)) {
+    if (!st.token || !st.chatId || (await this.tg.isMuted(id))) {
       this.remember(id, inv, true);
       return;
     }
@@ -246,6 +268,7 @@ export class Notifier {
     if (st.events.auditNew && appeared.length)
       await this.tg.send(
         `${name}: критичные замечания\n${appeared.map((t) => `- ${esc(t)}`).join('\n')}`,
+        { meta: { event: 'auditNew', serverId: id } },
       );
     if (st.events.auditClosed && gone.length)
       await this.tg.send(
@@ -266,7 +289,10 @@ export class Notifier {
       const jails = (inv.audit?.jails ?? [])
         .map((j) => `${j.name}: сейчас ${j.banned}, всего ${j.totalBanned}`)
         .join('; ');
-      await this.tg.send(`${name}: fail2ban за час заблокировал адресов: ${delta} (${esc(jails)})`);
+      await this.tg.send(
+        `${name}: fail2ban за час заблокировал адресов: ${delta} (${esc(jails)})`,
+        { meta: { event: 'bans', serverId: id } },
+      );
     }
     this.bans.set(id, b);
 
@@ -283,6 +309,7 @@ export class Notifier {
       this.updatesNotifiedAt.set(id, now);
       await this.tg.send(
         `${name}: ожидают установки обновления безопасности: ${pend}. Кнопка \u00abОбновить\u00bb\u00a0\u2014 в блоке \u00abОбслуживание\u00bb.`,
+        { meta: { event: 'pkgUpdates', serverId: id } },
       );
     }
   }
@@ -292,14 +319,30 @@ export class Notifier {
     if (!(await this.tg.wants(reachEvent(note.key, note.back), id))) return;
     // "снова виден" - только если о пропаже этой цели вообще уведомляем
     if (note.back && !(await this.tg.wants(reachEvent(note.key, false), id))) return;
-    await this.tg.send(`${await this.serverName(id)}: ${note.text}`);
+    const name = await this.serverName(id);
+    const ref = `reach:${id}:${note.key}`;
+    if (note.back) {
+      await this.tg.resolve(ref, () => `\u2705 ${name}: ${note.text}`);
+      return;
+    }
+    await this.tg.send(`${name}: ${note.text}`, {
+      meta: { event: reachEvent(note.key, false), serverId: id, ref, data: { key: note.key } },
+    });
   }
 
   /** Каскад VLESS входа: выход не отвечает две проверки подряд или снова отвечает. */
-  async cascade(id: string, text: string, back: boolean) {
+  async cascade(id: string, text: string, back: boolean, cid = '') {
     if (!(await this.tg.wants(back ? 'serviceUp' : 'serviceDown', id))) return;
     if (back && !(await this.tg.wants('serviceDown', id))) return;
-    await this.tg.send(`${await this.serverName(id, 'xui')}: ${esc(text)}`);
+    const name = await this.serverName(id, 'xui');
+    const ref = `casc:${cid || id}`;
+    if (back) {
+      await this.tg.resolve(ref, () => `\u2705 ${name}: ${esc(text)}`);
+      return;
+    }
+    await this.tg.send(`${name}: ${esc(text)}`, {
+      meta: { event: 'cascade', serverId: id, ref, data: cid ? { cid } : {} },
+    });
   }
 
   /** Новая версия самой панели (релиз GitHub в её канале), один раз на версию. */
@@ -307,6 +350,7 @@ export class Notifier {
     if (!(await this.tg.wants('updPanel'))) return;
     await this.tg.send(
       `VPS Panel: вышла ${r.prerelease ? 'предварительная ' : ''}версия ${esc(r.version)}. Обновление: \u00abНастройки\u00bb\u00a0\u2014 \u00abВерсия панели\u00bb.\n${esc(r.url)}`,
+      { meta: { event: 'updPanel', data: { version: r.version, url: r.url } } },
     );
   }
 
@@ -315,6 +359,7 @@ export class Notifier {
     if (!(await this.tg.wants(UPDATE_EVENT[u.kind], id))) return;
     await this.tg.send(
       `${await this.serverName(id)}: доступна версия ${u.title} ${esc(u.latest)}${u.current ? `, сейчас ${esc(u.current)}` : ''}. Кнопка \u00abОбновить\u00bb\u00a0\u2014 в блоке \u00abОбслуживание\u00bb.`,
+      { meta: { event: UPDATE_EVENT[u.kind], serverId: id, data: { kind: u.kind } } },
     );
   }
 
@@ -335,7 +380,7 @@ export class Notifier {
     const st = await this.tg.settings();
     if (!st.events.payment || !st.token || !st.chatId) return;
     for (const r of rows) {
-      if (!r.nextPaymentAt || st.mutedServers.includes(r.id)) continue;
+      if (!r.nextPaymentAt || (await this.tg.isMuted(r.id))) continue;
       const days = daysToPayment(r.nextPaymentAt, now);
       if (days > st.paymentDays || days < 0) continue;
       if (this.paymentNotified.get(r.id) === r.nextPaymentAt) continue;
@@ -344,6 +389,7 @@ export class Notifier {
       const price = r.price ? ` (${r.price} ${r.currency})` : '';
       await this.tg.send(
         `Оплата хостинга ${await this.serverName(r.id)}: ${shortDate(r.nextPaymentAt)}, ${when}${price}${r.providerUrl ? `\n${esc(r.providerUrl)}` : ''}`,
+        { meta: { event: 'payment', serverId: r.id } },
       );
     }
   }

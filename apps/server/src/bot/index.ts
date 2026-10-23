@@ -1,6 +1,7 @@
 import { createHash, randomBytes, timingSafeEqual } from 'node:crypto';
 import type {
   ActionListRow,
+  BaselinePlan,
   BotAdmin,
   BotLink,
   BotPoll,
@@ -13,14 +14,20 @@ import type {
   ServiceUpdate,
   Tag,
 } from '@vps/protocol';
+import { eq } from 'drizzle-orm';
 import type { InjectOptions, LightMyRequestResponse } from 'fastify';
 import type { Db } from '../db/index.js';
-import { actionLog } from '../db/schema.js';
+import { actionLog, servers } from '../db/schema.js';
+import { theAdmin, verifyTotp } from '../lib/auth.js';
 import { newId } from '../lib/ids.js';
 import { internalHeaders } from '../lib/internal-auth.js';
 import { deleteSetting, getJsonSetting, getSetting, putSetting } from '../lib/settings.js';
-import type { Telegram, TgApiResult } from '../lib/telegram.js';
+import { esc } from '../lib/telegram.js';
+import type { NotifyMeta, Telegram, TgApiResult } from '../lib/telegram.js';
+import type { UiEvent } from '../lib/ui-hub.js';
+import { ACTION_OPS, type ActionSpec, ApiError, type PanelApi, actionSpec } from './actions.js';
 import { Refs, parseCb } from './codec.js';
+import { type BotLevel, notifyButtons } from './notify-buttons.js';
 import {
   COMMANDS,
   type Ctx,
@@ -30,9 +37,15 @@ import {
   STALE_TEXT,
   type Screen,
   actionView,
+  bansView,
+  codeView,
+  confirmView,
+  finalText,
   findServers,
   journalView,
   offConfirmView,
+  planView,
+  progressText,
   reachView,
   searchView,
   serverView,
@@ -44,6 +57,16 @@ import {
 } from './views.js';
 
 const ON_KEY = 'tg_bot_on';
+const LEVEL_KEY = 'tg_bot_level';
+/** Подтверждение и ввод кода 2FA ждут 2 минуты. */
+const CONFIRM_TTL_MS = 2 * 60_000;
+/** После верного кода опасные действия не спрашивают его 10 минут. */
+const UNLOCK_MS = 10 * 60_000;
+/** Неверных кодов подряд до блокировки действий и на сколько. */
+const CODE_FAILS = 5;
+const CODE_LOCK_MS = 15 * 60_000;
+/** Ход действия правится не чаще. */
+const PROGRESS_EDIT_MS = 3_000;
 const ADMIN_KEY = 'tg_bot_admin';
 /** Номер следующего обновления вместе с отпечатком токена: у другого бота свои номера. */
 const OFFSET_KEY = 'tg_bot_offset';
@@ -75,6 +98,7 @@ interface TgMessage {
   chat: TgChat;
   from?: TgUser;
   text?: string;
+  reply_markup?: { inline_keyboard?: { text: string; callback_data?: string; url?: string }[][] };
 }
 interface TgCallback {
   id: string;
@@ -89,8 +113,9 @@ interface TgUpdate {
   my_chat_member?: { chat: TgChat; from: TgUser; date: number };
 }
 
-export type BotTelegram = Pick<Telegram, 'api' | 'settings' | 'health'> & {
+export type BotTelegram = Pick<Telegram, 'api' | 'settings' | 'health' | 'muteUntil'> & {
   chatsFromBot: Telegram['chatsFromBot'];
+  buttons: Telegram['buttons'];
 };
 
 export interface BotDeps {
@@ -101,9 +126,23 @@ export interface BotDeps {
   panelUrl: string;
   version: string;
   log: { info: (o: unknown, m?: string) => void; warn: (o: unknown, m?: string) => void };
+  /** события действий: ход запущенного из бота */
+  hub?: { listen: (fn: (ev: UiEvent) => void) => () => void };
 }
 
 class NotFound extends Error {}
+
+/** Ход действия, запущенного из бота: в каком сообщении он показывается. */
+interface Tracked {
+  chat: number | string;
+  mid: number;
+  header: string;
+  startedAt: number;
+  out: string;
+  lastEdit: number;
+  timer: NodeJS.Timeout | null;
+  spec: ActionSpec;
+}
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
@@ -129,8 +168,28 @@ export class Bot {
   private seen = new Map<string, { id: string; title: string; when: string }>();
   private strangers = new Map<number, number>();
   private commandsFor: string | null = null;
+  private confirms = new Map<string, { op: string; args: string[]; expires: number }>();
+  /** ждёт кода 2FA: подтверждение и сообщение, которое правится */
+  private codeWait: { token: string; chat: number; mid: number; expires: number } | null = null;
+  private unlockedUntil = 0;
+  private codeFails = 0;
+  private lockedUntil = 0;
+  private usedCodes = new Map<string, number>();
+  private tracked = new Map<string, Tracked>();
+  private unlisten: (() => void) | null = null;
 
-  constructor(private deps: BotDeps) {}
+  constructor(private deps: BotDeps) {
+    deps.telegram.buttons = (m) => this.notifyMarkup(m);
+  }
+
+  level(): BotLevel {
+    const v = getSetting(this.deps.db, LEVEL_KEY);
+    return v === 'view' || v === 'safe' ? v : 'all';
+  }
+
+  setLevel(level: BotLevel) {
+    putSetting(this.deps.db, LEVEL_KEY, level);
+  }
 
   // ---- состояние и настройки ----
 
@@ -149,6 +208,7 @@ export class Bot {
       admin: this.admin(),
       poll: { ...this.pollState },
       username: this.username,
+      level: this.level(),
     };
   }
 
@@ -224,9 +284,11 @@ export class Bot {
 
   start(): () => void {
     this.running = true;
+    this.unlisten = this.deps.hub?.listen((ev) => this.onHub(ev)) ?? null;
     void this.loop();
     return () => {
       this.running = false;
+      this.unlisten?.();
       this.deps.telegram.chatsFromBot = null;
       this.wake();
     };
@@ -382,7 +444,17 @@ export class Bot {
       return;
     }
     const chat = m.chat.id;
+    if (this.codeWait && /^\d{6}$/.test(text.replace(/\s+/g, ''))) {
+      await this.send('deleteMessage', { chat_id: chat, message_id: m.message_id });
+      return this.onCode(text.replace(/\s+/g, ''));
+    }
     const cmd = text.replace(/@\w+$/, '').split(/\s/)[0] ?? '';
+    if (cmd === '/cancel') {
+      const w = this.codeWait;
+      this.codeWait = null;
+      if (w) await this.editText(w.chat, w.mid, 'Отменено');
+      return;
+    }
     if (cmd === '/start') {
       await this.send('sendMessage', {
         chat_id: chat,
@@ -453,6 +525,27 @@ export class Bot {
       return answer('Управление\u00a0\u2014 в личном чате с ботом', true);
     const { op, args } = parseCb(q.data ?? '');
     if (op === 'noop') return answer();
+    if (op === 'o') {
+      const [sub = '', ...rest] = args;
+      let screen: Screen | null = null;
+      try {
+        screen = await this.screen(sub, rest);
+      } catch (e) {
+        if (!(e instanceof NotFound)) throw e;
+      }
+      await answer(screen ? undefined : 'Не найдено: возможно, удалено');
+      if (screen) await this.reply(msg.chat.id, screen, msg.message_id);
+      return;
+    }
+    if (ACTION_OPS.has(op)) return this.onAction(q, msg, op, args, answer);
+    if (op === 'cf') return this.onConfirm(msg, args[0] ?? '', answer);
+    if (op === 'cx') {
+      this.confirms.delete(args[0] ?? '');
+      if (this.codeWait?.token === args[0]) this.codeWait = null;
+      await answer();
+      await this.send('deleteMessage', { chat_id: msg.chat.id, message_id: msg.message_id });
+      return;
+    }
     if (op === 'off!') {
       await answer();
       await this.send('deleteMessage', { chat_id: msg.chat.id, message_id: msg.message_id });
@@ -474,6 +567,311 @@ export class Bot {
     }
     if (screen) await this.edit(msg, screen);
     await answer(toast);
+  }
+
+  // ---- действия ----
+
+  /** API панели для действий: от имени бота (в журнале действий - "из Telegram"). */
+  private api: PanelApi = {
+    get: (url) => this.get(url),
+    post: (url, body) => this.call('POST', url, body),
+    put: (url, body) => this.call('PUT', url, body),
+  };
+
+  private async call<T>(method: 'POST' | 'PUT', url: string, body?: unknown): Promise<T> {
+    const res = await this.deps.inject({
+      method,
+      url,
+      headers: { ...internalHeaders('telegram'), 'content-type': 'application/json' },
+      payload: JSON.stringify(body ?? {}),
+    });
+    if (res.statusCode >= 400) {
+      let msg = res.body.slice(0, 300);
+      try {
+        msg = (JSON.parse(res.body) as { error?: string }).error ?? msg;
+      } catch {
+        // ответ не JSON
+      }
+      throw new ApiError(res.statusCode, msg);
+    }
+    return (res.body ? res.json() : {}) as T;
+  }
+
+  /** Кнопки к уведомлению: только когда управление включено и аккаунт привязан. */
+  private async notifyMarkup(m: NotifyMeta): Promise<unknown | null> {
+    if (!this.isOn() || !this.admin()) return null;
+    let providerUrl: string | undefined;
+    if (m.serverId && (m.event === 'offline' || m.event === 'payment'))
+      providerUrl =
+        this.deps.db
+          .select({ url: servers.providerUrl })
+          .from(servers)
+          .where(eq(servers.id, m.serverId))
+          .get()?.url ?? undefined;
+    const kb = notifyButtons({ ...m, providerUrl }, this.level(), (v) => this.refs.put(v));
+    return kb.length ? this.markup({ text: '', kb }) : null;
+  }
+
+  private allowed(risk: ActionSpec['risk']): string | null {
+    const lv = this.level();
+    if (lv === 'view')
+      return 'Действия выключены: в настройках бота уровень \u00abтолько просмотр\u00bb';
+    if (lv === 'safe' && risk !== 'safe')
+      return 'Это действие выключено: в настройках бота уровень \u00abбезопасные действия\u00bb';
+    return null;
+  }
+
+  private specDeps() {
+    return {
+      api: this.api,
+      refValue: (k: string) => this.refs.get(k),
+      muteUntil: (id: string, until: Date) => this.deps.telegram.muteUntil(id, until),
+      now: () => Date.now(),
+    };
+  }
+
+  /** Убрать нажатую кнопку из сообщения: действие уже не нужно. */
+  private async dropButton(msg: TgMessage, data: string) {
+    const rows = msg.reply_markup?.inline_keyboard;
+    if (!rows) return;
+    const left = rows.map((r) => r.filter((b) => b.callback_data !== data)).filter((r) => r.length);
+    await this.send('editMessageReplyMarkup', {
+      chat_id: msg.chat.id,
+      message_id: msg.message_id,
+      reply_markup: { inline_keyboard: left },
+    });
+  }
+
+  private async onAction(
+    q: TgCallback,
+    msg: TgMessage,
+    op: string,
+    args: string[],
+    answer: (text?: string, alert?: boolean) => Promise<TgApiResult>,
+  ) {
+    let spec: ActionSpec | null;
+    try {
+      spec = await actionSpec(op, args, this.specDeps());
+    } catch (e) {
+      await answer(
+        e instanceof ApiError && e.status === 404
+          ? 'Не найдено: возможно, удалено'
+          : (e as Error).message,
+        true,
+      );
+      return;
+    }
+    if (!spec) return answer(STALE_TEXT, true);
+    const no = this.allowed(spec.risk);
+    if (no) return answer(no, true);
+    if (spec.stale) {
+      await answer(spec.stale, true);
+      await this.dropButton(msg, q.data ?? '');
+      return;
+    }
+    if (spec.risk === 'safe') {
+      await answer();
+      await this.execute(spec, msg.chat.id, msg.message_id, null);
+      return;
+    }
+    const token = this.refs.put(JSON.stringify({ op, args, n: Math.random() }));
+    this.confirms.set(token, { op, args, expires: Date.now() + CONFIRM_TTL_MS });
+    await answer();
+    await this.reply(msg.chat.id, confirmView(spec.question, spec.verb, token), msg.message_id);
+  }
+
+  private async onConfirm(
+    msg: TgMessage,
+    token: string,
+    answer: (text?: string, alert?: boolean) => Promise<TgApiResult>,
+  ) {
+    const c = this.confirms.get(token);
+    if (!c || Date.now() > c.expires) {
+      this.confirms.delete(token);
+      await answer('Подтверждение устарело, нажмите кнопку действия ещё раз', true);
+      await this.send('deleteMessage', { chat_id: msg.chat.id, message_id: msg.message_id });
+      return;
+    }
+    let spec: ActionSpec | null;
+    try {
+      spec = await actionSpec(c.op, c.args, this.specDeps());
+    } catch (e) {
+      return answer((e as Error).message, true);
+    }
+    if (!spec) return answer(STALE_TEXT, true);
+    const no = this.allowed(spec.risk);
+    if (no) return answer(no, true);
+    if (spec.stale) {
+      this.confirms.delete(token);
+      await answer();
+      await this.editText(msg.chat.id, msg.message_id, esc(spec.stale));
+      return;
+    }
+    if (spec.risk === 'danger' && Date.now() > this.unlockedUntil) {
+      if (Date.now() < this.lockedUntil)
+        return answer('Слишком много неверных кодов: действия недоступны 15 минут', true);
+      const admin = await theAdmin(this.deps.db);
+      if (!admin?.totpEnabled || !admin.totpSecret)
+        return answer('Двухфакторная аутентификация не настроена: войдите в панель', true);
+      c.expires = Date.now() + CONFIRM_TTL_MS;
+      this.codeWait = { token, chat: msg.chat.id, mid: msg.message_id, expires: c.expires };
+      await answer();
+      await this.editText(
+        msg.chat.id,
+        msg.message_id,
+        codeView(spec.question, token).text,
+        codeView(spec.question, token),
+      );
+      return;
+    }
+    this.confirms.delete(token);
+    await answer();
+    await this.execute(spec, msg.chat.id, null, msg.message_id);
+  }
+
+  /** Код 2FA сообщением: верный - окно 10 минут и действие, неверный - счётчик попыток. */
+  private async onCode(code: string) {
+    const w = this.codeWait;
+    if (!w) return;
+    const c = this.confirms.get(w.token);
+    if (!c || Date.now() > w.expires) {
+      this.codeWait = null;
+      await this.editText(w.chat, w.mid, 'Подтверждение устарело, нажмите кнопку действия ещё раз');
+      return;
+    }
+    const admin = await theAdmin(this.deps.db);
+    const now = Date.now();
+    for (const [k, at] of this.usedCodes) if (now - at > 120_000) this.usedCodes.delete(k);
+    const ok =
+      Boolean(admin?.totpSecret) &&
+      !this.usedCodes.has(code) &&
+      verifyTotp(admin?.totpSecret ?? '', code);
+    const spec = await actionSpec(c.op, c.args, this.specDeps()).catch(() => null);
+    if (!ok) {
+      this.codeFails++;
+      if (this.codeFails >= CODE_FAILS) {
+        this.codeFails = 0;
+        this.lockedUntil = now + CODE_LOCK_MS;
+        this.codeWait = null;
+        this.confirms.delete(w.token);
+        this.deps.log.warn({}, 'бот: неверные коды 2FA, действия заблокированы на 15 минут');
+        await this.editText(
+          w.chat,
+          w.mid,
+          'Неверный код. Действия через бота недоступны 15\u00a0минут',
+        );
+        return;
+      }
+      const left = CODE_FAILS - this.codeFails;
+      const v = codeView(spec?.question ?? '', w.token, `Неверный код, попыток: ${left}`);
+      await this.editText(w.chat, w.mid, v.text, v);
+      return;
+    }
+    this.usedCodes.set(code, now);
+    this.codeFails = 0;
+    this.unlockedUntil = now + UNLOCK_MS;
+    this.codeWait = null;
+    this.confirms.delete(w.token);
+    if (!spec || spec.stale) {
+      await this.editText(w.chat, w.mid, esc(spec?.stale ?? STALE_TEXT));
+      return;
+    }
+    await this.execute(spec, w.chat, null, w.mid);
+  }
+
+  /**
+   * Выполнить действие. Итог - в сообщении: editMid - правится (подтверждение), иначе новым
+   * ответом на replyTo (уведомление). Длинное действие - ход по событиям до окончания.
+   */
+  private async execute(
+    spec: ActionSpec,
+    chat: number | string,
+    replyTo: number | null,
+    editMid: number | null,
+  ) {
+    const header = spec.serverName
+      ? `<b>${esc(spec.serverName)}</b>: ${esc(spec.title)}`
+      : `<b>${esc(spec.title[0]?.toUpperCase() ?? '')}${esc(spec.title.slice(1))}</b>`;
+    const show = async (text: string, screen?: Screen): Promise<number | null> => {
+      if (editMid) {
+        await this.editText(chat, editMid, text, screen);
+        return editMid;
+      }
+      const r = await this.reply(chat, screen ?? { text, kb: [] }, replyTo ?? undefined);
+      return r?.ok ? ((r.result as { message_id?: number }).message_id ?? null) : null;
+    };
+    let res: Awaited<ReturnType<ActionSpec['run']>>;
+    try {
+      res = await spec.run();
+    } catch (e) {
+      const m =
+        e instanceof ApiError && e.status === 409
+          ? `сервер занят: ${e.message}`
+          : (e as Error).message;
+      await show(`${header} \u274c ${esc(m)}`);
+      return;
+    }
+    if ('screen' in res) {
+      await show(res.screen.text, res.screen);
+      return;
+    }
+    if ('text' in res) {
+      await show(res.text, res.kb ? { text: res.text, kb: res.kb } : undefined);
+      return;
+    }
+    const startedAt = Date.now();
+    const mid = await show(progressText(header, startedAt, '', startedAt));
+    if (!mid) return;
+    this.tracked.set(res.actionId, {
+      chat,
+      mid,
+      header,
+      startedAt,
+      out: '',
+      lastEdit: Date.now(),
+      timer: null,
+      spec,
+    });
+    // короткое действие могло закончиться раньше, чем бот начал следить
+    const row = await this.get<ActionListRow & { output: string }>(
+      `/api/actions/${res.actionId}`,
+    ).catch(() => null);
+    if (row?.finishedAt) await this.finishTracked(res.actionId);
+  }
+
+  private onHub(ev: UiEvent) {
+    if (ev.type !== 'action.stream' && ev.type !== 'action.finished') return;
+    const t = this.tracked.get(ev.actionId);
+    if (!t) return;
+    if (ev.type === 'action.finished') {
+      void this.finishTracked(ev.actionId);
+      return;
+    }
+    t.out = (t.out + ev.chunk).slice(-4000);
+    if (t.timer) return;
+    const wait = Math.max(0, t.lastEdit + PROGRESS_EDIT_MS - Date.now());
+    t.timer = setTimeout(() => {
+      t.timer = null;
+      if (!this.tracked.has(ev.actionId)) return;
+      t.lastEdit = Date.now();
+      void this.editText(t.chat, t.mid, progressText(t.header, t.startedAt, t.out, Date.now()));
+    }, wait);
+    t.timer.unref?.();
+  }
+
+  private async finishTracked(actionId: string) {
+    const t = this.tracked.get(actionId);
+    if (!t) return;
+    this.tracked.delete(actionId);
+    if (t.timer) clearTimeout(t.timer);
+    const a = await this.get<ActionListRow & { output: string }>(`/api/actions/${actionId}`).catch(
+      () => null,
+    );
+    if (!a) return;
+    const extra = (await t.spec.after?.(a.exitCode === 0).catch(() => [])) ?? [];
+    const kb = [...extra, [{ text: 'Подробнее', data: `ac:${actionId}:s` }]];
+    const text = finalText(t.header, a);
+    await this.editText(t.chat, t.mid, text, { text, kb });
   }
 
   // ---- экраны ----
@@ -589,6 +987,17 @@ export class Bot {
           },
           c,
         );
+      case 'bn':
+        return bansView(
+          await this.get<ServerDetail>(`/api/servers/${encodeURIComponent(args[0] ?? '')}`),
+          c,
+        );
+      case 'pl': {
+        const id = encodeURIComponent(args[0] ?? '');
+        const s = await this.get<ServerDetail>(`/api/servers/${id}`);
+        const plan = await this.api.post<BaselinePlan>(`/api/servers/${id}/baseline/plan`);
+        return planView(s, plan, c);
+      }
       case 'off':
         return offConfirmView();
       default:
@@ -628,14 +1037,28 @@ export class Bot {
     };
   }
 
-  private reply(chat: number | string, s: Screen | null) {
-    if (!s) return;
+  private reply(chat: number | string, s: Screen | null, replyTo?: number) {
+    if (!s) return Promise.resolve(null);
     return this.send('sendMessage', {
       chat_id: chat,
       text: s.text,
       parse_mode: 'HTML',
       link_preview_options: { is_disabled: true },
       reply_markup: this.markup(s),
+      ...(replyTo
+        ? { reply_parameters: { message_id: replyTo, allow_sending_without_reply: true } }
+        : {}),
+    });
+  }
+
+  private editText(chat: number | string, mid: number, text: string, s?: Screen) {
+    return this.send('editMessageText', {
+      chat_id: chat,
+      message_id: mid,
+      text,
+      parse_mode: 'HTML',
+      link_preview_options: { is_disabled: true },
+      reply_markup: s ? this.markup(s) : { inline_keyboard: [] },
     });
   }
 

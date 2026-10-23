@@ -2,10 +2,11 @@ import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import type { ServerSummary } from '@vps/protocol';
-import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
+import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import { buildApp } from '../src/app.js';
 import { CB_MAX, Refs, cb, parseCb } from '../src/bot/codec.js';
 import { Bot, type BotTelegram } from '../src/bot/index.js';
+import { notifyButtons } from '../src/bot/notify-buttons.js';
 import { findServers, plural, problems, serversView, summaryView, tail } from '../src/bot/views.js';
 import { loadEnv } from '../src/config.js';
 import { createDb } from '../src/db/index.js';
@@ -18,6 +19,8 @@ const dir = mkdtempSync(join(tmpdir(), 'vps-bot-'));
 const env = loadEnv({ NODE_ENV: 'test', DATA_DIR: dir });
 const db = createDb(':memory:');
 let app: Awaited<ReturnType<typeof buildApp>>['app'];
+let registry: Awaited<ReturnType<typeof buildApp>>['registry'];
+let hub: Awaited<ReturnType<typeof buildApp>>['hub'];
 
 const calls: { method: string; params: Record<string, unknown> }[] = [];
 const fake: BotTelegram = {
@@ -37,6 +40,8 @@ const fake: BotTelegram = {
     pending: 0,
   }),
   chatsFromBot: null,
+  buttons: null,
+  muteUntil: () => undefined,
 };
 let bot: Bot;
 
@@ -64,7 +69,7 @@ const press = (from: number, data: string) => ({
 const sent = (method: string) => calls.filter((c) => c.method === method);
 
 beforeAll(async () => {
-  ({ app } = await buildApp({ env, db }));
+  ({ app, registry, hub } = await buildApp({ env, db }));
   await app.ready();
   db.insert(servers)
     .values([
@@ -79,7 +84,12 @@ beforeAll(async () => {
     panelUrl: 'https://panel.example.com',
     version: '9.9.9',
     log: { info: () => undefined, warn: () => undefined },
+    hub,
   });
+  // приём сообщений в тестах не запускается, а подписка на ход действий нужна
+  (bot as unknown as { unlisten: unknown }).unlisten = hub.listen((ev) =>
+    (bot as unknown as { onHub: (e: unknown) => void }).onHub(ev),
+  );
 });
 afterAll(async () => {
   await app.close();
@@ -329,5 +339,183 @@ describe('bot codec and views', () => {
     expect(plural(1, 'сервере', 'серверах', 'серверах')).toBe('сервере');
     expect(plural(11, 'сервере', 'серверах', 'серверах')).toBe('серверах');
     expect(tail('a\nb\nc', 3)).toBe('c');
+  });
+});
+
+describe('notification buttons', () => {
+  it('actions by level, navigation always', () => {
+    const all = notifyButtons(
+      { event: 'serviceDown', serverId: 'abc', data: { kind: 'xui', title: '3X-UI' } },
+      'all',
+      (v) => v,
+    );
+    expect(all.flat().map((b) => b.data)).toEqual(['rs:abc:x', 'o:sv:abc']);
+    const view = notifyButtons(
+      { event: 'serviceDown', serverId: 'abc', data: { kind: 'xui', title: '3X-UI' } },
+      'view',
+      (v) => v,
+    );
+    expect(view.flat().map((b) => b.data)).toEqual(['o:sv:abc']);
+    const off = notifyButtons(
+      { event: 'offline', serverId: 'abc', providerUrl: 'https://hoster.example.com/vm/1' },
+      'all',
+      (v) => v,
+    );
+    expect(off.flat().map((b) => b.url ?? b.data)).toEqual([
+      'o:sv:abc',
+      'https://hoster.example.com/vm/1',
+      'mu:abc',
+    ]);
+    expect(notifyButtons({ event: 'auditClosed', serverId: 'abc' }, 'all', (v) => v)).toEqual([]);
+  });
+});
+
+describe('bot actions', () => {
+  const SID = 'srv-actions-000000000003';
+  let secret = '';
+
+  beforeAll(async () => {
+    const { initAdmin, saveTotp } = await import('../src/lib/auth.js');
+    const { authenticator: a } = await import('otplib');
+    await initAdmin(db, 'admin');
+    const adminRow = await (await import('../src/lib/auth.js')).theAdmin(db);
+    secret = a.generateSecret();
+    await saveTotp(db, adminRow?.id ?? '', secret, []);
+    db.insert(servers)
+      .values({
+        id: SID,
+        name: 'Kappa',
+        host: '203.0.113.30',
+        agentTokenHash: 'x',
+        statusCache: {
+          inventory: {
+            host: { hostname: 'k', os: 'u', kernel: 'k', arch: 'amd64', agentVersion: '1' },
+            services: [{ kind: 'xui', title: '3X-UI', ports: [], details: { down: false } }],
+            containers: [],
+            certs: [],
+            unchecked: [],
+            collectedAt: new Date().toISOString(),
+            firewall: {
+              ufwActive: true,
+              defaultIncoming: 'deny',
+              portsyncInstalled: false,
+              portsyncActive: false,
+              dockerFiltered: true,
+              rules: [],
+              listeners: [],
+            },
+            audit: {
+              sshPort: 22,
+              sshPasswordAuth: false,
+              sshPermitRootLogin: 'no',
+              fail2banRunning: true,
+              fail2banJails: ['sshd'],
+              jails: [
+                { name: 'sshd', banned: 1, totalBanned: 5, failed: 0, bannedIps: ['192.0.2.9'] },
+              ],
+              unattendedUpgrades: true,
+              pendingUpdates: 3,
+              rebootRequired: false,
+              findings: [],
+            },
+          },
+        },
+      })
+      .run();
+    // сервер "в сети" для проверок маршрутов; запрос к агенту всё равно не пройдёт
+    const online = registry.isOnline.bind(registry);
+    registry.isOnline = (id: string) => id === SID || online(id);
+    // аккаунт снова привязан, управление включено
+    const link = await bot.link();
+    await bot.handle(msg(ADMIN, `/start ${link.url.split('start=')[1]}`));
+  });
+
+  const notif = (data: string) => ({
+    update_id: 3,
+    callback_query: {
+      id: 'q2',
+      from: { id: ADMIN },
+      data,
+      message: {
+        message_id: 50,
+        date: 0,
+        chat: { id: ADMIN, type: 'private' },
+        reply_markup: { inline_keyboard: [[{ text: 'x', callback_data: data }]] },
+      },
+    },
+  });
+
+  it('notification buttons only while management is on', async () => {
+    const markup = await fake.buttons?.({ event: 'bans', serverId: SID });
+    expect(JSON.stringify(markup)).toContain(`o:bn:${SID}`);
+  });
+
+  it('a service that already works: alert and the button goes away', async () => {
+    await bot.handle(notif(cb('rs', SID, 'x')));
+    expect(sent('answerCallbackQuery')[0]?.params.text).toBe('3X-UI уже работает');
+    expect(sent('editMessageReplyMarkup')[0]?.params.reply_markup).toEqual({ inline_keyboard: [] });
+  });
+
+  it('unban runs at once and is logged as started from Telegram', async () => {
+    await bot.handle(press(ADMIN, cb('o', 'bn', SID)));
+    const kb = (
+      sent('sendMessage')[0]?.params.reply_markup as {
+        inline_keyboard: { text: string; callback_data?: string }[][];
+      }
+    ).inline_keyboard;
+    const unban = kb.flat().find((b) => b.text.includes('192.0.2.9'))?.callback_data ?? '';
+    calls.length = 0;
+    await bot.handle(notif(unban));
+    const row = db
+      .select()
+      .from(actionLog)
+      .all()
+      .find((r) => r.kind === 'fail2ban.unban');
+    expect(row?.initiator).toBe('telegram');
+    // агента нет: итог - ошибкой ответом на сообщение
+    expect(String(sent('sendMessage')[0]?.params.text)).toContain('\u274c');
+  });
+
+  it('dangerous action: confirmation, then the 2FA code, wrong code counts', async () => {
+    const { authenticator: a } = await import('otplib');
+    await bot.handle(notif(cb('pu', SID)));
+    const confirm = sent('sendMessage')[0]?.params;
+    expect(String(confirm?.text)).toContain('Обновить пакеты на Kappa?');
+    const kb = (confirm?.reply_markup as { inline_keyboard: { callback_data?: string }[][] })
+      .inline_keyboard;
+    const ok = kb[0]?.[0]?.callback_data ?? '';
+    calls.length = 0;
+    await bot.handle(press(ADMIN, ok));
+    expect(String(sent('editMessageText')[0]?.params.text)).toContain('Код двухфакторной');
+    calls.length = 0;
+    await bot.handle(msg(ADMIN, '000000'));
+    expect(sent('deleteMessage')).toHaveLength(1);
+    expect(String(sent('editMessageText')[0]?.params.text)).toContain('попыток: 4');
+    calls.length = 0;
+    await bot.handle(msg(ADMIN, a.generate(secret)));
+    // код верный: действие запущено (ход - в том же сообщении), агента нет - итог с ошибкой
+    expect(String(sent('editMessageText')[0]?.params.text)).toContain('обновление пакетов');
+    await vi.waitFor(
+      () => {
+        const last = sent('editMessageText').at(-1)?.params;
+        expect(String(last?.text)).toContain('\u274c');
+        expect(JSON.stringify(last?.reply_markup)).toContain('Подробнее');
+      },
+      { timeout: 5000 },
+    );
+    const row = db
+      .select()
+      .from(actionLog)
+      .all()
+      .find((r) => r.kind === 'system.upgrade');
+    expect(row?.initiator).toBe('telegram');
+  });
+
+  it('view level refuses actions', async () => {
+    bot.setLevel('view');
+    await bot.handle(notif(cb('pu', SID)));
+    expect(sent('answerCallbackQuery')[0]?.params.show_alert).toBe(true);
+    expect(sent('sendMessage')).toEqual([]);
+    bot.setLevel('all');
   });
 });
