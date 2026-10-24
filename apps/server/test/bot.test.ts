@@ -479,25 +479,18 @@ describe('bot actions', () => {
     expect(String(sent('sendMessage')[0]?.params.text)).toContain('\u274c');
   });
 
-  it('dangerous action: confirmation, then the 2FA code, wrong code counts', async () => {
-    const { authenticator: a } = await import('otplib');
+  it('dangerous action: confirmation only, no 2FA code', async () => {
     await bot.handle(notif(cb('pu', SID)));
     const confirm = sent('sendMessage')[0]?.params;
     expect(String(confirm?.text)).toContain('Обновить пакеты на Kappa?');
-    const kb = (confirm?.reply_markup as { inline_keyboard: { callback_data?: string }[][] })
-      .inline_keyboard;
-    const ok = kb[0]?.[0]?.callback_data ?? '';
+    const ok =
+      (confirm?.reply_markup as { inline_keyboard: { callback_data?: string }[][] })
+        .inline_keyboard[0]?.[0]?.callback_data ?? '';
     calls.length = 0;
     await bot.handle(press(ADMIN, ok));
-    expect(String(sent('editMessageText')[0]?.params.text)).toContain('Код двухфакторной');
-    calls.length = 0;
-    await bot.handle(msg(ADMIN, '000000'));
-    expect(sent('deleteMessage')).toHaveLength(1);
-    expect(String(sent('editMessageText')[0]?.params.text)).toContain('попыток: 4');
-    calls.length = 0;
-    await bot.handle(msg(ADMIN, a.generate(secret)));
-    // код верный: действие запущено (ход - в том же сообщении), агента нет - итог с ошибкой
+    // действие запущено сразу (ход - в том же сообщении), агента нет - итог с ошибкой
     expect(String(sent('editMessageText')[0]?.params.text)).toContain('обновление пакетов');
+    expect(String(sent('editMessageText')[0]?.params.text)).not.toContain('Код двухфакторной');
     await vi.waitFor(
       () => {
         const last = sent('editMessageText').at(-1)?.params;
@@ -512,6 +505,45 @@ describe('bot actions', () => {
       .all()
       .find((r) => r.kind === 'system.upgrade');
     expect(row?.initiator).toBe('telegram');
+  });
+
+  it('removing a server: confirmation, then the 2FA code, wrong code counts', async () => {
+    const { authenticator: a } = await import('otplib');
+    const RID = 'srv-remove-00000000004';
+    db.insert(servers).values({ id: RID, name: 'Orbit', host: '203.0.113.44' }).run();
+    await bot.handle(press(ADMIN, cb('sv', RID)));
+    expect(JSON.stringify(sent('editMessageText')[0]?.params.reply_markup)).toContain(`rm:${RID}`);
+    calls.length = 0;
+    await bot.handle(notif(cb('rm', RID)));
+    const confirm = sent('sendMessage')[0]?.params;
+    expect(String(confirm?.text)).toContain('Удалить Orbit из панели?');
+    const ok =
+      (confirm?.reply_markup as { inline_keyboard: { callback_data?: string }[][] })
+        .inline_keyboard[0]?.[0]?.callback_data ?? '';
+    calls.length = 0;
+    await bot.handle(press(ADMIN, ok));
+    expect(String(sent('editMessageText')[0]?.params.text)).toContain('Код двухфакторной');
+    calls.length = 0;
+    await bot.handle(msg(ADMIN, '000000'));
+    expect(sent('deleteMessage')).toHaveLength(1);
+    expect(String(sent('editMessageText')[0]?.params.text)).toContain('попыток: 4');
+    expect(
+      db
+        .select()
+        .from(servers)
+        .all()
+        .some((r) => r.id === RID),
+    ).toBe(true);
+    calls.length = 0;
+    await bot.handle(msg(ADMIN, a.generate(secret)));
+    expect(String(sent('editMessageText')[0]?.params.text)).toContain('удалён из панели');
+    expect(
+      db
+        .select()
+        .from(servers)
+        .all()
+        .some((r) => r.id === RID),
+    ).toBe(false);
   });
 
   it('maintenance and security screens from the server card', async () => {

@@ -132,7 +132,8 @@ export function BotSettingsRow({ tokenSet }: { tokenSet: boolean }) {
       {bot.admin && (
         <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
           <div className="min-w-0 grow text-xs text-muted">
-            действия через бота; опасные&nbsp;&mdash; с кодом 2FA
+            действия через бота; удаление сервера действия через бота; опасные&nbsp;&mdash; с кодом
+            2FAnbsp; действия через бота; опасные&nbsp;&mdash; с кодом 2FAmdash; с кодом 2FA
           </div>
           <Select
             size="sm"

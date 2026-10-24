@@ -31,10 +31,14 @@ export interface PanelApi {
   post<T>(url: string, body?: unknown): Promise<T>;
   put<T>(url: string, body?: unknown): Promise<T>;
   patch<T>(url: string, body?: unknown): Promise<T>;
+  delete<T>(url: string): Promise<T>;
 }
 
-/** Риск действия: безопасное - сразу, изменение - с подтверждением, опасное - ещё и с кодом 2FA. */
-export type Risk = 'safe' | 'change' | 'danger';
+/**
+ * Риск действия: безопасное - сразу; изменение и опасное - с подтверждением (опасное доступно
+ * только на уровне "все действия"); удаление сервера из панели - ещё и с кодом 2FA.
+ */
+export type Risk = 'safe' | 'change' | 'danger' | 'code';
 
 export type RunResult =
   | { actionId: string }
@@ -109,6 +113,7 @@ export const ACTION_OPS = new Set([
   'sn',
   'so',
   'sx',
+  'rm',
 ]);
 
 const enc = encodeURIComponent;
@@ -803,6 +808,21 @@ export async function actionSpec(
           return { text: `Сессии панели завершены: ${n}` };
         },
       };
+    case 'rm': {
+      const s = await server(a0);
+      return {
+        risk: 'code',
+        verb: 'Удалить',
+        question: `Удалить ${esc(s.name)} из панели?\nЖурнал и ручные правила firewall удалятся из панели. На самом сервере ничего не изменится, клиенты на нём перестанут синхронизироваться.`,
+        title: 'удаление из панели',
+        serverId: s.id,
+        serverName: s.name,
+        run: async () => {
+          await d.api.delete(`/api/servers/${enc(s.id)}`);
+          return { text: `Сервер <b>${esc(s.name)}</b> удалён из панели` };
+        },
+      };
+    }
     default:
       return null;
   }

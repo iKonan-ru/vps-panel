@@ -510,6 +510,8 @@ export function serverView(
     { text: 'Резервные копии', data: cb('bk', s.id) },
     { text: 'Журнал', data: cb('lg', s.id, 0) },
   ]);
+  // сервер не в сети - "Обслуживания" нет, удалить из панели - отсюда
+  if (s.status !== 'online') kb.push([{ text: 'Удалить из панели', data: cb('rm', s.id) }]);
   const link = panelLink(c, `/servers/${encodeURIComponent(s.id)}`);
   if (link.length) kb.push(link);
   kb.push([
@@ -789,7 +791,7 @@ export function confirmView(question: string, verb: string, token: string): Scre
 
 export function codeView(question: string, token: string, note = ''): Screen {
   return {
-    text: `${question}\n\n${note ? `${note}\n` : ''}Код двухфакторной аутентификации${DASH}сообщением. Следующие 10${NB}минут код не понадобится.`,
+    text: `${question}\n\n${note ? `${note}\n` : ''}Код двухфакторной аутентификации${DASH}сообщением`,
     kb: [[{ text: 'Отмена', data: cb('cx', token) }]],
   };
 }
@@ -859,6 +861,7 @@ export function maintenanceView(d: { s: ServerDetail; updates: ServiceUpdate[] }
   }
   if (s.agentUpdateAvailable && !s.agentUpdating)
     kb.push([{ text: 'Обновить агент', data: cb('au', s.id) }]);
+  kb.push([{ text: 'Удалить из панели', data: cb('rm', s.id) }]);
   kb.push(back(s));
   return { text: lines.join('\n'), kb };
 }

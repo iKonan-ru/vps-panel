@@ -112,8 +112,7 @@ const ON_KEY = 'tg_bot_on';
 const LEVEL_KEY = 'tg_bot_level';
 /** Подтверждение и ввод кода 2FA ждут 2 минуты. */
 const CONFIRM_TTL_MS = 2 * 60_000;
-/** После верного кода опасные действия не спрашивают его 10 минут. */
-const UNLOCK_MS = 10 * 60_000;
+
 /** Неверных кодов подряд до блокировки действий и на сколько. */
 const CODE_FAILS = 5;
 const CODE_LOCK_MS = 15 * 60_000;
@@ -251,7 +250,7 @@ export class Bot {
   private confirms = new Map<string, { op: string; args: string[]; expires: number }>();
   /** ждёт кода 2FA: подтверждение и сообщение, которое правится */
   private codeWait: { token: string; chat: number; mid: number; expires: number } | null = null;
-  private unlockedUntil = 0;
+
   private codeFails = 0;
   private lockedUntil = 0;
   private usedCodes = new Map<string, number>();
@@ -686,14 +685,23 @@ export class Bot {
     post: (url, body) => this.call('POST', url, body),
     put: (url, body) => this.call('PUT', url, body),
     patch: (url, body) => this.call('PATCH', url, body),
+    delete: (url) => this.call('DELETE', url),
   };
 
-  private async call<T>(method: 'POST' | 'PUT' | 'PATCH', url: string, body?: unknown): Promise<T> {
+  private async call<T>(
+    method: 'POST' | 'PUT' | 'PATCH' | 'DELETE',
+    url: string,
+    body?: unknown,
+  ): Promise<T> {
     const res = await this.deps.inject({
       method,
       url,
-      headers: { ...internalHeaders('telegram'), 'content-type': 'application/json' },
-      payload: JSON.stringify(body ?? {}),
+      ...(method === 'DELETE'
+        ? { headers: internalHeaders('telegram') }
+        : {
+            headers: { ...internalHeaders('telegram'), 'content-type': 'application/json' },
+            payload: JSON.stringify(body ?? {}),
+          }),
     });
     if (res.statusCode >= 400) {
       let msg = res.body.slice(0, 300);
@@ -828,7 +836,7 @@ export class Bot {
       await this.editText(msg.chat.id, msg.message_id, esc(spec.stale));
       return;
     }
-    if (spec.risk === 'danger' && Date.now() > this.unlockedUntil) {
+    if (spec.risk === 'code') {
       if (Date.now() < this.lockedUntil)
         return answer('Слишком много неверных кодов: действия недоступны 15 минут', true);
       const admin = await theAdmin(this.deps.db);
@@ -850,7 +858,7 @@ export class Bot {
     await this.execute(spec, msg.chat.id, null, msg.message_id);
   }
 
-  /** Код 2FA сообщением: верный - окно 10 минут и действие, неверный - счётчик попыток. */
+  /** Код 2FA сообщением (удаление сервера): верный - действие, неверный - счётчик попыток. */
   private async onCode(code: string) {
     const w = this.codeWait;
     if (!w) return;
@@ -890,7 +898,7 @@ export class Bot {
     }
     this.usedCodes.set(code, now);
     this.codeFails = 0;
-    this.unlockedUntil = now + UNLOCK_MS;
+
     this.codeWait = null;
     this.confirms.delete(w.token);
     if (!spec || spec.stale) {
@@ -1217,7 +1225,7 @@ export class Bot {
     }
   }
 
-  // ---- смена IP: адрес сообщением, проверка, переключение (опасное, с кодом 2FA) ----
+  // ---- смена IP: адрес сообщением, проверка, переключение (опасное, с подтверждением) ----
 
   private async onIpButton(
     msg: TgMessage,
