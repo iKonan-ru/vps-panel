@@ -237,7 +237,7 @@ describe('bot codec and views', () => {
       ({
         client: { id: 'c1', name: 'Анна', enabled: true, access: null, note: '' },
         syncing: false,
-        subscription: { url: `${page}/sub/t`, page: `${page}/c/t`, temporary: false },
+        subscription: { url: `${page}/sub/t`, page: `${page}/c/t` },
         devices: [],
         bindings: [],
       }) as never;

@@ -1,5 +1,6 @@
 import { ActionStatusChip } from '@/components/actions-table';
 import { MobileActions } from '@/components/mobile-actions';
+import { Alert } from '@/components/ui/alert';
 import { Button, ButtonLink } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { Chip } from '@/components/ui/chip';
@@ -14,7 +15,7 @@ import { useServers } from '@/lib/servers';
 import { useQuery } from '@tanstack/react-query';
 import { Link, useSearch } from '@tanstack/react-router';
 import type { CommandInfo } from '@vps/protocol';
-import { Box, Download, FileText, Play, Search, Trash2 } from 'lucide-react';
+import { Box, Download, FileText, Play, Plus, Search, Trash2 } from 'lucide-react';
 import { type ReactNode, useMemo, useState } from 'react';
 
 /** Каталог команд: карточки по группам и последние запуски. */
@@ -28,6 +29,8 @@ export function CommandsPage() {
   });
   const { data: servers } = useServers();
   const names = new Map((servers ?? []).map((s) => [s.id, s.name]));
+  // команда запускается на сервере: без серверов кнопки ведут в форму без выбора
+  const noServers = servers?.length === 0;
   const [q, setQ] = useState('');
   const [searchOpen, setSearchOpen] = useState(false);
   const { services, groups } = useMemo(() => {
@@ -90,6 +93,16 @@ export function CommandsPage() {
         />
       )}
 
+      {noServers && (
+        <Alert className="flex flex-wrap items-center justify-between gap-x-3 gap-y-2">
+          <span>Команды запускаются на сервере, серверов пока нет</span>
+          <ButtonLink to="/servers/new" size="sm" variant="primary">
+            <Plus className="size-3.5" />
+            Добавить сервер
+          </ButtonLink>
+        </Alert>
+      )}
+
       {services.size > 0 && (
         <div className="flex flex-col gap-2.5">
           <div className="flex items-center gap-2.5">
@@ -111,12 +124,11 @@ export function CommandsPage() {
                   serverName={names.get(r?.serverId ?? '')}
                 >
                   {list.map((c) => (
-                    <ButtonLink
+                    <RunButton
                       key={c.id}
-                      to="/commands/$id"
-                      params={{ id: c.id }}
-                      search={{ server, run: undefined, tab: undefined }}
-                      size="sm"
+                      id={c.id}
+                      server={server}
+                      disabled={noServers}
                       variant={c.group === 'install' ? 'primary' : 'danger'}
                       label={c.group === 'install' ? 'Установить' : 'Удалить с сервера'}
                     >
@@ -125,7 +137,7 @@ export function CommandsPage() {
                       ) : (
                         <Trash2 className="size-3.5" />
                       )}
-                    </ButtonLink>
+                    </RunButton>
                   ))}
                 </CommandCard>
               );
@@ -154,16 +166,15 @@ export function CommandsPage() {
                     run={r}
                     serverName={names.get(r?.serverId ?? '')}
                   >
-                    <ButtonLink
-                      to="/commands/$id"
-                      params={{ id: c.id }}
-                      search={{ server, run: undefined, tab: undefined }}
-                      size="sm"
+                    <RunButton
+                      id={c.id}
+                      server={server}
+                      disabled={noServers}
                       variant="primary"
                       label="Запустить"
                     >
                       <Play className="size-3.5" />
-                    </ButtonLink>
+                    </RunButton>
                   </CommandCard>
                 );
               })}
@@ -296,5 +307,41 @@ function CommandCard({
         {children}
       </div>
     </Card>
+  );
+}
+
+/** Кнопка запуска команды: переход к её форме; без серверов - неактивна. */
+function RunButton({
+  id,
+  server,
+  disabled,
+  variant,
+  label,
+  children,
+}: {
+  id: string;
+  server: string | undefined;
+  disabled: boolean;
+  variant: 'primary' | 'danger';
+  label: string;
+  children: ReactNode;
+}) {
+  if (disabled)
+    return (
+      <Button size="sm" variant={variant} label={label} disabled>
+        {children}
+      </Button>
+    );
+  return (
+    <ButtonLink
+      to="/commands/$id"
+      params={{ id }}
+      search={{ server, run: undefined, tab: undefined }}
+      size="sm"
+      variant={variant}
+      label={label}
+    >
+      {children}
+    </ButtonLink>
   );
 }

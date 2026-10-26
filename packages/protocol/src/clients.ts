@@ -131,7 +131,7 @@ export interface GClientDetail {
   };
   /** Сверка с серверами идёт сейчас: "Сверить сейчас" ждёт её конца. */
   syncing: boolean;
-  subscription: { url: string; page: string; temporary: boolean };
+  subscription: { url: string; page: string };
   devices: GDevice[];
   bindings: GBinding[];
   browserExt: GBrowserExt[];

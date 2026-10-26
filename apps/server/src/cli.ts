@@ -9,10 +9,17 @@
  *   admin-2fa             сбросить 2FA: настраивается при следующем входе; сессии закрываются
  *   admin-login <логин>   сменить логин
  *   bot-off               отключить управление через Telegram-бота и отвязать аккаунт
+ *   server-self [IP]      сервер панели в списке серверов (есть - он же, нет - новый) и команда
+ *                         установки его агента с новым токеном регистрации
+ *   panel-key             ключ панели для агентов (base64)
+ *   clients-count         число клиентов панели
  */
-import { gt } from 'drizzle-orm';
+import { gt, isNull } from 'drizzle-orm';
+import { loadEnv } from './config.js';
 import { createDb } from './db/index.js';
-import { sessions } from './db/schema.js';
+import { gclients, sessions } from './db/schema.js';
+import { panelKey } from './lib/agent-channel.js';
+import { installCommand, issueRegistration } from './lib/agent-dist.js';
 import {
   LOGIN_RE,
   deleteAllSessions,
@@ -24,6 +31,7 @@ import {
   setPassword,
   theAdmin,
 } from './lib/auth.js';
+import { ensurePanelServer, panelAddresses } from './lib/panel-host.js';
 import { deleteSetting, getSetting, putSetting } from './lib/settings.js';
 
 class CliError extends Error {
@@ -45,7 +53,8 @@ function checkLogin(login: string) {
 
 async function main(argv: string[]) {
   const [cmd = '', arg = ''] = argv;
-  const db = createDb(process.env.DATA_DIR ?? './data');
+  const dataDir = process.env.DATA_DIR ?? './data';
+  const db = createDb(dataDir);
   const need = async () => {
     const a = await theAdmin(db);
     if (!a) throw new CliError('администратора ещё нет: vps-panel admin init', 3);
@@ -94,9 +103,28 @@ async function main(argv: string[]) {
       deleteSetting(db, 'tg_bot_admin');
       return { unbound: Boolean(admin) };
     }
+    case 'server-self': {
+      const env = loadEnv(process.env);
+      const host = arg || new URL(env.PANEL_PUBLIC_URL).hostname;
+      const ips = [...new Set([host, ...(await panelAddresses(env.PANEL_PUBLIC_URL))])];
+      const s = await ensurePanelServer(db, ips, host);
+      const token = await issueRegistration(db, s.id);
+      if (!token) throw new CliError('сервер панели не найден');
+      return { ...s, installCommand: installCommand(env, token) };
+    }
+    case 'panel-key':
+      return { key: panelKey(dataDir).b64 };
+    case 'clients-count': {
+      const n = db
+        .select({ id: gclients.id })
+        .from(gclients)
+        .where(isNull(gclients.deletedAt))
+        .all();
+      return { clients: n.length };
+    }
     default:
       throw new CliError(
-        `неизвестная команда "${cmd}": admin-init, admin-show, admin-password, admin-2fa, admin-login, bot-off`,
+        `неизвестная команда "${cmd}": admin-init, admin-show, admin-password, admin-2fa, admin-login, bot-off, server-self, panel-key, clients-count`,
       );
   }
 }

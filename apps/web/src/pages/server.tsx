@@ -139,6 +139,7 @@ export function ServerPage() {
     return <Card className="p-8 text-bad">{cap(error?.message ?? 'сервер не найден')}</Card>;
   const inv = s.inventory;
   const online = s.status === 'online';
+  const noAgent = s.status === 'no-agent';
   const lock = serverLock(s);
   // агент обновляется: запуск, своё обновление до конца вывода или обновление по данным панели
   const agentUpdating =
@@ -231,13 +232,16 @@ export function ServerPage() {
               label: 'Перенести на другой сервер',
               icon: <Truck className="size-4" />,
               onClick: () => setMigrate(true),
-              // старый сервер может быть уже недоступен: перенос - из его копии
-              disabled: lock.busy || agentUpdating,
-              title: lock.reason ?? 'Сервисы, данные и клиенты\u00a0\u2014 на другой сервер панели',
+              // старый сервер может быть уже недоступен: перенос - из его копии; без агента
+              // копий и сервисов не было - переносить нечего
+              disabled: noAgent || lock.busy || agentUpdating,
+              title: noAgent
+                ? 'Агент ещё не подключался: переносить нечего'
+                : (lock.reason ?? 'Сервисы, данные и клиенты\u00a0\u2014 на другой сервер панели'),
             },
             {
               key: 'reinstall',
-              label: 'Переустановить агент',
+              label: noAgent ? 'Установить агент' : 'Переустановить агент',
               icon: <Wrench className="size-4" />,
               onClick: () => setReinstall(true),
               // переустановка - и для зависшего агента, но не поверх своего обновления
@@ -318,9 +322,13 @@ export function ServerPage() {
         </Alert>
       )}
       <ActiveActions s={s} />
-      {s.status === 'no-agent' && tab !== 'log' && (
-        <Alert>
-          Агент ещё не подключался. Установить его можно через &laquo;Переустановить агент&raquo;.
+      {noAgent && tab !== 'log' && (
+        <Alert className="flex flex-wrap items-center justify-between gap-x-3 gap-y-2">
+          <span>Агент ещё не подключался</span>
+          <Button size="sm" variant="primary" onClick={() => setReinstall(true)}>
+            <Wrench className="size-3.5" />
+            Установить агент
+          </Button>
         </Alert>
       )}
 
@@ -366,6 +374,7 @@ export function ServerPage() {
       <ReinstallDialog
         serverId={s.id}
         host={s.host}
+        first={noAgent}
         open={reinstall}
         onClose={() => setReinstall(false)}
       />

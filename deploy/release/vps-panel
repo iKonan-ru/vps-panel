@@ -1,8 +1,11 @@
 #!/bin/bash
 # vps-panel - установка, обновление и обслуживание VPS Panel из релизов GitHub.
 #
-#   vps-panel install [-y] [--beta] [--version X.Y.Z]   установка (вопросы: домен - можно без
-#                                                        него, по IP; подписки, почта, логин)
+#   vps-panel install [-y] [--beta] [--version X.Y.Z] [--no-agent]
+#                                                        установка (вопросы: домен - можно без
+#                                                        него, по IP; подписки, почта, логин);
+#                                                        сервер панели сразу в списке серверов
+#                                                        (--no-agent - без него)
 #   vps-panel admin [show | password | 2fa | login <имя> | init [имя]] [-y]
 #                                                        администратор: сброс пароля и 2FA
 #   vps-panel bot off                                    отключить управление через Telegram-бота
@@ -240,19 +243,71 @@ print_access() { # print_access <логин> <пароль> [заголовок]
   [ -n "$2" ] && echo " Пароль:     $2"
   [ "$tfa" = - ] || echo " 2FA:        $tfa"
   [ -n "$sub" ] && echo " Подписки:   https://$sub"
+  [ -n "$SELF_SERVER" ] && echo " Сервер:     $SELF_SERVER"
   printf '%s\n' "$line"
   [ -n "$2" ] && echo " Сохраните пароль сейчас: он показан один раз, восстановления нет."
   echo " Сброс пароля или 2FA - только здесь, в консоли: vps-panel admin password | 2fa"
   printf '%s\n' "$line"
 }
 
+# Агент из /etc/vps-agent/agent.json привязан к этой панели (её имя, прежнее имя или IP), а
+# не к чужой: чужого агента не трогаем - переустановка отвязала бы сервер от той панели.
+own_agent() { # own_agent <IP>
+  local host
+  host="$(python3 -c 'import json,sys,urllib.parse; print(urllib.parse.urlparse(json.load(open(sys.argv[1])).get("panelUrl","")).hostname or "")' "$AGENT_CFG" 2>/dev/null)" || return 1
+  [ -n "$host" ] && { [ "$host" = "$(env_get PANEL_DOMAIN)" ] || [ "$host" = "$(env_get PANEL_ALIAS)" ] || [ "$host" = "$1" ]; }
+}
+agent_key() { python3 -c 'import json,sys; print(json.load(open(sys.argv[1])).get("panelKey",""))' "$AGENT_CFG" 2>/dev/null || true; }
+
+# Сервер самой панели в её списке серверов: строка (есть - она же, нет - "Сервер панели") и
+# агент здесь же, без SSH, той же командой, что "Вручную" в окне установки агента. Итог - в
+# SELF_SERVER для сводки; сбой не прерывает установку.
+AGENT_CFG=/etc/vps-agent/agent.json
+SELF_SERVER=""
+attach_self_agent() { # attach_self_agent <внешний IP>
+  local url js name cmd log n
+  url="https://$(env_get PANEL_DOMAIN)"
+  if [ -f "$AGENT_CFG" ] && ! own_agent "$1"; then
+    SELF_SERVER="не добавлен: здесь стоит агент другой панели"
+    return 0
+  fi
+  # агент проверяет сертификат панели: на свежей установке Caddy получает его до пары минут
+  for n in $(seq 1 36); do
+    curl --proto =https -fsS -m 8 "$url/api/health" >/dev/null 2>&1 && break
+    [ "$n" = 36 ] && { SELF_SERVER="не добавлен: $url не открывается с этого сервера (сертификат или NAT) - \"Серверы\" -> \"Добавить сервер\""; return 0; }
+    sleep 5
+  done
+  log="$(mktemp)"
+  if ! js="$(panel_cli server-self "$1" 2>"$log")"; then
+    SELF_SERVER="не добавлен: $(tail -n 1 "$log")"
+    rm -f "$log"
+    return 0
+  fi
+  name="$(echo "$js" | json_field name)"
+  cmd="$(echo "$js" | json_field installCommand)"
+  if ! sh -c "$cmd" >"$log" 2>&1; then
+    tail -n 5 "$log" >&2
+    rm -f "$log"
+    SELF_SERVER="$name: агент не установлен - \"Установить агент\" в карточке сервера"
+    return 0
+  fi
+  rm -f "$log"
+  # агент подключился - одноразовый токен в конфиге сменился постоянным
+  for n in $(seq 1 15); do
+    grep -q '"token"' "$AGENT_CFG" 2>/dev/null && { SELF_SERVER="$name, агент в сети"; return 0; }
+    sleep 2
+  done
+  SELF_SERVER="$name, агент ещё не подключился: journalctl -u vps-agent"
+}
+
 cmd_install() {
   need_root
-  local VERSION="" CHANNEL=stable
+  local VERSION="" CHANNEL=stable NO_AGENT=0
   while [ $# -gt 0 ]; do
     case "$1" in
       -y) YES=1 ;;
       --beta) CHANNEL=beta ;;
+      --no-agent) NO_AGENT=1 ;;
       --version) VERSION="${2:-}"; shift ;;
       *) die "install: неизвестный ключ $1" ;;
     esac
@@ -418,13 +473,22 @@ ENV
   install_fail2ban
   install_units
 
+  if [ "$NO_AGENT" = 1 ]; then
+    SELF_SERVER="не добавлен (--no-agent)"
+  else
+    say "сервер панели в списке серверов"
+    attach_self_agent "$IP"
+    echo "$SELF_SERVER"
+  fi
+
   say "готово"
   ACCESS_LOGIN=""
   print_access "$ADMIN_LOGIN" "$ADMIN_PASSWORD" "VPS Panel $VERSION установлена"
   cat <<MSG
-Дальше: вход в панель, настройка 2FA, затем "Серверы" -> "Добавить сервер". Резервную копию
-панели (Настройки) стоит включить сразу. Обновления приходят в панель (Настройки -> Версия
-панели), из консоли: vps-panel update. Все команды: vps-panel help
+Дальше: вход в панель и настройка 2FA. Сервисы на сервер панели ставит "Настроить сервер" в
+его карточке, другие серверы - "Серверы" -> "Добавить сервер". Резервную копию панели
+(Настройки) стоит включить сразу. Обновления приходят в панель (Настройки -> Версия панели), из
+консоли: vps-panel update. Все команды: vps-panel help
 MSG
 }
 
@@ -803,6 +867,22 @@ cmd_domain() {
   echo "$DOMAIN" | grep -qE "$DOMAIN_RE" || die "нужен домен вида panel.example.com"
   [ "$DOMAIN" = "$OLD" ] && die "панель уже на $DOMAIN"
   [ "$set_sub" = 0 ] || [ -z "$SUB" ] || echo "$SUB" | grep -qE "$DOMAIN_RE" || die "--sub: нужен домен вида sub.example.com"
+  # подписки и личные страницы клиентов: старый адрес перестанет их отдавать - выданные ссылки
+  # сломаются (имя подписок сменилось или прежний адрес панели уходит из PANEL_ALIAS)
+  local old_sub lost="" n
+  old_sub="$(env_get SUB_DOMAIN)"
+  if [ "$set_sub" = 1 ] && [ "$SUB" != "$old_sub" ]; then
+    lost="${old_sub:-$OLD}"
+  elif [ -z "$old_sub" ] && [ -n "$(env_get PANEL_ALIAS)" ] && [ "$(env_get PANEL_ALIAS)" != "$DOMAIN" ]; then
+    lost="$(env_get PANEL_ALIAS)"
+  fi
+  if [ -n "$lost" ]; then
+    n="$(panel_cli clients-count 2>/dev/null | json_field clients || true)"
+    if [ "${n:-0}" != 0 ]; then
+      warn "ссылки клиентов на https://$lost (подписки и личные страницы, клиентов: $n) перестанут работать: клиентам нужно выдать новые"
+      confirm "Продолжить?" || exit 1
+    fi
+  fi
   IP="$(public_ip)"
   for name in "$DOMAIN" ${SUB:+"$SUB"}; do
     got="$(resolve4 "$name")"
@@ -876,6 +956,14 @@ cmd_restore() {
   if wait_health "$(env_get PANEL_VERSION)" 180; then
     echo "панель восстановлена: https://$(env_get PANEL_DOMAIN) - вход прежним логином, паролем и 2FA"
     echo "агенты на серверах подключатся сами: ключ панели взят из резервной копии"
+    # агент этого сервера ставила установка панели: он верит её ключу, а не ключу из копии
+    local key
+    key="$(panel_cli panel-key 2>/dev/null | json_field key || true)"
+    if [ -f "$AGENT_CFG" ] && [ -n "$key" ] && [ "$(agent_key)" != "$key" ] && own_agent "$(public_ip)"; then
+      say "агент этого сервера: привязка к восстановленной панели"
+      attach_self_agent "$(public_ip)"
+      echo "сервер панели: $SELF_SERVER"
+    fi
   else
     warn "панель не ответила за 3 минуты: vps-panel logs; прежние данные - в $keep"
   fi

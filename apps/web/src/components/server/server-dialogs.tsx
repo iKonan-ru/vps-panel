@@ -69,16 +69,23 @@ export function EditServerDialog({
   );
 }
 
+/** Установка агента на сервер; first - агент ещё не подключался. */
 export function ReinstallDialog({
   serverId,
   host,
+  first,
   open,
   onClose,
-}: { serverId: string; host: string; open: boolean; onClose: () => void }) {
+}: { serverId: string; host: string; first: boolean; open: boolean; onClose: () => void }) {
   const qc = useQueryClient();
   return (
-    <Dialog open={open} onClose={onClose} title="Переустановка агента" wide>
-      <div className="text-sm text-muted">Сервисы на сервере продолжат работать</div>
+    <Dialog
+      open={open}
+      onClose={onClose}
+      title={first ? 'Установка агента' : 'Переустановка агента'}
+      wide
+    >
+      {!first && <div className="text-sm text-muted">Сервисы на сервере продолжат работать</div>}
       <InstallAgent
         serverId={serverId}
         host={host}

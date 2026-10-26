@@ -203,7 +203,6 @@ export async function gclientRoutes(
       subscription: {
         url: `${subBase}/sub/${c.token}`,
         page: `${subBase}/c/${c.token}`,
-        temporary: !env.SUB_PUBLIC_URL,
       },
       devices: db
         .select()

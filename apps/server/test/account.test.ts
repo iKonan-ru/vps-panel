@@ -173,6 +173,37 @@ describe('консоль: vps-panel admin', () => {
       sessions: 0,
     });
   });
+
+  it(
+    'сервер панели: новый, повторно - тот же, ключ и число клиентов',
+    { timeout: 60_000 },
+    async () => {
+      const env = { PANEL_PUBLIC_URL: 'https://203.0.113.10' };
+      const self = async (...args: string[]) =>
+        JSON.parse(
+          (
+            await run(
+              'npx',
+              ['tsx', '--conditions=development', 'src/cli.ts', 'server-self', ...args],
+              {
+                env: { ...process.env, ...env, DATA_DIR: data },
+              },
+            )
+          ).stdout,
+        );
+      const a = await self('203.0.113.10');
+      expect(a).toMatchObject({ name: 'Сервер панели', created: true });
+      const key = JSON.parse((await cli('panel-key')).stdout).key;
+      expect(key).toMatch(/^[A-Za-z0-9+/]{43}=$/);
+      expect(a.installCommand).toContain('--panel https://203.0.113.10 --token ');
+      expect(a.installCommand).toContain(`--key ${key}`);
+      // без адреса - адрес панели; та же строка, новый токен
+      const b = await self();
+      expect(b).toMatchObject({ id: a.id, created: false });
+      expect(b.installCommand).not.toBe(a.installCommand);
+      expect(JSON.parse((await cli('clients-count')).stdout)).toEqual({ clients: 0 });
+    },
+  );
 });
 
 describe('панель без домена', () => {

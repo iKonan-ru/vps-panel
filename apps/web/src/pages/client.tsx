@@ -30,6 +30,7 @@ import { QrCode } from '@/components/ui/qr-code';
 import { Section } from '@/components/ui/section';
 import { api } from '@/lib/api';
 import { cn } from '@/lib/cn';
+import { useServers } from '@/lib/servers';
 import { useAction } from '@/lib/use-action';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { Link, useNavigate, useParams } from '@tanstack/react-router';
@@ -80,6 +81,7 @@ export function ClientPage() {
     />
   );
   const live = useClientLive(id, data?.bindings ?? []);
+  const { data: servers } = useServers();
 
   // пока идёт правка клиента, его кнопки недоступны (двойной тап по вкл/выкл - два запроса)
   const op = useAction();
@@ -189,12 +191,6 @@ export function ClientPage() {
       {op.error && <Alert tone="bad">{op.error}</Alert>}
       <SyncPanel />
 
-      {data.subscription.temporary && (
-        <Alert tone="info">
-          Ссылки временные, на адресе панели: после настройки SUB_DOMAIN они изменятся. Клиентам их
-          пока не раздавать.
-        </Alert>
-      )}
       {!c.enabled && <Alert tone="info">Клиент выключен: подписка отдаёт пустой список</Alert>}
       <div className="grid items-start gap-4 lg:grid-cols-[minmax(0,1fr)_minmax(0,2fr)]">
         <div className="flex min-w-0 flex-col gap-4">
@@ -292,11 +288,7 @@ export function ClientPage() {
           }
         >
           {data.bindings.length === 0 && (
-            <div className="px-4 py-3 text-[13px] text-muted">
-              {c.access?.length === 0
-                ? 'Доступ не выдан ни к одному сервису'
-                : 'Пока ничего не заведено: синхронизация обычно занимает до минуты'}
-            </div>
+            <div className="px-4 py-3 text-[13px] text-muted">{noBindings(c.access, servers)}</div>
           )}
           {byServer(data.bindings).map(([serverId, list]) => (
             <div
@@ -453,4 +445,17 @@ export function ClientPage() {
       </Dialog>
     </>
   );
+}
+
+/** Почему у клиента нет привязок: заводить некуда или синхронизация ещё не дошла. */
+function noBindings(
+  access: GClientDetail['client']['access'],
+  servers: { id: string; services: unknown[] }[] | undefined,
+): string {
+  if (access?.length === 0) return 'Доступ не выдан ни к одному сервису';
+  if (servers?.length === 0) return 'Серверов нет: доступ появится после добавления сервера';
+  const reach = servers?.filter((s) => !access || access.some((a) => a.serverId === s.id));
+  if (reach?.every((s) => s.services.length === 0))
+    return 'На серверах нет сервисов: доступ появится после их установки';
+  return 'Пока ничего не заведено: синхронизация обычно занимает до минуты';
 }
