@@ -17,7 +17,7 @@ interface AwgConfigs {
   wg: string | null;
   vpn: string;
   frames: string[];
-  /** Как подключение называется у клиента ("(флаг) Страна :: Хостинг"). */
+  /** Как подключение называется у клиента ("(флаг) Страна :: Сервер"). */
   title: string;
   /** Имя .conf без расширения - имя туннеля в AmneziaWG ("FI-Hoster"). */
   fileName: string;

@@ -462,7 +462,7 @@ describe('bot actions', () => {
   it('unban runs at once and is logged as started from Telegram', async () => {
     await bot.handle(press(ADMIN, cb('o', 'bn', SID)));
     const kb = (
-      sent('sendMessage')[0]?.params.reply_markup as {
+      sent('editMessageText')[0]?.params.reply_markup as {
         inline_keyboard: { text: string; callback_data?: string }[][];
       }
     ).inline_keyboard;
@@ -475,13 +475,17 @@ describe('bot actions', () => {
       .all()
       .find((r) => r.kind === 'fail2ban.unban');
     expect(row?.initiator).toBe('telegram');
-    // агента нет: итог - ошибкой ответом на сообщение
-    expect(String(sent('sendMessage')[0]?.params.text)).toContain('\u274c');
+    // агента нет: ошибка - всплывающим сообщением, новых сообщений нет
+    expect(sent('answerCallbackQuery').at(-1)?.params.show_alert).toBe(true);
+    expect(sent('sendMessage')).toEqual([]);
   });
 
   it('dangerous action: confirmation only, no 2FA code', async () => {
     await bot.handle(notif(cb('pu', SID)));
-    const confirm = sent('sendMessage')[0]?.params;
+    // подтверждение - на месте уведомления
+    expect(sent('sendMessage')).toEqual([]);
+    const confirm = sent('editMessageText')[0]?.params;
+    expect(confirm?.message_id).toBe(50);
     expect(String(confirm?.text)).toContain('Обновить пакеты на Kappa?');
     const ok =
       (confirm?.reply_markup as { inline_keyboard: { callback_data?: string }[][] })
@@ -495,7 +499,8 @@ describe('bot actions', () => {
       () => {
         const last = sent('editMessageText').at(-1)?.params;
         expect(String(last?.text)).toContain('\u274c');
-        expect(JSON.stringify(last?.reply_markup)).toContain('Подробнее');
+        expect(String(last?.text)).not.toContain('<pre>');
+        expect(JSON.stringify(last?.reply_markup)).toContain('Вывод файлом');
       },
       { timeout: 5000 },
     );
@@ -515,7 +520,7 @@ describe('bot actions', () => {
     expect(JSON.stringify(sent('editMessageText')[0]?.params.reply_markup)).toContain(`rm:${RID}`);
     calls.length = 0;
     await bot.handle(notif(cb('rm', RID)));
-    const confirm = sent('sendMessage')[0]?.params;
+    const confirm = sent('editMessageText')[0]?.params;
     expect(String(confirm?.text)).toContain('Удалить Orbit из панели?');
     const ok =
       (confirm?.reply_markup as { inline_keyboard: { callback_data?: string }[][] })
@@ -570,12 +575,12 @@ describe('bot actions', () => {
 
   it('clients: wizard creates a client with a device', async () => {
     await bot.handle(press(ADMIN, cb('nc')));
-    const ask = sent('sendMessage')[0]?.params;
+    const ask = sent('editMessageText')[0]?.params;
     expect(String(ask?.text)).toContain('Имя клиента');
     calls.length = 0;
     await bot.handle(msg(ADMIN, 'Борис'));
     expect(String(sent('editMessageText')[0]?.params.text)).toContain('Тип устройства');
-    const flowMsg = { message_id: 500, date: 0, chat: { id: ADMIN, type: 'private' } };
+    const flowMsg = { message_id: 11, date: 0, chat: { id: ADMIN, type: 'private' } };
     calls.length = 0;
     await bot.handle({
       update_id: 5,
@@ -626,7 +631,7 @@ describe('bot actions', () => {
     }[];
     const id = list.find((c) => c.name === 'Борис')?.id ?? '';
     await bot.handle(press(ADMIN, cb('ge', id, 0)));
-    const confirm = sent('sendMessage')[0]?.params;
+    const confirm = sent('editMessageText')[0]?.params;
     expect(String(confirm?.text)).toContain('Выключить клиента Борис?');
     const ok =
       (confirm?.reply_markup as { inline_keyboard: { callback_data?: string }[][] })
@@ -667,6 +672,57 @@ describe('bot actions', () => {
     calls.length = 0;
     await bot.handle(press(ADMIN, cb('vs')));
     expect(String(sent('editMessageText')[0]?.params.text)).toContain('Версия панели');
+  });
+
+  it('one message: cancel restores the notification, navigation returns to it', async () => {
+    const n = {
+      update_id: 7,
+      callback_query: {
+        id: 'q7',
+        from: { id: ADMIN },
+        data: cb('pu', SID),
+        message: {
+          message_id: 70,
+          date: 0,
+          chat: { id: ADMIN, type: 'private' },
+          text: 'Kappa: обновления',
+          entities: [{ type: 'bold', offset: 0, length: 5 }],
+          reply_markup: {
+            inline_keyboard: [[{ text: 'Обновить пакеты', callback_data: cb('pu', SID) }]],
+          },
+        },
+      },
+    };
+    await bot.handle(n);
+    const confirm = sent('editMessageText')[0]?.params;
+    const kb = (confirm?.reply_markup as { inline_keyboard: { callback_data?: string }[][] })
+      .inline_keyboard;
+    const cancel = kb[0]?.[1]?.callback_data ?? '';
+    calls.length = 0;
+    await bot.handle({ ...n, callback_query: { ...n.callback_query, data: cancel } });
+    const back = sent('editMessageText')[0]?.params;
+    expect(back?.message_id).toBe(70);
+    expect(back?.text).toBe('Kappa: обновления');
+    expect(back?.entities).toEqual([{ type: 'bold', offset: 0, length: 5 }]);
+    calls.length = 0;
+    // переход из уведомления - на месте, с возвратом
+    await bot.handle({ ...n, callback_query: { ...n.callback_query, data: cb('o', 'sv', SID) } });
+    const card = sent('editMessageText')[0]?.params;
+    expect(card?.message_id).toBe(70);
+    expect(JSON.stringify(card?.reply_markup)).toContain('"ob"');
+    calls.length = 0;
+    await bot.handle({ ...n, callback_query: { ...n.callback_query, data: 'ob' } });
+    expect(sent('editMessageText')[0]?.params.text).toBe('Kappa: обновления');
+  });
+
+  it('menu keeps one home screen: previous one and the typed message are deleted', async () => {
+    await bot.handle(msg(ADMIN, 'Серверы'));
+    calls.length = 0;
+    await bot.handle(msg(ADMIN, 'Клиенты'));
+    const del = sent('deleteMessage').map((c) => c.params.message_id);
+    expect(del).toContain(10);
+    expect(del).toContain(500);
+    expect(sent('sendMessage')).toHaveLength(1);
   });
 
   it('view level refuses actions', async () => {

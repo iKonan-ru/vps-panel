@@ -253,10 +253,11 @@ export function countryFlag(iso: string): string {
 
 /**
  * Как подключение называется у клиента - везде (подписка, AWG, личная страница): "(флаг) Страна
- * :: Хостинг" (в Amnezia VPN - из description ключа vpn://), у дополнительного экземпляра AWG -
- * ещё и версия ("... :: AWG 2.0"). Имя клиента туда не попадает. Без хостинга - имя сервера в
- * панели. file - имя .conf, оно же имя туннеля в AmneziaWG: Android принимает только
- * [A-Za-z0-9_=+.-] и до 15 символов ("SE-Hoster", "SE-Hoster-2.0").
+ * :: Сервер" - имя сервера в панели (у двух серверов одного хостинга в одной стране имена
+ * разные); в Amnezia VPN - из description ключа vpn://; у дополнительного экземпляра AWG - ещё и
+ * версия ("... :: AWG 2.0"). Имя клиента туда не попадает. Без имени - хостинг. file - имя
+ * .conf, оно же имя туннеля в AmneziaWG: Android принимает только [A-Za-z0-9_=+.-] и до 15
+ * символов ("SE-HosterOne", "SE-HosterOn-2.0"); имя сервера без латиницы - хостинг.
  */
 export function awgTunnelNames(o: {
   provider: string;
@@ -267,7 +268,7 @@ export function awgTunnelNames(o: {
 }): { title: string; file: string } {
   const iso = /^[A-Z]{2}$/.test(o.country) ? o.country : '';
   const country = iso ? (regionRu?.of(iso) ?? iso) : o.country.trim();
-  const host = o.provider.trim() || o.serverName.trim();
+  const host = o.serverName.trim() || o.provider.trim();
   const ver = o.version ? (o.version === 'wg' ? 'WireGuard' : `AWG ${o.version}`) : '';
   const place = [countryFlag(iso), country].filter(Boolean).join(' ');
   const title = [place, host, ver].filter(Boolean).join(' :: ');
@@ -275,7 +276,8 @@ export function awgTunnelNames(o: {
   const tag = o.version === 'wg' ? 'wg' : (o.version ?? '');
   const fixed = [iso, tag].filter(Boolean);
   const room = 15 - fixed.join('').length - fixed.length;
-  const base = host.replace(/[^A-Za-z0-9_=+.-]/g, '').slice(0, Math.max(0, room));
+  const latin = (v: string) => v.replace(/[^A-Za-z0-9_=+.-]/g, '');
+  const base = (latin(host) || latin(o.provider)).slice(0, Math.max(0, room));
   const file = [iso, base, tag].filter(Boolean).join('-');
   return { title, file: file || 'awg' };
 }

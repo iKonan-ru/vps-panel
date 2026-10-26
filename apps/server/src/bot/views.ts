@@ -627,8 +627,12 @@ export function actionView(
       `${I.run} идёт ${tgSpan(c.now - Date.parse(a.startedAt))}${SEP}с ${tgWhen(a.startedAt, c.now)}`,
     );
   }
-  const out = tail(a.output);
-  if (out) lines.push('', `<pre>${esc(out)}</pre>`);
+  // вывод консоли в Telegram не нужен: у ошибки - последняя строка, целиком - файлом
+  const out = a.output.trim();
+  if (a.finishedAt && a.exitCode !== 0 && out) {
+    const last = out.split('\n').at(-1)?.trim() ?? '';
+    if (last) lines.push(`<i>${esc(cut(last, 300))}</i>`);
+  }
   const back: Btn =
     d.from === 's' && a.serverId
       ? { text: `${I.back} Журнал сервера`, data: cb('lg', a.serverId, 0) }
@@ -636,8 +640,7 @@ export function actionView(
   const row: Btn[] = [back];
   if (!a.finishedAt) row.push({ text: 'Обновить', data: cb('ac', a.id, d.from) });
   const kb: Btn[][] = [row];
-  if (a.finishedAt && a.output.trim().length > out.length)
-    kb.unshift([{ text: 'Вывод файлом', data: cb('af', a.id) }]);
+  if (a.finishedAt && out) kb.unshift([{ text: 'Вывод файлом', data: cb('af', a.id) }]);
   return { text: lines.join('\n'), kb };
 }
 
@@ -796,23 +799,10 @@ export function codeView(question: string, token: string, note = ''): Screen {
   };
 }
 
-/** Ход действия: заголовок, сколько идёт, хвост вывода. */
-export function progressText(header: string, startedAt: number, out: string, now: number): string {
-  const t = tail(out, 1200);
-  return `${header} ${I.run} идёт ${tgSpan(now - startedAt)}${t ? `\n<pre>${esc(t)}</pre>` : ''}`;
-}
-
-export function finalText(
-  header: string,
-  a: { exitCode: number | null; startedAt: string; finishedAt: string | null; output: string },
-): string {
-  const ok = a.exitCode === 0;
-  const dur = a.finishedAt ? `, ${tgSpan(Date.parse(a.finishedAt) - Date.parse(a.startedAt))}` : '';
-  const res = ok
-    ? `${I.done} готово`
-    : `${I.fail} ошибка${a.exitCode !== null ? `, код ${a.exitCode}` : ''}`;
-  const t = tail(a.output, 1500);
-  return `${header} ${res}${dur}${t ? `\n<pre>${esc(t)}</pre>` : ''}`;
+/** Ход действия: что идёт и сколько, без вывода консоли. */
+export function progressText(header: string, startedAt: number, now: number): string {
+  const sec = Math.round((now - startedAt) / 1000);
+  return `${I.run} ${header}${DASH}идёт${sec >= 15 ? ` ${tgSpan(now - startedAt)}` : ''}`;
 }
 
 // ---- обслуживание, безопасность, Docker, резервные копии ----

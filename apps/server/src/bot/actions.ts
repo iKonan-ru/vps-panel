@@ -13,7 +13,7 @@ import type {
 import { esc, tgWhen } from '../lib/telegram.js';
 import { RESTART, UPDATE } from './notify-buttons.js';
 import { eventAt } from './panel-views.js';
-import { type Btn, type Screen, reachView } from './views.js';
+import { type Btn, I, type Screen, reachView } from './views.js';
 
 /** Ошибка API панели: статус и текст ответа. */
 export class ApiError extends Error {
@@ -42,8 +42,14 @@ export type Risk = 'safe' | 'change' | 'danger' | 'code';
 
 export type RunResult =
   | { actionId: string }
+  /** итог в том же сообщении (вместо уведомления или экрана) */
   | { text: string; kb?: Btn[][] }
   | { screen: Screen }
+  /**
+   * короткий итог всплывающим сообщением; сообщение возвращается к прежнему виду (drop - без
+   * нажатой кнопки) или к экрану reopen
+   */
+  | { toast: string; reopen?: { op: string; args: string[] }; drop?: boolean }
   /** открыть экран заново на месте нажатого сообщения (переключатели в списках) */
   | { reopen: { op: string; args: string[] } };
 
@@ -55,6 +61,8 @@ export interface ActionSpec {
   question: string;
   /** что идёт, для хода действия: "перезапуск 3X-UI" */
   title: string;
+  /** итог длинного действия при успехе (HTML): "3X-UI на Hoster обновлён до 2.8.3" */
+  done?: string;
   serverId: string | null;
   serverName: string | null;
   /** делать нечего: причина (уже работает, обновлений нет); кнопка уведомления снимается */
@@ -162,6 +170,7 @@ export async function actionSpec(
           : svc.details?.down !== true && args[2] !== 'f'
             ? `${title} уже работает`
             : undefined,
+        done: `<b>${esc(s.name)}</b>: ${title} перезапущен`,
         run: () =>
           kind === 'xui'
             ? d.api.post(`/api/servers/${enc(s.id)}/xui/service`, { action: 'restart' })
@@ -196,7 +205,8 @@ export async function actionSpec(
           const until = new Date(d.now() + 3600_000);
           d.muteUntil(s.id, until);
           return {
-            text: `Уведомления о <b>${esc(s.name)}</b> отключены до ${tgWhen(until.toISOString(), d.now())}`,
+            toast: `Уведомления о ${s.name} отключены до ${tgWhen(until.toISOString(), d.now())}`,
+            drop: true,
           };
         },
       };
@@ -217,9 +227,7 @@ export async function actionSpec(
         stale: still ? undefined : `${ip} уже не в бане`,
         run: async () => {
           await d.api.post(`/api/servers/${enc(s.id)}/fail2ban/unban`, { jail, ip });
-          return {
-            text: `<b>${esc(s.name)}</b>: бан с <code>${esc(ip)}</code> снят (${esc(jail)})`,
-          };
+          return { toast: `Бан с ${ip} снят`, reopen: { op: 'bn', args: [s.id] } };
         },
       };
     }
@@ -233,6 +241,7 @@ export async function actionSpec(
         serverId: s.id,
         serverName: s.name,
         stale: s.status !== 'online' ? 'Сервер не в сети' : undefined,
+        done: `<b>${esc(s.name)}</b>: пакеты обновлены`,
         run: () => d.api.post(`/api/servers/${enc(s.id)}/upgrade`),
         after: async (ok) => {
           if (!ok) return [];
@@ -257,7 +266,7 @@ export async function actionSpec(
         stale: s.status !== 'online' ? 'Сервер не в сети' : undefined,
         run: async () => {
           await d.api.post(`/api/servers/${enc(s.id)}/reboot`, { confirmName: s.name });
-          return { text: `<b>${esc(s.name)}</b>: перезагрузка запущена` };
+          return { text: `${I.run} <b>${esc(s.name)}</b>: перезагружается` };
         },
       };
     }
@@ -277,6 +286,7 @@ export async function actionSpec(
         serverId: s.id,
         serverName: s.name,
         stale: u ? undefined : `${title}: новой версии нет`,
+        done: `<b>${esc(s.name)}</b>: ${title} обновлён${u ? ` до ${esc(u.latest)}` : ''}`,
         run: () =>
           kind === 'xui'
             ? d.api.post(`${base}/xui/update`)
@@ -306,6 +316,7 @@ export async function actionSpec(
           : !plan.canApply
             ? `Исправить нельзя: ${plan.blockers.join('; ')}`
             : undefined,
+        done: `<b>${esc(s.name)}</b>: проблемы безопасности исправлены`,
         run: () => d.api.post(`/api/servers/${enc(s.id)}/baseline/apply`, { steps }),
       };
     }
@@ -320,7 +331,7 @@ export async function actionSpec(
         run: async () => {
           const r = await d.api.post<{ ok: boolean; error?: string }>('/api/panel-backup/telegram');
           if (!r.ok) throw new ApiError(502, r.error ?? 'не отправлена');
-          return { text: 'Резервная копия панели отправлена' };
+          return { toast: 'Резервная копия панели отправлена', drop: true };
         },
       };
     case 'pv': {
@@ -356,9 +367,9 @@ export async function actionSpec(
         run: async () => {
           const c = await d.api.post<CascadeCheck>(`/api/cascades/${enc(a0)}/check`);
           return {
-            text: c.ok
+            toast: c.ok
               ? `Каскад отвечает, ${Math.round(c.ms)}\u00a0мс`
-              : `Каскад не отвечает: ${esc(c.error ?? '')}`,
+              : `Каскад не отвечает: ${c.error ?? ''}`,
           };
         },
       };
@@ -385,7 +396,7 @@ export async function actionSpec(
             delayMinutes,
             enabled: false,
           });
-          return { text: `Уведомление о подключении ${esc(r.clientName)} выключено` };
+          return { toast: `Уведомление о подключении ${r.clientName} выключено`, drop: true };
         },
       };
     }
@@ -406,6 +417,7 @@ export async function actionSpec(
         serverId: s.id,
         serverName: s.name,
         stale: items.length ? undefined : 'Чистить нечего',
+        done: `<b>${esc(s.name)}</b>: диск очищен, освобождено около ${size(total)}`,
         run: () => d.api.post(`/api/servers/${enc(s.id)}/cleanup`, { ids: items.map((x) => x.id) }),
       };
     }
@@ -447,6 +459,7 @@ export async function actionSpec(
           : !s.agentUpdateAvailable
             ? 'Агент последней версии'
             : undefined,
+        done: `<b>${esc(s.name)}</b>: агент обновлён`,
         run: () => d.api.post(`/api/servers/${enc(s.id)}/agent/update`),
       };
     }
@@ -474,7 +487,7 @@ export async function actionSpec(
               : undefined,
         run: async () => {
           await d.api.post(`/api/servers/${enc(s.id)}/docker/${enc(c.id)}/${action}`);
-          return { text: `<b>${esc(s.name)}</b>: ${esc(c.name)}${DONE[action]}` };
+          return { toast: `${c.name}${DONE[action]}`, reopen: { op: 'dc', args: [s.id, c.id] } };
         },
       };
     }
@@ -498,6 +511,7 @@ export async function actionSpec(
             : op === 'fd' && !on
               ? 'Firewall уже выключен'
               : undefined,
+        done: `<b>${esc(s.name)}</b>: firewall ${op === 'fe' ? 'включён' : 'выключен'}`,
         run: () =>
           op === 'fe'
             ? d.api.post(`/api/servers/${enc(s.id)}/firewall/enable`)
@@ -514,6 +528,7 @@ export async function actionSpec(
         serverId: s.id,
         serverName: s.name,
         stale: s.status !== 'online' ? 'Сервер не в сети' : undefined,
+        done: `<b>${esc(s.name)}</b>: резервная копия создана`,
         run: async () => {
           const comps = await d.api.get<BackupComponent[]>(
             `/api/servers/${enc(s.id)}/backups/components`,
@@ -541,8 +556,8 @@ export async function actionSpec(
         run: async () => {
           await d.api.patch(`/api/gclients/${enc(g.client.id)}`, { enabled: on });
           return {
-            text: `Клиент <b>${esc(g.client.name)}</b> ${on ? 'включён' : 'выключен'}: синхронизация запущена`,
-            kb: [[{ text: 'Открыть клиента', data: `gc:${g.client.id}` }]],
+            toast: `${g.client.name} ${on ? 'включён' : 'выключен'}`,
+            reopen: { op: 'gc', args: [g.client.id] },
           };
         },
       };
@@ -559,8 +574,8 @@ export async function actionSpec(
         run: async () => {
           await d.api.post(`/api/gclients/${enc(g.client.id)}/rotate-token`);
           return {
-            text: `<b>${esc(g.client.name)}</b>: новая ссылка выдана, старые не работают`,
-            kb: [[{ text: 'Ссылки', data: `gk:${g.client.id}` }]],
+            toast: 'Новая ссылка выдана, старые не работают',
+            reopen: { op: 'gc', args: [g.client.id] },
           };
         },
       };
@@ -625,6 +640,7 @@ export async function actionSpec(
         title: 'перезапуск Xray',
         serverId: s.id,
         serverName: s.name,
+        done: `<b>${esc(s.name)}</b>: Xray перезапущен`,
         run: () => d.api.post(`/api/servers/${enc(s.id)}/xui/service`, { action: 'restart-xray' }),
       };
     }
@@ -646,7 +662,10 @@ export async function actionSpec(
         stale: !ib ? 'Inbound не найден' : ib.enable === on ? 'Уже так' : undefined,
         run: async () => {
           await d.api.post(`/api/servers/${enc(s.id)}/xui/inbounds/${enc(a1)}`, { enable: on });
-          return { reopen: { op: 'xu', args: [s.id] } };
+          return {
+            toast: `${name} ${on ? 'включён' : 'выключен'}`,
+            reopen: { op: 'xu', args: [s.id] },
+          };
         },
       };
     }
@@ -670,8 +689,8 @@ export async function actionSpec(
             publicKey: r.pk,
           });
           return {
-            text: `<b>${esc(s.name)}</b>: пользователь AWG ${esc(r.n || r.pk.slice(0, 8))} ${on ? 'включён' : 'выключен'}`,
-            kb: [[{ text: 'AWG', data: `aw:${s.id}` }]],
+            toast: `${r.n || r.pk.slice(0, 8)} ${on ? 'включён' : 'выключен'}`,
+            reopen: { op: 'aw', args: [s.id] },
           };
         },
       };
@@ -726,8 +745,8 @@ export async function actionSpec(
         run: async () => {
           await d.api.put('/api/panel/update/settings', { channel: ch });
           return {
-            text: `Канал обновлений: ${ch === 'beta' ? 'предварительный' : 'стабильный'}`,
-            kb: [[{ text: 'Версия панели', data: 'vs' }]],
+            toast: `Канал обновлений: ${ch === 'beta' ? 'предварительный' : 'стабильный'}`,
+            reopen: { op: 'vs', args: [] },
           };
         },
       };
@@ -746,8 +765,8 @@ export async function actionSpec(
         run: async () => {
           await d.api.put('/api/panel/update/settings', { autoUpdate: on });
           return {
-            text: `Автоматическое обновление панели ${on ? 'включено' : 'выключено'}`,
-            kb: [[{ text: 'Версия панели', data: 'vs' }]],
+            toast: `Автоматическое обновление панели ${on ? 'включено' : 'выключено'}`,
+            reopen: { op: 'vs', args: [] },
           };
         },
       };
@@ -778,7 +797,7 @@ export async function actionSpec(
         serverName: null,
         run: async () => {
           await d.api.post('/api/notify/telegram/test');
-          return { text: 'Тестовое сообщение отправлено в чат уведомлений' };
+          return { toast: 'Тестовое сообщение отправлено в чат уведомлений' };
         },
       };
     case 'sn':
@@ -805,7 +824,7 @@ export async function actionSpec(
         serverName: null,
         run: async () => {
           const n = await d.logoutAll();
-          return { text: `Сессии панели завершены: ${n}` };
+          return { toast: `Сессии панели завершены: ${n}`, reopen: { op: 'ss', args: [] } };
         },
       };
     case 'rm': {

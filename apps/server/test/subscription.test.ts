@@ -55,10 +55,22 @@ beforeEach(() => {
   dir = mkdtempSync(join(tmpdir(), 'sub-'));
   db = createDb(dir);
   db.insert(servers)
-    .values({ id: 's1', name: 'b', host: '1.1.1.1', provider: 'Hoster', country: 'FI' } as never)
+    .values({
+      id: 's1',
+      name: 'B Hoster',
+      host: '1.1.1.1',
+      provider: 'Hoster',
+      country: 'FI',
+    } as never)
     .run();
   db.insert(servers)
-    .values({ id: 's2', name: 'a', host: '2.2.2.2', provider: 'Kappa', country: 'DE' } as never)
+    .values({
+      id: 's2',
+      name: 'A Kappa',
+      host: '2.2.2.2',
+      provider: 'Kappa',
+      country: 'DE',
+    } as never)
     .run();
   db.insert(gclients).values({ id: 'c', name: 'Иван', slug: 'ivan-1', token: 'tok' }).run();
   for (const [id, s, links] of [
@@ -84,9 +96,9 @@ describe('buildSubscription', () => {
     const s = buildSubscription(db, 'tok');
     expect(s?.links).toHaveLength(3);
     expect(s?.links[0]).toContain('@2.2.2.2:3');
-    expect(decodeURIComponent(s?.links[0]?.split('#')[1] ?? '')).toContain('Германия :: Kappa');
+    expect(decodeURIComponent(s?.links[0]?.split('#')[1] ?? '')).toContain('Германия :: A Kappa');
     expect(decodeURIComponent(s?.links[1]?.split('#')[1] ?? '')).toContain(
-      `${countryFlag('FI')} Финляндия :: Hoster :: r1`,
+      `${countryFlag('FI')} Финляндия :: B Hoster :: r1`,
     );
     expect(buildSubscription(db, 'nope')).toBeNull();
     // сервер выключили из глобальных клиентов - его ссылок нет, даже пока привязки на месте

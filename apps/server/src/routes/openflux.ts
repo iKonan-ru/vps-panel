@@ -48,7 +48,7 @@ export async function openfluxRoutes(app: FastifyInstance, opts: ServerRouteOpts
     if (!row) return reply.code(404).send({ error: 'сервер не найден' });
     online(id);
     reply.header('Cache-Control', 'no-store');
-    // имя профиля в приложении - как у остальных сервисов: "флаг Страна :: Хостинг"
+    // имя профиля в приложении - как у остальных сервисов: "флаг Страна :: Сервер"
     const name = awgTunnelNames({
       provider: row.provider,
       country: row.country,

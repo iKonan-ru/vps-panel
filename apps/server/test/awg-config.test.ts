@@ -184,42 +184,48 @@ describe('Amnezia VPN', () => {
 
 describe('awgTunnelNames', () => {
   const fi = countryFlag('FI');
-  it('"(флаг) Страна :: Хостинг", имя файла для AmneziaWG', () => {
-    expect(awgTunnelNames({ provider: 'Hoster', country: 'FI', serverName: 'x' })).toEqual({
-      title: `${fi} Финляндия :: Hoster`,
-      file: 'FI-Hoster',
-    });
+  it('"(флаг) Страна :: Сервер", имя файла для AmneziaWG', () => {
+    expect(awgTunnelNames({ provider: 'Hoster', country: 'FI', serverName: 'Hoster One' })).toEqual(
+      {
+        title: `${fi} Финляндия :: Hoster One`,
+        file: 'FI-HosterOne',
+      },
+    );
+    // два сервера одного хостинга в одной стране - разные имена
+    expect(
+      awgTunnelNames({ provider: 'Hoster', country: 'FI', serverName: 'Hoster Two' }).title,
+    ).toBe(`${fi} Финляндия :: Hoster Two`);
   });
   it('дополнительный экземпляр - с версией', () => {
     expect(
-      awgTunnelNames({ provider: 'Hoster', country: 'FI', serverName: 'x', version: '2.0' }),
+      awgTunnelNames({ provider: 'Hoster', country: 'FI', serverName: 'Hoster', version: '2.0' }),
     ).toEqual({ title: `${fi} Финляндия :: Hoster :: AWG 2.0`, file: 'FI-Hoster-2.0' });
   });
   it('недопустимые символы выбрасываются, длина до 15', () => {
     const n = awgTunnelNames({
-      provider: 'my*hosting',
+      provider: 'x',
       country: 'NL',
-      serverName: 'x',
+      serverName: 'my*hosting',
       version: '3.1',
     });
     expect(n.title).toBe(`${countryFlag('NL')} Нидерланды :: my*hosting :: AWG 3.1`);
     expect(n.file).toBe('NL-myhostin-3.1');
     const long = awgTunnelNames({
-      provider: 'VeryLongHostingName',
+      provider: 'x',
       country: 'DE',
-      serverName: 'x',
+      serverName: 'VeryLongServerName',
     });
-    expect(long.file).toBe('DE-VeryLongHost');
+    expect(long.file).toBe('DE-VeryLongServ');
     expect(long.file).toMatch(/^[A-Za-z0-9_=+.-]{1,15}$/);
   });
-  it('без хостинга - имя сервера, страна свободным текстом без флага', () => {
-    expect(awgTunnelNames({ provider: '', country: '', serverName: 'VPS Panel' })).toEqual({
-      title: 'VPS Panel',
-      file: 'VPSPanel',
-    });
-    expect(awgTunnelNames({ provider: 'Web.io', country: 'Москва', serverName: 'x' })).toEqual({
+  it('без имени сервера - хостинг; имя без латиницы - файл по хостингу', () => {
+    expect(awgTunnelNames({ provider: 'Web.io', country: 'Москва', serverName: '' })).toEqual({
       title: 'Москва :: Web.io',
       file: 'Web.io',
+    });
+    expect(awgTunnelNames({ provider: 'Kappa', country: 'SE', serverName: 'Сервер' })).toEqual({
+      title: `${countryFlag('SE')} Швеция :: Сервер`,
+      file: 'SE-Kappa',
     });
     expect(awgTunnelNames({ provider: '', country: '', serverName: 'Сервер' }).file).toBe('awg');
   });

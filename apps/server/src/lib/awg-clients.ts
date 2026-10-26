@@ -21,7 +21,7 @@ interface AwgClientConfigs {
   wg: string | null;
   vpn: string;
   frames: string[];
-  /** Как подключение называется у клиента ("(флаг) Страна :: Хостинг"). */
+  /** Как подключение называется у клиента ("(флаг) Страна :: Сервер"). */
   title: string;
   /** Имя .conf без расширения = имя туннеля в AmneziaWG ("FI-Hoster"). */
   fileName: string;
@@ -55,7 +55,7 @@ export async function awgForgetKey(db: Db, serverId: string, container: string, 
 /**
  * Конфиги клиента: параметры экземпляра - у агента (awg.config), приватный ключ - из базы. У
  * клиентов приложения Amnezia ключа нет нигде - ошибка 409. Клиент видит "(флаг) Страна ::
- * Хостинг".
+ * Сервер" (имя сервера в панели).
  */
 export async function awgClientConfigs(o: {
   db: Db;

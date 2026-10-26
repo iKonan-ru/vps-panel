@@ -75,8 +75,10 @@ import {
   xuiView,
 } from './service-views.js';
 import {
+  type Btn,
   COMMANDS,
   type Ctx,
+  I,
   MENU,
   MENU_KEYBOARD,
   OFF_TEXT,
@@ -89,7 +91,6 @@ import {
   confirmView,
   containerView,
   dockerView,
-  finalText,
   findServers,
   journalView,
   logsView,
@@ -117,7 +118,9 @@ const CONFIRM_TTL_MS = 2 * 60_000;
 const CODE_FAILS = 5;
 const CODE_LOCK_MS = 15 * 60_000;
 /** Ход действия правится не чаще. */
-const PROGRESS_EDIT_MS = 3_000;
+const PROGRESS_EDIT_MS = 15_000;
+/** Последний экран из меню (одна "домашняя" плашка в чате вместо ленты экранов). */
+const HOME_KEY = 'tg_bot_home';
 /** Ссылки и конфиги клиентов удаляются из чата через 10 минут (решение Konan). */
 const SECRET_TTL_MS = 10 * 60_000;
 const DELETE_KEY = 'tg_bot_delete';
@@ -154,6 +157,7 @@ interface TgMessage {
   chat: TgChat;
   from?: TgUser;
   text?: string;
+  entities?: unknown[];
   reply_markup?: { inline_keyboard?: { text: string; callback_data?: string; url?: string }[][] };
 }
 interface TgCallback {
@@ -217,10 +221,30 @@ interface Tracked {
   mid: number;
   header: string;
   startedAt: number;
-  out: string;
-  lastEdit: number;
   timer: NodeJS.Timeout | null;
   spec: ActionSpec;
+}
+
+/** Как сообщение выглядело до действия: текст с разметкой и кнопки. */
+interface Origin {
+  text: string;
+  entities: unknown[];
+  kb: unknown;
+  /** уведомление панели, а не экран бота */
+  notify: boolean;
+  at: number;
+}
+
+const cutText = (s: string, n: number) => (s.length > n ? `${s.slice(0, n - 1)}\u2026` : s);
+
+/** Последняя содержательная строка вывода: причина ошибки без всего вывода. */
+function lastLine(out: string): string {
+  const lines = out
+    .replace(/\r/g, '')
+    .split('\n')
+    .map((l) => l.trim())
+    .filter(Boolean);
+  return cutText(lines.at(-1) ?? '', 300);
 }
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
@@ -247,7 +271,12 @@ export class Bot {
   private seen = new Map<string, { id: string; title: string; when: string }>();
   private strangers = new Map<number, number>();
   private commandsFor: string | null = null;
-  private confirms = new Map<string, { op: string; args: string[]; expires: number }>();
+  private confirms = new Map<
+    string,
+    { op: string; args: string[]; data: string; expires: number }
+  >();
+  private origins = new Map<string, Origin>();
+  private screenOf = new Map<string, string>();
   /** ждёт кода 2FA: подтверждение и сообщение, которое правится */
   private codeWait: { token: string; chat: number; mid: number; expires: number } | null = null;
 
@@ -536,10 +565,11 @@ export class Bot {
     if (cmd === '/cancel') {
       const w = this.codeWait;
       this.codeWait = null;
-      if (w) await this.editText(w.chat, w.mid, 'Отменено');
+      if (w) await this.cancelIn(w.chat, w.mid);
       const f = this.flow;
       this.flow = null;
-      if (f) await this.editText(f.chat, f.mid, 'Отменено');
+      if (f) await this.cancelIn(f.chat, f.mid);
+      await this.send('deleteMessage', { chat_id: chat, message_id: m.message_id });
       return;
     }
     if (this.flow && Date.now() > this.flow.expires) this.flow = null;
@@ -551,20 +581,24 @@ export class Bot {
         text: 'Меню\u00a0\u2014 кнопками внизу',
         reply_markup: MENU_KEYBOARD,
       });
-      return this.reply(chat, await this.screen('m', []));
+      return this.home(chat, m.message_id, 'm');
     }
-    if (cmd === '/menu' || text === MENU.summary)
-      return this.reply(chat, await this.screen('m', []));
-    if (cmd === '/servers' || text === MENU.servers)
-      return this.reply(chat, await this.screen('sl', ['-', '0']));
-    if (cmd === '/clients' || text === MENU.clients)
-      return this.reply(chat, await this.screen('gl', ['0', '0']));
-    if (cmd === '/log' || text === MENU.log)
-      return this.reply(chat, await this.screen('lg', ['-', '0']));
-    if (cmd === '/settings' || text === MENU.more)
-      return this.reply(chat, await this.screen('st', []));
+    const menu: Record<string, string> = {
+      '/menu': 'm',
+      [MENU.summary]: 'm',
+      '/servers': 'sl:-:0',
+      [MENU.servers]: 'sl:-:0',
+      '/clients': 'gl:0:0',
+      [MENU.clients]: 'gl:0:0',
+      '/log': 'lg:-:0',
+      [MENU.log]: 'lg:-:0',
+      '/settings': 'st',
+      [MENU.more]: 'st',
+    };
+    const go = menu[cmd] ?? menu[text];
+    if (go) return this.home(chat, m.message_id, go);
     if (text.startsWith('/'))
-      return this.reply(chat, {
+      return this.home(chat, m.message_id, '', {
         text: 'Команды: /menu, /servers, /clients, /log, /settings',
         kb: [],
       });
@@ -580,10 +614,10 @@ export class Bot {
       ? exact
       : rows.filter((r) => r.name.toLocaleLowerCase('ru').includes(qq));
     if (found.length === 1 && !clients.length && found[0])
-      return this.reply(chat, await this.screen('sv', [found[0].id]));
+      return this.home(chat, m.message_id, `sv:${found[0].id}`);
     if (clients.length === 1 && !found.length && clients[0])
-      return this.reply(chat, await this.screen('gc', [clients[0].id]));
-    return this.reply(chat, searchView(text, found, clients));
+      return this.home(chat, m.message_id, `gc:${clients[0].id}`);
+    return this.home(chat, m.message_id, '', searchView(text, found, clients));
   }
 
   private async bind(from: TgUser) {
@@ -608,7 +642,39 @@ export class Bot {
       parse_mode: 'HTML',
       reply_markup: MENU_KEYBOARD,
     });
-    await this.reply(from.id, await this.screen('m', []));
+    await this.home(from.id, null, 'm');
+  }
+
+  /**
+   * Экран из меню, команды или поиска - одна "домашняя" плашка в чате: прежняя удаляется
+   * (если в ней не идёт действие или мастер), сообщение администратора тоже. data - чем
+   * открыть экран заново; screen - готовый (поиск).
+   */
+  private async home(chat: number, userMid: number | null, data: string, screen?: Screen) {
+    if (userMid) await this.send('deleteMessage', { chat_id: chat, message_id: userMid });
+    let s: Screen | null | undefined = screen;
+    if (!s) {
+      const { op, args } = parseCb(data);
+      s = await this.screen(op, args).catch((e) => {
+        if (e instanceof NotFound) return null;
+        throw e;
+      });
+    }
+    if (!s) return;
+    const prev = getJsonSetting<{ chat: string; id: number } | null>(this.deps.db, HOME_KEY, null);
+    const busy =
+      prev &&
+      ([...this.tracked.values()].some((t) => t.mid === prev.id) ||
+        this.flow?.mid === prev.id ||
+        this.codeWait?.mid === prev.id ||
+        this.origins.has(this.key(prev.chat, prev.id)));
+    if (prev && prev.chat === String(chat) && !busy)
+      await this.send('deleteMessage', { chat_id: chat, message_id: prev.id });
+    const r = await this.reply(chat, s);
+    const mid = r?.ok ? (r.result as { message_id?: number }).message_id : undefined;
+    if (!mid) return;
+    putSetting(this.deps.db, HOME_KEY, JSON.stringify({ chat: String(chat), id: mid }));
+    if (data) this.rememberScreen(chat, mid, data);
   }
 
   private async onCallback(q: TgCallback) {
@@ -629,6 +695,7 @@ export class Bot {
     const { op, args } = parseCb(q.data ?? '');
     if (op === 'noop') return answer();
     if (op === 'o') {
+      // переход из уведомления - на месте, с кнопкой возврата к уведомлению
       const [sub = '', ...rest] = args;
       let screen: Screen | null = null;
       try {
@@ -637,7 +704,16 @@ export class Bot {
         if (!(e instanceof NotFound)) throw e;
       }
       await answer(screen ? undefined : 'Не найдено: возможно, удалено');
-      if (screen) await this.reply(msg.chat.id, screen, msg.message_id);
+      if (!screen) return;
+      this.stash(msg);
+      this.rememberScreen(msg.chat.id, msg.message_id, [sub, ...rest].join(':'));
+      await this.paint(msg.chat.id, msg.message_id, screen);
+      return;
+    }
+    if (op === 'ob') {
+      await answer();
+      this.screenOf.delete(this.key(msg.chat.id, msg.message_id));
+      if (!(await this.restore(msg.chat.id, msg.message_id))) await answer(STALE_TEXT, true);
       return;
     }
     if (ACTION_OPS.has(op)) return this.onAction(q, msg, op, args, answer);
@@ -651,7 +727,7 @@ export class Bot {
       this.confirms.delete(args[0] ?? '');
       if (this.codeWait?.token === args[0]) this.codeWait = null;
       await answer();
-      await this.send('deleteMessage', { chat_id: msg.chat.id, message_id: msg.message_id });
+      await this.cancelIn(msg.chat.id, msg.message_id);
       return;
     }
     if (op === 'off!') {
@@ -669,11 +745,16 @@ export class Bot {
       screen = await this.screen('sl', ['-', '0']);
       toast = 'Не найдено: возможно, удалено';
     }
+    let data = toast ? 'sl:-:0' : (q.data ?? '');
     if (!screen) {
       screen = await this.screen('m', []);
+      data = 'm';
       toast = STALE_TEXT;
     }
-    if (screen) await this.edit(msg, screen);
+    if (screen) {
+      this.rememberScreen(msg.chat.id, msg.message_id, data);
+      await this.edit(msg, screen);
+    }
     await answer(toast);
   }
 
@@ -771,6 +852,98 @@ export class Bot {
     });
   }
 
+  // ---- одно сообщение на дело: подтверждение, ход и итог - на месте нажатого ----
+
+  private key(chat: number | string, mid: number): string {
+    return `${chat}:${mid}`;
+  }
+
+  /**
+   * Запомнить, как сообщение выглядело до действия (уведомление или экран): "Отмена" и "Назад"
+   * возвращают его. notify - сообщение не экран бота (уведомление панели).
+   */
+  private stash(msg: TgMessage) {
+    const k = this.key(msg.chat.id, msg.message_id);
+    if (this.origins.has(k)) return;
+    this.origins.set(k, {
+      text: msg.text ?? '',
+      entities: msg.entities ?? [],
+      kb: msg.reply_markup ?? { inline_keyboard: [] },
+      notify: !this.screenOf.has(k),
+      at: Date.now(),
+    });
+    while (this.origins.size > 300) {
+      const first = this.origins.keys().next().value;
+      if (first === undefined) break;
+      this.origins.delete(first);
+    }
+  }
+
+  /** Вернуть сообщению прежний вид; drop - без кнопки с этими данными. */
+  private async restore(chat: number | string, mid: number, drop?: string): Promise<boolean> {
+    const k = this.key(chat, mid);
+    const o = this.origins.get(k);
+    if (!o) return false;
+    this.origins.delete(k);
+    const kb = o.kb as { inline_keyboard?: { callback_data?: string }[][] };
+    const rows = (kb.inline_keyboard ?? [])
+      .map((r) => r.filter((b) => !drop || b.callback_data !== drop))
+      .filter((r) => r.length);
+    await this.send('editMessageText', {
+      chat_id: chat,
+      message_id: mid,
+      text: o.text,
+      entities: o.entities,
+      link_preview_options: { is_disabled: true },
+      reply_markup: { inline_keyboard: rows },
+    });
+    return true;
+  }
+
+  /** Экран бота в сообщении: каким нажатием он открыт (для "Назад" и повтора). */
+  private rememberScreen(chat: number | string, mid: number, data: string) {
+    const k = this.key(chat, mid);
+    this.screenOf.delete(k);
+    this.screenOf.set(k, data);
+    while (this.screenOf.size > 500) {
+      const first = this.screenOf.keys().next().value;
+      if (first === undefined) break;
+      this.screenOf.delete(first);
+    }
+  }
+
+  /** Кнопки возврата под итогом: к экрану, с которого начали, и к уведомлению. */
+  private backRows(chat: number | string, mid: number): Btn[][] {
+    const k = this.key(chat, mid);
+    const rows: Btn[][] = [];
+    const scr = this.screenOf.get(k);
+    if (scr) rows.push([{ text: `${I.back} Назад`, data: scr }]);
+    if (this.origins.get(k)?.notify) rows.push([{ text: `${I.back} К уведомлению`, data: 'ob' }]);
+    return rows;
+  }
+
+  /** "Отмена": экран - открыть заново, уведомление - вернуть как было. */
+  private async cancelIn(chat: number | string, mid: number) {
+    const scr = this.screenOf.get(this.key(chat, mid));
+    if (scr) {
+      const { op, args } = parseCb(scr);
+      const s = await this.screen(op, args).catch(() => null);
+      if (s) {
+        await this.paint(chat, mid, s);
+        return;
+      }
+    }
+    if (!(await this.restore(chat, mid)))
+      await this.send('deleteMessage', { chat_id: chat, message_id: mid });
+  }
+
+  /** Экран на месте сообщения; если оно было уведомлением - с кнопкой возврата к нему. */
+  private paint(chat: number | string, mid: number, s: Screen) {
+    const notify = this.origins.get(this.key(chat, mid))?.notify;
+    const kb = notify ? [...s.kb, [{ text: `${I.back} К уведомлению`, data: 'ob' }]] : s.kb;
+    return this.editText(chat, mid, s.text, { text: s.text, kb });
+  }
+
   private async onAction(
     q: TgCallback,
     msg: TgMessage,
@@ -798,15 +971,21 @@ export class Bot {
       await this.dropButton(msg, q.data ?? '');
       return;
     }
+    this.stash(msg);
     if (spec.risk === 'safe') {
-      await answer();
-      await this.execute(spec, msg.chat.id, msg.message_id, null);
+      await this.execute(spec, msg.chat.id, msg.message_id, q.data ?? '', answer);
       return;
     }
     const token = this.refs.put(JSON.stringify({ op, args, n: Math.random() }));
-    this.confirms.set(token, { op, args, expires: Date.now() + CONFIRM_TTL_MS });
+    this.confirms.set(token, {
+      op,
+      args,
+      data: q.data ?? '',
+      expires: Date.now() + CONFIRM_TTL_MS,
+    });
     await answer();
-    await this.reply(msg.chat.id, confirmView(spec.question, spec.verb, token), msg.message_id);
+    const v = confirmView(spec.question, spec.verb, token);
+    await this.editText(msg.chat.id, msg.message_id, v.text, v);
   }
 
   private async onConfirm(
@@ -814,11 +993,12 @@ export class Bot {
     token: string,
     answer: (text?: string, alert?: boolean) => Promise<TgApiResult>,
   ) {
+    const chat = msg.chat.id;
     const c = this.confirms.get(token);
     if (!c || Date.now() > c.expires) {
       this.confirms.delete(token);
       await answer('Подтверждение устарело, нажмите кнопку действия ещё раз', true);
-      await this.send('deleteMessage', { chat_id: msg.chat.id, message_id: msg.message_id });
+      await this.cancelIn(chat, msg.message_id);
       return;
     }
     let spec: ActionSpec | null;
@@ -832,8 +1012,8 @@ export class Bot {
     if (no) return answer(no, true);
     if (spec.stale) {
       this.confirms.delete(token);
-      await answer();
-      await this.editText(msg.chat.id, msg.message_id, esc(spec.stale));
+      await answer(spec.stale, true);
+      await this.restore(chat, msg.message_id, c.data);
       return;
     }
     if (spec.risk === 'code') {
@@ -843,19 +1023,14 @@ export class Bot {
       if (!admin?.totpEnabled || !admin.totpSecret)
         return answer('Двухфакторная аутентификация не настроена: войдите в панель', true);
       c.expires = Date.now() + CONFIRM_TTL_MS;
-      this.codeWait = { token, chat: msg.chat.id, mid: msg.message_id, expires: c.expires };
+      this.codeWait = { token, chat, mid: msg.message_id, expires: c.expires };
       await answer();
-      await this.editText(
-        msg.chat.id,
-        msg.message_id,
-        codeView(spec.question, token).text,
-        codeView(spec.question, token),
-      );
+      const v = codeView(spec.question, token);
+      await this.editText(chat, msg.message_id, v.text, v);
       return;
     }
     this.confirms.delete(token);
-    await answer();
-    await this.execute(spec, msg.chat.id, null, msg.message_id);
+    await this.execute(spec, chat, msg.message_id, c.data, answer);
   }
 
   /** Код 2FA сообщением (удаление сервера): верный - действие, неверный - счётчик попыток. */
@@ -865,7 +1040,7 @@ export class Bot {
     const c = this.confirms.get(w.token);
     if (!c || Date.now() > w.expires) {
       this.codeWait = null;
-      await this.editText(w.chat, w.mid, 'Подтверждение устарело, нажмите кнопку действия ещё раз');
+      await this.cancelIn(w.chat, w.mid);
       return;
     }
     const admin = await theAdmin(this.deps.db);
@@ -888,6 +1063,7 @@ export class Bot {
           w.chat,
           w.mid,
           'Неверный код. Действия через бота недоступны 15\u00a0минут',
+          { text: '', kb: this.backRows(w.chat, w.mid) },
         );
         return;
       }
@@ -898,80 +1074,120 @@ export class Bot {
     }
     this.usedCodes.set(code, now);
     this.codeFails = 0;
-
     this.codeWait = null;
     this.confirms.delete(w.token);
     if (!spec || spec.stale) {
-      await this.editText(w.chat, w.mid, esc(spec?.stale ?? STALE_TEXT));
+      await this.cancelIn(w.chat, w.mid);
       return;
     }
-    await this.execute(spec, w.chat, null, w.mid);
+    await this.execute(spec, w.chat, w.mid, c.data);
   }
 
   /**
-   * Выполнить действие. Итог - в сообщении: editMid - правится (подтверждение), иначе новым
-   * ответом на replyTo (уведомление). Длинное действие - ход по событиям до окончания.
+   * Выполнить действие в сообщении mid (уведомление, экран или подтверждение на их месте).
+   * Короткий итог - всплывающим сообщением, если успели ответить на нажатие; длинное действие -
+   * "идёт" с временем, по окончании - итог на месте. pressed - данные нажатой кнопки (её
+   * снимают, когда действие больше не нужно).
    */
   private async execute(
     spec: ActionSpec,
     chat: number | string,
-    replyTo: number | null,
-    editMid: number | null,
+    mid: number,
+    pressed: string,
+    answer?: (text?: string, alert?: boolean) => Promise<TgApiResult>,
   ) {
     const header = spec.serverName
       ? `<b>${esc(spec.serverName)}</b>: ${esc(spec.title)}`
       : `<b>${esc(spec.title[0]?.toUpperCase() ?? '')}${esc(spec.title.slice(1))}</b>`;
-    const show = async (text: string, screen?: Screen): Promise<number | null> => {
-      if (editMid) {
-        await this.editText(chat, editMid, text, screen);
-        return editMid;
-      }
-      const r = await this.reply(chat, screen ?? { text, kb: [] }, replyTo ?? undefined);
-      return r?.ok ? ((r.result as { message_id?: number }).message_id ?? null) : null;
+    let answered = !answer;
+    const ack = async (text?: string, alert = false): Promise<boolean> => {
+      if (answered) return false;
+      answered = true;
+      await answer?.(text, alert);
+      return true;
     };
+    // Telegram ждёт ответа на нажатие недолго: долгое действие - сначала "идёт"
+    const slow = setTimeout(() => {
+      void ack();
+      void this.editText(chat, mid, progressText(header, Date.now(), Date.now()));
+    }, 4_000);
+    slow.unref?.();
     let res: Awaited<ReturnType<ActionSpec['run']>>;
     try {
       res = await spec.run();
     } catch (e) {
+      clearTimeout(slow);
       const m =
         e instanceof ApiError && e.status === 409
           ? `сервер занят: ${e.message}`
           : (e as Error).message;
-      await show(`${header} \u274c ${esc(m)}`);
+      if (!(await ack(cutText(m, 190), true)))
+        await this.editText(chat, mid, `${I.fail} ${header}: ${esc(m)}`, {
+          text: '',
+          kb: this.backRows(chat, mid),
+        });
+      else await this.cancelIn(chat, mid);
       return;
     }
+    clearTimeout(slow);
+    if ('toast' in res) {
+      const shown = await ack(res.toast);
+      if (res.reopen) {
+        const s = await this.screen(res.reopen.op, res.reopen.args).catch(() => null);
+        if (s) {
+          this.rememberScreen(chat, mid, [res.reopen.op, ...res.reopen.args].join(':'));
+          await this.paint(chat, mid, s);
+        }
+      } else if (!(await this.restore(chat, mid, res.drop ? pressed : undefined)) && !shown)
+        await this.editText(chat, mid, esc(res.toast));
+      if (!shown && res.reopen)
+        await this.send('sendChatAction', { chat_id: chat, action: 'typing' });
+      return;
+    }
+    await ack();
     if ('screen' in res) {
-      await show(res.screen.text, res.screen);
+      await this.paint(chat, mid, res.screen);
       return;
     }
     if ('reopen' in res) {
-      const target = editMid ?? replyTo;
       const sc = await this.screen(res.reopen.op, res.reopen.args).catch(() => null);
-      if (sc && target) await this.editText(chat, target, sc.text, sc);
+      if (sc) {
+        this.rememberScreen(chat, mid, [res.reopen.op, ...res.reopen.args].join(':'));
+        await this.paint(chat, mid, sc);
+      }
       return;
     }
     if ('text' in res) {
-      await show(res.text, res.kb ? { text: res.text, kb: res.kb } : undefined);
+      await this.settle(chat, mid, res.text, res.kb ?? []);
       return;
     }
     const startedAt = Date.now();
-    const mid = await show(progressText(header, startedAt, '', startedAt));
-    if (!mid) return;
-    this.tracked.set(res.actionId, {
-      chat,
-      mid,
-      header,
-      startedAt,
-      out: '',
-      lastEdit: Date.now(),
-      timer: null,
-      spec,
-    });
+    await this.editText(chat, mid, progressText(header, startedAt, startedAt));
+    const t: Tracked = { chat, mid, header, startedAt, timer: null, spec };
+    // раз в 15 секунд - сколько идёт: видно, что не зависло
+    t.timer = setInterval(() => {
+      void this.editText(chat, mid, progressText(header, startedAt, Date.now()));
+    }, PROGRESS_EDIT_MS);
+    t.timer.unref?.();
+    this.tracked.set(res.actionId, t);
     // короткое действие могло закончиться раньше, чем бот начал следить
     const row = await this.get<ActionListRow & { output: string }>(
       `/api/actions/${res.actionId}`,
     ).catch(() => null);
     if (row?.finishedAt) await this.finishTracked(res.actionId);
+  }
+
+  /**
+   * Успешный итог на месте сообщения. Уведомление становится итогом (возврат к нему не нужен),
+   * экран - итогом с кнопкой "Назад".
+   */
+  private async settle(chat: number | string, mid: number, text: string, kb: Btn[][]) {
+    const k = this.key(chat, mid);
+    const onScreen = this.screenOf.has(k);
+    if (!onScreen) this.origins.delete(k);
+    const rows = [...kb, ...(onScreen ? this.backRows(chat, mid) : [])];
+    if (onScreen) this.origins.delete(k);
+    await this.editText(chat, mid, text, { text, kb: rows });
   }
 
   /** Вывод действия целиком - файлом в чат. */
@@ -991,42 +1207,39 @@ export class Bot {
       esc(actionTitle(a.kind, a.params)),
       String(msg.chat.id),
     );
-    if (err) await this.reply(msg.chat.id, { text: `\u274c ${esc(err)}`, kb: [] }, msg.message_id);
+    if (err) await answer(err, true);
   }
 
   private onHub(ev: UiEvent) {
-    if (ev.type !== 'action.stream' && ev.type !== 'action.finished') return;
-    const t = this.tracked.get(ev.actionId);
-    if (!t) return;
-    if (ev.type === 'action.finished') {
-      void this.finishTracked(ev.actionId);
-      return;
-    }
-    t.out = (t.out + ev.chunk).slice(-4000);
-    if (t.timer) return;
-    const wait = Math.max(0, t.lastEdit + PROGRESS_EDIT_MS - Date.now());
-    t.timer = setTimeout(() => {
-      t.timer = null;
-      if (!this.tracked.has(ev.actionId)) return;
-      t.lastEdit = Date.now();
-      void this.editText(t.chat, t.mid, progressText(t.header, t.startedAt, t.out, Date.now()));
-    }, wait);
-    t.timer.unref?.();
+    if (ev.type !== 'action.finished') return;
+    if (this.tracked.has(ev.actionId)) void this.finishTracked(ev.actionId);
   }
 
   private async finishTracked(actionId: string) {
     const t = this.tracked.get(actionId);
     if (!t) return;
     this.tracked.delete(actionId);
-    if (t.timer) clearTimeout(t.timer);
+    if (t.timer) clearInterval(t.timer);
     const a = await this.get<ActionListRow & { output: string }>(`/api/actions/${actionId}`).catch(
       () => null,
     );
     if (!a) return;
-    const extra = (await t.spec.after?.(a.exitCode === 0).catch(() => [])) ?? [];
-    const kb = [...extra, [{ text: 'Подробнее', data: `ac:${actionId}:s` }]];
-    const text = finalText(t.header, a);
-    await this.editText(t.chat, t.mid, text, { text, kb });
+    const ok = a.exitCode === 0;
+    const extra = (await t.spec.after?.(ok).catch(() => [])) ?? [];
+    if (ok) {
+      await this.settle(t.chat, t.mid, `${I.done} ${t.spec.done ?? `${t.header}: готово`}`, extra);
+      return;
+    }
+    const why = lastLine(a.output);
+    const text = `${I.fail} ${t.header}: ошибка${a.exitCode !== null ? `, код ${a.exitCode}` : ''}${why ? `\n<i>${esc(why)}</i>` : ''}`;
+    await this.editText(t.chat, t.mid, text, {
+      text,
+      kb: [
+        ...extra,
+        [{ text: 'Вывод файлом', data: `af:${actionId}` }],
+        ...this.backRows(t.chat, t.mid),
+      ],
+    });
   }
 
   // ---- ссылки и конфиги клиентов: удаляются из чата через 10 минут ----
@@ -1129,9 +1342,12 @@ export class Bot {
       if (no) return answer(no, true);
       await answer();
       const now = Date.now();
+      // мастер - на месте экрана, "Отмена" возвращает его
+      const mid = msg.message_id;
+      this.stash(msg);
       if (op === 'nc') {
-        const r = await this.reply(chat, askName(), msg.message_id);
-        const mid = r?.ok ? (r.result as { message_id: number }).message_id : 0;
+        const v = askName();
+        await this.editText(chat, mid, v.text, v);
         this.flow = { kind: 'client', step: 'name', chat, mid, expires: now + FLOW_TTL_MS };
         return;
       }
@@ -1139,8 +1355,8 @@ export class Bot {
         `/api/gclients/${encodeURIComponent(args[0] ?? '')}`,
       ).catch(() => null);
       if (!g) return;
-      const r = await this.reply(chat, askType('Новое устройство', g.client.name), msg.message_id);
-      const mid = r?.ok ? (r.result as { message_id: number }).message_id : 0;
+      const v = askType('Новое устройство', g.client.name);
+      await this.editText(chat, mid, v.text, v);
       this.flow = {
         kind: 'device',
         step: 'type',
@@ -1161,7 +1377,7 @@ export class Bot {
     await answer();
     if (op === 'fx') {
       this.flow = null;
-      await this.editText(chat, f.mid, 'Отменено');
+      await this.cancelIn(chat, f.mid);
       return;
     }
     if (op === 'fy' && f.step === 'type') {
@@ -1203,6 +1419,7 @@ export class Bot {
 
   private async finishFlow(f: Flow, deviceName: string | null) {
     this.flow = null;
+    this.origins.delete(this.key(f.chat, f.mid));
     const device =
       f.type && deviceName !== null ? { name: deviceName, type: f.type, awg20: false } : null;
     try {
@@ -1241,8 +1458,10 @@ export class Bot {
       ).catch(() => null);
       if (!s) return answer('Сервер не найден', true);
       await answer();
-      const r = await this.reply(msg.chat.id, askIp(s), msg.message_id);
-      const mid = r?.ok ? (r.result as { message_id: number }).message_id : 0;
+      const mid = msg.message_id;
+      this.stash(msg);
+      const v = askIp(s);
+      await this.editText(msg.chat.id, mid, v.text, v);
       this.flow = {
         kind: 'ip',
         step: 'ip',
@@ -1652,14 +1871,7 @@ export class Bot {
 
   /** Экран на месте нажатого сообщения; править нельзя (удалено, слишком старое) - новым. */
   private async edit(msg: TgMessage, s: Screen) {
-    const r = await this.send('editMessageText', {
-      chat_id: msg.chat.id,
-      message_id: msg.message_id,
-      text: s.text,
-      parse_mode: 'HTML',
-      link_preview_options: { is_disabled: true },
-      reply_markup: this.markup(s),
-    });
+    const r = await this.paint(msg.chat.id, msg.message_id, s);
     if (!r.ok && !notModified(r) && r.status === 400) await this.reply(msg.chat.id, s);
   }
 }

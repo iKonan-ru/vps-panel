@@ -7,7 +7,7 @@ import { parseNaiveLink } from './gclient-services.js';
 
 /**
  * Ссылка из 3X-UI (subLinks) для клиента: адрес localhost/127.0.0.1 (3X-UI так подставляет без
- * домена) - на адрес сервера; подпись - "(флаг) Страна :: Хостинг", при нескольких inbound-ах
+ * домена) - на адрес сервера; подпись - "(флаг) Страна :: Сервер", при нескольких inbound-ах
  * на сервере - плюс имя inbound-а (3X-UI подписывает "<inbound>-<email>").
  */
 export function rewriteLink(
