@@ -1,4 +1,5 @@
 import { AppLinkButton } from '@/components/app-links';
+import { MobileActions } from '@/components/mobile-actions';
 import { Alert } from '@/components/ui/alert';
 import { Button } from '@/components/ui/button';
 import { PageTitle } from '@/components/ui/page-title';
@@ -35,12 +36,25 @@ export function AppsPage() {
         </div>
         <Button
           size="sm"
+          className="max-md:hidden"
           disabled={op.busy}
           onClick={() => void refresh()}
           label="Проверить версии"
         >
           <RefreshCw className={cn('size-3.5', op.busy && 'animate-spin')} />
         </Button>
+        <MobileActions>
+          <Button
+            size="icon"
+            variant="ghost"
+            disabled={op.busy}
+            onClick={() => void refresh()}
+            aria-label="Проверить версии"
+            title="Проверить версии"
+          >
+            <RefreshCw className={cn('size-4', op.busy && 'animate-spin')} />
+          </Button>
+        </MobileActions>
       </div>
       {error && <Alert tone="bad">{error.message}</Alert>}
       {op.error && <Alert tone="bad">{op.error}</Alert>}

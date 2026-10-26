@@ -16,13 +16,16 @@ import { type FormEvent, useState } from 'react';
 
 const tagUrl = (name: string) => `/api/tags?name=${encodeURIComponent(name)}`;
 
-/** Справочник тегов серверов: цвет, новое имя (имя другого тега - слияние), удаление. */
+/**
+ * Справочник тегов серверов: по карандашу - имя (имя другого тега - слияние), цвет и удаление.
+ */
 export function TagsSettings() {
   const qc = useQueryClient();
   const ask = useConfirm();
   const { data, isFetching } = useTags();
   const op = useAction();
-  const [edit, setEdit] = useState<{ name: string; value: string } | null>(null);
+  // правка тега: имя и цвет применяются вместе по "Сохранить"; цвета и удаление видны только тут
+  const [edit, setEdit] = useState<{ name: string; value: string; color: TagColor } | null>(null);
   // пока идёт своё действие или список перечитывается - действия раздела недоступны
   const locked = op.busy || isFetching;
 
@@ -39,9 +42,10 @@ export function TagsSettings() {
     });
   }
 
-  async function rename(e: FormEvent) {
+  async function save(e: FormEvent) {
     e.preventDefault();
     if (!edit) return;
+    const cur = data?.find((t) => t.name === edit.name);
     const value = edit.value.trim();
     const other = data?.find(
       (t) =>
@@ -56,7 +60,14 @@ export function TagsSettings() {
       }))
     )
       return;
-    if (await patch(edit.name, { name: value })) setEdit(null);
+    const body: { name?: string; color?: TagColor } = {};
+    if (value !== edit.name) body.name = value;
+    if (!other && edit.color !== cur?.color) body.color = edit.color;
+    if (!body.name && !body.color) {
+      setEdit(null);
+      return;
+    }
+    if (await patch(edit.name, body)) setEdit(null);
   }
 
   async function remove(t: Tag) {
@@ -69,10 +80,11 @@ export function TagsSettings() {
       danger: t.servers > 0,
     });
     if (!ok) return;
-    await op.run(async () => {
+    const done = await op.run(async () => {
       await api(tagUrl(t.name), { method: 'DELETE' });
       await reload();
     });
+    if (done) setEdit(null);
   }
 
   return (
@@ -95,92 +107,97 @@ export function TagsSettings() {
               className="stagger flex animate-rise flex-wrap items-center gap-x-3 gap-y-2 border-b border-border px-4 py-2.5 last:border-b-0"
             >
               {edit?.name === t.name ? (
-                <form onSubmit={rename} className="flex min-w-0 grow items-center gap-2">
-                  <Input
-                    aria-label="Новое имя тега"
-                    value={edit.value}
-                    onChange={(e) => setEdit({ ...edit, value: e.target.value })}
-                    maxLength={TAG_MAX}
-                    autoFocus
-                    disabled={op.busy}
-                    className="h-7.5 max-w-[240px] text-[13px]"
-                    onKeyDown={(e) => {
-                      if (e.key === 'Escape') setEdit(null);
-                    }}
-                  />
-                  <Button
-                    type="submit"
-                    size="icon-sm"
-                    variant="primary"
-                    aria-label="Сохранить"
-                    disabled={locked || !edit.value.trim()}
-                  >
-                    <Check className="size-3.5" />
-                  </Button>
+                <form onSubmit={save} className="flex w-full min-w-0 flex-col gap-2.5">
+                  <div className="flex min-w-0 items-center gap-2">
+                    <Input
+                      aria-label="Имя тега"
+                      value={edit.value}
+                      onChange={(e) => setEdit({ ...edit, value: e.target.value })}
+                      maxLength={TAG_MAX}
+                      autoFocus
+                      disabled={op.busy}
+                      className="h-7.5 min-w-0 max-w-[240px] text-[13px]"
+                      onKeyDown={(e) => {
+                        if (e.key === 'Escape') setEdit(null);
+                      }}
+                    />
+                    <Button
+                      type="submit"
+                      size="icon-sm"
+                      variant="primary"
+                      aria-label="Сохранить"
+                      title="Сохранить"
+                      disabled={locked || !edit.value.trim()}
+                    >
+                      <Check className="size-3.5" />
+                    </Button>
+                    <Button
+                      size="icon-sm"
+                      variant="ghost"
+                      aria-label="Отмена"
+                      title="Отмена"
+                      disabled={op.busy}
+                      onClick={() => setEdit(null)}
+                    >
+                      <X className="size-3.5" />
+                    </Button>
+                    <div className="grow" />
+                    <Button
+                      size="icon-sm"
+                      variant="ghost"
+                      aria-label="Удалить тег"
+                      title="Удалить тег"
+                      disabled={locked}
+                      onClick={() => void remove(t)}
+                    >
+                      <Trash2 className="size-3.5 text-bad" />
+                    </Button>
+                  </div>
+                  <div className="flex animate-reveal flex-wrap items-center gap-1">
+                    {TAG_COLORS.map((c) => (
+                      <button
+                        key={c}
+                        type="button"
+                        aria-pressed={edit.color === c}
+                        aria-label={TAG_COLOR_NAME[c]}
+                        title={TAG_COLOR_NAME[c]}
+                        disabled={locked}
+                        onClick={() => setEdit({ ...edit, color: c })}
+                        className="flex size-7 items-center justify-center rounded-full transition-transform duration-150 not-disabled:hover:scale-110 disabled:cursor-not-allowed disabled:opacity-50"
+                      >
+                        <span
+                          className={cn(
+                            'size-4 rounded-full',
+                            TAG_SWATCH[c],
+                            edit.color === c && 'ring-2 ring-offset-2 ring-offset-bg',
+                          )}
+                        />
+                      </button>
+                    ))}
+                  </div>
+                </form>
+              ) : (
+                <>
+                  <div className="flex min-w-0 grow items-center gap-2.5">
+                    <TagChip name={t.name} color={t.color} />
+                    <span className="whitespace-nowrap text-xs text-muted">
+                      {t.servers
+                        ? `${t.servers} ${plural(t.servers, 'сервер', 'сервера', 'серверов')}`
+                        : 'не используется'}
+                    </span>
+                  </div>
                   <Button
                     size="icon-sm"
                     variant="ghost"
-                    aria-label="Отмена"
-                    disabled={op.busy}
-                    onClick={() => setEdit(null)}
+                    aria-label="Изменить тег"
+                    title="Изменить тег"
+                    disabled={locked || edit !== null}
+                    onClick={() => setEdit({ name: t.name, value: t.name, color: t.color })}
                   >
-                    <X className="size-3.5" />
+                    <Pencil className="size-3.5" />
                   </Button>
-                </form>
-              ) : (
-                <div className="flex min-w-0 grow items-center gap-2.5">
-                  <TagChip name={t.name} color={t.color} />
-                  <span className="whitespace-nowrap text-xs text-muted">
-                    {t.servers
-                      ? `${t.servers} ${plural(t.servers, 'сервер', 'сервера', 'серверов')}`
-                      : 'не используется'}
-                  </span>
-                </div>
+                </>
               )}
-              <div className="flex items-center gap-1">
-                {TAG_COLORS.map((c) => (
-                  <button
-                    key={c}
-                    type="button"
-                    aria-pressed={t.color === c}
-                    aria-label={TAG_COLOR_NAME[c]}
-                    title={TAG_COLOR_NAME[c]}
-                    disabled={locked}
-                    onClick={() => t.color !== c && void patch(t.name, { color: c })}
-                    className="flex size-6 items-center justify-center rounded-full transition-transform duration-150 not-disabled:hover:scale-110 disabled:cursor-not-allowed disabled:opacity-50"
-                  >
-                    <span
-                      className={cn(
-                        'size-3.5 rounded-full',
-                        TAG_SWATCH[c],
-                        t.color === c && 'ring-2 ring-offset-2 ring-offset-bg',
-                      )}
-                    />
-                  </button>
-                ))}
-              </div>
-              <div className="flex items-center gap-1">
-                <Button
-                  size="icon-sm"
-                  variant="ghost"
-                  aria-label="Переименовать"
-                  title="Переименовать"
-                  disabled={locked || edit?.name === t.name}
-                  onClick={() => setEdit({ name: t.name, value: t.name })}
-                >
-                  <Pencil className="size-3.5" />
-                </Button>
-                <Button
-                  size="icon-sm"
-                  variant="ghost"
-                  aria-label="Удалить"
-                  title="Удалить"
-                  disabled={locked}
-                  onClick={() => void remove(t)}
-                >
-                  <Trash2 className="size-3.5" />
-                </Button>
-              </div>
             </div>
           ))}
         </div>

@@ -83,7 +83,7 @@ export function SyncPanel() {
         const pct = p.total ? Math.round((p.done / p.total) * 100) : 100;
         return (
           // строки одного вида у всех серверов: имя, счётчик и плашки - первой строкой (имя
-          // обрезается), полоса - второй, "сейчас" и итоги - третьей
+          // обрезается), полоса - второй, "сейчас" и "что сделано" (последние операции) - третьей
           <div key={p.server} className="border-b border-border px-4 py-2.5 last:border-b-0">
             <div className="flex min-w-0 items-center gap-2 text-[13px]">
               <span className="min-w-0 truncate font-medium" title={p.server}>
@@ -112,7 +112,7 @@ export function SyncPanel() {
                     className="shrink-0 text-xs"
                     onClick={() => setOpen(open === p.server ? null : p.server)}
                   >
-                    {open === p.server ? 'Скрыть' : 'Последние итоги'}
+                    {open === p.server ? 'Скрыть' : 'Что сделано'}
                   </Button>
                 )}
               </div>

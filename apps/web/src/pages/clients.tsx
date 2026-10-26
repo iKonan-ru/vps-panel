@@ -80,6 +80,7 @@ export function ClientsPage() {
               key: 'servers',
               label: 'Серверы клиентов',
               icon: <Server className="size-3.5" />,
+              mobile: <Server className="size-4" />,
               title: 'На каких серверах и в каких inbound 3X-UI заводятся клиенты',
               onClick: () => setServersOpen(true),
             },
@@ -87,6 +88,7 @@ export function ClientsPage() {
               key: 'sync',
               label: syncing ? 'Синхронизация\u2026' : 'Синхронизировать',
               icon: <RefreshCw className={syncing ? 'size-3.5 animate-spin' : 'size-3.5'} />,
+              mobile: <RefreshCw className={syncing ? 'size-4 animate-spin' : 'size-4'} />,
               disabled: syncing,
               title: syncing ? undefined : 'Полная синхронизация всех клиентов на всех серверах',
               onClick: () =>

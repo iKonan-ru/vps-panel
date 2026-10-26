@@ -1,3 +1,4 @@
+import { MobileActions } from '@/components/mobile-actions';
 import { Alert } from '@/components/ui/alert';
 import { Button, ButtonLink } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
@@ -118,9 +119,27 @@ export function ServicesPage() {
       <div className="flex flex-wrap items-center gap-3">
         <PageTitle>Сервисы</PageTitle>
         <div className="grow" />
-        <Button size="sm" disabled={isFetching} onClick={() => void refetch()} label="Обновить">
+        <Button
+          size="sm"
+          className="max-md:hidden"
+          disabled={isFetching}
+          onClick={() => void refetch()}
+          label="Обновить"
+        >
           <RefreshCw className={cn('size-3.5', isFetching && 'animate-spin')} />
         </Button>
+        <MobileActions>
+          <Button
+            size="icon"
+            variant="ghost"
+            disabled={isFetching}
+            onClick={() => void refetch()}
+            aria-label="Обновить"
+            title="Обновить"
+          >
+            <RefreshCw className={cn('size-4', isFetching && 'animate-spin')} />
+          </Button>
+        </MobileActions>
       </div>
       {error && <Alert tone="bad">{error.message}</Alert>}
       {!data && !error && <Placeholder>Загрузка&hellip;</Placeholder>}

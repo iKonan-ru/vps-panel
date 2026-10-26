@@ -14,12 +14,15 @@ export interface PageAction {
   onClick: () => void;
   disabled?: boolean;
   title?: string | undefined;
+  /** На узком экране - значком в верхней плашке (этот значок, size-4), а не пунктом меню. */
+  mobile?: ReactNode;
 }
 
 /**
  * Действия страницы-списка (серверы, клиенты) - одинаково на всех таких страницах. Широкий экран:
  * в шапке страницы поиск или фильтры (переключатель блока под шапкой), "Добавить" и прочие
- * кнопки; прочие, что не поместились в ширину, - в меню "Ещё" в конце ряда. Узкий: те же поиск и "Добавить" - значками в верхней плашке, прочее - в её меню.
+ * кнопки; прочие, что не поместились в ширину, - в меню "Ещё" в конце ряда. Узкий: те же поиск и "Добавить" - значками в верхней плашке, между ними - прочие с mobile, остальное - в
+ * её меню.
  */
 export function PageActions({
   find,
@@ -77,14 +80,16 @@ export function PageActions({
       </Button>
     );
   };
-  const items: MenuItem[] = more.map((a) => ({
+  const toItem = (a: PageAction): MenuItem => ({
     key: a.key,
     label: a.label,
     icon: a.icon,
     onSelect: a.onClick,
     ...(a.disabled !== undefined ? { disabled: a.disabled } : {}),
     title: a.title,
-  }));
+  });
+  const items = more.map(toItem);
+  const mobileMenu = more.filter((a) => !a.mobile).map(toItem);
   // поиск и "Добавить" - в ряду всегда; кнопка меню (h-7.5) и отступ gap-2
   const fixed = (find ? 1 : 0) + 1;
   const { row, measure, fit, full } = useFit(fixed + more.length, 30 + 8, fixed);
@@ -137,8 +142,23 @@ export function PageActions({
       </div>
       <MobileActions>
         {findButton(true)}
+        {more
+          .filter((a) => a.mobile)
+          .map((a) => (
+            <Button
+              key={a.key}
+              size="icon"
+              variant="ghost"
+              disabled={a.disabled}
+              aria-label={a.label}
+              title={a.title ?? a.label}
+              onClick={a.onClick}
+            >
+              {a.mobile}
+            </Button>
+          ))}
         {addButton(true)}
-        {items.length > 0 && <Menu items={items} size="md" variant="ghost" />}
+        {mobileMenu.length > 0 && <Menu items={mobileMenu} size="md" variant="ghost" />}
       </MobileActions>
     </>
   );
