@@ -1,3 +1,4 @@
+import { OnlineOnly } from '@/components/online-only';
 import { Alert } from '@/components/ui/alert';
 import { Button } from '@/components/ui/button';
 import { Checkbox } from '@/components/ui/checkbox';
@@ -46,13 +47,16 @@ export function XuiClients({
   });
   const [q, setQ] = useState('');
   const [inb, setInb] = useState('all');
+  const [onlyOnline, setOnlyOnline] = useState(false);
   const [edit, setEdit] = useState<XuiClientRow | null>(null);
   const op = useAction();
   const noToken = error instanceof ApiError && error.code === 'no-token';
   const byId = new Map((inbounds ?? []).map((i) => [i.id, i]));
   const needle = q.trim().toLowerCase();
+  const isOn = (c: XuiClientRow) => c.enable && c.online;
   const rows = (data ?? []).filter(
     (c) =>
+      (!onlyOnline || isOn(c)) &&
       (inb === 'all' || c.inboundIds.includes(Number(inb))) &&
       (!needle || `${c.email} ${c.comment} ${c.panel?.name ?? ''}`.toLowerCase().includes(needle)),
   );
@@ -175,11 +179,22 @@ export function XuiClients({
             value={q}
             onChange={(e) => setQ(e.target.value)}
           />
+          <div className="sm:ml-auto">
+            <OnlineOnly
+              on={onlyOnline}
+              onChange={setOnlyOnline}
+              count={(data ?? []).filter(isOn).length}
+            />
+          </div>
         </div>
       )}
       {data && rows.length === 0 && (
         <div className="px-4 py-3 text-[13px] text-muted">
-          {data.length ? 'Ничего не найдено' : 'Пользователей нет'}
+          {!data.length
+            ? 'Пользователей нет'
+            : onlyOnline && !needle && inb === 'all'
+              ? 'Сейчас в сети никого'
+              : 'Ничего не найдено'}
         </div>
       )}
       {paged.items.length > 0 && (

@@ -122,11 +122,12 @@ export function clientView(d: GClientDetail, rules: WatchRuleView[], c: Ctx): Sc
   const on = rules.filter((r) => r.enabled).length;
   if (rules.length) lines.push(`Уведомления о подключении: ${on} из ${rules.length}`);
   if (d.syncing) lines.push(`${I.run} синхронизация выполняется`);
+  // личная страница - кнопкой-ссылкой (Telegram открывает только https), иначе - ссылки в чат
+  const page: Btn = d.subscription.page.startsWith('https://')
+    ? { text: 'Личная страница', url: d.subscription.page }
+    : { text: 'Ссылки', data: cb('gk', cl.id) };
   const kb: Btn[][] = [
-    [
-      { text: 'Ссылки', data: cb('gk', cl.id) },
-      { text: 'Устройства', data: cb('gd', cl.id) },
-    ],
+    [page, { text: 'Устройства', data: cb('gd', cl.id) }],
     [
       { text: 'Сейчас на связи', data: cb('gn', cl.id) },
       { text: 'Уведомления', data: cb('gw', cl.id) },

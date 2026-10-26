@@ -1,4 +1,4 @@
-import type { GLiveBinding, GLiveServer, GService } from '@vps/protocol';
+import type { GClientPresence, GLiveBinding, GLiveServer, GService } from '@vps/protocol';
 import type { AgentRegistry } from '../agents/registry.js';
 import type { Db } from '../db/index.js';
 import type { gclientBindings } from '../db/schema.js';
@@ -79,4 +79,19 @@ export async function clientLive(
     }
   }
   return { servers: [...snaps.values()].map((s) => s.info), bindings };
+}
+
+/** На связи ли клиент по живой статистике его привязок (плашка в списке клиентов). */
+export function presenceOf(
+  rows: { id: string; service: string }[],
+  bindings: GLiveBinding[],
+): GClientPresence {
+  const service = new Map(rows.map((b) => [b.id, b.service as GService]));
+  const on = bindings.filter((l) => l.state === 'online');
+  const seen = bindings.flatMap((l) => (l.lastSeen ? [l.lastSeen] : [])).sort();
+  return {
+    online: on.length > 0,
+    services: [...new Set(on.flatMap((l) => service.get(l.bindingId) ?? []))],
+    lastSeen: seen.at(-1) ?? null,
+  };
 }

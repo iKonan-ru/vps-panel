@@ -1,4 +1,5 @@
 import { ActionPanel } from '@/components/action-output';
+import { OnlineOnly } from '@/components/online-only';
 import { useOwners } from '@/components/owner-link';
 import { MetricCard } from '@/components/server/metric-card';
 import { type MtUser, mtApi } from '@/components/server/mtproxyl/model';
@@ -71,6 +72,7 @@ export function MtproxylTab({ s }: { s: ServerDetail }) {
   const [openLabel, setOpenLabel] = useState<string | null>(null);
   const [addOpen, setAddOpen] = useState(false);
   const [engineOpen, setEngineOpen] = useState(false);
+  const [onlyOnline, setOnlyOnline] = useState(false);
   // через поддомен панели, если агент умеет туннель; иначе прямой адрес
   const panelUrl =
     s.panelLinks.mtproxyl ?? s.inventory?.services.find((sv) => sv.kind === 'mtproxyl')?.panelUrl;
@@ -154,6 +156,11 @@ export function MtproxylTab({ s }: { s: ServerDetail }) {
     | { percent: number; ok: number; total: number; checkedAt: string; error?: string }
     | undefined;
   const trafficByUser = new Map((data.traffic?.users ?? []).map((u) => [u.user, u]));
+  const users = data.secrets ?? [];
+  const isOn = (u: (typeof users)[number]) =>
+    u.enabled && (trafficByUser.get(u.label)?.connections ?? 0) > 0;
+  const onlineUsers = users.filter(isOn);
+  const shownUsers = onlyOnline ? onlineUsers : users;
   const openUser = data.secrets?.find((u) => u.label === openLabel);
   const panelInstalled = Boolean(panelUrl) || /running|active|работает/i.test(data.panel);
   const proxyNote = `v${st?.version ?? '?'}, режим ${st?.mode ?? '?'}${
@@ -338,33 +345,43 @@ export function MtproxylTab({ s }: { s: ServerDetail }) {
         }
       >
         {/* компактный список: точка состояния и имя; подробности и управление - в окне */}
-        {(data.secrets ?? []).length === 0 ? (
+        {users.length === 0 ? (
           <div className="px-4 py-4 text-center text-[13px] text-muted">Пользователей нет</div>
         ) : (
-          <div className="grid grid-cols-2 gap-2 p-3 sm:grid-cols-3 lg:grid-cols-4">
-            {(data.secrets ?? []).map((u) => {
-              const panel = owner('mtproxyl', u.label);
-              const online = (trafficByUser.get(u.label)?.connections ?? 0) > 0;
-              return (
-                <button
-                  key={u.label}
-                  type="button"
-                  title={`${!u.enabled ? 'выключен' : online ? 'в сети' : 'включён, не в сети'}${panel ? `, клиент панели ${panel.client}` : ''}`}
-                  onClick={() => setOpenLabel(u.label)}
-                  className="flex min-w-0 items-center gap-2 rounded-lg border border-border bg-surface-2 px-3 py-2 text-left hover:border-accent"
-                >
-                  <StatusDot enabled={u.enabled} online={online} />
-                  <span className="min-w-0 grow truncate font-mono text-[13px]">{u.label}</span>
-                  {panel && (
-                    <UserRound
-                      className="size-3.5 shrink-0 text-accent"
-                      aria-label={`клиент панели ${panel.client}`}
-                    />
-                  )}
-                </button>
-              );
-            })}
-          </div>
+          <>
+            <div className="flex justify-end px-4 pt-3">
+              <OnlineOnly on={onlyOnline} onChange={setOnlyOnline} count={onlineUsers.length} />
+            </div>
+            {shownUsers.length === 0 && (
+              <div className="px-4 py-4 text-center text-[13px] text-muted">
+                Сейчас в сети никого
+              </div>
+            )}
+            <div className="grid grid-cols-2 gap-2 p-3 sm:grid-cols-3 lg:grid-cols-4 empty:hidden">
+              {shownUsers.map((u) => {
+                const panel = owner('mtproxyl', u.label);
+                const online = isOn(u);
+                return (
+                  <button
+                    key={u.label}
+                    type="button"
+                    title={`${!u.enabled ? 'выключен' : online ? 'в сети' : 'включён, не в сети'}${panel ? `, клиент панели ${panel.client}` : ''}`}
+                    onClick={() => setOpenLabel(u.label)}
+                    className="flex min-w-0 items-center gap-2 rounded-lg border border-border bg-surface-2 px-3 py-2 text-left hover:border-accent"
+                  >
+                    <StatusDot enabled={u.enabled} online={online} />
+                    <span className="min-w-0 grow truncate font-mono text-[13px]">{u.label}</span>
+                    {panel && (
+                      <UserRound
+                        className="size-3.5 shrink-0 text-accent"
+                        aria-label={`клиент панели ${panel.client}`}
+                      />
+                    )}
+                  </button>
+                );
+              })}
+            </div>
+          </>
         )}
       </Section>
 

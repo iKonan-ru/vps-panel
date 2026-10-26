@@ -6,7 +6,9 @@ import {
   type GClientAccess,
   type GClientDetail,
   type GClientLive,
+  type GClientPresence,
   type GClientRow,
+  type GClientsPresence,
   type GOwner,
   type GServer,
   type GService,
@@ -21,7 +23,7 @@ import type { Env } from '../config.js';
 import type { Db } from '../db/index.js';
 import { gclientBindings, gclientDevices, gclients, openfluxDocs, servers } from '../db/schema.js';
 import { extsByClient } from '../lib/browser-ext.js';
-import { clientLive } from '../lib/client-live.js';
+import { clientLive, presenceOf } from '../lib/client-live.js';
 import type { ClientStatsHub } from '../lib/client-stats.js';
 import { extensionVersion } from '../lib/extension.js';
 import { clientSlug, newClientToken, newXuiSubId } from '../lib/gclient-names.js';
@@ -229,6 +231,26 @@ export async function gclientRoutes(
           registry.isOnline(sid),
         ).get(c.id) ?? [],
     };
+  });
+
+  /**
+   * Кто из клиентов на связи (плашки списка клиентов): из тех же снимков серверов, что карточка
+   * клиента, - снимок сервера один на всех клиентов, агента спрашивают не чаще раза в 2,5 с.
+   */
+  app.get('/api/gclients/presence', async (_req, reply): Promise<GClientsPresence> => {
+    const all = db.select().from(gclientBindings).all();
+    const out: Record<string, GClientPresence> = {};
+    for (const c of db.select().from(gclients).where(isNull(gclients.deletedAt)).all()) {
+      const rows = all.filter((b) => b.clientId === c.id);
+      if (!c.enabled || !rows.length) {
+        out[c.id] = { online: false, services: [], lastSeen: null };
+        continue;
+      }
+      const live = await clientLive({ db, box, hub: liveHub }, c, rows);
+      out[c.id] = presenceOf(rows, live.bindings);
+    }
+    reply.header('Cache-Control', 'no-store');
+    return { at: new Date().toISOString(), clients: out };
   });
 
   /**

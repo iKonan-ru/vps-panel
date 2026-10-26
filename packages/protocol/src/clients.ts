@@ -250,6 +250,22 @@ export interface GLiveServer {
   error: string;
 }
 
+/** Клиент на связи - для списка клиентов: по всем его привязкам. */
+export interface GClientPresence {
+  /** на связи хотя бы одной привязкой */
+  online: boolean;
+  /** сервисы, которыми на связи сейчас */
+  services: GService[];
+  /** последняя активность по всем привязкам, ISO; null - неизвестна */
+  lastSeen: string | null;
+}
+
+/** GET /api/gclients/presence: id клиента - на связи ли. */
+export interface GClientsPresence {
+  at: string;
+  clients: Record<string, GClientPresence>;
+}
+
 /** GET /api/gclients/:id/live */
 export interface GClientLive {
   at: string;

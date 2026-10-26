@@ -1,3 +1,4 @@
+import { OnlineOnly } from '@/components/online-only';
 import {
   type AwgClient,
   type AwgInstance,
@@ -55,6 +56,7 @@ export function Instance({
   );
   const [showParams, setShowParams] = useState(false);
   const [changing, setChanging] = useState(false);
+  const [onlyOnline, setOnlyOnline] = useState(false);
   const legacy = inst.container === 'amnezia-awg';
   const current = inst.version.startsWith('3') ? '3.1' : inst.version === '2.0' ? '2.0' : '1.0';
   const [profile, setProfile] = useState(legacy ? '1.0' : current);
@@ -114,46 +116,56 @@ export function Instance({
           {inst.clients.length === 0 ? (
             <div className="px-4 py-4 text-center text-[13px] text-muted">Клиентов нет</div>
           ) : (
-            <div className="grid grid-cols-2 gap-2 p-3 sm:grid-cols-3 lg:grid-cols-4">
-              {inst.clients.map((c) => {
-                const on = isOnline(c);
-                const panel = owner(c.publicKey);
-                const state =
-                  c.disabled || !c.inConfig ? 'выключен' : on ? 'на связи' : 'не на связи';
-                return (
-                  <button
-                    key={c.publicKey}
-                    type="button"
-                    title={`${state}${panel ? `, клиент панели ${panel.client}` : ''}`}
-                    onClick={() => onClient(c)}
-                    className={cn(
-                      'flex min-w-0 items-center gap-2 rounded-lg border border-border bg-surface-2 px-3 py-2 text-left hover:border-accent',
-                      (c.disabled || !c.inConfig) && 'opacity-60',
-                    )}
-                  >
-                    <span
-                      aria-label={state}
-                      className={cn('size-2.5 shrink-0 rounded-full', on ? 'bg-ok' : 'bg-muted')}
-                    />
-                    {/* одна обрезка на двоих: не хватает места - первым сокращается устройство */}
-                    <span className="min-w-0 truncate">
-                      <span className="font-mono text-[13px]">{clientTitle(c)}</span>
-                      {deviceOf(c.device) && (
-                        <span className="ml-1.5 text-xs text-muted">
-                          {deviceOf(c.device)?.title}
-                        </span>
+            <>
+              <div className="flex justify-end px-4 pt-3">
+                <OnlineOnly on={onlyOnline} onChange={setOnlyOnline} count={onlineCount} />
+              </div>
+              {onlyOnline && onlineCount === 0 && (
+                <div className="px-4 py-4 text-center text-[13px] text-muted">
+                  Сейчас в сети никого
+                </div>
+              )}
+              <div className="grid grid-cols-2 gap-2 p-3 sm:grid-cols-3 lg:grid-cols-4 empty:hidden">
+                {(onlyOnline ? inst.clients.filter(isOnline) : inst.clients).map((c) => {
+                  const on = isOnline(c);
+                  const panel = owner(c.publicKey);
+                  const state =
+                    c.disabled || !c.inConfig ? 'выключен' : on ? 'на связи' : 'не на связи';
+                  return (
+                    <button
+                      key={c.publicKey}
+                      type="button"
+                      title={`${state}${panel ? `, клиент панели ${panel.client}` : ''}`}
+                      onClick={() => onClient(c)}
+                      className={cn(
+                        'flex min-w-0 items-center gap-2 rounded-lg border border-border bg-surface-2 px-3 py-2 text-left hover:border-accent',
+                        (c.disabled || !c.inConfig) && 'opacity-60',
                       )}
-                    </span>
-                    {panel && (
-                      <UserRound
-                        className="size-3.5 shrink-0 text-accent"
-                        aria-label={`клиент панели ${panel.client}`}
+                    >
+                      <span
+                        aria-label={state}
+                        className={cn('size-2.5 shrink-0 rounded-full', on ? 'bg-ok' : 'bg-muted')}
                       />
-                    )}
-                  </button>
-                );
-              })}
-            </div>
+                      {/* одна обрезка на двоих: не хватает места - первым сокращается устройство */}
+                      <span className="min-w-0 truncate">
+                        <span className="font-mono text-[13px]">{clientTitle(c)}</span>
+                        {deviceOf(c.device) && (
+                          <span className="ml-1.5 text-xs text-muted">
+                            {deviceOf(c.device)?.title}
+                          </span>
+                        )}
+                      </span>
+                      {panel && (
+                        <UserRound
+                          className="size-3.5 shrink-0 text-accent"
+                          aria-label={`клиент панели ${panel.client}`}
+                        />
+                      )}
+                    </button>
+                  );
+                })}
+              </div>
+            </>
           )}
           <div className="border-t border-border px-4 py-2.5">
             <div className="flex items-center justify-between gap-3">

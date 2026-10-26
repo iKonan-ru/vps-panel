@@ -24,8 +24,16 @@ import { api } from '@/lib/api';
 import { useAction } from '@/lib/use-action';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { Link, useNavigate } from '@tanstack/react-router';
-import type { GClientAccess, GClientRow, GServer, XuiOwnInbound } from '@vps/protocol';
-import { ListChecks, RefreshCw, Server, SlidersHorizontal } from 'lucide-react';
+import {
+  type GClientAccess,
+  type GClientPresence,
+  type GClientRow,
+  type GClientsPresence,
+  type GServer,
+  type XuiOwnInbound,
+  serviceByBinding,
+} from '@vps/protocol';
+import { ListChecks, LoaderCircle, RefreshCw, Server, SlidersHorizontal } from 'lucide-react';
 import { type FormEvent, useState } from 'react';
 
 /**
@@ -43,6 +51,12 @@ export function ClientsPage() {
   const servers = useQuery({
     queryKey: ['gclient-servers'],
     queryFn: () => api<GServer[]>('/api/gclients/servers'),
+  });
+  // на связи ли - отдельным запросом: он спрашивает серверы и приходит позже списка
+  const presence = useQuery({
+    queryKey: ['gclients-presence'],
+    queryFn: () => api<GClientsPresence>('/api/gclients/presence'),
+    refetchInterval: 15_000,
   });
   const [view, setView] = useClientsView();
   // спрятанный фильтр не должен молча прятать клиентов: включённый открывает блок сразу
@@ -139,9 +153,13 @@ export function ClientsPage() {
                       выключен
                     </Chip>
                   )}
+                  <Presence
+                    p={c.enabled ? presence.data?.clients[c.id] : undefined}
+                    loading={c.enabled && presence.isPending}
+                  />
                   {c.limited && (
                     <SlidersHorizontal
-                      className="ml-auto size-3.5 shrink-0 text-accent"
+                      className="size-3.5 shrink-0 text-accent"
                       role="img"
                       aria-label="Выборочный доступ"
                     >
@@ -177,6 +195,27 @@ export function ClientsPage() {
         />
       </Dialog>
     </>
+  );
+}
+
+/**
+ * На связи ли клиент (у правого края строки имени): пока состояние грузится - индикатор, на
+ * связи - зелёная плашка, сервисы - в подсказке; не на связи - ничего.
+ */
+function Presence({ p, loading }: { p: GClientPresence | undefined; loading: boolean }) {
+  if (loading)
+    return (
+      <LoaderCircle
+        className="ml-auto size-3.5 shrink-0 animate-spin text-muted"
+        aria-label="Проверка связи"
+      />
+    );
+  if (!p?.online) return <span className="ml-auto" />;
+  const services = p.services.map((s) => serviceByBinding(s)?.clientTitle ?? s).join(', ');
+  return (
+    <Chip tone="ok" dot pulse className="ml-auto" title={`На связи: ${services}`}>
+      на связи
+    </Chip>
   );
 }
 

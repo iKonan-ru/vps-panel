@@ -285,8 +285,15 @@ export function XuiTab({ s }: { s: ServerDetail }) {
         }
       />
 
-      <XuiInbounds serverId={s.id} disabled={op.busy || lock.busy} reason={lock.reason} />
-      <XuiCascades serverId={s.id} disabled={op.busy || lock.busy} reason={lock.reason} />
+      {/* широкий экран: Inbound и Каскад - рядом, каждый со своей панелью хода действия */}
+      <div className="grid items-start gap-5 2xl:grid-cols-2">
+        <div className="flex min-w-0 flex-col gap-5">
+          <XuiInbounds serverId={s.id} disabled={op.busy || lock.busy} reason={lock.reason} />
+        </div>
+        <div className="flex min-w-0 flex-col gap-5">
+          <XuiCascades serverId={s.id} disabled={op.busy || lock.busy} reason={lock.reason} />
+        </div>
+      </div>
       <XuiClients
         serverId={s.id}
         inbounds={inboundList.data}

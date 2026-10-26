@@ -10,6 +10,7 @@ import { Bot, type BotTelegram, PRESS_OPS } from '../src/bot/index.js';
 import { notifyButtons } from '../src/bot/notify-buttons.js';
 import { SCREEN_OPS } from '../src/bot/screens.js';
 import { BotStore } from '../src/bot/store.js';
+import { clientView } from '../src/bot/views/clients.js';
 import { plural, tail } from '../src/bot/views/common.js';
 import { findServers, summaryView } from '../src/bot/views/menu.js';
 import { problems, serversView } from '../src/bot/views/servers.js';
@@ -229,6 +230,22 @@ describe('bot codec and views', () => {
     expect(() => cb('sv', 'x'.repeat(70))).toThrow();
     expect(Buffer.byteLength(cb('ac', 'x'.repeat(22), 's'))).toBeLessThanOrEqual(CB_MAX);
     expect(parseCb('lg:abc:2')).toEqual({ op: 'lg', args: ['abc', '2'] });
+  });
+
+  it('client card: personal page as a link button when it is https', () => {
+    const d = (page: string) =>
+      ({
+        client: { id: 'c1', name: 'Анна', enabled: true, access: null, note: '' },
+        syncing: false,
+        subscription: { url: `${page}/sub/t`, page: `${page}/c/t`, temporary: false },
+        devices: [],
+        bindings: [],
+      }) as never;
+    const ctx = { now: Date.now(), panelUrl: 'https://panel.example.com', ref: (v: string) => v };
+    const https = JSON.stringify(clientView(d('https://sub.example.com'), [], ctx).kb);
+    expect(https).toContain('"url":"https://sub.example.com/c/t"');
+    expect(https).not.toContain('gk:c1');
+    expect(JSON.stringify(clientView(d('http://203.0.113.5'), [], ctx).kb)).toContain('gk:c1');
   });
 
   it('refs keep values and reuse keys', () => {

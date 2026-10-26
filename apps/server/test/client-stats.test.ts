@@ -267,9 +267,46 @@ describe('GET /api/gclients/:id/live', () => {
       ).json() as import('@vps/protocol').GClientLive;
       expect(one.servers.map((s) => s.serverId)).toEqual(['s2']);
       expect(one.bindings.map((b) => b.bindingId)).toEqual(['b3']);
+      // список клиентов: на связи ли - по всем привязкам
+      const pres = await built.app.inject({
+        method: 'GET',
+        url: '/api/gclients/presence',
+        headers: { cookie },
+      });
+      expect(pres.statusCode).toBe(200);
+      expect((pres.json() as import('@vps/protocol').GClientsPresence).clients.c1).toEqual({
+        online: false,
+        services: [],
+        lastSeen: null,
+      });
     } finally {
       await built.app.close();
       rmSync(dir, { recursive: true, force: true });
     }
+  });
+});
+
+describe('presenceOf', () => {
+  it('на связи - хотя бы одной привязкой; сервисы и последняя активность', async () => {
+    const { presenceOf } = await import('../src/lib/client-live.js');
+    const l = (bindingId: string, state: string, lastSeen: string | null) =>
+      ({ bindingId, state, lastSeen }) as never;
+    const rows = [
+      { id: 'b1', service: 'xui' },
+      { id: 'b2', service: 'awg' },
+      { id: 'b3', service: 'awg' },
+    ];
+    expect(
+      presenceOf(rows, [
+        l('b1', 'idle', '2026-10-26T09:00:00Z'),
+        l('b2', 'online', '2026-10-26T10:00:00Z'),
+        l('b3', 'online', null),
+      ]),
+    ).toEqual({ online: true, services: ['awg'], lastSeen: '2026-10-26T10:00:00Z' });
+    expect(presenceOf(rows, [l('b1', 'idle', '2026-10-26T09:00:00Z')])).toEqual({
+      online: false,
+      services: [],
+      lastSeen: '2026-10-26T09:00:00Z',
+    });
   });
 });
