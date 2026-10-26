@@ -1,142 +1,37 @@
-import {
-  type ActionListRow,
-  type BackupInfo,
-  type BaselinePlan,
-  type BotAdmin,
-  type GClientRow,
-  type ServerDetail,
-  type ServerReach,
-  type ServerSummary,
-  type ServiceUpdate,
-  type Tag,
-  type TgHealthView,
-  actionTitle,
+import type {
+  BackupInfo,
+  BaselinePlan,
+  ServerDetail,
+  ServerReach,
+  ServerSummary,
+  ServiceUpdate,
+  Tag,
 } from '@vps/protocol';
-import { daysToPayment } from '../lib/billing.js';
-import { esc, tgSpan, tgWhen } from '../lib/telegram.js';
-import { cb } from './codec.js';
+import { daysToPayment } from '../../lib/billing.js';
+import { esc, tgSpan, tgWhen } from '../../lib/telegram.js';
+import { cb } from '../codec.js';
+import { UPDATE } from '../notify-buttons.js';
+import {
+  type Btn,
+  type Ctx,
+  DASH,
+  I,
+  NB,
+  SEP,
+  type Screen,
+  ago,
+  country,
+  cut,
+  flag,
+  grid,
+  num,
+  panelLink,
+  q,
+  tail,
+  toServer,
+} from './common.js';
 
-/**
- * Экраны бота: чистые функции "данные API - текст и кнопки". Тексты - HTML Telegram, всё
- * пришедшее из данных - через esc(). В исходниках только клавиатурные символы: значки, тире и
- * кавычки - кодами.
- */
-
-export interface Btn {
-  text: string;
-  data?: string;
-  url?: string;
-  /** кнопка копирования текста (до 256 символов) */
-  copy?: string;
-}
-export interface Screen {
-  text: string;
-  kb: Btn[][];
-}
-export interface Ctx {
-  now: number;
-  /** адрес панели для кнопок "Открыть в панели" (только https) */
-  panelUrl: string;
-  /** короткая ссылка на значение, которое не помещается в callback_data */
-  ref: (value: string) => string;
-}
-
-export const NB = '\u00a0';
-export const DASH = '\u00a0\u2014 ';
-export const SEP = ' \u00b7 ';
-export const I = {
-  ok: '\u{1F7E2}',
-  bad: '\u{1F534}',
-  warn: '\u{1F7E1}',
-  none: '\u26aa',
-  done: '\u2705',
-  fail: '\u274c',
-  run: '\u23f3',
-  back: '\u2190',
-  prev: '\u2039',
-  next: '\u203a',
-  user: '\u{1F464}',
-};
-export const q = (s: string) => `\u00ab${s}\u00bb`;
-
-/** Кнопки постоянного меню: их текст приходит сообщением. */
-export const MENU = {
-  summary: 'Сводка',
-  servers: 'Серверы',
-  clients: 'Клиенты',
-  log: 'Журнал',
-  more: 'Ещё',
-};
-export const MENU_KEYBOARD = {
-  keyboard: [
-    [{ text: MENU.summary }, { text: MENU.servers }],
-    [{ text: MENU.clients }, { text: MENU.log }, { text: MENU.more }],
-  ],
-  is_persistent: true,
-  resize_keyboard: true,
-};
-
-/** Команды бота в меню слева от поля ввода (только в чате администратора). */
-export const COMMANDS = [
-  { command: 'menu', description: 'Сводка' },
-  { command: 'servers', description: 'Серверы' },
-  { command: 'clients', description: 'Клиенты' },
-  { command: 'log', description: 'Журнал действий' },
-  { command: 'settings', description: 'Управление через бота' },
-];
-
-export function plural(n: number, one: string, few: string, many: string): string {
-  const a = Math.abs(n) % 100;
-  const b = a % 10;
-  if (a > 10 && a < 20) return many;
-  if (b === 1) return one;
-  if (b >= 2 && b <= 4) return few;
-  return many;
-}
-
-/** Ровно 1,2 ГБ: дробь через запятую, без лишнего нуля. */
-function num(v: number, digits = 1): string {
-  return (Math.round(v * 10 ** digits) / 10 ** digits).toString().replace('.', ',');
-}
-
-/** "5 мин назад"; давнее - временем по Москве. */
-export function ago(iso: string | null, now: number): string {
-  if (!iso) return '';
-  const ms = now - Date.parse(iso);
-  if (Number.isNaN(ms)) return '';
-  if (ms < 60_000) return 'только что';
-  if (ms < 24 * 3600_000) return `${tgSpan(ms)} назад`;
-  return tgWhen(iso, now);
-}
-
-function cut(s: string, max: number): string {
-  return s.length > max ? `${s.slice(0, max - 1)}\u2026` : s;
-}
-
-function flag(code: string): string {
-  if (!/^[A-Za-z]{2}$/.test(code)) return '';
-  const up = code.toUpperCase();
-  return String.fromCodePoint(0x1f1e6 + up.charCodeAt(0) - 65, 0x1f1e6 + up.charCodeAt(1) - 65);
-}
-
-function country(code: string): string {
-  if (!/^[A-Za-z]{2}$/.test(code)) return code;
-  try {
-    return new Intl.DisplayNames(['ru'], { type: 'region' }).of(code.toUpperCase()) ?? code;
-  } catch {
-    return code;
-  }
-}
-
-/** Кнопка "Открыть в панели": Telegram принимает только настоящие адреса, локальные - нет. */
-function panelLink(c: Ctx, path: string): Btn[] {
-  if (!c.panelUrl.startsWith('https://')) return [];
-  try {
-    return [{ text: 'Открыть в панели', url: new URL(path, c.panelUrl).href }];
-  } catch {
-    return [];
-  }
-}
+/** Экраны серверов: список, карточка, доступность, обслуживание, безопасность, Docker, копии. */
 
 // ---- состояние серверов ----
 
@@ -151,7 +46,7 @@ export function reachLevel(percent: number | null): Level {
 }
 const levelIcon: Record<Level, string> = { ok: I.ok, partial: I.warn, bad: I.bad, none: I.none };
 
-interface Problem {
+export interface Problem {
   bad: boolean;
   text: string;
 }
@@ -191,7 +86,7 @@ export function problems(s: ServerSummary, reach: ServerReach | null | undefined
 }
 
 /** Значок сервера в списках: не в сети - красный, есть проблемы - жёлтый. */
-function serverIcon(s: ServerSummary, list: Problem[]): string {
+export function serverIcon(s: ServerSummary, list: Problem[]): string {
   if (s.status === 'offline') return I.bad;
   if (s.status === 'no-agent') return I.none;
   if (s.status === 'rebooting' || list.length) return I.warn;
@@ -209,114 +104,14 @@ function rttOf(r: ServerReach | null | undefined): number | null {
   return v.length % 2 ? (v[h] ?? null) : ((v[h - 1] ?? 0) + (v[h] ?? 0)) / 2;
 }
 
-function paymentWhen(days: number): string {
+export function paymentWhen(days: number): string {
   if (days === 0) return 'сегодня';
   if (days === 1) return 'завтра';
   return `через ${days}${NB}дн.`;
 }
 
-function money(price: number | null, currency: string): string {
+export function money(price: number | null, currency: string): string {
   return price ? `${num(price, 2)}${NB}${esc(currency)}` : '';
-}
-
-// ---- сводка ----
-
-export interface SummaryData {
-  version: string;
-  /** новая версия панели в её канале */
-  newer: string | null;
-  servers: ServerSummary[];
-  reach: Record<string, ServerReach>;
-  updates: Record<string, ServiceUpdate[]>;
-  clients: GClientRow[];
-  running: ActionListRow[];
-}
-
-export function summaryView(d: SummaryData, c: Ctx): Screen {
-  const lines: string[] = [
-    `<b>VPS Panel ${esc(d.version)}</b>${d.newer ? `${SEP}доступна ${esc(d.newer)}` : ''}`,
-    '',
-  ];
-  const by = (st: ServerSummary['status']) => d.servers.filter((s) => s.status === st).length;
-  const online = by('online');
-  const offline = by('offline');
-  const counts = [`${online} в сети`];
-  if (offline) counts.push(`${offline} не в сети`);
-  if (by('rebooting')) counts.push(`${by('rebooting')} перезагружается`);
-  if (by('no-agent')) counts.push(`${by('no-agent')} без агента`);
-  lines.push(d.servers.length ? `<b>Серверы:</b> ${counts.join(', ')}` : '<b>Серверов нет</b>');
-
-  // не в сети - первыми, остальное - по имени (как в списке серверов)
-  const troubled = d.servers
-    .map((s) => ({ s, list: problems(s, d.reach[s.id], c.now) }))
-    .filter((x) => x.list.length > 0)
-    .map((x) => ({ ...x, icon: serverIcon(x.s, x.list) }))
-    .sort((a, b) => Number(b.s.status === 'offline') - Number(a.s.status === 'offline'));
-  for (const { s, list, icon } of troubled.slice(0, 8)) {
-    const more = list.length > 1 ? ` (+${list.length - 1})` : '';
-    lines.push(`${icon} ${esc(s.name)}${DASH}${esc(list[0]?.text ?? '')}${more}`);
-  }
-  if (troubled.length > 8) lines.push(`и ещё ${troubled.length - 8}`);
-  if (d.servers.length && !troubled.length) lines.push('Проблем нет');
-
-  // обновления: сервисы по названию, пакеты безопасности, агенты
-  const upd = new Map<string, number>();
-  const add = (k: string) => upd.set(k, (upd.get(k) ?? 0) + 1);
-  for (const s of d.servers) {
-    for (const u of d.updates[s.id] ?? []) add(u.title);
-    if ((s.audit?.pendingUpdates ?? 0) > 0) add('пакеты безопасности');
-    if (s.agentUpdateAvailable && !s.agentUpdating) add('агент');
-  }
-  if (upd.size)
-    lines.push(
-      `Обновления: ${[...upd]
-        .map(([k, n]) => `${esc(k)} на ${n} ${plural(n, 'сервере', 'серверах', 'серверах')}`)
-        .join(', ')}`,
-    );
-  const pays = d.servers
-    .filter((s) => s.hosting.nextPaymentAt)
-    .map((s) => ({ s, days: daysToPayment(s.hosting.nextPaymentAt ?? '', c.now) }))
-    .filter((x) => x.days >= 0 && x.days <= 3)
-    .sort((a, b) => a.days - b.days);
-  for (const { s, days } of pays) {
-    const price = money(s.hosting.price, s.hosting.currency);
-    lines.push(`Оплата: ${esc(s.name)} ${paymentWhen(days)}${price ? `, ${price}` : ''}`);
-  }
-
-  if (d.clients.length) {
-    const errors = d.clients.filter((x) => x.states.error > 0).length;
-    lines.push(
-      '',
-      `<b>Клиенты:</b> ${d.clients.length}${errors ? `, ошибки синхронизации${DASH}${errors}` : ''}`,
-    );
-  }
-  if (d.running.length) {
-    const names = new Map(d.servers.map((s) => [s.id, s.name]));
-    const list = d.running.slice(0, 3).map((a) => {
-      const sv = a.serverId ? names.get(a.serverId) : null;
-      return `${esc(actionTitle(a.kind, a.params))}${sv ? ` (${esc(sv)})` : ''}`;
-    });
-    lines.push(`<b>Сейчас:</b> ${list.join('; ')}${d.running.length > 3 ? ' \u2026' : ''}`);
-  }
-
-  const kb: Btn[][] = [];
-  const shown = troubled.slice(0, 6);
-  for (let i = 0; i < shown.length; i += 3)
-    kb.push(
-      shown.slice(i, i + 3).map(({ s, icon }) => ({
-        text: `${icon} ${cut(s.name, 18)}`,
-        data: cb('sv', s.id),
-      })),
-    );
-  kb.push([
-    { text: 'Серверы', data: cb('sl', '-', 0) },
-    { text: 'Клиенты', data: cb('gl', 0, 0) },
-  ]);
-  kb.push([
-    { text: 'Журнал', data: cb('lg', '-', 0) },
-    { text: 'Обновить', data: cb('m') },
-  ]);
-  return { text: lines.join('\n'), kb };
 }
 
 // ---- список серверов ----
@@ -354,8 +149,12 @@ export function serversView(
 
   const tagRef = f.tag ? c.ref(f.tag) : '-';
   const kb: Btn[][] = [];
-  for (let i = 0; i < items.length; i += 2)
-    kb.push(items.slice(i, i + 2).map((s) => ({ text: cut(s.name, 24), data: cb('sv', s.id) })));
+  kb.push(
+    ...grid(
+      items.map((s) => ({ text: cut(s.name, 24), data: cb('sv', s.id) })),
+      2,
+    ),
+  );
   const nav: Btn[] = [];
   if (d.tags.length) nav.push({ text: `Тег: ${cut(f.tag ?? 'все', 16)}`, data: cb('tg', tagRef) });
   if (pages > 1) {
@@ -382,7 +181,7 @@ export function tagsView(
     })),
   ];
   const kb: Btn[][] = [];
-  for (let i = 0; i < btns.length; i += 2) kb.push(btns.slice(i, i + 2));
+  kb.push(...grid(btns, 2));
   kb.push([{ text: `${I.back} Серверы`, data: cb('sl', current ? c.ref(current) : '-', 0) }]);
   return { text: '<b>Серверы с тегом</b>', kb };
 }
@@ -495,7 +294,7 @@ export function serverView(
 
   const kb: Btn[][] = [];
   const svc = s.status === 'online' ? (d.services ?? []) : [];
-  for (let i = 0; i < svc.length; i += 3) kb.push(svc.slice(i, i + 3));
+  kb.push(...grid(svc, 3));
   if (s.status === 'online')
     kb.push([
       { text: 'Обслуживание', data: cb('mt', s.id) },
@@ -541,200 +340,9 @@ export function reachView(d: { s: ServerSummary; r: ServerReach | null }, c: Ctx
     text: lines.join('\n'),
     kb: [
       [{ text: 'Сменить IP', data: cb('ic', d.s.id) }],
-      [
-        { text: `${I.back} ${cut(d.s.name, 20)}`, data: cb('sv', d.s.id) },
-        { text: 'Обновить', data: cb('rc', d.s.id) },
-      ],
+      [toServer(d.s), { text: 'Обновить', data: cb('rc', d.s.id) }],
     ],
   };
-}
-
-// ---- журнал действий ----
-
-const LOG_PAGE = 10;
-
-function actionIcon(a: { finishedAt: string | null; exitCode: number | null }): string {
-  if (!a.finishedAt) return I.run;
-  return a.exitCode === 0 ? I.done : I.fail;
-}
-
-export function journalView(
-  d: { rows: ActionListRow[]; names: Map<string, string>; serverId: string | null },
-  page: number,
-  c: Ctx,
-): Screen {
-  const pages = Math.max(1, Math.ceil(d.rows.length / LOG_PAGE));
-  const p = Math.min(Math.max(0, page), pages - 1);
-  const items = d.rows.slice(p * LOG_PAGE, p * LOG_PAGE + LOG_PAGE);
-  const own = d.serverId ? (d.names.get(d.serverId) ?? '') : '';
-  const text = `<b>Журнал действий</b>${own ? `${SEP}${esc(own)}` : ''}${d.rows.length ? '' : '\n\nДействий пока нет'}`;
-  const from = d.serverId ? 's' : 'g';
-  const kb: Btn[][] = items.map((a) => {
-    const sv = !d.serverId && a.serverId ? d.names.get(a.serverId) : '';
-    return [
-      {
-        text: cut(
-          `${actionIcon(a)} ${tgWhen(a.startedAt, c.now)} ${actionTitle(a.kind, a.params)}${sv ? ` (${sv})` : ''}`,
-          60,
-        ),
-        data: cb('ac', a.id, from),
-      },
-    ];
-  });
-  const sid = d.serverId ?? '-';
-  if (pages > 1)
-    kb.push([
-      { text: I.prev, data: cb('lg', sid, (p - 1 + pages) % pages) },
-      { text: `${p + 1}/${pages}`, data: cb('lg', sid, p) },
-      { text: I.next, data: cb('lg', sid, (p + 1) % pages) },
-    ]);
-  kb.push(
-    d.serverId
-      ? [{ text: `${I.back} ${cut(own, 20)}`, data: cb('sv', d.serverId) }]
-      : [{ text: `${I.back} Сводка`, data: cb('m') }],
-  );
-  return { text, kb };
-}
-
-/** Хвост вывода: целые строки, не длиннее max символов. */
-export function tail(out: string, max = 3000): string {
-  const t = out.replace(/\r/g, '').replace(/\n+$/, '');
-  if (t.length <= max) return t;
-  const s = t.slice(-max);
-  const nl = s.indexOf('\n');
-  return nl >= 0 && nl < s.length - 1 ? s.slice(nl + 1) : s;
-}
-
-export function actionView(
-  d: {
-    a: ActionListRow & { output: string };
-    serverName: string | null;
-    from: 'g' | 's';
-  },
-  c: Ctx,
-): Screen {
-  const { a } = d;
-  const lines = [
-    `<b>${esc(actionTitle(a.kind, a.params))}</b>${d.serverName ? `${SEP}${esc(d.serverName)}` : ''}`,
-  ];
-  if (a.finishedAt) {
-    const dur = tgSpan(Date.parse(a.finishedAt) - Date.parse(a.startedAt));
-    const res =
-      a.exitCode === 0 ? 'готово' : `ошибка${a.exitCode !== null ? `, код ${a.exitCode}` : ''}`;
-    lines.push(`${actionIcon(a)} ${res}${SEP}${tgWhen(a.startedAt, c.now)}, ${dur}`);
-  } else {
-    lines.push(
-      `${I.run} идёт ${tgSpan(c.now - Date.parse(a.startedAt))}${SEP}с ${tgWhen(a.startedAt, c.now)}`,
-    );
-  }
-  // вывод консоли в Telegram не нужен: у ошибки - последняя строка, целиком - файлом
-  const out = a.output.trim();
-  if (a.finishedAt && a.exitCode !== 0 && out) {
-    const last = out.split('\n').at(-1)?.trim() ?? '';
-    if (last) lines.push(`<i>${esc(cut(last, 300))}</i>`);
-  }
-  const back: Btn =
-    d.from === 's' && a.serverId
-      ? { text: `${I.back} Журнал сервера`, data: cb('lg', a.serverId, 0) }
-      : { text: `${I.back} Журнал`, data: cb('lg', '-', 0) };
-  const row: Btn[] = [back];
-  if (!a.finishedAt) row.push({ text: 'Обновить', data: cb('ac', a.id, d.from) });
-  const kb: Btn[][] = [row];
-  if (a.finishedAt && out) kb.unshift([{ text: 'Вывод файлом', data: cb('af', a.id) }]);
-  return { text: lines.join('\n'), kb };
-}
-
-// ---- управление ботом ----
-
-export function settingsView(
-  d: { admin: BotAdmin | null; version: string; newer: string | null; health: TgHealthView },
-  c: Ctx,
-): Screen {
-  const lines = ['<b>Управление через бота</b>', ''];
-  if (d.admin)
-    lines.push(
-      `Аккаунт: ${esc(d.admin.name)}${d.admin.username ? ` (@${esc(d.admin.username)})` : ''}`,
-    );
-  lines.push(`Версия панели: ${esc(d.version)}${d.newer ? `, доступна ${esc(d.newer)}` : ''}`);
-  const h = d.health;
-  lines.push(
-    h.ok === false
-      ? `Уведомления: ${I.bad} не доходят${h.failingSince ? ` с ${tgWhen(h.failingSince, c.now)}` : ''}${h.pending ? `, отложено ${h.pending}` : ''}`
-      : `Уведомления: ${I.ok} доходят`,
-  );
-  const kb: Btn[][] = [
-    [
-      { text: 'Версия панели', data: cb('vs') },
-      { text: 'Резервная копия', data: cb('pb') },
-    ],
-    [
-      { text: 'Уведомления', data: cb('ns') },
-      { text: 'Синхронизация', data: cb('sy') },
-    ],
-    [
-      { text: 'Маршрут до Telegram', data: cb('tr') },
-      { text: 'Сессии', data: cb('ss') },
-    ],
-    [{ text: 'Отключить управление', data: cb('off') }],
-  ];
-  const link = panelLink(c, '/settings');
-  if (link.length) kb.push([{ text: 'Настройки панели', url: link[0]?.url ?? '' }]);
-  return { text: lines.join('\n'), kb };
-}
-
-export function offConfirmView(): Screen {
-  return {
-    text: `Отключить управление через бота?\nВключить снова: ${q('Настройки')}${DASH}${q('Уведомления в Telegram')}. Уведомления продолжат приходить.`,
-    kb: [
-      [
-        { text: 'Отключить', data: cb('off!') },
-        { text: 'Отмена', data: cb('st') },
-      ],
-    ],
-  };
-}
-
-export const OFF_TEXT = `Управление через бота отключено. Включить снова: ${q('Настройки')}${DASH}${q('Уведомления в Telegram')}.`;
-
-// ---- поиск ----
-
-export function searchView(
-  query: string,
-  found: ServerSummary[],
-  clients: { id: string; name: string }[] = [],
-): Screen {
-  if (!found.length && !clients.length)
-    return { text: `Ничего не найдено по запросу ${q(esc(cut(query, 60)))}`, kb: [] };
-  const kb: Btn[][] = [];
-  const all: Btn[] = [
-    ...found.slice(0, 12).map((s) => ({ text: cut(s.name, 24), data: cb('sv', s.id) })),
-    ...clients
-      .slice(0, 12)
-      .map((c) => ({ text: `${I.user} ${cut(c.name, 22)}`, data: cb('gc', c.id) })),
-  ];
-  for (let i = 0; i < all.length; i += 2) kb.push(all.slice(i, i + 2));
-  const parts = [];
-  if (found.length) parts.push(`серверов: ${found.length}`);
-  if (clients.length) parts.push(`клиентов: ${clients.length}`);
-  return { text: `Найдено ${parts.join(', ')}`, kb };
-}
-
-/** Поиск сервера по имени или адресу, без учёта регистра. */
-export function findServers(list: ServerSummary[], query: string): ServerSummary[] {
-  const qq = query.trim().toLocaleLowerCase('ru');
-  if (!qq) return [];
-  const exact = list.filter((s) => s.name.toLocaleLowerCase('ru') === qq);
-  if (exact.length) return exact;
-  return list.filter(
-    (s) =>
-      s.name.toLocaleLowerCase('ru').includes(qq) || s.host.toLocaleLowerCase('ru').includes(qq),
-  );
-}
-
-export const STALE_TEXT = 'Кнопка устарела, экран открыт заново';
-
-export function welcomeText(name: string): string {
-  return `Аккаунт ${esc(name)} привязан к VPS Panel. Меню${DASH}кнопками внизу, поиск сервера${DASH}его имя сообщением.`;
 }
 
 // ---- баны и план исправления ----
@@ -757,7 +365,7 @@ export function bansView(s: ServerDetail, c: Ctx): Screen {
     if (j.bannedIps.length > 15) lines.push(`и ещё ${j.bannedIps.length - 15}`);
   }
   if (!jails.length) lines.push('fail2ban не настроен');
-  kb.push([{ text: `${I.back} ${cut(s.name, 20)}`, data: cb('sv', s.id) }]);
+  kb.push([toServer(s)]);
   return { text: lines.join('\n'), kb };
 }
 
@@ -773,50 +381,12 @@ export function planView(s: { id: string; name: string }, plan: BaselinePlan, c:
   if (plan.blockers.length) lines.push('', `Нельзя: ${esc(plan.blockers.join('; '))}`);
   const kb: Btn[][] = [];
   if (need.length && plan.canApply) kb.push([{ text: 'Исправить', data: cb('bf', s.id) }]);
-  kb.push([{ text: `${I.back} ${cut(s.name, 20)}`, data: cb('sv', s.id) }]);
+  kb.push([toServer(s)]);
   void c;
   return { text: lines.join('\n'), kb };
 }
 
-// ---- подтверждение, код 2FA, ход действия ----
-
-export function confirmView(question: string, verb: string, token: string): Screen {
-  return {
-    text: question,
-    kb: [
-      [
-        { text: verb, data: cb('cf', token) },
-        { text: 'Отмена', data: cb('cx', token) },
-      ],
-    ],
-  };
-}
-
-export function codeView(question: string, token: string, note = ''): Screen {
-  return {
-    text: `${question}\n\n${note ? `${note}\n` : ''}Код двухфакторной аутентификации${DASH}сообщением`,
-    kb: [[{ text: 'Отмена', data: cb('cx', token) }]],
-  };
-}
-
-/** Ход действия: что идёт и сколько, без вывода консоли. */
-export function progressText(header: string, startedAt: number, now: number): string {
-  const sec = Math.round((now - startedAt) / 1000);
-  return `${I.run} ${header}${DASH}идёт${sec >= 15 ? ` ${tgSpan(now - startedAt)}` : ''}`;
-}
-
 // ---- обслуживание, безопасность, Docker, резервные копии ----
-
-const back = (s: { id: string; name: string }): Btn[] => [
-  { text: `${I.back} ${cut(s.name, 20)}`, data: cb('sv', s.id) },
-];
-
-const UPD_CODE: Record<string, string> = {
-  xui: 'x',
-  xray: 'y',
-  mtproxyl: 'm',
-  'mtproxyl-panel': 'p',
-};
 
 export function maintenanceView(d: { s: ServerDetail; updates: ServiceUpdate[] }): Screen {
   const { s } = d;
@@ -846,13 +416,13 @@ export function maintenanceView(d: { s: ServerDetail; updates: ServiceUpdate[] }
     ],
   ];
   for (const u of d.updates) {
-    const code = UPD_CODE[u.kind];
+    const code = UPDATE[u.kind]?.code;
     if (code) kb.push([{ text: `Обновить ${u.title} до ${u.latest}`, data: cb('up', s.id, code) }]);
   }
   if (s.agentUpdateAvailable && !s.agentUpdating)
     kb.push([{ text: 'Обновить агент', data: cb('au', s.id) }]);
   kb.push([{ text: 'Удалить из панели', data: cb('rm', s.id) }]);
-  kb.push(back(s));
+  kb.push([toServer(s)]);
   return { text: lines.join('\n'), kb };
 }
 
@@ -883,7 +453,7 @@ export function securityView(s: ServerDetail): Screen {
         ? { text: 'Выключить firewall', data: cb('fd', s.id) }
         : { text: 'Включить firewall', data: cb('fe', s.id) },
     ]);
-  kb.push(back(s));
+  kb.push([toServer(s)]);
   return { text: lines.join('\n'), kb };
 }
 
@@ -906,11 +476,13 @@ export function dockerView(s: ServerDetail): Screen {
     );
   if (!list.length) lines.push('Контейнеров нет');
   const kb: Btn[][] = [];
-  for (let i = 0; i < Math.min(list.length, 30); i += 2)
-    kb.push(
-      list.slice(i, i + 2).map((c) => ({ text: cut(c.name, 24), data: cb('dc', s.id, c.id) })),
-    );
-  kb.push(back(s));
+  kb.push(
+    ...grid(
+      list.slice(0, 30).map((c) => ({ text: cut(c.name, 24), data: cb('dc', s.id, c.id) })),
+      2,
+    ),
+  );
+  kb.push([toServer(s)]);
   return { text: lines.join('\n'), kb };
 }
 
@@ -973,6 +545,6 @@ export function backupsView(s: ServerDetail, list: BackupInfo[], c: Ctx): Screen
   if (!mine.length) lines.push('Копий нет');
   const kb: Btn[][] = [];
   if (s.status === 'online') kb.push([{ text: 'Создать резервную копию', data: cb('bc', s.id) }]);
-  kb.push(back(s));
+  kb.push([toServer(s)]);
   return { text: lines.join('\n'), kb };
 }

@@ -44,6 +44,11 @@ const WATCH_SQL = `create table if not exists client_watch (
   created_at text not null default (strftime('%Y-%m-%dT%H:%M:%fZ','now'))
 );`;
 
+const BOT_STATE_SQL = `create table if not exists bot_state (
+  key text primary key, kind text not null, value text not null, expires_at integer not null
+);
+create index if not exists bot_state_kind on bot_state(kind, expires_at);`;
+
 /**
  * Шаги после BASE_VERSION для уже созданных баз: шаг i в списке - версия BASE_VERSION + i + 1,
  * применённые помнит pragma user_version. Каждый шаг идемпотентен (новая база уже содержит его
@@ -150,6 +155,10 @@ const STEPS: ((sqlite: Database.Database) => void)[] = [
   // 26: уведомления о подключении клиентов - таблица client_watch (её же создаёт BOOTSTRAP_SQL)
   (sqlite) => {
     sqlite.exec(WATCH_SQL);
+  },
+  // 27: состояние бота между перезапусками - таблица bot_state (её же создаёт BOOTSTRAP_SQL)
+  (sqlite) => {
+    sqlite.exec(BOT_STATE_SQL);
   },
 ];
 
@@ -292,4 +301,5 @@ create index if not exists action_log_started on action_log(started_at);
 create table if not exists setting (key text primary key, value text not null);
 ${TAG_SQL}
 ${WATCH_SQL}
+${BOT_STATE_SQL}
 `;

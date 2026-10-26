@@ -7,9 +7,22 @@ import {
   type WatchRuleView,
   deviceLabel,
 } from '@vps/protocol';
-import { esc, tgWhen } from '../lib/telegram.js';
-import { cb } from './codec.js';
-import { type Btn, type Ctx, DASH, I, NB, SEP, type Screen, ago, plural, q } from './views.js';
+import { esc, tgWhen } from '../../lib/telegram.js';
+import { cb } from '../codec.js';
+import {
+  type Btn,
+  type Ctx,
+  DASH,
+  I,
+  NB,
+  SEP,
+  type Screen,
+  ago,
+  cut,
+  grid,
+  plural,
+  q,
+} from './common.js';
 
 /** Экраны клиентов панели в боте. Ссылки клиента - под спойлером, сообщение потом удаляется. */
 
@@ -22,7 +35,6 @@ export const SERVICE_TITLE: Record<GService, string> = {
   naive: 'браузер',
 };
 
-const cut = (s: string, n: number) => (s.length > n ? `${s.slice(0, n - 1)}\u2026` : s);
 const PAGE = 10;
 
 function rate(bps: number | null): string {
@@ -61,8 +73,12 @@ export function clientsView(rows: GClientRow[], f: { page: number; problems: boo
   }
   if (!list.length) lines.push(f.problems ? 'Проблем нет' : 'Клиентов нет');
   const kb: Btn[][] = [];
-  for (let i = 0; i < items.length; i += 2)
-    kb.push(items.slice(i, i + 2).map((r) => ({ text: cut(r.name, 24), data: cb('gc', r.id) })));
+  kb.push(
+    ...grid(
+      items.map((r) => ({ text: cut(r.name, 24), data: cb('gc', r.id) })),
+      2,
+    ),
+  );
   const fl = f.problems ? 1 : 0;
   const nav: Btn[] = [
     f.problems
@@ -170,13 +186,11 @@ export function deviceView(d: GClientDetail, did: string): Screen | null {
   if (!mine.length) lines.push('Привязок устройства нет: VLESS, MTProxy и WDTT у клиента общие');
   const awg = mine.filter((b) => b.service === 'awg' && b.state === 'ok');
   const kb: Btn[][] = [];
-  for (let i = 0; i < awg.length; i += 2)
-    kb.push(
-      awg.slice(i, i + 2).map((b) => ({
-        text: `AWG ${cut(b.serverName, 16)} .conf`,
-        data: cb('ga', d.client.id, b.id),
-      })),
-    );
+  const conf = awg.map((b) => ({
+    text: `AWG ${cut(b.serverName, 16)} .conf`,
+    data: cb('ga', d.client.id, b.id),
+  }));
+  kb.push(...grid(conf, 2));
   kb.push([{ text: `${I.back} Устройства`, data: cb('gd', d.client.id) }]);
   return { text: lines.join('\n'), kb };
 }
@@ -279,8 +293,12 @@ export function askName(): Screen {
 
 export function askType(title: string, name: string): Screen {
   const kb: Btn[][] = [];
-  for (let i = 0; i < DEVICES.length; i += 3)
-    kb.push(DEVICES.slice(i, i + 3).map((x) => ({ text: x.title, data: cb('fy', x.id) })));
+  kb.push(
+    ...grid(
+      DEVICES.map((x) => ({ text: x.title, data: cb('fy', x.id) })),
+      3,
+    ),
+  );
   kb.push([{ text: 'Без устройства', data: cb('fy', '-') }]);
   kb.push([{ text: 'Отмена', data: cb('fx') }]);
   return { text: `<b>${esc(title)}</b>${name ? ` ${q(esc(name))}` : ''}\n\nТип устройства:`, kb };

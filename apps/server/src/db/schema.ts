@@ -183,6 +183,17 @@ export const settings = sqliteTable('setting', {
 });
 
 /**
+ * Состояние бота администратора между перезапусками панели: key - "вид/ключ", значение JSON,
+ * срок - мс с эпохи (просроченное бот не читает и удаляет).
+ */
+export const botState = sqliteTable('bot_state', {
+  key: text('key').primaryKey(),
+  kind: text('kind').notNull(),
+  value: text('value').notNull(),
+  expiresAt: integer('expires_at').notNull(),
+});
+
+/**
  * Клиенты AWG, созданные панелью: приватный ключ хранится здесь (зашифрован SecretBox), на
  * VPN-сервере его нет. Пир и имя живут на сервере (конфиг и clientsTable), здесь - только то,
  * без чего нельзя выдать конфиг повторно.

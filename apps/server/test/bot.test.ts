@@ -4,10 +4,15 @@ import { join } from 'node:path';
 import type { ServerSummary } from '@vps/protocol';
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import { buildApp } from '../src/app.js';
+import { ACTION_OPS } from '../src/bot/actions.js';
 import { CB_MAX, Refs, cb, parseCb } from '../src/bot/codec.js';
-import { Bot, type BotTelegram } from '../src/bot/index.js';
+import { Bot, type BotTelegram, PRESS_OPS } from '../src/bot/index.js';
 import { notifyButtons } from '../src/bot/notify-buttons.js';
-import { findServers, plural, problems, serversView, summaryView, tail } from '../src/bot/views.js';
+import { SCREEN_OPS } from '../src/bot/screens.js';
+import { BotStore } from '../src/bot/store.js';
+import { plural, tail } from '../src/bot/views/common.js';
+import { findServers, summaryView } from '../src/bot/views/menu.js';
+import { problems, serversView } from '../src/bot/views/servers.js';
 import { loadEnv } from '../src/config.js';
 import { createDb } from '../src/db/index.js';
 import { actionLog, servers } from '../src/db/schema.js';
@@ -89,10 +94,6 @@ beforeAll(async () => {
     log: { info: () => undefined, warn: () => undefined },
     hub,
   });
-  // приём сообщений в тестах не запускается, а подписка на ход действий нужна
-  (bot as unknown as { unlisten: unknown }).unlisten = hub.listen((ev) =>
-    (bot as unknown as { onHub: (e: unknown) => void }).onHub(ev),
-  );
 });
 afterAll(async () => {
   await app.close();
@@ -725,11 +726,129 @@ describe('bot actions', () => {
     expect(sent('sendMessage')).toHaveLength(1);
   });
 
+  it('a switch on the home screen does not keep it from being replaced', async () => {
+    await bot.handle(msg(ADMIN, 'Ещё'));
+    await bot.handle({
+      update_id: 8,
+      callback_query: {
+        id: 'q8',
+        from: { id: ADMIN },
+        data: cb('nt', 0, 1),
+        message: { message_id: 500, date: 0, chat: { id: ADMIN, type: 'private' } },
+      },
+    });
+    calls.length = 0;
+    await bot.handle(msg(ADMIN, 'Клиенты'));
+    expect(sent('deleteMessage').map((c) => c.params.message_id)).toContain(500);
+  });
+
   it('view level refuses actions', async () => {
     bot.setLevel('view');
     await bot.handle(notif(cb('pu', SID)));
     expect(sent('answerCallbackQuery')[0]?.params.show_alert).toBe(true);
     expect(sent('sendMessage')).toEqual([]);
     bot.setLevel('all');
+  });
+});
+
+describe('bot registries and state across restarts', () => {
+  const SID = 'srv-actions-000000000003';
+
+  it('button codes of actions, screens and service buttons do not overlap', () => {
+    const all = [...ACTION_OPS, ...SCREEN_OPS, ...PRESS_OPS];
+    expect(new Set(all).size).toBe(all.length);
+    expect(ACTION_OPS.has('rm')).toBe(true);
+    expect(SCREEN_OPS.has('sv')).toBe(true);
+  });
+
+  it('expired state is not read and goes away', () => {
+    let now = 1_000;
+    const s = new BotStore(db, () => now);
+    s.put('test', 'k', { v: 1 }, 100);
+    expect(s.get('test', 'k')).toEqual({ v: 1 });
+    now = 2_000;
+    expect(s.get('test', 'k')).toBeNull();
+    s.prune();
+    expect(s.list('test')).toEqual([]);
+  });
+
+  it('short refs survive a restart and keep one key per value', () => {
+    const k = new Refs(new BotStore(db)).put('Резерв');
+    const again = new Refs(new BotStore(db));
+    expect(again.get(k)).toBe('Резерв');
+    expect(again.put('Резерв')).toBe(k);
+  });
+
+  it('after a restart: back to the notification and the result of an action started before', async () => {
+    const n = {
+      update_id: 9,
+      callback_query: {
+        id: 'q9',
+        from: { id: ADMIN },
+        data: cb('o', 'sv', SID),
+        message: {
+          message_id: 90,
+          date: 0,
+          chat: { id: ADMIN, type: 'private' },
+          text: 'Kappa: не в сети',
+          reply_markup: {
+            inline_keyboard: [[{ text: 'Сервер', callback_data: cb('o', 'sv', SID) }]],
+          },
+        },
+      },
+    };
+    await bot.handle(n);
+    // действие, запущенное из бота до перезапуска и прерванное им
+    const id = 'act-restart-000000001';
+    db.insert(actionLog)
+      .values({
+        id,
+        serverId: SID,
+        kind: 'system.upgrade',
+        params: {},
+        finishedAt: new Date().toISOString(),
+        exitCode: 1,
+        output: 'apt\nПанель перезапущена, действие прервано\n',
+        initiator: 'telegram',
+      })
+      .run();
+    new BotStore(db).put(
+      'track',
+      id,
+      {
+        chat: ADMIN,
+        mid: 91,
+        header: '<b>Kappa</b>: обновление пакетов',
+        startedAt: Date.now(),
+        done: null,
+        op: 'pu',
+        args: [SID],
+      },
+      60_000,
+    );
+    // новая панель: другой экземпляр бота на той же базе
+    const after = new Bot({
+      db,
+      telegram: fake,
+      inject: (o) => app.inject(o),
+      panelUrl: 'https://panel.example.com',
+      version: '9.9.9',
+      log: { info: () => undefined, warn: () => undefined },
+      hub,
+    });
+    // запуск без токена: приём сообщений ждёт, действия после перезапуска - досматриваются
+    const settings = fake.settings;
+    fake.settings = async () => ({ token: '' }) as Awaited<ReturnType<BotTelegram['settings']>>;
+    const stop = after.start();
+    calls.length = 0;
+    await after.handle({ ...n, callback_query: { ...n.callback_query, data: 'ob' } });
+    expect(sent('editMessageText')[0]?.params.text).toBe('Kappa: не в сети');
+    await vi.waitFor(() => {
+      const e = sent('editMessageText').find((c) => c.params.message_id === 91)?.params;
+      expect(String(e?.text)).toContain('действие прервано');
+      expect(JSON.stringify(e?.reply_markup)).toContain(`af:${id}`);
+    });
+    stop();
+    fake.settings = settings;
   });
 });

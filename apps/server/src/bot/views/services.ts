@@ -1,15 +1,21 @@
 import type { CascadesView, ServerDetail, ServiceUpdate, XuiInboundRow } from '@vps/protocol';
-import { esc, tgSpan, tgWhen } from '../lib/telegram.js';
-import { cb } from './codec.js';
-import { type Btn, type Ctx, DASH, I, NB, SEP, type Screen } from './views.js';
+import { esc, tgSpan, tgWhen } from '../../lib/telegram.js';
+import { cb } from '../codec.js';
+import { UPDATE } from '../notify-buttons.js';
+import {
+  type Btn,
+  type Ctx,
+  DASH,
+  I,
+  NB,
+  SEP,
+  type Screen,
+  cut,
+  grid,
+  toServer,
+} from './common.js';
 
 /** Экраны сервисов сервера, каскадов и смены IP в боте. */
-
-const cut = (s: string, n: number) => (s.length > n ? `${s.slice(0, n - 1)}\u2026` : s);
-const back = (s: { id: string; name: string }): Btn => ({
-  text: `${I.back} ${cut(s.name, 20)}`,
-  data: cb('sv', s.id),
-});
 
 /** Кнопки сервисов в карточке сервера: только тем, что стоят на сервере. */
 export function serviceButtons(s: ServerDetail): Btn[] {
@@ -38,13 +44,14 @@ function updateLines(list: ServiceUpdate[], kinds: string[]): string[] {
     );
 }
 
-const UPD: Record<string, string> = { xui: 'x', xray: 'y', mtproxyl: 'm', 'mtproxyl-panel': 'p' };
-
 function updateButtons(s: { id: string }, list: ServiceUpdate[], kinds: string[]): Btn[][] {
   return list
-    .filter((u) => kinds.includes(u.kind) && UPD[u.kind])
+    .filter((u) => kinds.includes(u.kind) && UPDATE[u.kind])
     .map((u) => [
-      { text: `Обновить ${u.title} до ${u.latest}`, data: cb('up', s.id, UPD[u.kind] ?? '') },
+      {
+        text: `Обновить ${u.title} до ${u.latest}`,
+        data: cb('up', s.id, UPDATE[u.kind]?.code ?? ''),
+      },
     ]);
 }
 
@@ -73,15 +80,13 @@ export function xuiView(
     ],
     ...updateButtons(s, updates, ['xui', 'xray']),
   ];
-  for (let i = 0; i < Math.min(own.length, 12); i += 2)
-    kb.push(
-      own.slice(i, i + 2).map((x) => ({
-        text: `${x.enable ? 'Выключить' : 'Включить'} ${cut(x.remark || String(x.port), 14)}`,
-        data: cb('ib', s.id, x.id, x.enable ? 0 : 1),
-      })),
-    );
+  const toggles = own.slice(0, 12).map((x) => ({
+    text: `${x.enable ? 'Выключить' : 'Включить'} ${cut(x.remark || String(x.port), 14)}`,
+    data: cb('ib', s.id, x.id, x.enable ? 0 : 1),
+  }));
+  kb.push(...grid(toggles, 2));
   kb.push([{ text: 'Каскады', data: cb('cs', s.id) }]);
-  kb.push([back(s)]);
+  kb.push([toServer(s)]);
   return { text: lines.join('\n'), kb };
 }
 
@@ -122,7 +127,7 @@ export function mtView(s: ServerDetail, st: MtStatus | null, updates: ServiceUpd
     kb: [
       [{ text: 'Перезапустить MTProxyL', data: cb('rs', s.id, 'm', 'f') }],
       ...updateButtons(s, updates, ['mtproxyl', 'mtproxyl-panel']),
-      [back(s)],
+      [toServer(s)],
     ],
   };
 }
@@ -166,7 +171,7 @@ export function awgView(
   const kb: Btn[][] = list
     .slice(0, 8)
     .map((x, i) => [{ text: `Пользователи ${cut(x.container, 22)}`, data: cb('ai', s.id, i, 0) }]);
-  kb.push([back(s)]);
+  kb.push([toServer(s)]);
   return { text: lines.join('\n'), kb };
 }
 
@@ -240,7 +245,7 @@ export function wdttView(
     `Устройств привязано ${list.reduce((a, p) => a + p.device_ids.length, 0)}`,
   ];
   if (soon) lines.push(`Истекают в течение 30${NB}дней: ${soon}`);
-  return { text: lines.join('\n'), kb: [[back(s)]] };
+  return { text: lines.join('\n'), kb: [[toServer(s)]] };
 }
 
 export function ofView(
@@ -253,7 +258,7 @@ export function ofView(
     '',
     `${d?.core ? `Ядро ${esc(d.core)}\n` : ''}Каналов ${ch.length}`,
   ];
-  return { text: lines.join('\n'), kb: [[back(s)]] };
+  return { text: lines.join('\n'), kb: [[toServer(s)]] };
 }
 
 const MODE: Record<string, string> = {

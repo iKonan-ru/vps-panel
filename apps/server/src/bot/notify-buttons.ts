@@ -1,6 +1,6 @@
 import type { BotLevel } from '@vps/protocol';
 import { cb } from './codec.js';
-import type { Btn } from './views.js';
+import type { Btn } from './views/common.js';
 
 export type { BotLevel };
 

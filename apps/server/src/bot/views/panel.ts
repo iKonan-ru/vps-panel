@@ -6,9 +6,9 @@ import {
   type TgHealthView,
   type XrayStatus,
 } from '@vps/protocol';
-import { esc, tgWhen } from '../lib/telegram.js';
-import { cb } from './codec.js';
-import { type Btn, type Ctx, I, NB, SEP, type Screen, ago } from './views.js';
+import { esc, tgWhen } from '../../lib/telegram.js';
+import { cb } from '../codec.js';
+import { type Btn, type Ctx, I, NB, SEP, type Screen, ago } from './common.js';
 
 /** Экраны раздела "Ещё": версия панели, резервная копия, уведомления, синхронизация, сессии. */
 
