@@ -278,6 +278,8 @@ describe('GET /api/gclients/:id/live', () => {
         online: false,
         services: [],
         lastSeen: null,
+        serversOnline: 0,
+        serversTotal: 2,
       });
     } finally {
       await built.app.close();
@@ -292,9 +294,9 @@ describe('presenceOf', () => {
     const l = (bindingId: string, state: string, lastSeen: string | null) =>
       ({ bindingId, state, lastSeen }) as never;
     const rows = [
-      { id: 'b1', service: 'xui' },
-      { id: 'b2', service: 'awg' },
-      { id: 'b3', service: 'awg' },
+      { id: 'b1', service: 'xui', serverId: 's1' },
+      { id: 'b2', service: 'awg', serverId: 's1' },
+      { id: 'b3', service: 'awg', serverId: 's2' },
     ];
     expect(
       presenceOf(rows, [
@@ -302,11 +304,19 @@ describe('presenceOf', () => {
         l('b2', 'online', '2026-10-26T10:00:00Z'),
         l('b3', 'online', null),
       ]),
-    ).toEqual({ online: true, services: ['awg'], lastSeen: '2026-10-26T10:00:00Z' });
+    ).toEqual({
+      online: true,
+      services: ['awg'],
+      lastSeen: '2026-10-26T10:00:00Z',
+      serversOnline: 2,
+      serversTotal: 2,
+    });
     expect(presenceOf(rows, [l('b1', 'idle', '2026-10-26T09:00:00Z')])).toEqual({
       online: false,
       services: [],
       lastSeen: '2026-10-26T09:00:00Z',
+      serversOnline: 0,
+      serversTotal: 2,
     });
   });
 });

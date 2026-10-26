@@ -243,7 +243,13 @@ export async function gclientRoutes(
     for (const c of db.select().from(gclients).where(isNull(gclients.deletedAt)).all()) {
       const rows = all.filter((b) => b.clientId === c.id);
       if (!c.enabled || !rows.length) {
-        out[c.id] = { online: false, services: [], lastSeen: null };
+        out[c.id] = {
+          online: false,
+          services: [],
+          lastSeen: null,
+          serversOnline: 0,
+          serversTotal: new Set(rows.map((b) => b.serverId)).size,
+        };
         continue;
       }
       const live = await clientLive({ db, box, hub: liveHub }, c, rows);

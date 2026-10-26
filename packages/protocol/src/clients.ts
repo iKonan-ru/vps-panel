@@ -256,6 +256,9 @@ export interface GClientPresence {
   online: boolean;
   /** сервисы, которыми на связи сейчас */
   services: GService[];
+  /** серверов, где на связи, и всех серверов клиента (как в карточке: "на связи: 3 из 8") */
+  serversOnline: number;
+  serversTotal: number;
   /** последняя активность по всем привязкам, ISO; null - неизвестна */
   lastSeen: string | null;
 }

@@ -83,15 +83,18 @@ export async function clientLive(
 
 /** На связи ли клиент по живой статистике его привязок (плашка в списке клиентов). */
 export function presenceOf(
-  rows: { id: string; service: string }[],
+  rows: { id: string; service: string; serverId: string }[],
   bindings: GLiveBinding[],
 ): GClientPresence {
   const service = new Map(rows.map((b) => [b.id, b.service as GService]));
+  const server = new Map(rows.map((b) => [b.id, b.serverId]));
   const on = bindings.filter((l) => l.state === 'online');
   const seen = bindings.flatMap((l) => (l.lastSeen ? [l.lastSeen] : [])).sort();
   return {
     online: on.length > 0,
     services: [...new Set(on.flatMap((l) => service.get(l.bindingId) ?? []))],
     lastSeen: seen.at(-1) ?? null,
+    serversOnline: new Set(on.flatMap((l) => server.get(l.bindingId) ?? [])).size,
+    serversTotal: new Set(rows.map((b) => b.serverId)).size,
   };
 }

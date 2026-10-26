@@ -153,13 +153,9 @@ export function ClientsPage() {
                       выключен
                     </Chip>
                   )}
-                  <Presence
-                    p={c.enabled ? presence.data?.clients[c.id] : undefined}
-                    loading={c.enabled && presence.isPending}
-                  />
                   {c.limited && (
                     <SlidersHorizontal
-                      className="size-3.5 shrink-0 text-accent"
+                      className="ml-auto size-3.5 shrink-0 text-accent"
                       role="img"
                       aria-label="Выборочный доступ"
                     >
@@ -176,7 +172,12 @@ export function ClientsPage() {
                 </div>
               </div>
               {c.states.ok + c.states.pending + c.states.error > 0 && (
-                <BindingStates s={c.states} />
+                <span className="flex flex-wrap items-center gap-1.5">
+                  <BindingStates s={c.states} />
+                  {c.enabled && (
+                    <Presence p={presence.data?.clients[c.id]} loading={presence.isPending} />
+                  )}
+                </span>
               )}
             </Card>
           </Link>
@@ -199,22 +200,23 @@ export function ClientsPage() {
 }
 
 /**
- * На связи ли клиент (у правого края строки имени): пока состояние грузится - индикатор, на
- * связи - зелёная плашка, сервисы - в подсказке; не на связи - ничего.
+ * На связи ли клиент - плашкой рядом с состоянием привязок, как в карточке клиента: "на связи: 3
+ * из 8" (серверов) или "не на связи"; пока состояние грузится - индикатор.
  */
 function Presence({ p, loading }: { p: GClientPresence | undefined; loading: boolean }) {
   if (loading)
     return (
       <LoaderCircle
-        className="ml-auto size-3.5 shrink-0 animate-spin text-muted"
+        className="size-3.5 shrink-0 animate-spin text-muted"
         aria-label="Проверка связи"
       />
     );
-  if (!p?.online) return <span className="ml-auto" />;
-  const services = p.services.map((s) => serviceByBinding(s)?.clientTitle ?? s).join(', ');
+  if (!p) return null;
+  if (!p.online) return <Chip>не на связи</Chip>;
+  const services = p.services.map((x) => serviceByBinding(x)?.clientTitle ?? x).join(', ');
   return (
-    <Chip tone="ok" dot pulse className="ml-auto" title={`На связи: ${services}`}>
-      на связи
+    <Chip tone="ok" dot pulse title={`На связи: ${services}`}>
+      на связи: {p.serversOnline} из {p.serversTotal}
     </Chip>
   );
 }
