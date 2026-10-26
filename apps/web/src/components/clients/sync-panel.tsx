@@ -38,7 +38,7 @@ export function SyncPanel() {
       extra={
         <>
           <Chip tone="accent" dot pulse>
-            {data.stopping ? 'останавливается' : 'идёт'}
+            {data.stopping ? 'останавливается' : 'выполняется'}
           </Chip>
           {data.startedAt && (
             <span className="text-xs text-muted">начата {ago(data.startedAt)}</span>

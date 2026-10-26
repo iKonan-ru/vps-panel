@@ -38,7 +38,7 @@ function duration(s: string): string | null {
 const HEALTH: Record<string, string> = {
   healthy: 'проверка здоровья: в порядке',
   unhealthy: 'проверка здоровья: сбой',
-  'health: starting': 'проверка здоровья: идёт',
+  'health: starting': 'проверка здоровья: выполняется',
   paused: 'на паузе',
 };
 

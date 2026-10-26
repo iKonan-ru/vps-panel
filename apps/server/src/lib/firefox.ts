@@ -106,7 +106,7 @@ export class FirefoxSigner {
     const version = extensionVersion(this.env.EXTENSION_DIR);
     if (!key) throw new Error('не задан ключ API addons.mozilla.org');
     if (!version) throw new Error('нет расширения в образе панели');
-    if (this.busy) throw new Error('подпись уже идёт');
+    if (this.busy) throw new Error('подпись уже выполняется');
     this.busy = true;
     this.setState({ error: null });
     try {

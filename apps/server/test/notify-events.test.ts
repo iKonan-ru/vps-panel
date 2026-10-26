@@ -117,6 +117,62 @@ describe('события уведомлений', () => {
     stop();
   });
 
+  it('критичные замечания: одно сообщение, устранение - правкой его же', async () => {
+    vi.useFakeTimers({ toFake: ['Date'] });
+    vi.setSystemTime(new Date('2026-10-12T10:00:00Z'));
+    const ctx = await make();
+    let mid = 0;
+    const tg = ctx.tg as unknown as {
+      send: (m: string, o?: { meta?: { ref?: string } }) => Promise<null>;
+      remember: (ref: string, v: { chat: string; id: number; at: string }) => void;
+      api: (method: string, p: Record<string, unknown>) => Promise<unknown>;
+    };
+    tg.send = async (m, o) => {
+      ctx.sent.push(m);
+      mid++;
+      if (o?.meta?.ref)
+        tg.remember(o.meta.ref, { chat: '42', id: mid, at: new Date().toISOString() });
+      return null;
+    };
+    const edits: { id: unknown; text: string }[] = [];
+    const deleted: unknown[] = [];
+    tg.api = async (method, p) => {
+      if (method === 'editMessageText') edits.push({ id: p.message_id, text: String(p.text) });
+      if (method === 'deleteMessage') deleted.push(p.message_id);
+      return { ok: true, result: true, via: 'direct' };
+    };
+    const stop = ctx.n.bind([]);
+    vi.setSystemTime(new Date('2026-10-12T10:05:00Z')); // после тихого старта
+    const flush = () => new Promise((r) => setTimeout(r, 20));
+    const on = async (...texts: string[]) => {
+      ctx.reg.emit('inventory', 's1', {
+        services: [],
+        audit: {
+          findings: texts.map((text) => ({ severity: 'high', text })),
+          jails: [],
+          pendingUpdates: 0,
+        },
+      });
+      await flush();
+    };
+    await on(); // первый снимок - только запомнить
+    await on('MTProxyL: прокси не работает', 'SSH: вход по паролю');
+    expect(ctx.sent).toHaveLength(1);
+    await on('SSH: вход по паролю');
+    expect(edits.at(-1)).toMatchObject({ id: 1 });
+    expect(edits.at(-1)?.text).toMatch(/Устранено:\n- MTProxyL/);
+    await on('SSH: вход по паролю', 'Firewall выключен');
+    // новое - новым сообщением со всеми открытыми, прежнее удаляется
+    expect(ctx.sent).toHaveLength(2);
+    expect(ctx.sent[1]).toMatch(/SSH: вход по паролю\n- Firewall выключен/);
+    expect(deleted).toEqual([1]);
+    await on();
+    expect(ctx.sent).toHaveLength(2);
+    expect(edits.at(-1)).toMatchObject({ id: 2 });
+    expect(edits.at(-1)?.text).toMatch(/замечания устранены/);
+    stop();
+  });
+
   it('диск и CPU по метрикам: одно сообщение на переход, флаги переживают перезапуск', async () => {
     vi.useFakeTimers({ toFake: ['Date'] });
     vi.setSystemTime(new Date('2026-10-12T10:00:00Z'));

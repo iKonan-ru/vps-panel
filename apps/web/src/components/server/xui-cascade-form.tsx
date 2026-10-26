@@ -248,7 +248,7 @@ export function CascadeForm({
           <FingerprintField value={fp} onChange={setFp} disabled={act.busy} />
         </>
       )}
-      <Field label="Что идёт через выход" htmlFor="cascade-mode" hint={MODE_HINT[mode]}>
+      <Field label="Что направлять через выход" htmlFor="cascade-mode" hint={MODE_HINT[mode]}>
         <Select
           id="cascade-mode"
           value={mode}

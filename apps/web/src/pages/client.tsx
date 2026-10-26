@@ -266,7 +266,7 @@ export function ClientPage() {
               />
               <LiveSummary live={live} />
               {c.access !== null && <Chip tone="accent">выборочный доступ</Chip>}
-              {syncing && <span className="text-xs text-muted">идёт синхронизация</span>}
+              {syncing && <span className="text-xs text-muted">синхронизация выполняется</span>}
             </>
           }
           actions={

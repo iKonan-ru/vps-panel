@@ -318,7 +318,7 @@ function Details({
           <div className="space-y-3">
             <div className="text-xs font-medium text-muted">
               {hm(sel.end - SLOT_MS)}-{hm(sel.end)}
-              {sel.current ? ' (идёт сейчас)' : ''}: {sel.points.length}{' '}
+              {sel.current ? ' (текущий)' : ''}: {sel.points.length}{' '}
               {plural(sel.points.length, 'проверка', 'проверки', 'проверок')}
             </div>
             {sel.points.map((p) => (

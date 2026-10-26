@@ -101,7 +101,7 @@ export function syncView(s: GSyncState, c: Ctx): Screen {
   const lines = ['<b>Синхронизация клиентов</b>', ''];
   if (s.syncing) {
     lines.push(
-      `${I.run} идёт${s.startedAt ? ` с ${tgWhen(s.startedAt, c.now)}` : ''}${s.stopping ? ', останавливается' : ''}`,
+      `${I.run} выполняется${s.startedAt ? ` с ${tgWhen(s.startedAt, c.now)}` : ''}${s.stopping ? ', останавливается' : ''}`,
     );
     for (const p of s.progress.slice(0, 12))
       lines.push(
@@ -109,7 +109,7 @@ export function syncView(s: GSyncState, c: Ctx): Screen {
       );
   } else
     lines.push(
-      'Сейчас не идёт: панель синхронизирует клиентов сама раз в 5 минут и после изменений',
+      'Сейчас не выполняется: панель синхронизирует клиентов сама раз в 5 минут и после изменений',
     );
   const kb: Btn[][] = [
     s.syncing

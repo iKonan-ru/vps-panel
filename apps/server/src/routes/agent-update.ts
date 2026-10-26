@@ -149,7 +149,10 @@ export async function agentUpdateRoutes(
       return reply.code(r === 'busy' ? 409 : 400).send({ error: errors[r] });
     return r;
   });
-  const errors = { busy: 'обновление агентов уже идёт', fresh: 'все агенты уже последней версии' };
+  const errors = {
+    busy: 'обновление агентов уже выполняется',
+    fresh: 'все агенты уже последней версии',
+  };
 
   // панель обновилась (релиз) и включено "обновлять агентов": через 90 с - агенты успевают
   // переподключиться к новой панели
@@ -187,7 +190,7 @@ export async function agentUpdateRoutes(
         if (!registry.isOnline(it.serverId)) {
           Object.assign(it, { status: 'skipped', note: 'не в сети' });
         } else if (busyAction(db, it.serverId)) {
-          Object.assign(it, { status: 'skipped', note: 'на сервере идёт другое действие' });
+          Object.assign(it, { status: 'skipped', note: 'на сервере выполняется другое действие' });
         } else {
           it.status = 'running';
           rolloutChanged();

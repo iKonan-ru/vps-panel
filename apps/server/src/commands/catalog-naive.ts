@@ -98,7 +98,7 @@ export const naiveCmd: CommandDef = {
   group: 'install',
   service: 'Браузер (naive)',
   description:
-    'HTTPS-прокси (Caddy naive) для расширения Chrome: через сервер идёт только трафик браузера, программы на компьютере не нужны. Клиенты получат прокси при синхронизации.',
+    'HTTPS-прокси (Caddy naive) для расширения Chrome: через сервер проходит только трафик браузера, программы на компьютере не нужны. Клиенты получат прокси при синхронизации.',
   liveDefaults: 'naive',
   panelCertParam: 'NAIVE_DOMAIN',
   params: [

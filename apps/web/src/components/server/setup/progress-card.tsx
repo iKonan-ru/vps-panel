@@ -12,7 +12,7 @@ const STATE: Record<
   { text: string; tone: 'ok' | 'warn' | 'bad' | 'muted' | 'accent' }
 > = {
   pending: { text: 'ждёт', tone: 'muted' },
-  running: { text: 'идёт', tone: 'accent' },
+  running: { text: 'выполняется', tone: 'accent' },
   done: { text: 'готово', tone: 'ok' },
   skipped: { text: 'пропущен', tone: 'muted' },
   failed: { text: 'ошибка', tone: 'bad' },
@@ -39,7 +39,7 @@ export function ProgressCard({
     <Card className="flex flex-col gap-3 p-4">
       <div className="flex flex-wrap items-center gap-2">
         <div className="font-semibold">
-          {running ? 'Идёт настройка' : `Настройка от ${dateTime(progress.startedAt)}`}
+          {running ? 'Настройка выполняется' : `Настройка от ${dateTime(progress.startedAt)}`}
         </div>
         <div className="grow" />
         {failed && (

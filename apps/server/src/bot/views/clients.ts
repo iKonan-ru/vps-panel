@@ -121,7 +121,7 @@ export function clientView(d: GClientDetail, rules: WatchRuleView[], c: Ctx): Sc
   if (cl.note) lines.push(`<i>${esc(cl.note)}</i>`);
   const on = rules.filter((r) => r.enabled).length;
   if (rules.length) lines.push(`Уведомления о подключении: ${on} из ${rules.length}`);
-  if (d.syncing) lines.push(`${I.run} идёт синхронизация`);
+  if (d.syncing) lines.push(`${I.run} синхронизация выполняется`);
   const kb: Btn[][] = [
     [
       { text: 'Ссылки', data: cb('gk', cl.id) },

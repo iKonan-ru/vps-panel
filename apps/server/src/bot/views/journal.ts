@@ -71,7 +71,7 @@ export function actionView(
     lines.push(`${actionIcon(a)} ${res}${SEP}${tgWhen(a.startedAt, c.now)}, ${dur}`);
   } else {
     lines.push(
-      `${I.run} идёт ${tgSpan(c.now - Date.parse(a.startedAt))}${SEP}с ${tgWhen(a.startedAt, c.now)}`,
+      `${I.run} выполняется ${tgSpan(c.now - Date.parse(a.startedAt))}${SEP}с ${tgWhen(a.startedAt, c.now)}`,
     );
   }
   // вывод консоли в Telegram не нужен: у ошибки - последняя строка, целиком - файлом
@@ -115,5 +115,5 @@ export function codeView(question: string, token: string, note = ''): Screen {
 /** Ход действия: что идёт и сколько, без вывода консоли. */
 export function progressText(header: string, startedAt: number, now: number): string {
   const sec = Math.round((now - startedAt) / 1000);
-  return `${I.run} ${header}${DASH}идёт${sec >= 15 ? ` ${tgSpan(now - startedAt)}` : ''}`;
+  return `${I.run} ${header}${DASH}выполняется${sec >= 15 ? ` ${tgSpan(now - startedAt)}` : ''}`;
 }

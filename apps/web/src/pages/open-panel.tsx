@@ -174,7 +174,9 @@ export function OpenPanelPage() {
 
 function StepIcon({ state }: { state: StepState }) {
   if (state === 'run')
-    return <LoaderCircle className="size-4 shrink-0 animate-spin text-accent" aria-label="идёт" />;
+    return (
+      <LoaderCircle className="size-4 shrink-0 animate-spin text-accent" aria-label="загрузка" />
+    );
   if (state === 'ok') return <Check className="size-4 shrink-0 text-ok" aria-label="готово" />;
   if (state === 'fail') return <X className="size-4 shrink-0 text-bad" aria-label="ошибка" />;
   return <Circle className="size-4 shrink-0 text-muted" aria-label="ожидает" />;

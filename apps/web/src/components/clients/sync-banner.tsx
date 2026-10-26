@@ -33,7 +33,9 @@ export function SyncBanner() {
       <RefreshCw className="mt-0.5 size-4 shrink-0 animate-spin" />
       <div className="min-w-0 grow">
         <div>
-          {data.stopping ? 'Синхронизация клиентов останавливается' : 'Идёт синхронизация клиентов'}
+          {data.stopping
+            ? 'Синхронизация клиентов останавливается'
+            : 'Синхронизация клиентов выполняется'}
           {total > 0 && `: ${done} из ${total}`}
           {errors > 0 && `, ошибок: ${errors}`}
         </div>

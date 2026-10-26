@@ -737,6 +737,39 @@ export class Telegram {
     return this.send(body);
   }
 
+  /**
+   * Поправить отправленное уведомление по ref, нового сообщения не слать: false - исходного нет
+   * или править нельзя. done - дело закрыто: кнопки снимаются, ref забывается; иначе кнопки -
+   * заново по meta.
+   */
+  async amend(
+    ref: string,
+    text: string,
+    opts: { meta?: NotifyMeta; done?: boolean } = {},
+  ): Promise<boolean> {
+    const sent = this.sentOf(ref, opts.done === true);
+    if (!sent) return false;
+    const markup =
+      !opts.done && opts.meta && this.buttons
+        ? await this.buttons(opts.meta).catch(() => null)
+        : null;
+    const r = await this.api('editMessageText', {
+      chat_id: sent.chat,
+      message_id: sent.id,
+      text,
+      parse_mode: 'HTML',
+      link_preview_options: { is_disabled: true },
+      reply_markup: markup ?? { inline_keyboard: [] },
+    });
+    return r.ok || /message is not modified/i.test(r.description ?? '');
+  }
+
+  /** Удалить отправленное уведомление по ref (его сменяет новое) и забыть ref. */
+  async drop(ref: string) {
+    const sent = this.sentOf(ref, true);
+    if (sent) await this.api('deleteMessage', { chat_id: sent.chat, message_id: sent.id });
+  }
+
   /** Не уведомлять о сервере до момента until (кнопка бота "Не уведомлять 1 ч"). */
   muteUntil(serverId: string, until: Date) {
     const now = Date.now();

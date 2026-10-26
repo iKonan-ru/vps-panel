@@ -276,7 +276,7 @@ export function cascadesView(s: ServerDetail, v: CascadesView, c: Ctx): Screen {
         : `${I.bad} ${esc(x.check.error ?? 'не отвечает')}`
       : I.none;
     const tg = x.telegram
-      ? `${SEP}Telegram: ${x.telegramMain ? 'основной' : 'запасной'}${x.telegramActive ? ', идёт' : ''}`
+      ? `${SEP}Telegram: ${x.telegramMain ? 'основной' : 'запасной'}${x.telegramActive ? ', используется' : ''}`
       : '';
     lines.push(
       `${st} ${I.next} ${esc(x.exitServerName)}${SEP}порт ${x.entryPort ?? '?'}${SEP}${MODE[x.mode] ?? x.mode}${tg}`,

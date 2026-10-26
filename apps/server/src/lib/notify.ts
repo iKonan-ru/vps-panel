@@ -18,6 +18,8 @@ import { schedule } from './schedule.js';
 import { getJsonSetting, putSetting } from './settings.js';
 import { type Telegram, esc, tgSpan } from './telegram.js';
 
+/** Замечания, о которых говорит сообщение "критичные замечания": по серверам. */
+const AUDIT_OPEN_KEY = 'tg_audit_open';
 const STARTUP_QUIET_MS = 2 * 60_000;
 /** Сервис считаем упавшим, если он down в снимках агента дольше этого (перезапуск - не падение). */
 const SERVICE_DOWN_MS = 2 * 60_000;
@@ -147,6 +149,7 @@ export class Notifier {
     this.offlineTimers.delete(id);
     this.notifiedOffline.delete(id);
     this.highFindings.delete(id);
+    this.setAuditOpen(id, []);
     this.bans.delete(id);
     this.pendingUpdates.delete(id);
     this.updatesNotifiedAt.delete(id);
@@ -280,18 +283,8 @@ export class Notifier {
     const cur = new Set(
       (inv.audit?.findings ?? []).filter((f) => f.severity === 'high').map((f) => f.text),
     );
-    const appeared = [...cur].filter((t) => !prev.has(t));
-    const gone = [...prev].filter((t) => !cur.has(t));
     this.highFindings.set(id, cur);
-    if (st.events.auditNew && appeared.length)
-      await this.tg.send(
-        `${name}: критичные замечания\n${appeared.map((t) => `- ${esc(t)}`).join('\n')}`,
-        { meta: { event: 'auditNew', serverId: id } },
-      );
-    if (st.events.auditClosed && gone.length)
-      await this.tg.send(
-        `${name}: замечания устранены\n${gone.map((t) => `- ${esc(t)}`).join('\n')}`,
-      );
+    await this.audit(id, name, cur, prev, st.events);
 
     // баны fail2ban: рост суммарного счётчика за последний час
     const total = (inv.audit?.jails ?? []).reduce((a, j) => a + j.totalBanned, 0);
@@ -327,8 +320,71 @@ export class Notifier {
       this.updatesNotifiedAt.set(id, now);
       await this.tg.send(
         `${name}: ожидают установки обновления безопасности: ${pend}. Кнопка \u00abОбновить\u00bb\u00a0\u2014 в блоке \u00abОбслуживание\u00bb.`,
-        { meta: { event: 'pkgUpdates', serverId: id } },
+        { meta: { event: 'pkgUpdates', serverId: id, ref: `pkg:${id}` } },
       );
+    }
+    // установлены: то же сообщение - итогом, нового нет
+    if (pend === 0 && prevPend > 0)
+      await this.tg.amend(`pkg:${id}`, `\u2705 ${name}: обновления безопасности установлены`, {
+        done: true,
+      });
+  }
+
+  /** Замечания, о которых сейчас говорит сообщение "критичные замечания", по серверам. */
+  private auditOpen(): Record<string, string[]> {
+    return getJsonSetting<Record<string, string[]>>(this.db, AUDIT_OPEN_KEY, {});
+  }
+
+  private setAuditOpen(id: string, list: string[]) {
+    const all = this.auditOpen();
+    if (list.length) all[id] = list;
+    else delete all[id];
+    putSetting(this.db, AUDIT_OPEN_KEY, JSON.stringify(all));
+  }
+
+  /**
+   * Критичные замечания - одно сообщение на сервер. Новые - новым сообщением со всеми открытыми
+   * (прежнее удаляется); устранённые - правкой того же сообщения: часть - список и
+   * "устранено", все - "замечания устранены" без кнопок. Список открытых - в базе: правка
+   * работает и после перезапуска панели.
+   */
+  private async audit(
+    id: string,
+    name: string,
+    cur: Set<string>,
+    prev: Set<string>,
+    ev: { auditNew: boolean; auditClosed: boolean },
+  ) {
+    const ref = `audit:${id}`;
+    const meta = { event: 'auditNew', serverId: id, ref };
+    const lines = (l: string[]) => l.map((t) => `- ${esc(t)}`).join('\n');
+    const open = this.auditOpen()[id] ?? [];
+    const left = open.filter((t) => cur.has(t));
+    const fixed = open.filter((t) => !cur.has(t));
+    if (fixed.length) {
+      if (left.length)
+        await this.tg.amend(
+          ref,
+          `${name}: критичные замечания\n${lines(left)}\n\u2705 Устранено:\n${lines(fixed)}`,
+          { meta },
+        );
+      else {
+        const text = `\u2705 ${name}: замечания устранены\n${lines(fixed)}`;
+        if (!(await this.tg.amend(ref, text, { done: true })) && ev.auditClosed)
+          await this.tg.send(text);
+      }
+      this.setAuditOpen(id, left);
+    }
+    // ушедшие, о которых сообщения не было (например, событие было выключено)
+    const other = [...prev].filter((t) => !cur.has(t) && !open.includes(t));
+    if (ev.auditClosed && other.length)
+      await this.tg.send(`${name}: замечания устранены\n${lines(other)}`);
+    const appeared = [...cur].filter((t) => !prev.has(t) && !left.includes(t));
+    if (ev.auditNew && appeared.length) {
+      const list = [...left, ...appeared];
+      if (left.length) await this.tg.drop(ref);
+      await this.tg.send(`${name}: критичные замечания\n${lines(list)}`, { meta });
+      this.setAuditOpen(id, list);
     }
   }
 

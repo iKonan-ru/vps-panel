@@ -13,7 +13,7 @@ export function useServers() {
 /** Занят ли сервер блокирующим действием; reason - подсказка для неактивных кнопок. */
 export function serverLock(s: ServerDetail): { busy: boolean; reason: string | undefined } {
   const a = s.activeActions.find((x) => isBlockingAction(x.kind));
-  return a ? { busy: true, reason: `Идёт: ${a.title}` } : { busy: false, reason: undefined };
+  return a ? { busy: true, reason: `Выполняется: ${a.title}` } : { busy: false, reason: undefined };
 }
 
 export function useServer(id: string) {
