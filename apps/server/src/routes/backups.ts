@@ -223,6 +223,10 @@ export async function backupRoutes(
               hashed,
               createWriteStream(file(backupId), { mode: 0o600 }),
             );
+            // чужой пароль изредка даёт верное дополнение блока - расшифровка "удаётся",
+            // а внутри мусор: копия - всегда gzip
+            const gz = await readHead(file(backupId), 2);
+            if (gz[0] !== 0x1f || gz[1] !== 0x8b) throw new Error('не gzip');
           } catch {
             throw Object.assign(
               new Error(
