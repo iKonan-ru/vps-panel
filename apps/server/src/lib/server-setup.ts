@@ -30,8 +30,9 @@ import { type BackupSetup, backupSnapshot, subnetOf } from './backup-setup.js';
 import { telegramListeners } from './cascades.js';
 import type { CatalogRunner } from './catalog-runner.js';
 import { checkClientHost } from './client-host.js';
-import { type GClients, queued } from './gclients.js';
+import { type GClients, PANEL_HOST_KEY, panelHostOptIn, queued } from './gclients.js';
 import { setMtproxylHost } from './mtproxyl-host.js';
+import { isPanelHost, panelAddresses } from './panel-host.js';
 import { redactOutput } from './redact.js';
 import type { SecretBox } from './secret-box.js';
 import { transferClients } from './server-migrate.js';
@@ -222,6 +223,11 @@ export function serverSetup(deps: SetupDeps) {
     return { bk, snap, comps };
   }
 
+  /** Сервер, на котором стоит сама панель. */
+  async function onPanelHost(id: string): Promise<boolean> {
+    return isPanelHost(row(id).host, inventory(id), await panelAddresses(env.PANEL_PUBLIC_URL));
+  }
+
   /**
    * План: пустой сервер, копия этого сервера (backupId) или перенос с другого (migrateFrom);
    * строка - id копии.
@@ -321,8 +327,16 @@ export function serverSetup(deps: SetupDeps) {
       ...(xuiThere && pr.ownVless === null ? { note: 'если своих inbound VLESS ещё нет' } : {}),
       ...(asEmpty ? {} : off(Boolean(pr.ownVless), 'свои inbound VLESS уже есть')),
     });
+    // сервер панели: клиенты на нём - только по явному включению, этот шаг и есть включение
+    const panelOptIn = (await onPanelHost(id)) && !panelHostOptIn(db);
     steps.push(
-      { id: 'gclients', kind: 'gclients', title: 'Синхронизация клиентов', enabled: true },
+      {
+        id: 'gclients',
+        kind: 'gclients',
+        title: 'Синхронизация клиентов',
+        enabled: true,
+        ...(panelOptIn ? { note: 'включит клиентов на сервере панели' } : {}),
+      },
       { id: 'reboot', kind: 'reboot', title: 'Перезагрузка, если нужна', enabled: true },
       { id: 'reach', kind: 'reach', title: 'Проверка доступности из России', enabled: true },
     );
@@ -1231,6 +1245,7 @@ export function serverSetup(deps: SetupDeps) {
       }
       case 'gclients':
         db.update(servers).set({ gclients: true }).where(eq(servers.id, id)).run();
+        if (await onPanelHost(id)) putSetting(db, PANEL_HOST_KEY, '1');
         db.update(gclientBindings).set(queued()).where(eq(gclientBindings.serverId, id)).run();
         return 'начнётся сразу после настройки';
       case 'reboot': {

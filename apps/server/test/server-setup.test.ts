@@ -20,8 +20,10 @@ import { upsertAccess } from '../src/lib/access.js';
 import { actionJournal } from '../src/lib/action-journal.js';
 import { BackupRestorer } from '../src/lib/backup-restore.js';
 import { catalogRunner } from '../src/lib/catalog-runner.js';
+import { PANEL_HOST_KEY } from '../src/lib/gclients.js';
 import { SecretBox } from '../src/lib/secret-box.js';
 import { serverSetup } from '../src/lib/server-setup.js';
+import { getSetting } from '../src/lib/settings.js';
 import { keyFingerprint, loadPanelKey } from '../src/lib/ssh.js';
 import { savedXuiToken } from '../src/lib/xui-token.js';
 
@@ -379,6 +381,21 @@ describe('настройка сервера', () => {
     expect(p.steps.find((x) => x.id === 'client-host')?.state).toBe('skipped');
     expect(kicks).toBe(1);
     expect(db.select().from(servers).get()?.gclients).toBe(true);
+    // не сервер панели: включение клиентов на сервере панели не трогается
+    expect(getSetting(db, PANEL_HOST_KEY)).toBeUndefined();
+  });
+
+  it('сервер панели: синхронизация клиентов включает клиентов на нём', async () => {
+    db.update(servers).set({ host: 'panel.example.com' }).where(eq(servers.id, 's1')).run();
+    const s = make();
+    const plan = await s.plan('s1');
+    expect(plan.steps.find((x) => x.id === 'gclients')?.note).toBe(
+      'включит клиентов на сервере панели',
+    );
+    await runAll(s);
+    expect(getSetting(db, PANEL_HOST_KEY)).toBe('1');
+    // уже включено - без пояснения
+    expect((await s.plan('s1')).steps.find((x) => x.id === 'gclients')?.note).toBeUndefined();
   });
 
   it('сбой - стоп; продолжение не повторяет сделанное', async () => {
