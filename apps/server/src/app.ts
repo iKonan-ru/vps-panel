@@ -6,7 +6,7 @@ import fastifyCookie from '@fastify/cookie';
 import fastifyRateLimit from '@fastify/rate-limit';
 import fastifyStatic from '@fastify/static';
 import fastifyWebsocket from '@fastify/websocket';
-import type { PanelRelease } from '@vps/protocol';
+import { type PanelRelease, SERVICE_UPDATE_ACTIONS } from '@vps/protocol';
 import { eq, isNull, sql } from 'drizzle-orm';
 import Fastify from 'fastify';
 import { ZodError } from 'zod';
@@ -17,7 +17,7 @@ import { Bot } from './bot/index.js';
 import { type Env, panelDomain } from './config.js';
 import { type Db, createDb } from './db/index.js';
 import { actionLog, servers } from './db/schema.js';
-import { actionJournal } from './lib/action-journal.js';
+import { actionJournal, onActionFinished } from './lib/action-journal.js';
 import { initiator } from './lib/action-lock.js';
 import { AppReleases } from './lib/apps.js';
 import { BackupRestorer } from './lib/backup-restore.js';
@@ -378,6 +378,14 @@ export async function buildApp(opts: AppOptions) {
     outFetch,
   );
   stops.push(serviceUpdates.start());
+  // обновили сервис (в интерфейсе или из Telegram) - версии перепроверяются после свежего снимка:
+  // строка "доступна" не висит до плановой проверки
+  stops.push(
+    onActionFinished((id, kind, fresh) => {
+      if (SERVICE_UPDATE_ACTIONS.has(kind))
+        void serviceUpdates.recheck(id, fresh).catch(() => undefined);
+    }),
+  );
   await app.register(standardRoutes, { db, registry, env, updates: serviceUpdates });
   await app.register(updateRoutes, { db, hub, registry, updates: serviceUpdates });
   stops.push(gc.start(), startHousekeeping(db, app.log));

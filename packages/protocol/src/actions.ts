@@ -99,6 +99,14 @@ export function isBlockingAction(kind: string): boolean {
   return !NON_BLOCKING.has(kind);
 }
 
+/** Действия-обновления сервисов: по их окончании панель перепроверяет версии сама. */
+export const SERVICE_UPDATE_ACTIONS: ReadonlySet<string> = new Set([
+  'xui:update',
+  'xui:xray',
+  'mtproxyl:update',
+  'mtproxyl:panel.update',
+]);
+
 /** Строка журнала действий в списках (без вывода: он - в /api/actions/:id). */
 export interface ActionListRow {
   id: string;

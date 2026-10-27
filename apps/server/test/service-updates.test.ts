@@ -113,3 +113,42 @@ describe('ServiceUpdates: MTProxyL и его веб-панель (движок -
     expect((await u.versions('s1'))['mtproxyl-panel']).toBeUndefined();
   });
 });
+
+describe('ServiceUpdates: перепроверка после обновления', () => {
+  it('ждёт свежий снимок; кнопка во время проверки получает её итог, а не вторую', async () => {
+    let calls = 0;
+    const counting = {
+      ...registry,
+      request: async (id: string, method: string) => {
+        if (method === 'mtproxyl.status') calls++;
+        return (registry.request as (i: string, m: string) => Promise<unknown>)(id, method);
+      },
+    } as unknown as AgentRegistry;
+    const u = new ServiceUpdates(
+      db,
+      {} as SecretBox,
+      counting,
+      { warn: () => {} },
+      async () => {},
+      fetchOut,
+    );
+    u.recheck('s1');
+    expect((await u.recheck('s1')).map((x) => x.kind)).toEqual(['mtproxyl-panel']);
+    expect(calls).toBe(1);
+
+    // после обновления: проверка - когда придёт снимок; кнопка в это время ждёт её же
+    panelStatus = 'Состояние: работает (v1.2.13)';
+    let fresh = () => {};
+    const snap = new Promise<void>((r) => {
+      fresh = r;
+    });
+    const after = u.recheck('s1', snap);
+    const button = u.recheck('s1');
+    await new Promise((r) => setTimeout(r, 10));
+    expect(calls).toBe(1);
+    fresh();
+    expect(await after).toEqual([]);
+    expect(await button).toEqual([]);
+    expect(calls).toBe(2);
+  });
+});

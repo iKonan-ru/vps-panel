@@ -15,7 +15,7 @@ import type { AgentRegistry } from '../agents/registry.js';
 import type { Db } from '../db/index.js';
 import { cascades, servers } from '../db/schema.js';
 import { type actionJournal, onActionFinished } from './action-journal.js';
-import { busyAction } from './action-lock.js';
+import { busyAction, busyOrSettling } from './action-lock.js';
 import {
   type ExitParams,
   blockedRules,
@@ -78,6 +78,11 @@ const SYNC_EVERY_MS = 30 * 60_000;
 const CHECK_EVERY_MS = 5 * 60_000;
 /** Столько неудачных проверок подряд - уведомление "каскад не работает". */
 const FAILS_TO_NOTIFY = 2;
+/**
+ * После действия на входе или выходе (обновление 3X-UI, перезапуск Xray) плановая проверка ждёт
+ * столько: Xray и 3X-UI поднимаются не сразу, проверка в это время - ложная тревога.
+ */
+const SETTLE_MS = 2 * 60_000;
 
 const fail = (statusCode: number, message: string) =>
   Object.assign(new Error(message), { statusCode });
@@ -159,8 +164,10 @@ export interface CascadeDeps {
   notify: (entryServerId: string, text: string, back: boolean, cascadeId: string) => void;
   /** Паузы проверки Xray (тесты - короче). */
   checksMs?: number[];
-  /** Пауза перед повторной проверкой выхода Telegram после первой неудачи. */
+  /** Пауза перед повторной проверкой выхода после первой неудачи. */
   recheckMs?: number;
+  /** Сколько плановая проверка ждёт после действия на входе или выходе (тесты - 0). */
+  settleMs?: number;
   inboundChecksMs?: number[];
   /** Сервер, на котором стоит сама панель: каскад Telegram на нём пока недоступен. */
   panelHost?: (serverId: string) => Promise<boolean>;
@@ -1132,7 +1139,7 @@ export class Cascades {
   }
 
   /** Проверка выхода с входа: testOutbound 3X-UI (временный Xray, запрос на адрес проверки). */
-  private async checkOne(cid: string, form?: XuiFormCall): Promise<CascadeCheck> {
+  private async checkOne(cid: string, form?: XuiFormCall, save = true): Promise<CascadeCheck> {
     const row = this.row(cid);
     let check: CascadeCheck;
     try {
@@ -1157,8 +1164,12 @@ export class Cascades {
     } catch (e) {
       check = { at: new Date().toISOString(), ok: false, ms: 0, error: (e as Error).message };
     }
-    this.d.db.update(cascades).set({ check }).where(eq(cascades.id, cid)).run();
+    if (save) this.saveCheck(cid, check);
     return check;
+  }
+
+  private saveCheck(cid: string, check: CascadeCheck) {
+    this.d.db.update(cascades).set({ check }).where(eq(cascades.id, cid)).run();
   }
 
   /** Проверка по кнопке; у каскада Telegram - ещё и путь MTProxyL входа через выход. */
@@ -1182,11 +1193,12 @@ export class Cascades {
   }
 
   /**
-   * Плановая проверка каскадов, вход которых на связи и свободен (во время действия 3X-UI может
-   * перезапускаться - ложная тревога); уведомления при смене состояния. Прогоны не накладываются.
-   * Каскад Telegram: первая неудача - сразу повторная проверка, две подряд - выход уходит из
-   * маршрутов MTProxyL (основным становится живой запасной), снова отвечает - возвращается;
-   * маршруты входа пересобираются сверкой.
+   * Плановая проверка каскадов, вход которых на связи, а вход и выход свободны и не только что
+   * из действия (SETTLE_MS: 3X-UI и Xray перезапускаются - ложная тревога); уведомления при смене
+   * состояния. Прогоны не накладываются. Первая неудача - повторная проверка через recheckMs, в
+   * карточку - её итог. Каскад Telegram: две неудачи подряд - выход уходит из маршрутов MTProxyL
+   * (основным становится живой запасной), снова отвечает - возвращается; маршруты входа
+   * пересобираются сверкой.
    */
   async checkAll() {
     if (this.checking) return;
@@ -1197,17 +1209,23 @@ export class Cascades {
       for (const r of this.rows()) {
         if (!registry.isOnline(r.entryServerId) || !registry.supports(r.entryServerId, 'xui.form'))
           continue;
-        if (busyAction(db, r.entryServerId)) continue;
-        let c = await this.checkOne(r.id);
+        if (
+          busyOrSettling(db, r.entryServerId, this.d.settleMs ?? SETTLE_MS) ||
+          busyOrSettling(db, r.exitServerId, this.d.settleMs ?? SETTLE_MS)
+        )
+          continue;
+        let c = await this.checkOne(r.id, undefined, false);
         if (!this.rows(eq(cascades.id, r.id)).length) continue;
         const f = this.fails.get(r.id) ?? { count: 0, notified: false };
-        if (!c.ok && r.telegram && f.count === 0) {
-          // один сбой testOutbound - не повод перестраивать Telegram: проверка ещё раз
+        if (!c.ok && f.count === 0) {
+          // один сбой testOutbound - не повод показывать "не работает" и перестраивать Telegram:
+          // проверка ещё раз
           await new Promise((res) => setTimeout(res, this.d.recheckMs ?? 20_000));
           if (!this.rows(eq(cascades.id, r.id)).length) continue;
-          c = await this.checkOne(r.id);
-          if (!c.ok) f.count += 1;
+          c = await this.checkOne(r.id, undefined, false);
+          if (!c.ok && r.telegram) f.count += 1;
         }
+        this.saveCheck(r.id, c);
         const exit = db
           .select({ name: servers.name })
           .from(servers)

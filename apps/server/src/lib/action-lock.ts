@@ -1,6 +1,6 @@
 import { AsyncLocalStorage } from 'node:async_hooks';
 import { actionTitle, isBlockingAction } from '@vps/protocol';
-import { and, eq, isNull } from 'drizzle-orm';
+import { and, eq, gt, isNull } from 'drizzle-orm';
 import type { Db } from '../db/index.js';
 import { actionLog } from '../db/schema.js';
 
@@ -28,6 +28,21 @@ export function busyAction(db: Db, serverId: string) {
     rows.find((r) => isBlockingAction(r.kind) && Date.now() - Date.parse(r.startedAt) < STALE_MS) ??
     null
   );
+}
+
+/**
+ * Сервер занят действием или закончил его меньше ms назад: сервисы после обновления и
+ * перезапуска ещё поднимаются, проверка в это время - ложная тревога.
+ */
+export function busyOrSettling(db: Db, serverId: string, ms: number): boolean {
+  if (busyAction(db, serverId)) return true;
+  const since = new Date(Date.now() - ms).toISOString();
+  return db
+    .select({ kind: actionLog.kind })
+    .from(actionLog)
+    .where(and(eq(actionLog.serverId, serverId), gt(actionLog.finishedAt, since)))
+    .all()
+    .some((r) => isBlockingAction(r.kind));
 }
 
 /**

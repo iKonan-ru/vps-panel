@@ -13,6 +13,7 @@ import type { AgentRegistry } from '../agents/registry.js';
 import type { StatusCache } from '../agents/state.js';
 import type { Db } from '../db/index.js';
 import { loginAttempts, servers } from '../db/schema.js';
+import { busyAction } from './action-lock.js';
 import { daysToPayment, rollPaymentDate } from './billing.js';
 import { schedule } from './schedule.js';
 import { getJsonSetting, putSetting } from './settings.js';
@@ -21,8 +22,18 @@ import { type Telegram, esc, tgSpan } from './telegram.js';
 /** Замечания, о которых говорит сообщение "критичные замечания": по серверам. */
 const AUDIT_OPEN_KEY = 'tg_audit_open';
 const STARTUP_QUIET_MS = 2 * 60_000;
-/** Сервис считаем упавшим, если он down в снимках агента дольше этого (перезапуск - не падение). */
+/**
+ * Сервис считаем упавшим, если он down в снимках агента дольше этого (перезапуск - не падение).
+ * Время действия на сервере (обновление, перезапуск) не считается.
+ */
 const SERVICE_DOWN_MS = 2 * 60_000;
+/**
+ * Новое критичное замечание - в Telegram, только если оно есть и в снимке не раньше чем через
+ * столько после первого (и не во время действия): снимок посреди перезапуска fail2ban или
+ * сервиса показывает "не запущен", а через минуту всё работает. Для подтверждения панель сама
+ * просит снимок.
+ */
+const FINDING_CONFIRM_MS = 60_000;
 
 const UPDATE_EVENT: Record<ServiceUpdateKind, NotifyEvent> = {
   xui: 'updXui',
@@ -85,6 +96,10 @@ export class Notifier {
   private stCache: { at: number; v: Awaited<ReturnType<Telegram['settings']>> } | null = null;
   /** serverId -> сервис (kind:title) -> с какого момента down и сказали ли. */
   private downs = new Map<string, Map<string, { since: number; notified: boolean }>>();
+  /** serverId -> новое критичное замечание -> с какого момента ждёт подтверждения. */
+  private unconfirmed = new Map<string, Map<string, number>>();
+  /** Запрос снимка для подтверждения замечаний, по серверу. */
+  private confirmTimers = new Map<string, NodeJS.Timeout>();
 
   constructor(
     private db: Db,
@@ -133,6 +148,7 @@ export class Notifier {
       stopPayments();
       stopLogins();
       for (const t of this.offlineTimers.values()) clearTimeout(t);
+      for (const t of this.confirmTimers.values()) clearTimeout(t);
     };
   }
 
@@ -149,6 +165,10 @@ export class Notifier {
     this.offlineTimers.delete(id);
     this.notifiedOffline.delete(id);
     this.highFindings.delete(id);
+    this.unconfirmed.delete(id);
+    const ct = this.confirmTimers.get(id);
+    if (ct) clearTimeout(ct);
+    this.confirmTimers.delete(id);
     this.setAuditOpen(id, []);
     this.bans.delete(id);
     this.pendingUpdates.delete(id);
@@ -207,11 +227,17 @@ export class Notifier {
     const prev = this.downs.get(id) ?? new Map<string, { since: number; notified: boolean }>();
     const next = new Map<string, { since: number; notified: boolean }>();
     const now = Date.now();
+    const busy = this.busy(id);
     for (const s of inv.services) {
       const key = `${s.kind}:${s.title}`;
       const was = prev.get(key);
       if (s.details?.down === true) {
         const d = was ?? { since: now, notified: false };
+        // во время действия (обновление, перезапуск) сервис и должен лежать: отсчёт - с первого
+        // снимка после его конца (NaN - ждёт такого снимка)
+        if (!d.notified && !Number.isFinite(d.since) && d.since !== Number.POSITIVE_INFINITY)
+          d.since = now;
+        if (busy && !d.notified && d.since !== Number.POSITIVE_INFINITY) d.since = Number.NaN;
         if (
           !d.notified &&
           now - d.since >= SERVICE_DOWN_MS &&
@@ -278,10 +304,12 @@ export class Notifier {
     await this.services(id, inv);
     const name = await this.serverName(id);
 
-    // критичные замечания: новые и ушедшие
+    // критичные замечания: новые (подтверждённые) и ушедшие
     const prev = this.highFindings.get(id) ?? new Set<string>();
-    const cur = new Set(
-      (inv.audit?.findings ?? []).filter((f) => f.severity === 'high').map((f) => f.text),
+    const cur = this.confirmed(
+      id,
+      prev,
+      new Set((inv.audit?.findings ?? []).filter((f) => f.severity === 'high').map((f) => f.text)),
     );
     this.highFindings.set(id, cur);
     await this.audit(id, name, cur, prev, st.events);
@@ -328,6 +356,54 @@ export class Notifier {
       await this.tg.amend(`pkg:${id}`, `\u2705 ${name}: обновления безопасности установлены`, {
         done: true,
       });
+  }
+
+  /** На сервере идёт действие (обновление, перезапуск, команда). */
+  private busy(id: string): boolean {
+    return busyAction(this.db, id) !== null;
+  }
+
+  /**
+   * Критичные замечания снимка, которые считаются настоящими: прежние, о которых уже сказано, и
+   * новые, продержавшиеся FINDING_CONFIRM_MS (во время действия отсчёт не идёт). Новое и не
+   * подтверждённое ждёт: панель просит снимок после срока; пропало - забывается молча.
+   */
+  private confirmed(id: string, prev: Set<string>, high: Set<string>): Set<string> {
+    const now = Date.now();
+    const busy = this.busy(id);
+    const open = new Set(this.auditOpen()[id] ?? []);
+    const wait = this.unconfirmed.get(id) ?? new Map<string, number>();
+    const out = new Set<string>();
+    for (const t of high) {
+      if (prev.has(t) || open.has(t)) {
+        out.add(t);
+        continue;
+      }
+      // во время действия не ждёт: отсчёт - с первого снимка после его конца
+      if (busy) {
+        wait.delete(t);
+        continue;
+      }
+      const since = wait.get(t) ?? now;
+      if (now - since >= FINDING_CONFIRM_MS) {
+        wait.delete(t);
+        out.add(t);
+      } else wait.set(t, since);
+    }
+    for (const t of wait.keys()) if (!high.has(t)) wait.delete(t);
+    if (wait.size) {
+      this.unconfirmed.set(id, wait);
+      // во время действия снимок придёт сам по его окончании
+      if (!busy && !this.confirmTimers.has(id)) {
+        const t = setTimeout(() => {
+          this.confirmTimers.delete(id);
+          void this.registry.refreshInventory(id, { quiet: true });
+        }, FINDING_CONFIRM_MS + 5_000);
+        t.unref?.();
+        this.confirmTimers.set(id, t);
+      }
+    } else this.unconfirmed.delete(id);
+    return out;
   }
 
   /** Замечания, о которых сейчас говорит сообщение "критичные замечания", по серверам. */
@@ -423,7 +499,7 @@ export class Notifier {
       this.setFlag('disk', id, true);
       if (await this.tg.wants('diskFull', id))
         await this.tg.send(
-          `${await this.serverName(id)}: диск заполнен на ${pct}% (${Math.round(m.diskUsedGb)}/${Math.round(m.diskTotalGb)}"""+NBSP+"""ГБ)`,
+          `${await this.serverName(id)}: диск заполнен на ${pct}% (${Math.round(m.diskUsedGb)}/${Math.round(m.diskTotalGb)}\u00a0ГБ)`,
           { meta: { event: 'diskFull', serverId: id, ref: `disk:${id}` } },
         );
     } else if (diskOn && pct < st.diskPercent - 3) {
@@ -432,7 +508,7 @@ export class Notifier {
         const name = await this.serverName(id);
         await this.tg.resolve(
           `disk:${id}`,
-          () => `"""+OK+""" ${name}: место на диске освободилось, занято ${pct}%`,
+          () => `\u2705 ${name}: место на диске освободилось, занято ${pct}%`,
         );
       }
     }
@@ -445,7 +521,7 @@ export class Notifier {
         this.setFlag('cpu', id, true);
         if (await this.tg.wants('cpuHigh', id))
           await this.tg.send(
-            `${await this.serverName(id)}: загрузка CPU выше ${st.cpuPercent}% уже ${CPU_HIGH_MINUTES}"""+NBSP+"""мин, сейчас ${Math.round(m.cpuPercent)}%, load ${m.load1.toFixed(2)}`,
+            `${await this.serverName(id)}: загрузка CPU выше ${st.cpuPercent}% уже ${CPU_HIGH_MINUTES}\u00a0мин, сейчас ${Math.round(m.cpuPercent)}%, load ${m.load1.toFixed(2)}`,
             { meta: { event: 'cpuHigh', serverId: id, ref: `cpu:${id}` } },
           );
       }
@@ -457,7 +533,7 @@ export class Notifier {
           const name = await this.serverName(id);
           await this.tg.resolve(
             `cpu:${id}`,
-            () => `"""+OK+""" ${name}: загрузка CPU спала, сейчас ${Math.round(m.cpuPercent)}%`,
+            () => `\u2705 ${name}: загрузка CPU спала, сейчас ${Math.round(m.cpuPercent)}%`,
           );
         }
       }

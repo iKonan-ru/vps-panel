@@ -3,7 +3,7 @@ import { describe, expect, it } from 'vitest';
 import { AgentRegistry } from '../src/agents/registry.js';
 import { createDb } from '../src/db/index.js';
 import { actionLog, servers } from '../src/db/schema.js';
-import { MAX_OUTPUT, actionJournal } from '../src/lib/action-journal.js';
+import { MAX_OUTPUT, actionJournal, onActionFinished } from '../src/lib/action-journal.js';
 import { UiHub } from '../src/lib/ui-hub.js';
 
 function setup() {
@@ -41,5 +41,26 @@ describe('actionJournal.open', () => {
       'вывод не сохраняется',
     );
     expect(() => journal.open('s1', 'command:z')).not.toThrow();
+  });
+});
+
+describe('окончание действия', () => {
+  it('подписчики узнают сервер, вид действия и запрошенный свежий снимок', async () => {
+    const { journal } = setup();
+    const seen: [string, string][] = [];
+    let fresh: Promise<void> | null = null;
+    const stop = onActionFinished((id, kind, f) => {
+      seen.push([id, kind]);
+      fresh = f;
+    });
+    const a = journal.open('s1', 'mtproxyl:update');
+    await a.finish(0);
+    await journal.quick('s1', 'xui:token', {}, async () => 1);
+    stop();
+    expect(seen).toEqual([
+      ['s1', 'mtproxyl:update'],
+      ['s1', 'xui:token'],
+    ]);
+    await expect(fresh).resolves.toBeUndefined();
   });
 });

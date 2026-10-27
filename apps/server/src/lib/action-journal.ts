@@ -15,11 +15,20 @@ export const MAX_OUTPUT = 1_000_000;
  */
 const running = new Map<string, () => string>();
 
+/** Вид идущих действий: подписчики окончания узнают, что закончилось. */
+const kinds = new Map<string, string>();
+
+/**
+ * Окончание действия: сервер, вид действия и запрошенный после него свежий снимок (resolve -
+ * снимок пришёл или не удался).
+ */
+type FinishedListener = (serverId: string, kind: string, fresh: Promise<void>) => void;
+
 /** Кто ждёт окончания действий на серверах (синхронизация клиентов, пропустившая занятый). */
-const finishedListeners = new Set<(serverId: string) => void>();
+const finishedListeners = new Set<FinishedListener>();
 
 /** Подписка на окончание любого действия; возвращает отписку. */
-export function onActionFinished(fn: (serverId: string) => void): () => void {
+export function onActionFinished(fn: FinishedListener): () => void {
   finishedListeners.add(fn);
   return () => {
     finishedListeners.delete(fn);
@@ -27,8 +36,12 @@ export function onActionFinished(fn: (serverId: string) => void): () => void {
 }
 
 /** Действие на сервере закончилось: сказать подписчикам. */
-export function actionFinished(serverId: string) {
-  for (const fn of finishedListeners) fn(serverId);
+export function actionFinished(
+  serverId: string,
+  kind = '',
+  fresh: Promise<void> = Promise.resolve(),
+) {
+  for (const fn of finishedListeners) fn(serverId, kind, fresh);
 }
 
 /** Накопленный вывод идущего действия или null (не идёт или без стрима). */
@@ -55,14 +68,15 @@ export interface Action {
 export function actionJournal(db: Db, hub: UiHub, registry: AgentRegistry) {
   async function finish(id: string, serverId: string, exitCode: number, output: string) {
     running.delete(id);
+    const kind = kinds.get(id) ?? '';
+    kinds.delete(id);
     await db
       .update(actionLog)
       .set({ finishedAt: new Date().toISOString(), exitCode, output: output.slice(-MAX_OUTPUT) })
       .where(eq(actionLog.id, id));
     hub.broadcast({ type: 'action.finished', serverId, actionId: id, exitCode });
-    actionFinished(serverId);
     // после любого действия просим агента прислать свежий inventory: интерфейс обновится сам
-    void registry.refreshInventory(serverId);
+    actionFinished(serverId, kind, registry.refreshInventory(serverId));
   }
 
   /**
@@ -77,6 +91,7 @@ export function actionJournal(db: Db, hub: UiHub, registry: AgentRegistry) {
   ): Action {
     const id = newId();
     beginAction(db, { id, serverId, kind, params }, force);
+    kinds.set(id, kind);
     hub.broadcast({ type: 'action.started', serverId, actionId: id, kind });
     let output = '';
     running.set(id, () => output);

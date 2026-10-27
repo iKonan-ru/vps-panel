@@ -1,5 +1,5 @@
 import { type QueryClient, useQueryClient } from '@tanstack/react-query';
-import type { ServiceUpdateKind } from '@vps/protocol';
+import { SERVICE_UPDATE_ACTIONS, type ServiceUpdateKind } from '@vps/protocol';
 import { useSyncExternalStore } from 'react';
 import { api } from './api';
 
@@ -20,13 +20,11 @@ export const startServiceUpdate: Record<
   'mtproxyl-panel': (id) => mtExec(id, 'panel.update'),
 };
 
-/** Действия-обновления сервиса: по их окончании версии перепроверяются. */
-export const SERVICE_UPDATE_ACTIONS = new Set([
-  'xui:update',
-  'xui:xray',
-  'mtproxyl:update',
-  'mtproxyl:panel.update',
-]);
+/**
+ * Действия-обновления сервиса: по их окончании версии перепроверяет панель (и без открытого
+ * интерфейса - после обновления из Telegram); интерфейс присоединяется к этой проверке.
+ */
+export { SERVICE_UPDATE_ACTIONS };
 
 interface CheckState {
   checking: boolean;

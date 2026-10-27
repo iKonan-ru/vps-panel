@@ -179,7 +179,7 @@ interface FakeMt {
   ip: string;
 }
 
-async function setup(o: { mtproxyl?: boolean; panelHost?: boolean } = {}) {
+async function setup(o: { mtproxyl?: boolean; panelHost?: boolean; settleMs?: number } = {}) {
   const db = createDb(':memory:');
   const box = new SecretBox('s'.repeat(40));
   for (const [id, name, host, country] of [
@@ -267,6 +267,7 @@ async function setup(o: { mtproxyl?: boolean; panelHost?: boolean } = {}) {
     inboundChecksMs: [1],
     panelHost: async () => Boolean(o.panelHost),
     recheckMs: 1,
+    settleMs: o.settleMs ?? 0,
   });
   const done = async () => {
     for (let i = 0; i < 200; i++) {
@@ -501,6 +502,62 @@ describe('каскады', () => {
         .get()?.check?.ok,
     ).toBe(true);
   });
+  it('разовый сбой проверки в карточку не попадает: итог - повторная проверка', async () => {
+    const { db, c, xui, done, input, notes } = await setup();
+    await c.create('entry', input);
+    await done();
+    let n = 0;
+    const orig = xui.entry?.handle.bind(xui.entry);
+    if (xui.entry && orig)
+      xui.entry.handle = (m, p, b, f) =>
+        p === 'xray/testOutbound' && n++ === 0
+          ? ok({ success: false, error: 'timeout' })
+          : orig(m, p, b, f);
+    await c.checkAll();
+    expect(n).toBe(2);
+    expect(db.select().from(cascades).get()?.check).toMatchObject({ ok: true, error: null });
+    expect(notes).toEqual([]);
+  });
+
+  it('после действия на входе или выходе плановая проверка ждёт', async () => {
+    const { db, c, xui, done, input } = await setup({ settleMs: 60_000 });
+    await c.create('entry', input);
+    await done();
+    const before = db.select().from(cascades).get()?.check;
+    let tests = 0;
+    const orig = xui.entry?.handle.bind(xui.entry);
+    if (xui.entry && orig)
+      xui.entry.handle = (m, p, b, f) => {
+        if (p === 'xray/testOutbound') tests++;
+        return orig(m, p, b, f);
+      };
+    // создание - действие на входе: только что закончилось
+    await c.checkAll();
+    expect(tests).toBe(0);
+    // действие на выходе (обновление 3X-UI) - тоже
+    db.update(actionLog)
+      .set({ finishedAt: new Date(Date.now() - 120_000).toISOString() })
+      .run();
+    db.insert(actionLog)
+      .values({
+        id: 'upd',
+        serverId: 'exit',
+        kind: 'xui:update',
+        params: {},
+        finishedAt: new Date().toISOString(),
+        exitCode: 0,
+      })
+      .run();
+    await c.checkAll();
+    expect(tests).toBe(0);
+    db.update(actionLog)
+      .set({ finishedAt: new Date(Date.now() - 120_000).toISOString() })
+      .run();
+    await c.checkAll();
+    expect(tests).toBe(1);
+    expect(db.select().from(cascades).get()?.check).not.toEqual(before);
+  });
+
   it('правила каскада - на своём теге loopback-а; торренты и private - в блок первыми', async () => {
     const { db, c, xui, done, input } = await setup();
     await c.create('entry', input);

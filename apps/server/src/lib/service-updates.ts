@@ -68,6 +68,8 @@ export class ServiceUpdates {
   private panelRelease: { at: number; version: string } | null = null;
   /** Когда перепроверяли сервер из-за устаревшей записи (не чаще раза в 5 минут). */
   private staleAt = new Map<string, number>();
+  /** Идущая проверка сервера: кнопка во время неё ждёт её же, а не ставит вторую. */
+  private inflight = new Map<string, Promise<ServiceUpdate[]>>();
 
   constructor(
     private db: Db,
@@ -171,14 +173,27 @@ export class ServiceUpdates {
     return out;
   }
 
-  /** Проверить один сервер сейчас (кнопка, после обновления); итог - его обновления. */
-  async recheck(serverId: string): Promise<ServiceUpdate[]> {
-    await this.exclusive(async () => {
-      const store = await this.load();
-      await this.checkServer(serverId, store);
-      await this.save(store);
+  /**
+   * Проверить один сервер сейчас (кнопка, после обновления); итог - его обновления. after -
+   * сначала дождаться (свежий снимок после обновления: текущие версии берутся из него). Уже
+   * идёт проверка этого сервера - её итог.
+   */
+  recheck(serverId: string, after?: Promise<unknown>): Promise<ServiceUpdate[]> {
+    const cur = this.inflight.get(serverId);
+    if (cur) return cur;
+    const run = (async () => {
+      await after?.catch(() => undefined);
+      await this.exclusive(async () => {
+        const store = await this.load();
+        await this.checkServer(serverId, store);
+        await this.save(store);
+      });
+      return this.list(serverId);
+    })().finally(() => {
+      if (this.inflight.get(serverId) === run) this.inflight.delete(serverId);
     });
-    return this.list(serverId);
+    this.inflight.set(serverId, run);
+    return run;
   }
 
   private exclusive<T>(fn: () => Promise<T>): Promise<T> {
