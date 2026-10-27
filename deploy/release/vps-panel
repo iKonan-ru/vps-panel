@@ -47,13 +47,33 @@ TAIL_FILE=""
 # сводка всё равно печатается при выходе - иначе пароль был бы потерян.
 ACCESS_LOGIN=""
 ACCESS_PASSWORD=""
+# Ход обновления: последний записанный итог и шаг. Обновление оборвалось (ошибка без своей
+# обработки, сигнал) - при выходе в data/deploy.json пишется "не удалось", иначе панель так и
+# показывала бы "выполняется". До перезапуска контейнеров на место возвращаются и прежние файлы.
+UPDATING=0
+SWAPPED=0
+LAST_STATE=""
+STEP=0
+STEP_NAME=""
+PREV="$ROOT/.prev"
 on_exit() {
+  local code=$?
+  if [ "$UPDATING" = 1 ] && [ "$LAST_STATE" = building ]; then
+    UPDATING=0
+    if [ "$SWAPPED" = 1 ] && [ "$STEP" -lt 3 ]; then restore_files || true; fi
+    if [ -n "${TAIL_FILE:-}" ]; then echo "обновление прервано, код выхода $code" >>"$TAIL_FILE" || true; fi
+    status failed "$STEP" 4 "$STEP_NAME" || true
+  fi
   rm -rf "${TMPD:-}" "${TAIL_FILE:-}"
   if [ -n "$ACCESS_LOGIN" ]; then
     print_access "$ACCESS_LOGIN" "$ACCESS_PASSWORD" "VPS Panel: установка оборвалась, но администратор создан"
   fi
 }
 trap on_exit EXIT
+# остановка службы, обрыв ssh, Ctrl+C - через выход, чтобы on_exit записал итог
+trap 'exit 143' TERM
+trap 'exit 129' HUP
+trap 'exit 130' INT
 
 say() { printf '\n== %s\n' "$*"; }
 warn() { printf '!! %s\n' "$*" >&2; }
@@ -137,6 +157,7 @@ fetch_release() { # fetch_release <версия> <каталог>
 # Ход обновления для панели (data/deploy.json: этап, шаг, итог)
 STARTED=0
 status() { # status <state> <шаг> <всего> <название> [running]
+  LAST_STATE="$1" STEP="$2" STEP_NAME="$4"
   [ -d "$DATA" ] || return 0
   python3 - "$STATUS" "$1" "$2" "$3" "$4" "${TARGET:-?}" "${5:-${CURRENT:-}}" "$STARTED" "${TAIL_FILE:-}" <<'PY'
 import json, os, sys, time
@@ -165,6 +186,19 @@ wait_health() { # wait_health <версия> <секунд>: /api/health отв�
     sleep 5
   done
   return 1
+}
+
+# Команда vps-panel из релиза - рядом и переименованием: запущенный скрипт bash дочитывает с
+# диска по ходу работы, запись поверх него подменила бы ему продолжение.
+install_cli() {
+  install -m 755 "$1" "$CLI_PATH.new"
+  mv -f "$CLI_PATH.new" "$CLI_PATH"
+}
+
+# прежние compose.yml, Caddyfile и .env (копия перед обновлением) - на место
+restore_files() {
+  cp -p "$PREV/compose.yml" "$PREV/Caddyfile" "$ROOT/"
+  cp -p "$PREV/.env" "$ENV_FILE"
 }
 
 install_units() {
@@ -422,7 +456,7 @@ TXT
   local tmp="$TMPD"
   fetch_release "$VERSION" "$tmp"
   install -m 644 "$tmp/compose.yml" "$tmp/Caddyfile" "$tmp/fail2ban-panel.conf" "$tmp/fail2ban-panel.jail" "$ROOT/"
-  install -m 755 "$tmp/vps-panel" "$CLI_PATH"
+  install_cli "$tmp/vps-panel"
   umask 077
   cat >"$ENV_FILE" <<ENV
 # VPS Panel: настройки установки. SESSION_SECRET - ключ шифрования данных в базе: храните
@@ -515,26 +549,32 @@ cmd_update() {
   [ -n "$TARGET" ] || TARGET="$(latest_version "${channel:-stable}")"
   echo "$TARGET" | grep -qE "$SEMVER" || die "версия $TARGET: нужна вида X.Y.Z или X.Y.Z-beta.N"
   if [ "$TARGET" = "$CURRENT" ] && [ "$force" = 0 ]; then
-    echo "уже $CURRENT"
-    return 0
+    # в .env версия ставится до перезапуска: панель ей не отвечает - прошлое обновление
+    # оборвалось, ставится заново
+    if wait_health "$CURRENT" 5; then
+      echo "уже $CURRENT"
+      return 0
+    fi
+    warn "панель не отвечает версией $CURRENT - установка заново"
   fi
   STARTED="$(date +%s)"
   TAIL_FILE="$(mktemp)"
   TMPD="$(mktemp -d)"
-  local tmp="$TMPD" prev="$ROOT/.prev"
+  UPDATING=1
+  local tmp="$TMPD"
   say "обновление $CURRENT -> $TARGET"
   status building 1 4 "файлы релиза"
   ( fetch_release "$TARGET" "$tmp" ) >>"$TAIL_FILE" 2>&1 || { status failed 1 4 "файлы релиза"; cat "$TAIL_FILE" >&2; exit 1; }
 
   # прежние файлы - для отката
-  rm -rf "$prev"
-  mkdir -p "$prev"
-  cp -p "$ROOT/compose.yml" "$ROOT/Caddyfile" "$ENV_FILE" "$prev/"
+  rm -rf "$PREV"
+  mkdir -p "$PREV"
+  cp -p "$ROOT/compose.yml" "$ROOT/Caddyfile" "$ENV_FILE" "$PREV/"
   restore() {
-    cp -p "$prev/compose.yml" "$prev/Caddyfile" "$ROOT/"
-    cp -p "$prev/.env" "$ENV_FILE"
+    restore_files
     compose up -d >>"$TAIL_FILE" 2>&1 || true
   }
+  SWAPPED=1
   install -m 644 "$tmp/compose.yml" "$tmp/Caddyfile" "$tmp/fail2ban-panel.conf" "$tmp/fail2ban-panel.jail" "$ROOT/"
   env_set PANEL_VERSION "$TARGET"
   env_set PANEL_PREV_VERSION "$CURRENT"
@@ -560,7 +600,7 @@ cmd_update() {
     status failed 4 4 "проверка новой версии" "$CURRENT"
     die "$TARGET не ответила за 3 минуты, возвращена $CURRENT (vps-panel logs)"
   fi
-  install -m 755 "$tmp/vps-panel" "$CLI_PATH"
+  install_cli "$tmp/vps-panel"
   # jail fail2ban - по правилам нового релиза (его же командой), там, где jail уже стоял
   if [ -f /etc/fail2ban/jail.d/vps-panel.conf ]; then
     "$CLI_PATH" fail2ban >>"$TAIL_FILE" 2>&1 || warn "jail fail2ban не обновился: vps-panel fail2ban"
