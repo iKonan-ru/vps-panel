@@ -11,6 +11,7 @@ import {
 import { daysToPayment } from '../../lib/billing.js';
 import { esc, tgWhen } from '../../lib/telegram.js';
 import { cb } from '../codec.js';
+import { UPDATE } from '../notify-buttons.js';
 import {
   type Btn,
   type Ctx,
@@ -51,6 +52,7 @@ export const COMMANDS = [
   { command: 'servers', description: 'Серверы' },
   { command: 'clients', description: 'Клиенты' },
   { command: 'log', description: 'Журнал действий' },
+  { command: 'updates', description: 'Обновления' },
   { command: 'settings', description: 'Управление через бота' },
 ];
 
@@ -145,10 +147,60 @@ export function summaryView(d: SummaryData, c: Ctx): Screen {
   kb.push([
     { text: 'Серверы', data: cb('sl', '-', 0) },
     { text: 'Клиенты', data: cb('gl', 0, 0) },
+    { text: 'Журнал', data: cb('lg', '-', 0) },
   ]);
   kb.push([
-    { text: 'Журнал', data: cb('lg', '-', 0) },
+    { text: upd.size ? `${I.warn} Обновления` : 'Обновления', data: cb('ud') },
     { text: 'Обновить', data: cb('m') },
+  ]);
+  return { text: lines.join('\n'), kb };
+}
+
+// ---- обновления всех серверов ----
+
+/** Кнопок обновления на экране не больше: остальное - в "Обслуживании" сервера. */
+const UPDATE_BUTTONS = 10;
+
+/**
+ * Обновления всех серверов: сервисы (по последней проверке), агент, пакеты безопасности. Кнопки -
+ * те же действия, что в "Обслуживании" сервера; "Проверить все" - проверка сервисов на всех
+ * серверах в сети.
+ */
+export function updatesView(d: {
+  servers: ServerSummary[];
+  updates: Record<string, ServiceUpdate[]>;
+}): Screen {
+  const lines = ['<b>Обновления</b>', ''];
+  const btns: Btn[][] = [];
+  const servers = [...d.servers].sort((a, b) => a.name.localeCompare(b.name));
+  for (const s of servers) {
+    const parts: string[] = [];
+    const name = cut(s.name, 16);
+    for (const u of d.updates[s.id] ?? []) {
+      parts.push(
+        `${esc(u.title)} ${esc(u.latest)}${u.current ? ` (сейчас ${esc(u.current)})` : ''}`,
+      );
+      const c = UPDATE[u.kind];
+      if (c) btns.push([{ text: `Обновить ${c.title} на ${name}`, data: cb('up', s.id, c.code) }]);
+    }
+    if (s.agentUpdateAvailable && !s.agentUpdating) {
+      parts.push('агент');
+      btns.push([{ text: `Обновить агент на ${name}`, data: cb('au', s.id) }]);
+    }
+    const pending = s.audit?.pendingUpdates ?? 0;
+    if (pending > 0) {
+      parts.push(`пакеты безопасности: ${pending}`);
+      btns.push([{ text: `Обновить пакеты на ${name}`, data: cb('pu', s.id) }]);
+    }
+    if (parts.length) lines.push(`<b>${esc(s.name)}</b>${DASH}${parts.join(', ')}`);
+  }
+  if (!btns.length) lines.push('Новых версий нет');
+  if (btns.length > UPDATE_BUTTONS)
+    lines.push('', `Ещё ${btns.length - UPDATE_BUTTONS}${DASH}в ${q('Обслуживании')} сервера`);
+  const kb = btns.slice(0, UPDATE_BUTTONS);
+  kb.push([
+    { text: 'Проверить все', data: cb('uk') },
+    { text: 'Сводка', data: cb('m') },
   ]);
   return { text: lines.join('\n'), kb };
 }

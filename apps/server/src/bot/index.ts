@@ -63,6 +63,7 @@ const MENU_SCREENS: Record<string, string> = {
   [MENU.clients]: 'gl:0:0',
   '/log': 'lg:-:0',
   [MENU.log]: 'lg:-:0',
+  '/updates': 'ud',
   '/settings': 'st',
   [MENU.more]: 'st',
 };

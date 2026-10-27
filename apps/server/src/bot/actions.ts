@@ -6,6 +6,7 @@ import type {
   PanelUpdateView,
   ServerDetail,
   ServerReach,
+  ServerSummary,
   ServiceUpdate,
   WatchList,
   XuiInboundRow,
@@ -453,6 +454,27 @@ const ACTIONS: Record<string, Make> = {
       },
     };
   },
+  uk: async ({ d }) => ({
+    risk: 'safe',
+    verb: 'Проверить',
+    question: 'Проверить новые версии сервисов на всех серверах в сети?',
+    title: 'проверка обновлений',
+    serverId: null,
+    serverName: null,
+    run: async () => {
+      const list = (await d.api.get<ServerSummary[]>('/api/servers')).filter(
+        (s) => s.status === 'online',
+      );
+      const res = await Promise.allSettled(
+        list.map((s) => d.api.post(`/api/servers/${enc(s.id)}/updates/check`)),
+      );
+      const failed = list.filter((_, i) => res[i]?.status === 'rejected').map((s) => s.name);
+      return {
+        toast: failed.length ? `Не проверены: ${failed.join(', ')}` : 'Проверено',
+        reopen: { op: 'ud', args: [] },
+      };
+    },
+  }),
   au: async ({ a0, d, server }) => {
     const s = await server(a0);
     return {

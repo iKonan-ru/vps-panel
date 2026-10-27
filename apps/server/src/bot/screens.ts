@@ -31,7 +31,7 @@ import {
 } from './views/clients.js';
 import type { Ctx, Screen } from './views/common.js';
 import { actionView, journalView } from './views/journal.js';
-import { offConfirmView, settingsView, summaryView } from './views/menu.js';
+import { offConfirmView, settingsView, summaryView, updatesView } from './views/menu.js';
 import {
   backupView,
   notifyView,
@@ -124,6 +124,13 @@ const SCREENS: Record<string, Make> = {
       { version: d.version, newer: next, servers, reach, updates, clients, running },
       d.ctx,
     );
+  },
+  ud: async (_, d) => {
+    const [servers, updates] = await Promise.all([
+      d.api.get<ServerSummary[]>('/api/servers'),
+      d.api.get<Record<string, ServiceUpdate[]>>('/api/updates'),
+    ]);
+    return updatesView({ servers, updates });
   },
   sl: async ([ref, page], d) => {
     const tag = d.ref(ref);

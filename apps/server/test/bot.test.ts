@@ -12,7 +12,7 @@ import { SCREEN_OPS } from '../src/bot/screens.js';
 import { BotStore } from '../src/bot/store.js';
 import { clientView } from '../src/bot/views/clients.js';
 import { plural, tail } from '../src/bot/views/common.js';
-import { findServers, summaryView } from '../src/bot/views/menu.js';
+import { findServers, summaryView, updatesView } from '../src/bot/views/menu.js';
 import { problems, serversView } from '../src/bot/views/servers.js';
 import { loadEnv } from '../src/config.js';
 import { createDb } from '../src/db/index.js';
@@ -196,6 +196,22 @@ describe('bot screens', () => {
     expect(kb.flat().some((b) => b.text.includes('привязка'))).toBe(true);
   });
 
+  it('updates: from the summary and by command, check all reopens the screen', async () => {
+    await bot.handle(press(ADMIN, cb('ud')));
+    const e = sent('editMessageText')[0]?.params;
+    expect(String(e?.text)).toContain('<b>Обновления</b>');
+    expect(String(e?.text)).toContain('Новых версий нет');
+    calls.length = 0;
+    await bot.handle(msg(ADMIN, '/updates'));
+    expect(String(sent('sendMessage')[0]?.params.text)).toContain('<b>Обновления</b>');
+    calls.length = 0;
+    await bot.handle(press(ADMIN, cb('uk')));
+    for (let i = 0; i < 50 && !sent('editMessageText').length; i++)
+      await new Promise((r) => setTimeout(r, 10));
+    expect(sent('answerCallbackQuery').some((c) => c.params.text === 'Проверено')).toBe(true);
+    expect(String(sent('editMessageText').at(-1)?.params.text)).toContain('<b>Обновления</b>');
+  });
+
   it('turning off from the bot removes the keyboard and stops answering', async () => {
     await bot.handle(press(ADMIN, cb('off!')));
     expect(getSetting(db, 'tg_bot_on')).toBe('0');
@@ -328,6 +344,40 @@ describe('bot codec and views', () => {
     expect(s.text).toContain('Web&lt;io&gt;');
     expect(s.text).toContain('Оплата: Web&lt;io&gt; завтра, 450\u00a0RUB');
     expect(s.kb[0]?.[0]?.data).toBe('sv:b');
+  });
+
+  it('updates of all servers: services, agent, packages - with update buttons', () => {
+    const list: ServerSummary[] = [
+      {
+        ...base,
+        id: 'b',
+        name: 'NetCore',
+        host: 'n',
+        status: 'online',
+        agentUpdateAvailable: true,
+      },
+      {
+        ...base,
+        id: 'a',
+        name: 'Hoster',
+        host: 'h',
+        status: 'online',
+        audit: { pendingUpdates: 3 } as ServerSummary['audit'],
+      },
+      { ...base, id: 'c', name: 'Kappa', host: 'k', status: 'online' },
+    ];
+    const v = updatesView({
+      servers: list,
+      updates: { a: [{ kind: 'xui', title: '3X-UI', current: '2.4.9', latest: 'v2.5.0' }] },
+    });
+    expect(v.text).toContain('<b>Hoster</b>');
+    expect(v.text).toContain('3X-UI v2.5.0 (сейчас 2.4.9), пакеты безопасности: 3');
+    expect(v.text).toContain('<b>NetCore</b>');
+    expect(v.text).not.toContain('Kappa');
+    expect(v.kb.flat().map((b) => b.data)).toEqual(['up:a:x', 'pu:a', 'au:b', 'uk', 'm']);
+    const none = updatesView({ servers: [list[2] as ServerSummary], updates: {} });
+    expect(none.text).toContain('Новых версий нет');
+    expect(none.kb.flat().map((b) => b.data)).toEqual(['uk', 'm']);
   });
 
   it('server list pages and filters by tag without case', () => {
