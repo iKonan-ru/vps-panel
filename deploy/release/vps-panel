@@ -18,6 +18,9 @@
 #   vps-panel status | version | logs [panel|caddy] | restart
 #   vps-panel fail2ban                                   jail fail2ban входа в панель заново
 #                                                        (обновление делает это само)
+#   vps-panel sites [reload]                             свои сайты (sites/*.caddy): список и
+#                                                        проверка конфига Caddy; reload - применить
+#                                                        без перезапуска (неверный не применяется)
 #   vps-panel channel [stable|beta]                      канал для "update" без версии: стабильный
 #                                                        или предварительный (beta)
 #   vps-panel uninstall [--purge | --full] [-y]          снять панель (данные - с --purge);
@@ -25,9 +28,10 @@
 #                                                        включая агент и VPN-сервисы
 #   vps-panel serve-request                              запрос обновления из панели (служба)
 #
-# Каталог - /opt/vps-panel (VPS_PANEL_ROOT): compose.yml, Caddyfile, .env, data. Образы -
-# ghcr.io/ikonan-ru/vps-panel и vps-panel-caddy, файлы релиза - с GitHub. Ход обновления
-# пишется в data/deploy.json: его показывает панель полосой сверху.
+# Каталог - /opt/vps-panel (VPS_PANEL_ROOT): compose.yml (и свой compose.override.yml),
+# Caddyfile, .env, data, sites (свои сайты). Образы - ghcr.io/ikonan-ru/vps-panel и
+# vps-panel-caddy, файлы релиза - с GitHub. Ход обновления пишется в data/deploy.json: его
+# показывает панель полосой сверху.
 set -euo pipefail
 
 REPO="iKonan-ru/vps-panel"
@@ -56,6 +60,7 @@ LAST_STATE=""
 STEP=0
 STEP_NAME=""
 PREV="$ROOT/.prev"
+SITES="$ROOT/sites"
 on_exit() {
   local code=$?
   if [ "$UPDATING" = 1 ] && [ "$LAST_STATE" = building ]; then
@@ -114,11 +119,16 @@ resolve4() { { getent ahostsv4 "$1" 2>/dev/null || true; } | awk '{print $1}' | 
 # адреса.
 COMPOSE_VARS=(PANEL_VERSION PANEL_DOMAIN SUB_DOMAIN ACME_EMAIL SESSION_SECRET LOG_LEVEL TG_PROXY_URL
   PANEL_TLS PANEL_SNI PANEL_ALIAS PANEL_CHANNEL CADDY_DATA_VOLUME CADDY_CONFIG_VOLUME)
+# Свои правки установки - compose.override.yml рядом: с явным -f docker compose сам его не
+# читает, поэтому он подключается здесь, во все команды (и в проверку при обновлении).
 compose() {
-  local u=() v
+  local u=() v f=(-f "$ROOT/compose.yml")
   for v in "${COMPOSE_VARS[@]}"; do u+=(-u "$v"); done
-  env "${u[@]}" docker compose --project-directory "$ROOT" -f "$ROOT/compose.yml" --env-file "$ENV_FILE" "$@"
+  [ -f "$ROOT/compose.override.yml" ] && f+=(-f "$ROOT/compose.override.yml")
+  env "${u[@]}" docker compose --project-directory "$ROOT" "${f[@]}" --env-file "$ENV_FILE" "$@"
 }
+# шапка этого файла - справка (до первой строки не комментария)
+print_help() { awk 'NR == 1 { next } !/^#/ { exit } { sub(/^# ?/, ""); print }' "$0"; }
 
 # Последняя версия канала: stable - только релизы, beta - и пре-релизы. Наибольшая по semver.
 latest_version() { # latest_version <stable|beta>
@@ -451,7 +461,7 @@ TXT
   docker compose version >/dev/null 2>&1 || die "нет docker compose plugin (пакет docker-compose-plugin)"
 
   say "файлы релиза $VERSION"
-  mkdir -p "$ROOT" "$DATA/update"
+  mkdir -p "$ROOT" "$ROOT/sites" "$DATA/update"
   TMPD="$(mktemp -d)"
   local tmp="$TMPD"
   fetch_release "$VERSION" "$tmp"
@@ -578,6 +588,8 @@ cmd_update() {
   install -m 644 "$tmp/compose.yml" "$tmp/Caddyfile" "$tmp/fail2ban-panel.conf" "$tmp/fail2ban-panel.jail" "$ROOT/"
   env_set PANEL_VERSION "$TARGET"
   env_set PANEL_PREV_VERSION "$CURRENT"
+  # папка своих сайтов (монтируется в Caddy): иначе её создал бы docker от root при запуске
+  mkdir -p "$SITES"
 
   status building 2 4 "загрузка образов"
   if ! compose pull >>"$TAIL_FILE" 2>&1; then
@@ -586,9 +598,12 @@ cmd_update() {
     die "образы $TARGET не скачались - осталась $CURRENT"
   fi
   if ! compose run --rm --no-deps -T --entrypoint caddy caddy validate --config /etc/caddy/Caddyfile --adapter caddyfile >>"$TAIL_FILE" 2>&1; then
+    caddy_errors "$TAIL_FILE" >&2
     restore
     status failed 2 4 "проверка Caddyfile"
-    die "Caddyfile релиза $TARGET не прошёл проверку - осталась $CURRENT"
+    local hint=""
+    [ -n "$(sites_files)" ] && hint=" (проверьте свои сайты: vps-panel sites)"
+    die "Caddyfile релиза $TARGET не прошёл проверку$hint - осталась $CURRENT"
   fi
 
   status building 3 4 "перезапуск"
@@ -669,7 +684,7 @@ cmd_uninstall() {
     return
   fi
   confirm "Остановить и снять VPS Panel?" || exit 1
-  [ "$mode" = purge ] && { confirm "Удалить и данные ($DATA, сертификаты Caddy)? Без резервной копии их не вернуть" || exit 1; }
+  [ "$mode" = purge ] && { confirm "Удалить и данные ($DATA, сертификаты Caddy, свои сайты в $SITES)? Без резервной копии их не вернуть" || exit 1; }
   remove_panel "$mode"
   if [ "$mode" = purge ]; then
     echo "снято вместе с данными"
@@ -712,6 +727,7 @@ full_uninstall() {
   fi
   [ "${#awg[@]}" -gt 0 ] && vpn+=("Amnezia: ${awg[*]}")
   [ -f "$ENV_FILE" ] && items+=("панель ${domain:-} с данными, сертификатами и образами")
+  [ -n "$(sites_files)" ] && items+=("файлы своих сайтов в $SITES (контейнеры сайтов остаются)")
   [ -f /etc/systemd/system/vps-agent.service ] && items+=("агент панели (vps-agent)")
   [ -f /etc/systemd/system/vps-naive.service ] && items+=("прокси для браузера (vps-naive)")
   [ -x /usr/local/sbin/vps-portsync ] && items+=("port-sync (порты снятых сервисов в ufw закрываются, SSH остаётся)")
@@ -818,6 +834,66 @@ full_uninstall() {
   fi
   say "готово: VPS Panel снята с сервера"
   [ "$drop_vpn" = 1 ] || [ "${#vpn[@]}" -eq 0 ] || echo "VPN-сервисы оставлены и работают."
+}
+
+# ---------------------------------------------------------------- sites
+# Свои сайты: файлы sites/*.caddy, их подключает Caddyfile панели. Проверка - caddy validate
+# всего конфига (с панелью и подписками); reload применяет только проверенный конфиг и без
+# перезапуска: если reload не прошёл, Caddy остаётся на прежнем.
+sites_files() { find "$SITES" -maxdepth 1 -type f -name '*.caddy' 2>/dev/null | sort; }
+# адреса блоков сайтов в файле: строки вида "имя {" без отступа (сниппеты "(имя) {" - не сайты)
+site_names() { grep -E '^[^#([:space:]][^{]*\{' "$1" | sed -E 's/[[:space:]]*\{.*//' | tr '\n' ' ' || true; }
+# ошибки из вывода caddy (журнал JSON и "Error: ..."), последние три; нет таких - хвост вывода
+caddy_errors() { # caddy_errors <файл с выводом>
+  local e
+  e="$( { grep -E '"level":"error"' "$1" | sed -E 's/.*"msg":"(([^"\\]|\\.)*)".*/\1/' || true; grep -E '^Error' "$1" || true; } | tail -n 3)"
+  if [ -n "$e" ]; then echo "$e"; else tail -n 5 "$1"; fi
+}
+caddy_running() { [ -n "$(compose ps -q --status running caddy 2>/dev/null)" ]; }
+caddy_cli() { # caddy_cli <аргументы caddy>: запущен - exec, нет - разовый контейнер
+  if caddy_running; then
+    compose exec -T caddy caddy "$@"
+  else
+    compose run --rm --no-deps -T --entrypoint caddy caddy "$@"
+  fi
+}
+cmd_sites() {
+  need_root
+  [ -f "$ENV_FILE" ] || die "панель не установлена в $ROOT"
+  case "${1:-}" in "" | reload) ;; *) die "vps-panel sites [reload]" ;; esac
+  mkdir -p "$SITES"
+  local files f names log wild=""
+  files="$(sites_files)"
+  if [ -z "$files" ]; then
+    echo "сайтов нет: файлы <имя>.caddy - в $SITES"
+  else
+    echo "сайты ($SITES):"
+    while read -r f; do
+      names="$(site_names "$f")"
+      echo "  $(basename "$f"): ${names:-адресов не найдено}"
+      # wildcard Caddy пропускает, но такой блок перехватил бы поддомены панелей сервисов, а
+      # сертификат на него без DNS-проверки не выпустить
+      case "$names" in *"*"*) wild="$wild $(basename "$f")" ;; esac
+    done <<<"$files"
+  fi
+  [ -z "$wild" ] || die "адрес с wildcard в:$wild - нужно одно конкретное имя на блок (app.example.com)"
+  TMPD="$(mktemp -d)"
+  log="$TMPD/caddy.log"
+  if ! caddy_cli validate --config /etc/caddy/Caddyfile --adapter caddyfile >"$log" 2>&1; then
+    caddy_errors "$log" >&2
+    [ "${1:-}" = reload ] && die "конфиг Caddy неверный - не применён, Caddy работает на прежнем"
+    die "конфиг Caddy неверный: при перезапуске Caddy не запустится, а с ним панель и подписки - исправьте файлы в $SITES"
+  fi
+  echo "конфиг Caddy верный"
+  [ "${1:-}" = reload ] || return 0
+  if caddy_running; then
+    compose exec -T caddy caddy reload --config /etc/caddy/Caddyfile --adapter caddyfile >"$log" 2>&1 ||
+      { caddy_errors "$log" >&2; die "caddy reload не прошёл - Caddy работает на прежнем конфиге"; }
+    echo "применено без перезапуска; сертификаты новых имён Caddy выпускает сам (журнал: vps-panel logs caddy)"
+  else
+    say "Caddy не запущен - запуск"
+    compose up -d caddy
+  fi
 }
 
 # Администратор панели из консоли: восстановления пароля в панели нет - сброс только здесь.
@@ -1024,7 +1100,8 @@ case "${1:-}" in
   logs) shift; compose logs --tail 200 -f "$@" ;;
   restart) need_root; compose restart ;;
   fail2ban) need_root; install_fail2ban ;;
+  sites) shift; cmd_sites "$@" ;;
   uninstall) shift; cmd_uninstall "$@" ;;
-  help | -h | --help) sed -n '2,27p' "$0" | sed 's/^# \{0,1\}//' ;;
-  *) sed -n '2,27p' "$0" | sed 's/^# \{0,1\}//'; exit 1 ;;
+  help | -h | --help) print_help ;;
+  *) print_help; exit 1 ;;
 esac

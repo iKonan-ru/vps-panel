@@ -1,6 +1,8 @@
 # VPS Panel из релиза: готовые образы ghcr.io, версия - PANEL_VERSION в .env (её меняет
 # "vps-panel update"). Файл заменяется при каждом обновлении - свои правки держите в
-# compose.override.yml рядом (docker compose подхватит его сам).
+# compose.override.yml рядом (его подключают команды vps-panel и docker compose в этом каталоге).
+# Свои сайты - файлы sites/*.caddy (их подключает Caddyfile), их контейнеры - в сети
+# vps-panel_default.
 name: vps-panel
 
 x-logging: &logging
@@ -62,6 +64,7 @@ services:
       ACME_EMAIL: ${ACME_EMAIL}
     volumes:
       - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - ./sites:/etc/caddy/sites:ro
       - caddy_data:/data
       - caddy_config:/config
     depends_on:

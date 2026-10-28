@@ -7,7 +7,7 @@
 | Файл | Что это |
 | --- | --- |
 | `Dockerfile` | образ панели: сервер, интерфейс, xray для маршрута до Telegram, агент и сборки naive и wdtt из стадии `artifacts` |
-| `Dockerfile.caddy`, `Caddyfile` | образ Caddy: HTTPS панели, имени подписок и поддоменов панелей сервисов |
+| `Dockerfile.caddy`, `Caddyfile` | образ Caddy: HTTPS панели, имени подписок и поддоменов панелей сервисов; Caddyfile подключает и свои сайты из `sites/` (`/opt/vps-panel/sites/*.caddy`) |
 | `fail2ban-panel.conf` | фильтр fail2ban для неудачных входов в панель по журналу Caddy |
 | `release/vps-panel` | команда на сервере панели: установка, обновление, откат, домен, восстановление, удаление |
 | `release/compose.yml` | контейнеры panel и caddy релизной установки |
