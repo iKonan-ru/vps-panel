@@ -98,6 +98,9 @@ func TestNaiveRenderExternalCert(t *testing.T) {
 	if strings.Contains(text, "http_port") || strings.Contains(text, "cert_issuer") || strings.Contains(text, ":443") {
 		t.Errorf("с сертификатом панели прокси не выпускает и не слушает 443/80:\n%s", text)
 	}
+	if !strings.Contains(text, "\tauto_https disable_redirects disable_certs\n") {
+		t.Errorf("с сертификатом панели нужен auto_https disable_certs, иначе Caddy прокси занимает 80 для HTTP-01:\n%s", text)
+	}
 	if !strings.HasSuffix(crt, "/certificates/panel/hoster.example.com/hoster.example.com.crt") {
 		t.Errorf("путь сертификата %s: NaiveCertExpiry ищет certificates/*/<имя>/<имя>.crt", crt)
 	}
@@ -134,6 +137,10 @@ func TestNaiveRenderCaddyAdapts(t *testing.T) {
 			out, err := exec.Command(bin, "adapt", "--config", f, "--adapter", "caddyfile").CombinedOutput()
 			if err != nil {
 				t.Errorf("%+v, пользователей %d: Caddy не принял конфиг: %s\n%s", mode, len(u), out, text)
+			}
+			// сертификат панели: Caddy прокси ничего не выпускает (иначе проверка HTTP-01 держит 80)
+			if mode.ext && strings.Contains(string(out), `"automate"`) {
+				t.Errorf("%+v: Caddy прокси выпускает сертификат сам:\n%s", mode, out)
 			}
 		}
 	}

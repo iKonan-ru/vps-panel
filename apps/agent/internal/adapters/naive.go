@@ -119,13 +119,17 @@ func NaiveRender(c NaiveConfig, users map[string]string, deny []string) (string,
 	fmt.Fprintf(&b, "\thttps_port %d\n", c.Port)
 	switch {
 	case c.ExternalCert:
-		// сертификат - файлами (tls в сайте), сам Caddy прокси ничего не выпускает
+		// сертификат - файлами (tls в сайте). disable_certs обязателен: имя в адресе сайта Caddy
+		// иначе всё равно ставит на выпуск, а проверка HTTP-01 занимает 80. Прокси стартует
+		// раньше docker, и после перезагрузки сервера Caddy панели не поднимался: 80 занят.
+		b.WriteString("\tauto_https disable_redirects disable_certs\n")
 	case c.HTTP80:
 		b.WriteString("\thttp_port 80\n")
+		b.WriteString("\tauto_https disable_redirects\n")
 	default:
 		b.WriteString("\tcert_issuer acme {\n\t\tdisable_http_challenge\n\t}\n")
+		b.WriteString("\tauto_https disable_redirects\n")
 	}
-	b.WriteString("\tauto_https disable_redirects\n")
 	b.WriteString("\tservers {\n\t\tprotocols h1 h2\n\t}\n")
 	b.WriteString("\tlog {\n\t\tlevel WARN\n\t}\n}\n\n")
 	// Адрес без имени (":порт") обязателен: Caddy выбирает сайт по Host, а у запроса через прокси
@@ -346,6 +350,30 @@ func naiveRefresh(ctx context.Context, c NaiveConfig, users map[string]string) (
 		return nil, err
 	}
 	return map[string]any{"ok": true, "changed": true}, nil
+}
+
+// NaiveRefreshInstalled - при старте агента: Caddyfile по шаблону этой версии. Сверка зовёт
+// naiveRefresh только через пользователей, а без них (сервер панели) новый шаблон не доезжал
+// бы никогда. Прокси не установлен - ничего не делает.
+func NaiveRefreshInstalled(ctx context.Context) (changed bool, err error) {
+	if _, err := os.Stat(filepath.Join(naiveDir, "config.json")); errors.Is(err, os.ErrNotExist) {
+		return false, nil
+	}
+	naiveMu.Lock()
+	defer naiveMu.Unlock()
+	c, err := naiveReadConfig()
+	if err != nil {
+		return false, err
+	}
+	users, err := naiveReadUsers()
+	if err != nil {
+		return false, err
+	}
+	res, err := naiveRefresh(ctx, c, users)
+	if err != nil {
+		return false, err
+	}
+	return res["changed"] == true, nil
 }
 
 func naiveApply(ctx context.Context, c NaiveConfig, users map[string]string) error {

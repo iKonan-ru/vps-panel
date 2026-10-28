@@ -157,6 +157,14 @@ func main() {
 	} else if updated {
 		log.Info("port-sync: скрипт и юниты обновлены до версии агента")
 	}
+	// прокси для браузера: Caddyfile по шаблону этой версии (reload до минуты - не задерживает подключение)
+	go func() {
+		if changed, err := adapters.NaiveRefreshInstalled(ctx); err != nil {
+			log.Warn("прокси для браузера: Caddyfile не обновлён", "err", err)
+		} else if changed {
+			log.Info("прокси для браузера: Caddyfile обновлён до версии агента")
+		}
+	}()
 
 	collector := metrics.NewCollector()
 	ops := withConfigOps(registry(cfg.PanelURL), cfg, *cfgPath)
