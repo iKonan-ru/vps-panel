@@ -42,6 +42,8 @@ interface SshTarget {
   auth: SshAuth;
   /** Известный отпечаток хоста; пустая строка - первое подключение (запоминаем). */
   knownFingerprint: string;
+  /** Ключи, прочитанные агентом по защищённому каналу перед полной очисткой. */
+  fingerprints?: string[];
 }
 
 export class HostKeyMismatch extends Error {
@@ -68,6 +70,7 @@ export async function sshRun(
   command: string,
   onOutput: (chunk: string) => void,
   timeoutMs = 10 * 60_000,
+  input?: string,
 ): Promise<{ exitCode: number; fingerprint: string }> {
   const conn = new Client();
   let seen = '';
@@ -94,12 +97,17 @@ export async function sshRun(
             conn.end();
             done(() => resolve({ exitCode: code ?? 1, fingerprint: seen }));
           });
+          if (input !== undefined) stream.end(input);
         });
       })
       .on('error', (e: Error & { level?: string }) => {
         // ключ хоста не тот: ssh2 сам отвечает "Host denied (verification failed)" - объясняем
         if (target.knownFingerprint && seen && seen !== target.knownFingerprint)
           return done(() => reject(new HostKeyMismatch(target.knownFingerprint, seen)));
+        if (target.fingerprints && seen && !target.fingerprints.includes(seen))
+          return done(() =>
+            reject(new Error('SSH: ключ хоста не совпадает с ключами, полученными от агента')),
+          );
         const msg =
           e.level === 'client-authentication'
             ? 'SSH: сервер не принял пароль или ключ'
@@ -117,7 +125,10 @@ export async function sshRun(
         hostVerifier: (key: Buffer) => {
           seen = fingerprint(key);
           // бросать из verifier нельзя: false, а причину объясняет обработчик error выше
-          return !target.knownFingerprint || target.knownFingerprint === seen;
+          return (
+            (!target.knownFingerprint || target.knownFingerprint === seen) &&
+            (!target.fingerprints || target.fingerprints.includes(seen))
+          );
         },
         ...auth,
       });

@@ -92,6 +92,8 @@ export const ENSURE_DOCKER = `if ! need docker; then
   fetch https://get.docker.com -o /tmp/get-docker.sh
   apt_wait
   sh /tmp/get-docker.sh
+  install -d -m 700 /etc/vps-agent
+  touch /etc/vps-agent/docker-installed
   rm -f /tmp/get-docker.sh
   systemctl enable --now docker
 fi

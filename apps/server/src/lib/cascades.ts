@@ -10,10 +10,10 @@ import type {
   CascadesView,
   Listener,
 } from '@vps/protocol';
-import { eq, or } from 'drizzle-orm';
+import { and, eq, or } from 'drizzle-orm';
 import type { AgentRegistry } from '../agents/registry.js';
 import type { Db } from '../db/index.js';
-import { cascades, servers } from '../db/schema.js';
+import { cascades, gclientBindings, servers } from '../db/schema.js';
 import { type actionJournal, onActionFinished } from './action-journal.js';
 import { busyAction, busyOrSettling } from './action-lock.js';
 import {
@@ -66,6 +66,18 @@ import {
 import { savedXuiToken, xuiFor, xuiFormFor } from './xui-token.js';
 
 type Row = typeof cascades.$inferSelect;
+const cleanupKey = (id: string) => `uninstall_cascades:${id}`;
+
+/** Снимок незавершённого снятия переживает перезапуск между записью шаблона и удалением клиента. */
+export function cleanupCascades(db: Db, serverId: string): Row[] {
+  const current = db
+    .select()
+    .from(cascades)
+    .where(or(eq(cascades.entryServerId, serverId), eq(cascades.exitServerId, serverId)))
+    .all();
+  const pending = getJsonSetting<Row[]>(db, cleanupKey(serverId), []);
+  return [...new Map([...current, ...pending].map((r) => [r.id, r])).values()];
+}
 type Journal = ReturnType<typeof actionJournal>;
 type Say = (line: string) => void;
 type Json = Record<string, unknown>;
@@ -276,6 +288,15 @@ export class Cascades {
   private requireForm(id: string) {
     if (!this.d.registry.supports(id, 'xui.form'))
       throw fail(409, 'агент входа устарел: нужно обновить агент');
+  }
+
+  private requireNoCleanup(...ids: string[]) {
+    if (
+      ids.some((id) =>
+        ['server.uninstall', 'server.detach'].includes(busyAction(this.d.db, id)?.kind ?? ''),
+      )
+    )
+      throw fail(409, 'сервер участвует в очистке; изменение связей недоступно');
   }
 
   /** Маршруты MTProxyL входа: отметки, ошибки каскадов и не прошедшие проверку выходы. */
@@ -791,6 +812,7 @@ export class Cascades {
    */
   async create(entryId: string, body: CascadeInput): Promise<string> {
     const { db, journal, gc } = this.d;
+    this.requireNoCleanup(entryId, body.exitServerId);
     if (body.exitServerId === entryId) throw fail(400, 'выход - другой сервер');
     this.server(body.exitServerId);
     this.requireForm(entryId);
@@ -801,6 +823,7 @@ export class Cascades {
       const tg = await this.telegramState(entryId);
       if (!tg.available) throw fail(409, `Telegram: ${tg.reason}`);
     }
+    this.requireNoCleanup(entryId, body.exitServerId);
     let ok = false;
     return journal.background(
       entryId,
@@ -908,6 +931,7 @@ export class Cascades {
   async edit(cid: string, body: CascadeEdit): Promise<string> {
     const { db, journal, gc } = this.d;
     const row = this.row(cid);
+    this.requireNoCleanup(row.entryServerId, row.exitServerId);
     const given = Object.fromEntries(
       Object.entries(body).filter(([, v]) => v !== undefined),
     ) as CascadeEdit;
@@ -930,6 +954,7 @@ export class Cascades {
       (change.telegram !== undefined && change.telegram !== row.telegram) ||
       (change.telegramMain !== undefined && tgOn && change.telegramMain !== row.telegramMain);
     const rowChanged = Object.keys(change).length > 0;
+    this.requireNoCleanup(row.entryServerId, row.exitServerId);
     let linksChanged = false;
     return journal.background(
       row.entryServerId,
@@ -1088,6 +1113,7 @@ export class Cascades {
   remove(cid: string): string {
     const { db, journal, gc } = this.d;
     const row = this.row(cid);
+    this.requireNoCleanup(row.entryServerId, row.exitServerId);
     this.requireForm(row.entryServerId);
     const api = this.api(row.entryServerId);
     const exitName = (id: string) =>
@@ -1136,6 +1162,102 @@ export class Cascades {
       },
       { after: () => ok && resyncXui(db, gc, row.entryServerId) },
     );
+  }
+
+  /** Снять связи до очистки сервера. Вызывающий держит блокировки всех участников. */
+  async detachForCleanup(serverId: string, say: Say): Promise<void> {
+    const { db, registry } = this.d;
+    const rows = cleanupCascades(db, serverId);
+    // Недоступность любой стороны обнаруживается до первого изменения.
+    for (const r of rows) {
+      for (const id of [r.entryServerId, r.exitServerId]) {
+        if (!registry.isOnline(id))
+          throw fail(409, `связанный сервер ${this.server(id).name} не в сети`);
+      }
+      this.requireForm(r.entryServerId);
+    }
+    let pending = [...rows];
+    if (pending.length) putSetting(db, cleanupKey(serverId), JSON.stringify(pending));
+    for (const row of rows) {
+      say(
+        `Снятие каскада: ${this.server(row.entryServerId).name} -> ${this.server(row.exitServerId).name}`,
+      );
+      db.delete(cascades).where(eq(cascades.id, row.id)).run();
+      try {
+        await this.apply(row.entryServerId, say);
+        if (
+          JSON.stringify(
+            (await this.readTemplate(this.api(row.entryServerId))).xraySetting,
+          ).includes(outboundTag(row.id))
+        )
+          throw new Error('маршрут каскада остался в шаблоне Xray');
+        if (row.telegram || this.tgState(row.entryServerId).on)
+          await this.applyTelegram(row.entryServerId, say);
+        const entryApi = this.api(row.entryServerId);
+        if (row.entryInboundId) {
+          const present = (await listInbounds(entryApi)).some(
+            (i) => Number(i.id) === row.entryInboundId,
+          );
+          if (present)
+            unwrap(await entryApi('POST', `inbounds/del/${row.entryInboundId}`), 'inbounds/del');
+          if ((await listInbounds(entryApi)).some((i) => Number(i.id) === row.entryInboundId))
+            throw new Error('inbound каскада остался на входе');
+        }
+        // Клиент может уже отсутствовать после частичного выполнения: повтор безопасен.
+        const exitApi = this.api(row.exitServerId);
+        const email = cascadeClientEmail(row.entryServerId);
+        const clients = () =>
+          exitApi('GET', 'clients/list').then((v) => (unwrap(v, 'clients/list') ?? []) as Json[]);
+        if ((await clients()).some((c) => c.email === email))
+          say(await this.releaseExitClient(row.entryServerId, row.exitServerId, row.exitInboundId));
+        const stillNeeded = this.rows(eq(cascades.entryServerId, row.entryServerId)).some(
+          (r) => r.exitServerId === row.exitServerId && r.exitInboundId === row.exitInboundId,
+        );
+        const remaining = (await clients()).find((c) => c.email === email);
+        const needsClient = this.rows(eq(cascades.entryServerId, row.entryServerId)).some(
+          (r) => r.exitServerId === row.exitServerId,
+        );
+        if (!needsClient && remaining) throw new Error('служебный пользователь остался на выходе');
+        if (
+          !stillNeeded &&
+          (remaining?.inboundIds as number[] | undefined)?.includes(row.exitInboundId)
+        )
+          throw new Error('служебный пользователь остался привязан к выходу');
+      } catch (error) {
+        // Запись сохраняет обе стороны для повторной попытки; сервер ещё не удаляется.
+        db.insert(cascades).values(row).run();
+        throw error;
+      }
+      this.fails.delete(row.id);
+      this.tgDown.delete(row.id);
+      const bindings = db
+        .select()
+        .from(gclientBindings)
+        .where(
+          and(eq(gclientBindings.serverId, row.entryServerId), eq(gclientBindings.service, 'xui')),
+        )
+        .all();
+      for (const b of bindings) {
+        db.update(gclientBindings)
+          .set({
+            links: b.links.filter((link) => {
+              try {
+                return Number(new URL(link).port || '443') !== row.entryPort;
+              } catch {
+                return true;
+              }
+            }),
+            xuiInbounds: b.xuiInbounds?.filter((id) => id !== row.entryInboundId) ?? null,
+          })
+          .where(eq(gclientBindings.id, b.id))
+          .run();
+      }
+      resyncXui(db, this.d.gc, row.entryServerId);
+      pending = pending.filter((r) => r.id !== row.id);
+      if (pending.length) putSetting(db, cleanupKey(serverId), JSON.stringify(pending));
+      else deleteSetting(db, cleanupKey(serverId));
+    }
+    if (!this.rows(eq(cascades.entryServerId, serverId)).length) deleteSetting(db, tgKey(serverId));
   }
 
   /** Проверка выхода с входа: testOutbound 3X-UI (временный Xray, запрос на адрес проверки). */

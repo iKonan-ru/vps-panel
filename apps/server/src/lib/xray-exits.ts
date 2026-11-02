@@ -3,6 +3,7 @@ import { eq } from 'drizzle-orm';
 import type { AgentRegistry } from '../agents/registry.js';
 import type { Db } from '../db/index.js';
 import { cascades, servers } from '../db/schema.js';
+import { busyAction } from './action-lock.js';
 import { panelAddresses } from './panel-host.js';
 import { schedule } from './schedule.js';
 import type { SecretBox } from './secret-box.js';
@@ -81,6 +82,11 @@ export async function prepareExit(
   inboundId: number,
 ): Promise<XrayOutbound> {
   const { db, registry, box } = deps;
+  const requireAvailable = () => {
+    if (['server.uninstall', 'server.detach'].includes(busyAction(db, serverId)?.kind ?? ''))
+      throw fail(409, 'сервер участвует в очистке: новый маршрут недоступен');
+  };
+  requireAvailable();
   const row = (await db.select().from(servers).where(eq(servers.id, serverId)).limit(1))[0];
   if (!row) throw fail(404, 'сервер не найден');
   if (!registry.isOnline(row.id)) throw fail(409, 'сервер не в сети');
@@ -98,6 +104,7 @@ export async function prepareExit(
     flow: '',
     comment: 'выход VPS Panel в Telegram',
   });
+  requireAvailable();
 
   return {
     serverId: row.id,
@@ -126,6 +133,7 @@ export async function prepareExit(
  */
 export class XraySpares {
   private running: Promise<void> | null = null;
+  private paused = 0;
 
   constructor(private deps: ExitDeps) {}
 
@@ -134,11 +142,21 @@ export class XraySpares {
   }
 
   sync(): Promise<void> {
+    if (this.paused) return Promise.resolve();
     if (!this.running)
       this.running = this.run().finally(() => {
         this.running = null;
       });
     return this.running;
+  }
+
+  /** Очистка меняет выходы сама; текущая сверка завершается до её изменений. */
+  async pauseForCleanup(): Promise<() => void> {
+    this.paused++;
+    await this.running?.catch(() => undefined);
+    return () => {
+      this.paused--;
+    };
   }
 
   private async run() {

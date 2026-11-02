@@ -11,12 +11,27 @@ import (
 	"github.com/iKonan-ru/vps-panel/apps/agent/internal/inventory"
 	"github.com/iKonan-ru/vps-panel/apps/agent/internal/selfupdate"
 	"github.com/iKonan-ru/vps-panel/apps/agent/internal/shell"
+	"github.com/iKonan-ru/vps-panel/apps/agent/internal/uninstall"
 )
 
 // systemOps - сам сервер: снимок, чистка диска, эталон, firewall, ключи SSH, пакеты,
 // перезагрузка, обновление агента.
 func systemOps(panelURL string) map[string]op {
 	return map[string]op{
+		"uninstall.scan": plain(func(ctx context.Context, _ stream) (any, error) {
+			return uninstall.Scan(ctx)
+		}),
+		"uninstall.prepare": typed(func(ctx context.Context, p uninstall.Request, _ stream) (any, error) {
+			return uninstall.Prepare(ctx, p)
+		}),
+		"uninstall.validate": typed(func(ctx context.Context, p uninstall.Request, _ stream) (any, error) {
+			return uninstall.Validate(ctx, p)
+		}),
+		"uninstall.cancel": typed(func(ctx context.Context, p struct {
+			Token string `json:"token"`
+		}, _ stream) (any, error) {
+			return uninstall.Cancel(ctx, p.Token)
+		}),
 		"inventory.get": plain(func(ctx context.Context, _ stream) (any, error) {
 			return inventory.Collect(ctx, Version)
 		}),

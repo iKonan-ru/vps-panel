@@ -27,6 +27,7 @@ import (
 	"github.com/iKonan-ru/vps-panel/apps/agent/internal/terminal"
 	"github.com/iKonan-ru/vps-panel/apps/agent/internal/transport"
 	"github.com/iKonan-ru/vps-panel/apps/agent/internal/tunnel"
+	"github.com/iKonan-ru/vps-panel/apps/agent/internal/uninstall"
 )
 
 // Version подставляется при сборке: -ldflags "-X main.Version=0.1.0".
@@ -104,11 +105,27 @@ func portsyncCmd(state bool) int {
 func main() {
 	cfgPath := flag.String("config", config.DefaultPath, "путь к конфигу")
 	showVersion := flag.Bool("version", false, "показать версию")
+	fullUninstall := flag.Bool("uninstall", false, "полная очистка сервера с проверкой SSH и выбором ресурсов")
+	uninstallScan := flag.Bool("uninstall-plan", false, "список ресурсов очистки в JSON, без изменений")
+	uninstallRun := flag.Bool("uninstall-run", false, "выполнить подготовленный план из stdin по SSH")
+	uninstallCancel := flag.String("uninstall-cancel", "", "откат подготовки SSH по идентификатору")
+	panelRoot := flag.String("panel-root", "", "каталог установки панели для полной очистки")
 	dumpInventory := flag.Bool("inventory", false, "собрать снимок и напечатать JSON (без подключения к панели)")
 	naiveRender := flag.Bool("naive-render", false, "собрать /etc/vps-naive/Caddyfile из config.json и users.json (команда установки прокси для браузера; externalCert - сертификат от Caddy панели)")
 	portsyncState := flag.Bool("portsync-state", false, "напечатать JSON желаемого состояния port-sync (его применяет vps-portsync)")
 	portsyncIfChanged := flag.Bool("portsync-if-changed", false, "запустить vps-portsync.service, если в 3x-ui изменилось то, что берёт port-sync (vps-portsync-xui.path)")
 	flag.Parse()
+	if *fullUninstall || *uninstallScan || *uninstallRun || *uninstallCancel != "" {
+		mode := "interactive"
+		if *uninstallScan {
+			mode = "scan"
+		} else if *uninstallRun {
+			mode = "run"
+		} else if *uninstallCancel != "" {
+			mode = "cancel"
+		}
+		os.Exit(uninstall.CLI(mode, *panelRoot, *uninstallCancel))
+	}
 	if *portsyncState || *portsyncIfChanged {
 		os.Exit(portsyncCmd(*portsyncState))
 	}

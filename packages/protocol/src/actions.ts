@@ -11,6 +11,8 @@ export const actionTitles: Record<string, string> = {
   'docker.restart': 'Docker: перезапуск',
   'docker.remove': 'Docker: удаление',
   'system.reboot': 'Перезагрузка',
+  'server.uninstall': 'Полная очистка сервера',
+  'server.detach': 'Снятие связей перед очисткой',
   'system.upgrade': 'Обновление пакетов',
   'fail2ban.unban': 'fail2ban: снятие бана',
   'server.setup': 'Настройка сервера',

@@ -46,6 +46,7 @@ import { serverSetup } from './lib/server-setup.js';
 import { ServiceUpdates } from './lib/service-updates.js';
 import { Telegram } from './lib/telegram.js';
 import { UiHub } from './lib/ui-hub.js';
+import { UninstallLinks } from './lib/uninstall-links.js';
 import { PANEL_VERSION } from './lib/version.js';
 import { XraySpares, exitsAfterInboundChange, exitsAfterServerRemoved } from './lib/xray-exits.js';
 import { XrayManager } from './lib/xray.js';
@@ -89,6 +90,7 @@ import { systemRoutes } from './routes/system.js';
 import { tagRoutes } from './routes/tags.js';
 import { terminalRoutes } from './routes/terminal.js';
 import { uiWsRoutes } from './routes/ui-ws.js';
+import { uninstallRoutes } from './routes/uninstall.js';
 import { updateRoutes } from './routes/updates.js';
 import { watchRoutes } from './routes/watch.js';
 import { wdttRoutes } from './routes/wdtt.js';
@@ -437,6 +439,10 @@ export async function buildApp(opts: AppOptions) {
   });
   stops.push(cascades.start());
   await app.register(cascadeRoutes, { cascades });
+  await app.register(uninstallRoutes, {
+    ...serverRouteOpts,
+    links: new UninstallLinks({ db, registry, box, journal, cascades, xray, spares: xraySpares }),
+  });
   // настройка сервера в один клик: команды каталога, inbound-ы, синхронизация - одним действием
   const setup = serverSetup({
     db,

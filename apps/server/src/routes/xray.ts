@@ -1,7 +1,9 @@
+import { isNull } from 'drizzle-orm';
 import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
 import { type AgentRegistry, requireOnline } from '../agents/registry.js';
 import type { Db } from '../db/index.js';
+import { actionLog } from '../db/schema.js';
 import type { SecretBox } from '../lib/secret-box.js';
 import { type ExitDeps, type XraySpares, prepareExit, realityInbounds } from '../lib/xray-exits.js';
 import { type XrayManager, setSpareOff } from '../lib/xray.js';
@@ -25,6 +27,19 @@ export async function xrayRoutes(
   },
 ) {
   const { db, registry, box, xray, spares, deps } = opts;
+  const requireMutable = () => {
+    if (
+      db
+        .select()
+        .from(actionLog)
+        .where(isNull(actionLog.finishedAt))
+        .all()
+        .some((a) => a.kind === 'server.uninstall' || a.kind === 'server.detach')
+    )
+      throw Object.assign(new Error('выполняется очистка сервера: дождитесь снятия связей'), {
+        statusCode: 409,
+      });
+  };
 
   app.get('/api/xray', async () => xray.status());
 
@@ -41,8 +56,10 @@ export async function xrayRoutes(
   });
 
   app.post('/api/xray/setup', async (req) => {
+    requireMutable();
     const body = z.object({ serverId: z.string(), inboundId: z.number().int() }).parse(req.body);
     const ob = await prepareExit(deps, body.serverId, body.inboundId);
+    requireMutable();
     await xray.save(ob);
     await xray.start();
     await new Promise((r) => setTimeout(r, 1_500));
@@ -60,6 +77,7 @@ export async function xrayRoutes(
 
   /** Подготовить запасные выходы сейчас (кнопка в настройках). */
   app.post('/api/xray/spares', async () => {
+    requireMutable();
     await spares.sync();
     return { status: xray.status() };
   });
@@ -69,6 +87,7 @@ export async function xrayRoutes(
    * Запасные пересобираются сразу.
    */
   app.put('/api/xray/spares/off', async (req) => {
+    requireMutable();
     const { off } = z.object({ off: z.array(z.string().max(64)).max(200) }).parse(req.body ?? {});
     setSpareOff(db, off);
     if (xray.status().configured) await spares.sync();
@@ -80,6 +99,7 @@ export async function xrayRoutes(
    * vps-panel в 3x-ui остаются.
    */
   app.post('/api/xray/disable', async () => {
+    requireMutable();
     await xray.save(null);
     await xray.stop();
     return { status: xray.status() };

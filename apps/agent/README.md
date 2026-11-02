@@ -62,6 +62,9 @@ curl --proto '=https' -fsSL https://<панель>/agent/install.sh | sh -s -- \
 | --- | --- |
 | `-config <путь>` | другой конфиг (по умолчанию `/etc/vps-agent/agent.json`) |
 | `-version` | напечатать версию |
+| `-uninstall-plan` | состав полной очистки в JSON без изменений на сервере |
+| `-uninstall` | интерактивная полная очистка с выбором ресурсов, новым паролем root и проверкой SSH |
+| `-panel-root <путь>` | каталог установки панели для очистки (по умолчанию `/opt/vps-panel`) |
 | `-inventory` | собрать снимок и напечатать JSON, к панели не подключаясь |
 | `-naive-render` | собрать `/etc/vps-naive/Caddyfile` из config.json и users.json (вызывает команда установки прокси для браузера) |
 | `-portsync-state` | напечатать JSON желаемого состояния firewall port-sync: его применяет `vps-portsync` |
@@ -96,6 +99,7 @@ curl --proto '=https' -fsSL https://<панель>/agent/install.sh | sh -s -- \
 | Telegram | `telegram.send`, `telegram.updates` (запасной путь в Telegram через сервер) |
 | Доступность из России | `reach.check` (измерения Globalping с адреса сервера: TCP до порта или TLS с SNI из домашних сетей РФ; у дошедших зондов - задержка, время TCP-соединения, и медиана по цели) |
 | агент | `agent.update`, `agent.update.cancel` |
+| полная очистка | `uninstall.scan`, `uninstall.validate`, `uninstall.prepare`, `uninstall.cancel` |
 
 Список в коде - `cmd/vps-agent/ops*.go`; тест сверяет его с `AgentMethodSchema` в
 `packages/protocol`.
@@ -132,6 +136,38 @@ systemctl daemon-reload
 
 Сервисы, поставленные командами панели, при этом остаются на сервере.
 
+Для полной очистки используйте меню "Очистить сервер от панели" в карточке сервера, а на
+сервере панели - `vps-panel uninstall --full` по SSH. Исполнитель требует python3, systemd
+и OpenSSH. Сначала новый пароль root и отдельное подключение по нему, затем выбранные
+ресурсы, агент и точный ключ панели. Чужие приложения, ключи владельца и защита сохраняются.
+Подробности и ограничения - [Удаление](../../docs/install.md#удаление).
+
+`uninstall.validate` проверяет конкретный состав без смены пароля и удаления.
+Режим `detachOnly` разрешает снять только агент и port-sync: нужен при отвязке соседних
+серверов перед удалением панели. VPN-сервисы и Docker в этом режиме сохраняются.
+
+`uninstall.prepare` сохраняет прежнюю конфигурацию SSH и хеш пароля в закрытом каталоге
+`/run/vps-uninstall`, устанавливает новый пароль и таймер отката на 5 минут.
+`uninstall.cancel` откатывает подготовку. Удаление запускается панелью по независимому SSH
+через `-uninstall-run` (запрос JSON в stdin), поэтому остановка агента его не прерывает.
+Эти служебные флаги не предназначены для ручного формирования запросов.
+
+Проверки исполнителя входят в `go test ./...` (нужен python3). Дополнительный изолированный
+стенд с настоящим SSH, сменой пароля и удалением файлов:
+
+```bash
+make build-all
+docker build -t vps-panel-uninstall-ssh-test internal/uninstall/testdata/ssh
+docker run --rm --network none \
+  -v "$PWD/../../dist/vps-agent-linux-amd64:/test/vps-agent:ro" \
+  -v "$PWD/internal/uninstall/uninstall.py:/test/uninstall.py:ro" \
+  vps-panel-uninstall-ssh-test
+# Повторить с -e TEST_MODE=detach: агент снимается, данные VPN остаются.
+```
+
+Стенд не подключает Docker socket и каталоги хоста для записи. В нём подменены только
+systemctl и планировщик таймера: настоящее поведение systemd проверяется отдельно на VM.
+
 ## Код
 
 | Пакет | Что внутри |
@@ -152,6 +188,7 @@ systemctl daemon-reload
 | `internal/certs` | поиск сертификатов (только чтение) |
 | `internal/backup` | резервное копирование и восстановление конфигураций сервисов |
 | `internal/cleanup` | чистка диска |
+| `internal/uninstall` | план и полная очистка сервера; общий Python-исполнитель для API и CLI |
 | `internal/selfupdate` | самообновление |
 | `internal/terminal`, `internal/tunnel` | терминал и туннель к панелям сервисов |
 | `internal/dockerapi`, `internal/sshd`, `internal/shell`, `internal/fsutil` | docker API, настройки sshd, запуск процессов, атомарная запись файлов |

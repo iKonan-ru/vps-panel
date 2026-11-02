@@ -4,7 +4,7 @@
 # не выглядит обновлением (не перезапускает агентов впустую).
 # Описания (*.md) в бинарник не входят и версию не меняют.
 BASE := $(shell cat VERSION)
-SRC := $(shell find . -type f \( -name '*.go' -o -name go.mod -o -name go.sum -o -name '*.html' -o -path './internal/baseline/assets/*' \) ! -name '*_test.go' ! -name '*.md' ! -path '*/__pycache__/*' | LC_ALL=C sort)
+SRC := $(shell find . -type f \( -name '*.go' -o -name go.mod -o -name go.sum -o -name '*.html' -o -path './internal/uninstall/uninstall.py' -o -path './internal/baseline/assets/*' \) ! -name '*_test.go' ! -name '*.md' ! -path '*/__pycache__/*' | LC_ALL=C sort)
 HASH := $(shell cat VERSION $(SRC) | sha256sum | cut -c1-8)
 VERSION ?= $(BASE)+$(HASH)
 LDFLAGS := -s -w -X main.Version=$(VERSION)

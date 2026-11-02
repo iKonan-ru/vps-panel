@@ -15,3 +15,4 @@ export * from './host.js';
 export * from './tags.js';
 export * from './watch.js';
 export * from './bot.js';
+export * from './uninstall.js';

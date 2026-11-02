@@ -7,6 +7,7 @@ import { BackupsTab } from '@/components/server/backups-tab';
 import { CertsTab } from '@/components/server/certs/certs-tab';
 import { DockerTab } from '@/components/server/docker-tab';
 import { FirewallTab } from '@/components/server/firewall-tab';
+import { FullCleanupDialog } from '@/components/server/full-cleanup-dialog';
 import { IpChangeDialog } from '@/components/server/ip-change-dialog';
 import { LogTab } from '@/components/server/log-tab';
 import { MigrateDialog } from '@/components/server/migrate-dialog';
@@ -41,7 +42,7 @@ import { serverLock, useServer } from '@/lib/servers';
 import { useAction } from '@/lib/use-action';
 import { useCopy } from '@/lib/use-copy';
 import { useNavigate, useParams } from '@tanstack/react-router';
-import { cpuModelLabel } from '@vps/protocol';
+import { type ServerDetail, cpuModelLabel } from '@vps/protocol';
 import {
   ArrowLeftRight,
   Check,
@@ -100,7 +101,9 @@ export function ServerPage() {
   const params = useParams({ strict: false }) as { id: string; tab?: string };
   const id = params.id;
   const navigate = useNavigate();
-  const { data: s, isLoading, error } = useServer(id);
+  const [fullCleanup, setFullCleanup] = useState<ServerDetail | null>(null);
+  const { data: serverData, isLoading, error } = useServer(id);
+  const s = serverData ?? fullCleanup;
   // вкладка - в адресе; неизвестная или без сервиса на сервере - обзор. OpenFlux открывается и
   // без него ("Новый канал" из обзора ставит его), но в ряду вкладок его тогда нет
   const available = s
@@ -134,8 +137,8 @@ export function ServerPage() {
     });
   }
 
-  if (isLoading) return <Card className="p-8 text-muted">Загрузка&hellip;</Card>;
-  if (error || !s)
+  if (isLoading && !fullCleanup) return <Card className="p-8 text-muted">Загрузка&hellip;</Card>;
+  if ((error && !fullCleanup) || !s)
     return <Card className="p-8 text-bad">{cap(error?.message ?? 'сервер не найден')}</Card>;
   const inv = s.inventory;
   const online = s.status === 'online';
@@ -264,6 +267,16 @@ export function ServerPage() {
               title: lock.reason,
             },
             {
+              key: 'full-cleanup',
+              label: 'Очистить сервер от панели',
+              icon: <Trash2 className="size-4" />,
+              onClick: () => setFullCleanup(s),
+              disabled: (!online && !s.panelHost) || lock.busy || agentUpdating,
+              title: lock.reason,
+              variant: 'danger',
+              group: 'danger',
+            },
+            {
               key: 'remove',
               label: 'Удалить из панели',
               icon: <Trash2 className="size-4" />,
@@ -379,6 +392,9 @@ export function ServerPage() {
         onClose={() => setReinstall(false)}
       />
       <RemoveDialog serverId={s.id} name={s.name} open={remove} onClose={() => setRemove(false)} />
+      <Presence value={fullCleanup}>
+        {(server) => <FullCleanupDialog s={server} onClose={() => setFullCleanup(null)} />}
+      </Presence>
     </>
   );
 }

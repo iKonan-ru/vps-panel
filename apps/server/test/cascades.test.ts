@@ -3,7 +3,7 @@ import { describe, expect, it } from 'vitest';
 import { createDb } from '../src/db/index.js';
 import { actionLog, cascades, gclientBindings, gclients, servers } from '../src/db/schema.js';
 import { actionJournal } from '../src/lib/action-journal.js';
-import { Cascades, cascadeClientEmail } from '../src/lib/cascades.js';
+import { Cascades, cascadeClientEmail, cleanupCascades } from '../src/lib/cascades.js';
 import { SecretBox } from '../src/lib/secret-box.js';
 import { buildSubscription } from '../src/lib/subscription.js';
 import { saveXuiToken } from '../src/lib/xui-token.js';
@@ -925,5 +925,52 @@ describe('каскад Telegram', () => {
       ok: false,
       ip: '198.51.100.5',
     });
+  });
+});
+
+describe('снятие каскадов перед полной очисткой', () => {
+  it.each(['entry', 'exit'])(
+    'снимает обе стороны при очистке %s, сохраняет обычный inbound выхода',
+    async (id) => {
+      const { c, db, xui, input, done, mt } = await setup({ mtproxyl: true });
+      await c.create('entry', { ...input, telegram: true, telegramMain: true });
+      expect((await done())?.exitCode).toBe(0);
+      await c.detachForCleanup(id, () => {});
+      expect(db.select().from(cascades).all()).toHaveLength(0);
+      expect(xui.entry?.inbounds).toHaveLength(0);
+      expect(JSON.stringify(xui.entry?.template)).not.toContain('vp-cascade-');
+      expect(xui.exit?.clients.has(cascadeClientEmail('entry'))).toBe(false);
+      expect(xui.exit?.inbounds).toHaveLength(1);
+      expect(mt.want).toBe('');
+    },
+  );
+
+  it('офлайн-выход блокирует снятие до изменений', async () => {
+    const { c, db, xui, input, done, online } = await setup();
+    await c.create('entry', input);
+    await done();
+    const before = JSON.stringify(xui.entry?.template);
+    online.delete('exit');
+    await expect(c.detachForCleanup('entry', () => {})).rejects.toThrow('не в сети');
+    expect(db.select().from(cascades).all()).toHaveLength(1);
+    expect(JSON.stringify(xui.entry?.template)).toBe(before);
+    expect(xui.exit?.clients.has(cascadeClientEmail('entry'))).toBe(true);
+  });
+
+  it('ошибка MTProxyL сохраняет запись для повторной попытки; повтор снимает связь', async () => {
+    const { c, db, xui, input, done, mt } = await setup({ mtproxyl: true });
+    await c.create('entry', { ...input, telegram: true, telegramMain: true });
+    await done();
+    mt.fail = 'не удалось записать маршруты';
+    await expect(c.detachForCleanup('exit', () => {})).rejects.toThrow('не удалось');
+    expect(db.select().from(cascades).all()).toHaveLength(1);
+    expect(xui.entry?.inbounds).toHaveLength(1);
+    mt.fail = null;
+    // Перезапуск мог произойти после удаления строки: обе стороны остались в снимке.
+    db.delete(cascades).run();
+    expect(cleanupCascades(db, 'exit')).toHaveLength(1);
+    await c.detachForCleanup('exit', () => {});
+    expect(db.select().from(cascades).all()).toHaveLength(0);
+    expect(xui.exit?.clients.has(cascadeClientEmail('entry'))).toBe(false);
   });
 });

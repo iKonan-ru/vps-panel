@@ -1,5 +1,5 @@
 import { type ChildProcess, spawn } from 'node:child_process';
-import { existsSync, mkdirSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, rmSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 import type { XrayCheck, XrayExitView, XrayOutbound, XrayStatus } from '@vps/protocol';
 import { ProxyAgent, fetch as ufetch } from 'undici';
@@ -233,7 +233,10 @@ export class XrayManager {
   /** Запуск (или перезапуск) по сохранённым настройкам; при отсутствии настроек - остановка. */
   async start() {
     await this.stop();
-    if (!this.outbound) return;
+    if (!this.outbound) {
+      rmSync(path.join(this.dir, 'config.json'), { force: true });
+      return;
+    }
     if (!this.hasBinary()) {
       this.lastError = `не найден исполняемый файл xray (${this.bin})`;
       this.log.warn({ bin: this.bin }, 'xray: бинарник не найден');
