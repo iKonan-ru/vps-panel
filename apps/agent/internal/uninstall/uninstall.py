@@ -25,10 +25,13 @@ class CleanupError(Exception):
     pass
 
 
+# 3x-ipl-backend.conf задаёт DEFAULT backend для всех jail, включая SSH: сохраняется.
 DEFINITIONS = {
     "xui": ("3X-UI: Xray, пользователи и настройки", False,
             ["/usr/local/x-ui", "/etc/x-ui", "/etc/default/x-ui", "/usr/bin/x-ui", "/usr/local/bin/x-ui",
-             "/var/log/x-ui", "/etc/fail2ban/jail.d/xui-panel.conf", "/etc/fail2ban/filter.d/xui-panel.conf"],
+             "/var/log/x-ui", "/etc/fail2ban/jail.d/xui-panel.conf", "/etc/fail2ban/filter.d/xui-panel.conf",
+             "/etc/fail2ban/jail.d/3x-ipl.conf", "/etc/fail2ban/filter.d/3x-ipl.conf",
+             "/etc/fail2ban/action.d/3x-ipl.conf"],
             ["x-ui.service"], []),
     "mtproxyl": ("MTProxyL: прокси, веб-панель, ключи и настройки", False,
                  ["/opt/mtproxyl", "/etc/mtproxyl-panel", "/var/lib/mtproxyl-panel",

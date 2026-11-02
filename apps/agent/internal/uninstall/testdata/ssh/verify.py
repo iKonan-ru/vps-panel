@@ -20,8 +20,23 @@ Path('/root/.ssh/authorized_keys').write_text('ssh-ed25519 AAAA panel\nssh-ed255
 Path('/etc/wdtt').mkdir()
 Path('/etc/wdtt/passwords.json').write_text('secret-fixture')
 Path('/etc/security-preserved').write_text('keep')
-plan = engine.scan()
 detach = os.environ.get('TEST_MODE') == 'detach'
+partial = os.environ.get('TEST_MODE') == 'partial'
+Path('/var/log/auth.log').touch()
+Path('/var/log/x-ui').mkdir()
+Path('/var/log/x-ui/3xipl.log').touch()
+Path('/etc/fail2ban/jail.d/sshd.local').write_text('[sshd]\nenabled = true\nlogpath = /var/log/auth.log\naction = dummy\n')
+Path('/etc/fail2ban/jail.d/3x-ipl.conf').write_text('[3x-ipl]\nenabled = true\nbackend = auto\nfilter = 3x-ipl\nlogpath = /var/log/x-ui/3xipl.log\naction = 3x-ipl\n')
+Path('/etc/fail2ban/jail.d/3x-ipl-backend.conf').write_text('[DEFAULT]\nbackend = systemd\n')
+Path('/etc/fail2ban/filter.d/3x-ipl.conf').write_text('[Definition]\nfailregex = ^<HOST> exceeded$\n')
+Path('/etc/fail2ban/action.d/3x-ipl.conf').write_text('[INCLUDES]\nbefore = dummy.conf\n')
+subprocess.run(['fail2ban-client', 'start'], check=True)
+subprocess.run(['fail2ban-client', 'set', 'sshd', 'banip', '198.51.100.42'], check=True)
+if partial:
+    shutil.rmtree('/var/log/x-ui')
+    Path('/usr/local/sbin/container-firewall').write_text('preserved firewall fixture')
+    assert subprocess.run(['fail2ban-client', 'reload'], capture_output=True).returncode != 0
+plan = engine.scan()
 request = dict(revision=plan['revision'], ids=[i['id'] for i in plan['items'] if not detach or i['id'] in ('agent', 'portsync')], password='isolated-test-password', detachOnly=detach)
 original_config = Path('/etc/ssh/sshd_config').read_text()
 original_shadow = Path('/etc/shadow').read_text().splitlines()[0].split(':')[1]
@@ -54,5 +69,14 @@ assert not Path('/usr/local/bin/vps-agent').exists()
 assert 'AAAA' not in Path('/root/.ssh/authorized_keys').read_text()
 assert 'BBBB' in Path('/root/.ssh/authorized_keys').read_text()
 assert Path('/etc/security-preserved').read_text() == 'keep'
+subprocess.run(['fail2ban-client', '-t'], check=True)
+jails = subprocess.check_output(['fail2ban-client', 'status'], text=True)
+assert ('3x-ipl' in jails) == detach
+assert 'sshd' in jails
+assert '198.51.100.42' in subprocess.check_output(['fail2ban-client', 'get', 'sshd', 'banip'], text=True)
+assert Path('/etc/fail2ban/jail.d/sshd.local').exists()
+assert Path('/etc/fail2ban/jail.d/3x-ipl-backend.conf').read_text() == '[DEFAULT]\nbackend = systemd\n'
+if partial:
+    assert Path('/usr/local/sbin/container-firewall').read_text() == 'preserved firewall fixture'
 subprocess.run(ssh + ['true'], check=True, env=env, stdin=subprocess.DEVNULL)
 print('OK: новый пароль работает после удаления агента, ключ владельца и посторонний файл сохранены')

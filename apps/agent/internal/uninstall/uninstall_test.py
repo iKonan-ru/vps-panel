@@ -127,6 +127,40 @@ class UninstallTest(unittest.TestCase):
         self.assertTrue(all(args[0] == 'getent' for args, _ in self.e.calls))
         self.assertTrue(self.e.exists("/etc/vps-agent"))
 
+    def test_xui_fail2ban_files_removed_in_full_and_partial_cleanup(self):
+        for partial in (False, True):
+            with self.subTest(partial=partial):
+                self.e.write("/etc/vps-agent/agent.json", "{}")
+                self.e.write("/usr/local/bin/vps-agent", "binary")
+                paths = ("/etc/fail2ban/jail.d/3x-ipl.conf", "/etc/fail2ban/action.d/3x-ipl.conf",
+                         "/etc/fail2ban/filter.d/3x-ipl.conf")
+                for path in paths:
+                    self.e.write(path, "3x-ui configuration")
+                self.e.write("/etc/fail2ban/jail.d/sshd.local", "owner ssh protection")
+                self.e.write("/etc/fail2ban/jail.d/3x-ipl-backend.conf", "[DEFAULT]\nbackend = systemd\n")
+                self.e.write("/usr/local/sbin/container-firewall", "preserved protection")
+                if not partial:
+                    self.e.write("/var/log/x-ui/3xipl.log", "log")
+                self.e.available.add("fail2ban-client")
+                run = self.e.run
+
+                def check_reload(args, **kwargs):
+                    if args == ["fail2ban-client", "reload"]:
+                        self.assertFalse(any(self.e.exists(p) for p in paths))
+                        self.assertEqual(self.e.text("/etc/fail2ban/jail.d/sshd.local"), "owner ssh protection")
+                        self.assertEqual(self.e.text("/etc/fail2ban/jail.d/3x-ipl-backend.conf"), "[DEFAULT]\nbackend = systemd\n")
+                    return run(args, **kwargs)
+
+                with patch.object(self.e, 'run', side_effect=check_reload):
+                    self.execute(self.prepared(("xui",)))
+                self.assertFalse(self.e.exists("/etc/vps-agent"))
+                self.assertEqual(self.e.text("/usr/local/sbin/container-firewall"), "preserved protection")
+
+    def test_unselected_xui_keeps_its_fail2ban_configuration(self):
+        self.e.write("/etc/fail2ban/jail.d/3x-ipl.conf", "keep")
+        self.execute(self.prepared())
+        self.assertEqual(self.e.text("/etc/fail2ban/jail.d/3x-ipl.conf"), "keep")
+
     def test_panel_sites_block_before_password_change(self):
         self.e.write("/opt/vps-panel/compose.yml", "panel")
         self.e.write("/opt/vps-panel/sites/foreign.caddy", "site")
