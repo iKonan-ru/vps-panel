@@ -285,10 +285,48 @@ class UninstallTest(unittest.TestCase):
     def test_existing_firewall_script_blocks_before_removal(self):
         self.e.write("/usr/local/sbin/vps-portsync", "script")
         self.e.write("/usr/local/sbin/container-firewall", "foreign")
+        item = next(i for i in self.e.scan()["items"] if i["id"] == "portsync")
+        self.assertTrue(item["blockers"])
         with self.assertRaisesRegex(CleanupError, "согласуйте правила"):
             self.execute(self.prepared())
         self.assertTrue(self.e.exists("/etc/vps-agent"))
         self.assertEqual(self.e.text("/usr/local/sbin/container-firewall"), "foreign")
+        self.assertFalse(any(args[0] == 'chpasswd' for args, _ in self.e.calls))
+
+    def test_generated_firewall_is_recognized_but_changes_are_blocked(self):
+        self.e.available.add('iptables')
+        self.e.write('/usr/local/sbin/vps-portsync', 'script')
+        rules = '-N CONTAINER-GUARD\n-A CONTAINER-GUARD -j DROP\n'
+        script = ('#!/bin/sh\nset -eu\n'
+                  'iptables -w 5 -N CONTAINER-GUARD 2>/dev/null || iptables -w 5 -S CONTAINER-GUARD >/dev/null\n'
+                  'iptables -w 5 -F CONTAINER-GUARD\niptables -w 5 -A CONTAINER-GUARD -j DROP\n'
+                  'iptables -w 5 -C DOCKER-USER -j CONTAINER-GUARD 2>/dev/null || iptables -w 5 -I DOCKER-USER 1 -j CONTAINER-GUARD\n')
+        name = '/usr/local/sbin/container-firewall'
+        dropin = '/etc/systemd/system/docker.service.d/50-container-firewall.conf'
+        dropin_text = '[Service]\nExecStartPost=/usr/local/sbin/container-firewall\n'
+        run = self.e.run
+
+        def read_rules(args, **kwargs):
+            if args == ['iptables', '-w', '5', '-S', 'CONTAINER-GUARD']:
+                return subprocess.CompletedProcess(args, 0, rules, '')
+            return run(args, **kwargs)
+
+        with patch.object(self.e, 'run', side_effect=read_rules):
+            self.e.write(name, script)
+            self.e.write(dropin, dropin_text)
+            self.e.check_container_firewall()
+            self.assertFalse(next(i for i in self.e.scan()['items'] if i['id'] == 'portsync')['blockers'])
+            for path, content in ((name, script + 'echo changed\n'), (dropin, dropin_text + 'ExecStartPost=/custom\n')):
+                with self.subTest(path=path):
+                    self.e.write(path, content)
+                    with self.assertRaises(CleanupError):
+                        self.e.check_container_firewall()
+                    self.e.write(name, script)
+                    self.e.write(dropin, dropin_text)
+            rules += '-A CONTAINER-GUARD -j RETURN\n'
+            with self.assertRaises(CleanupError):
+                self.e.prepare(self.request())
+            self.assertFalse(any(args[0] == 'chpasswd' for args, _ in self.e.calls))
 
     def test_postgres_requires_separate_database_decision(self):
         self.e.write("/etc/default/x-ui", "XUI_DB_TYPE=postgres\n")

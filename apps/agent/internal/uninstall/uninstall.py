@@ -67,6 +67,9 @@ PRESERVED = ["Обновления ОС и автообновления безо
              "Сторонние приложения и общие системные журналы"]
 SSH_BLOCK = "\n# Доступ root по паролю\nMatch User root\n    PermitRootLogin yes\n    PasswordAuthentication yes\n    AuthenticationMethods any\n"
 STATE_DIR = "/run/vps-uninstall"
+CONTAINER_FIREWALL = "/usr/local/sbin/container-firewall"
+CONTAINER_DROPIN = "/etc/systemd/system/docker.service.d/50-container-firewall.conf"
+CONTAINER_DROPIN_TEXT = "[Service]\nExecStartPost=/usr/local/sbin/container-firewall\n"
 
 
 class Engine:
@@ -193,6 +196,11 @@ class Engine:
                 continue
             item = dict(id=key, title=title, owned=owned, paths=paths, containers=[], blockers=[], units=units,
                         users=present_users, groups=present_groups)
+            if key == "portsync":
+                try:
+                    self.check_container_firewall()
+                except CleanupError as e:
+                    item["blockers"].append(str(e))
             if key == "xui" and re.search(r"XUI_DB_TYPE\s*=\s*['\"]?postgres", self.text("/etc/default/x-ui")):
                 item["blockers"].append("3X-UI использует PostgreSQL: сначала перенести или удалить её базу отдельно; общий PostgreSQL не удаляется")
             if key == "mtproxyl" and any(self.exists(p) for p in (
@@ -483,31 +491,44 @@ class Engine:
                 if owned and family in ("ip", "ip6", "inet", "bridge"):
                     self.run(["nft", "delete", "table", family, name])
 
+    @staticmethod
+    def container_firewall_script(rules):
+        script = "#!/bin/sh\nset -eu\niptables -w 5 -N CONTAINER-GUARD 2>/dev/null || iptables -w 5 -S CONTAINER-GUARD >/dev/null\niptables -w 5 -F CONTAINER-GUARD\n"
+        for line in rules.splitlines():
+            args = shlex.split(line)
+            if args[:2] in (["-A", "VPS-PORTSYNC"], ["-A", "CONTAINER-GUARD"]):
+                args[1] = "CONTAINER-GUARD"
+                if "--log-prefix" in args:
+                    args[args.index("--log-prefix") + 1] = "[CONTAINER-GUARD DROP] "
+                script += shlex.join(["iptables", "-w", "5", *args]) + "\n"
+        script += "iptables -w 5 -C DOCKER-USER -j CONTAINER-GUARD 2>/dev/null || iptables -w 5 -I DOCKER-USER 1 -j CONTAINER-GUARD\n"
+        return script
+
+    def check_container_firewall(self):
+        rules = self.run(["iptables", "-w", "5", "-S", "CONTAINER-GUARD"], check=False) if self.has("iptables") else None
+        files = self.exists(CONTAINER_FIREWALL) or self.exists(CONTAINER_DROPIN)
+        if not files and (rules is None or rules.returncode):
+            return
+        self.safe_path(CONTAINER_FIREWALL)
+        self.safe_path(CONTAINER_DROPIN)
+        # При повторной настройке остаётся наша статическая защита. Принимаем только
+        # точное совпадение скрипта, drop-in и действующей цепочки, включая старый формат.
+        if (rules is not None and rules.returncode == 0
+                and self.text(CONTAINER_DROPIN) == CONTAINER_DROPIN_TEXT
+                and self.text(CONTAINER_FIREWALL) == self.container_firewall_script(rules.stdout)):
+            return
+        raise CleanupError("container-firewall отличается от сохранённой защиты панели; сначала согласуйте правила Docker вручную")
+
     def preserve_container_firewall(self):
         if not self.has("iptables"):
             return
         rules = self.run(["iptables", "-w", "5", "-S", "VPS-PORTSYNC"], check=False)
         if rules.returncode:
             return
-        name = "/usr/local/sbin/container-firewall"
-        dropin = "/etc/systemd/system/docker.service.d/50-container-firewall.conf"
-        if self.exists(name) or self.exists(dropin):
-            raise CleanupError("уже есть container-firewall; сначала согласуйте правила Docker вручную")
-        if self.run(["iptables", "-w", "5", "-S", "CONTAINER-GUARD"], check=False).returncode == 0:
-            raise CleanupError("цепочка CONTAINER-GUARD уже существует; сначала согласуйте правила вручную")
-        script = "#!/bin/sh\nset -eu\niptables -w 5 -N CONTAINER-GUARD 2>/dev/null || iptables -w 5 -S CONTAINER-GUARD >/dev/null\niptables -w 5 -F CONTAINER-GUARD\n"
-        for line in rules.stdout.splitlines():
-            args = shlex.split(line)
-            if args[:2] == ["-A", "VPS-PORTSYNC"]:
-                args[1] = "CONTAINER-GUARD"
-                if "--log-prefix" in args:
-                    args[args.index("--log-prefix") + 1] = "[CONTAINER-GUARD DROP] "
-                script += shlex.join(["iptables", "-w", "5", *args]) + "\n"
-        script += "iptables -w 5 -C DOCKER-USER -j CONTAINER-GUARD 2>/dev/null || iptables -w 5 -I DOCKER-USER 1 -j CONTAINER-GUARD\n"
-        self.write(name, script, 0o700)
-        self.write(dropin,
-                   "[Service]\nExecStartPost=/usr/local/sbin/container-firewall\n", 0o644)
-        self.run([name])
+        self.check_container_firewall()
+        self.write(CONTAINER_FIREWALL, self.container_firewall_script(rules.stdout), 0o700)
+        self.write(CONTAINER_DROPIN, CONTAINER_DROPIN_TEXT, 0o644)
+        self.run([CONTAINER_FIREWALL])
         self.run(["iptables", "-w", "5", "-D", "DOCKER-USER", "-j", "VPS-PORTSYNC"])
         self.run(["iptables", "-w", "5", "-F", "VPS-PORTSYNC"])
         self.run(["iptables", "-w", "5", "-X", "VPS-PORTSYNC"])
@@ -602,11 +623,8 @@ class Engine:
         ids = set(request["ids"])
         removed = [c for c in before if any(c["Id"] in i["containers"] for i in items)]
         retained = [c for c in before if c not in removed]
-        if "portsync" in ids and any(self.exists(p) for p in (
-                "/usr/local/sbin/container-firewall", "/etc/systemd/system/docker.service.d/50-container-firewall.conf")):
-            raise CleanupError("уже есть container-firewall; сначала согласуйте правила Docker вручную")
-        if "portsync" in ids and self.has("iptables") and self.run(["iptables", "-w", "5", "-S", "CONTAINER-GUARD"], check=False).returncode == 0:
-            raise CleanupError("цепочка CONTAINER-GUARD уже существует; сначала согласуйте правила вручную")
+        if "portsync" in ids:
+            self.check_container_firewall()
         # Проверки завершены. Откат SSH больше не нужен: пароль уже проверен отдельным входом.
         self.run(["systemctl", "stop", "vps-uninstall-rollback-" + token + ".timer"])
         self.remove(state_file)

@@ -170,6 +170,17 @@ docker run --rm --network none \
 Стенд не подключает Docker socket и каталоги хоста для записи. В нём подменены только
 systemctl и планировщик таймера: настоящее поведение systemd проверяется отдельно на VM.
 
+Повторное сохранение защиты контейнеров после новой настройки, проверка чужих правил
+и неизменности остальных правил проверяются с настоящим iptables в отдельном сетевом
+пространстве (из каталога агента):
+
+```bash
+docker run --rm --network none --cap-add NET_ADMIN --entrypoint python3 \
+  -v "$PWD/internal/uninstall/uninstall.py:/test/uninstall.py:ro" \
+  -v "$PWD/internal/uninstall/testdata/firewall/verify.py:/test/verify.py:ro" \
+  crazymax/fail2ban:latest /test/verify.py
+```
+
 ## Код
 
 | Пакет | Что внутри |
