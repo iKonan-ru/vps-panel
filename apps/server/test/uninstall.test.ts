@@ -4,6 +4,7 @@ import { join } from 'node:path';
 import { eq } from 'drizzle-orm';
 import Fastify, { type FastifyInstance } from 'fastify';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { api } from '../../web/src/lib/api.js';
 import type { AgentRegistry } from '../src/agents/registry.js';
 import { loadEnv } from '../src/config.js';
 import { createDb } from '../src/db/index.js';
@@ -100,6 +101,21 @@ async function result() {
 }
 
 describe('полная очистка сервера', () => {
+  it('принимает JSON от веб-клиента по HTTP, но отклоняет текст до запуска очистки', async () => {
+    const address = await app.listen({ host: '127.0.0.1', port: 0 });
+    const url = `${address}/api/servers/s/uninstall`;
+    const text = await fetch(url, { method: 'POST', body: JSON.stringify(body) });
+    expect(text.status).toBe(400);
+    expect(request).not.toHaveBeenCalled();
+    expect(sshRun).not.toHaveBeenCalled();
+    const response = await api<{ actionId: string }>(url, { method: 'POST', json: body });
+    await vi.waitFor(() => {
+      expect(
+        db.select().from(actionLog).where(eq(actionLog.id, response.actionId)).get()?.exitCode,
+      ).toBe(0);
+    });
+  });
+
   it('просмотр состава ничего не меняет', async () => {
     const response = await app.inject('/api/servers/s/uninstall');
     expect(response.json().revision).toBe(revision);

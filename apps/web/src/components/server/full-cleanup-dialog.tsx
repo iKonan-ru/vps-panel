@@ -51,13 +51,13 @@ export function FullCleanupDialog({ s, onClose }: { s: ServerDetail; onClose: ()
     await start.run(async () => {
       const result = await api<{ actionId: string }>(`/api/servers/${s.id}/uninstall`, {
         method: 'POST',
-        body: JSON.stringify({
+        json: {
           confirmName: name,
           revision: data.revision,
           connectionsRevision: data.connections?.revision,
           ids,
           password,
-        }),
+        },
       });
       setActionId(result.actionId);
       setFinished(null);
