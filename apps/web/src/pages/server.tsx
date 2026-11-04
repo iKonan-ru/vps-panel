@@ -29,6 +29,7 @@ import { Alert } from '@/components/ui/alert';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { Chip } from '@/components/ui/chip';
+import { CopyText } from '@/components/ui/copy-text';
 import { PageTitle } from '@/components/ui/page-title';
 import { LoadState } from '@/components/ui/placeholder';
 import { Presence } from '@/components/ui/presence';
@@ -40,13 +41,10 @@ import { cn } from '@/lib/cn';
 import { agentVersionShort, cap, uptime } from '@/lib/format';
 import { serverLock, useServer } from '@/lib/servers';
 import { useAction } from '@/lib/use-action';
-import { useCopy } from '@/lib/use-copy';
 import { useNavigate, useParams } from '@tanstack/react-router';
 import { type ServerDetail, cpuModelLabel } from '@vps/protocol';
 import {
   ArrowLeftRight,
-  Check,
-  Copy,
   Pencil,
   Power,
   RefreshCw,
@@ -396,25 +394,5 @@ export function ServerPage() {
         {(server) => <FullCleanupDialog s={server} onClose={() => setFullCleanup(null)} />}
       </Presence>
     </>
-  );
-}
-
-/** Текст, который копируется по клику. */
-function CopyText({ text }: { text: string }) {
-  const { copied, copy } = useCopy();
-  return (
-    <Button
-      variant="link"
-      title="Скопировать"
-      className="gap-1 font-mono text-muted hover:text-text hover:no-underline"
-      onClick={() => copy(text)}
-    >
-      {text}
-      {copied ? (
-        <Check className="size-3.5 animate-check text-ok" />
-      ) : (
-        <Copy className="size-3.5 opacity-60" />
-      )}
-    </Button>
   );
 }
