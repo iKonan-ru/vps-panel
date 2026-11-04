@@ -17,7 +17,6 @@ import (
 	"github.com/iKonan-ru/vps-panel/apps/agent/internal/firewall"
 	"github.com/iKonan-ru/vps-panel/apps/agent/internal/fsutil"
 	"github.com/iKonan-ru/vps-panel/apps/agent/internal/hostfs"
-	"github.com/iKonan-ru/vps-panel/apps/agent/internal/lockout"
 	"github.com/iKonan-ru/vps-panel/apps/agent/internal/portsync"
 	"github.com/iKonan-ru/vps-panel/apps/agent/internal/proto"
 	"github.com/iKonan-ru/vps-panel/apps/agent/internal/shell"
@@ -100,7 +99,7 @@ func ApplyPortsyncConfig(ctx context.Context, cfg PortsyncConfig) error {
 		return err
 	}
 	if fw := firewall.State(ctx); fw.UfwActive {
-		allowed, err := plannedAllow(ctx, cfg)
+		desired, err := portsync.Compute(ctx, cfg)
 		if err != nil {
 			return fmt.Errorf("настройки port-sync не применены: не удалось рассчитать порты (%v)", err)
 		}
@@ -110,7 +109,7 @@ func ApplyPortsyncConfig(ctx context.Context, cfg PortsyncConfig) error {
 				open = append(open, l)
 			}
 		}
-		if closing := lockout.ClosingVPN(open, allowed, deniedPorts(cfg), keepRules(fw.Rules)); len(closing) > 0 {
+		if closing := desired.ClosingVPN(open, keepRules(fw.Rules)); len(closing) > 0 {
 			return errors.New("настройки port-sync не применены: " + strings.Join(closing, "; "))
 		}
 	}

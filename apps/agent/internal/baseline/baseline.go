@@ -89,15 +89,17 @@ func MakePlan(ctx context.Context) Plan {
 	// Что закроется: слушатели, которых не откроет port-sync. Порты не рассчитались - ни ufw, ни
 	// port-sync включать нельзя: неизвестно, что они закроют.
 	cfg, err := planConfig()
+	var desired *portsync.State
 	var allowed map[string]bool
 	if err == nil {
-		allowed, err = plannedAllow(ctx, cfg)
+		desired, err = portsync.Compute(ctx, cfg)
 	}
 	if err != nil {
 		why := "не удалось рассчитать порты port-sync: " + err.Error()
 		block("portsync", why)
 		block("ufw", why)
-		allowed = nil
+	} else {
+		allowed = desired.Allowed()
 	}
 	for _, l := range fw.Listeners {
 		if allowed == nil {
@@ -115,7 +117,7 @@ func MakePlan(ctx context.Context) Plan {
 		p.Ports = append(p.Ports, PortChange{Port: l.Port, Proto: l.Proto, Process: l.Process, Action: "close"})
 	}
 	if !fw.UfwActive && allowed != nil {
-		for _, why := range lockout.ClosingVPN(fw.Listeners, allowed, deniedPorts(cfg), nil) {
+		for _, why := range desired.ClosingVPN(fw.Listeners, nil) {
 			block("ufw", why)
 		}
 	}
@@ -164,27 +166,6 @@ func selectSteps(plan Plan, want []string) (map[string]bool, error) {
 		}
 	}
 	return sel, nil
-}
-
-// deniedPorts - deny_public_ports конфига вида "443/tcp" (без протокола - tcp).
-func deniedPorts(cfg PortsyncConfig) map[string]bool {
-	denied := map[string]bool{}
-	for _, d := range cfg.DenyPublicPorts {
-		if !strings.Contains(d, "/") {
-			d += "/tcp"
-		}
-		denied[d] = true
-	}
-	return denied
-}
-
-// plannedAllow - порты, которые port-sync откроет по конфигу.
-func plannedAllow(ctx context.Context, cfg PortsyncConfig) (map[string]bool, error) {
-	st, err := portsync.Compute(ctx, cfg)
-	if err != nil {
-		return map[string]bool{}, err
-	}
-	return st.Allowed(), nil
 }
 
 func fileHas(path, needle string) bool {

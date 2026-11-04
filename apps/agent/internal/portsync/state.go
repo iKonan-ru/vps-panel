@@ -15,6 +15,7 @@ import (
 	"github.com/iKonan-ru/vps-panel/apps/agent/internal/dockerapi"
 	"github.com/iKonan-ru/vps-panel/apps/agent/internal/firewall"
 	"github.com/iKonan-ru/vps-panel/apps/agent/internal/hostfs"
+	"github.com/iKonan-ru/vps-panel/apps/agent/internal/lockout"
 	"github.com/iKonan-ru/vps-panel/apps/agent/internal/proto"
 	"github.com/iKonan-ru/vps-panel/apps/agent/internal/services"
 	"github.com/iKonan-ru/vps-panel/apps/agent/internal/shell"
@@ -80,6 +81,8 @@ type State struct {
 	WanInterface string      `json:"wan_interface"`
 	// XuiFP - отпечаток 3x-ui (services.XuiInfo.Fingerprint), "" - 3x-ui не прочитан
 	XuiFP string `json:"xui_fp"`
+	// Внутренние UDP-порты WDTT из того же расчёта; правила firewall и JSON не меняют.
+	wdttInternal portSet
 }
 
 // Allowed - порты ("443/tcp"), которые откроет port-sync: хост и контейнеры.
@@ -89,6 +92,22 @@ func (s *State) Allowed() map[string]bool {
 		out[p.Key()] = true
 	}
 	return out
+}
+
+// ClosingVPN проверяет публичные VPN-порты, сохраняя исключение для внутреннего WireGuard WDTT.
+func (s *State) ClosingVPN(listeners []proto.Listener, keep map[string]bool) []string {
+	denied := map[string]bool{}
+	for _, p := range s.Deny {
+		denied[p.Key()] = true
+	}
+	var public []proto.Listener
+	for _, l := range listeners {
+		if s.wdttInternal[Port{l.Proto, l.Port}] && fnmatch(l.Process, "wdtt*") {
+			continue
+		}
+		public = append(public, l)
+	}
+	return lockout.ClosingVPN(public, s.Allowed(), denied, keep)
 }
 
 type portSet map[Port]bool
@@ -221,7 +240,8 @@ func Compute(ctx context.Context, cfg Config) (*State, error) {
 		return nil, err
 	}
 	procPorts, unknown := processPorts(cfg.KnownProcesses, listeners, labels)
-	procPorts.sub(wdttInternalPorts())
+	internal := wdttInternalPorts()
+	procPorts.sub(internal)
 	for k := range extra {
 		labels.setDefault(k, "вручную (extra_allow)")
 	}
@@ -305,6 +325,7 @@ func Compute(ctx context.Context, cfg Config) (*State, error) {
 		Findings:              findings,
 		WanInterface:          wan,
 		XuiFP:                 xr.fp,
+		wdttInternal:          internal,
 	}, nil
 }
 
