@@ -1,6 +1,8 @@
 import { InstallAgent } from '@/components/server/install-agent';
+import { SshPortSettings } from '@/components/server/ssh-port-settings';
 import { Alert } from '@/components/ui/alert';
 import { Button } from '@/components/ui/button';
+import { CopyName } from '@/components/ui/copy-name';
 import { Dialog } from '@/components/ui/dialog';
 import { Field } from '@/components/ui/field';
 import { Input } from '@/components/ui/input';
@@ -20,6 +22,7 @@ export function EditServerDialog({
   onClose,
 }: { serverId: string; name: string; tags: string[]; onClose: () => void }) {
   const qc = useQueryClient();
+  const [sshBusy, setSshBusy] = useState(false);
   const [v, setV] = useState(name);
   const [t, setT] = useState(tags);
   const { data: tagList } = useTags();
@@ -36,7 +39,13 @@ export function EditServerDialog({
     if (ok) onClose();
   }
   return (
-    <Dialog open onClose={onClose} title="Изменить сервер">
+    <Dialog
+      open
+      onClose={() => {
+        if (!save.busy && !sshBusy) onClose();
+      }}
+      title="Настройки сервера"
+    >
       <form onSubmit={submit} className="flex flex-col gap-4">
         <Field label="Имя сервера" htmlFor="ed-name">
           <Input
@@ -45,7 +54,7 @@ export function EditServerDialog({
             onChange={(e) => setV(e.target.value)}
             required
             maxLength={64}
-            disabled={save.busy}
+            disabled={save.busy || sshBusy}
           />
         </Field>
         <Field
@@ -53,18 +62,25 @@ export function EditServerDialog({
           htmlFor="ed-tags"
           hint={'Цвет, переименование и удаление тегов\u00a0\u2014 в\u00a0настройках'}
         >
-          <TagInput id="ed-tags" value={t} onChange={setT} tags={tagList} disabled={save.busy} />
+          <TagInput
+            id="ed-tags"
+            value={t}
+            onChange={setT}
+            tags={tagList}
+            disabled={save.busy || sshBusy}
+          />
         </Field>
         {save.error && <Alert tone="bad">{save.error}</Alert>}
         <div className="flex justify-end gap-2">
-          <Button onClick={onClose} disabled={save.busy}>
+          <Button onClick={onClose} disabled={save.busy || sshBusy}>
             Отмена
           </Button>
-          <Button type="submit" variant="primary" disabled={save.busy}>
+          <Button type="submit" variant="primary" disabled={save.busy || sshBusy}>
             Сохранить
           </Button>
         </div>
       </form>
+      <SshPortSettings serverId={serverId} blocked={save.busy} onBusy={setSshBusy} />
     </Dialog>
   );
 }
@@ -124,7 +140,7 @@ export function RemoveDialog({
       <Field
         label={
           <>
-            Имя для подтверждения: <span className="font-mono">{name}</span>
+            Имя для подтверждения: <CopyName name={name} />
           </>
         }
         htmlFor="rm-name"

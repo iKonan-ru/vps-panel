@@ -211,6 +211,8 @@ class Engine:
         by_id = {i["id"]: i for i in items}
         preserved = list(PRESERVED)
         blockers = []
+        if self.exists("/etc/vps-agent/ssh-port/state.json"):
+            blockers.append("сначала завершите смену SSH-порта в настройках сервера или дождитесь отката")
         panel = self.exists(self.panel_root + "/compose.yml") or self.exists(self.panel_root + "/.env")
         for c in containers:
             name = c["Name"].lstrip("/")

@@ -9,6 +9,7 @@ import type { ServerRouteOpts } from '../lib/action-runners.js';
 import { isPanelHost, panelAddresses } from '../lib/panel-host.js';
 import { removeServer } from '../lib/server-remove.js';
 import { putSetting } from '../lib/settings.js';
+import { changeSshPort } from '../lib/ssh-port.js';
 import { loadPanelKey, sshRun } from '../lib/ssh.js';
 import { type UninstallLinks, detachedKey, panelDetachServers } from '../lib/uninstall-links.js';
 
@@ -23,6 +24,8 @@ const HostRequest = z.object({
   revision: Revision,
   ids: z.array(z.string().min(1).max(200)).max(200),
   password: Password,
+  sshPortMode: z.enum(['keep', 'reset']).default('keep'),
+  externalFirewallReady: z.boolean().default(false),
 });
 const Request = HostRequest.extend({ confirmName: z.string(), connectionsRevision: Revision });
 const DetachRequest = z.object({
@@ -40,6 +43,11 @@ async function clearHost(
   detachOnly = false,
 ) {
   const { registry, env } = opts;
+  if (body.sshPortMode === 'reset') {
+    if (!body.externalFirewallReady)
+      throw new Error('сначала разрешите TCP 22 во внешнем firewall');
+    await changeSshPort(opts, row.id, { port: 22, externalFirewallReady: true }, out);
+  }
   let prepared: UninstallPrepared | undefined;
   try {
     out('Проверка состава сервера и подготовка входа root по паролю...\n');
@@ -52,7 +60,7 @@ async function clearHost(
     if (!prepared.fingerprints.length) throw new Error('агент не передал ключи хоста SSH');
     const target = {
       host: row.host,
-      port: row.sshPort,
+      port: prepared.port,
       knownFingerprint: row.hostKeyFingerprint,
       fingerprints: prepared.fingerprints,
       auth: { mode: 'password' as const, password: body.password },
@@ -193,7 +201,8 @@ export async function uninstallRoutes(
             .set({ agentTokenHash: null, registrationToken: null, registrationExpiresAt: null })
             .where(eq(servers.id, peer.id))
             .run();
-          putSetting(db, detachedKey(peer.id), `${peer.host}:${peer.sshPort}`);
+          const current = db.select().from(servers).where(eq(servers.id, peer.id)).get();
+          putSetting(db, detachedKey(peer.id), `${peer.host}:${current?.sshPort ?? peer.sshPort}`);
           registry.get(peer.id)?.ws.close(4005, 'panel detached');
           hub.broadcast({ type: 'server.changed', serverId: peer.id });
         }

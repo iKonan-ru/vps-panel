@@ -11,6 +11,7 @@ export const actionTitles: Record<string, string> = {
   'docker.restart': 'Docker: перезапуск',
   'docker.remove': 'Docker: удаление',
   'system.reboot': 'Перезагрузка',
+  'ssh.port': 'Смена порта SSH',
   'server.uninstall': 'Полная очистка сервера',
   'server.detach': 'Снятие связей перед очисткой',
   'system.upgrade': 'Обновление пакетов',

@@ -10,6 +10,7 @@ import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
 import type { AgentRegistry } from '../agents/registry.js';
 import { toSummary } from '../agents/state.js';
+import { busyAction } from '../lib/action-lock.js';
 
 import type { Env } from '../config.js';
 import type { Db } from '../db/index.js';
@@ -133,10 +134,21 @@ export async function serverRoutes(
   app.patch('/api/servers/:id', async (req, reply) => {
     const { id } = z.object({ id: z.string() }).parse(req.params);
     const body = PatchSchema.parse(req.body);
+    if ((body.host !== undefined || body.sshPort !== undefined) && busyAction(db, id))
+      return reply
+        .code(409)
+        .send({ error: 'дождитесь завершения действия перед изменением подключения' });
     const patch: Partial<typeof servers.$inferInsert> = { ...hostingToRow(body.hosting) };
     if (body.name !== undefined) patch.name = body.name;
     if (body.host !== undefined) patch.host = body.host;
-    if (body.sshPort !== undefined) patch.sshPort = body.sshPort;
+    if (body.sshPort !== undefined) {
+      const current = db.select().from(servers).where(eq(servers.id, id)).get();
+      if (current?.agentTokenHash && body.sshPort !== current.sshPort)
+        return reply.code(409).send({
+          error: 'используйте смену SSH-порта с проверкой подключения в настройках сервера',
+        });
+      patch.sshPort = body.sshPort;
+    }
     if (body.tags !== undefined) patch.tags = ensureTags(db, body.tags);
     const res = await db
       .update(servers)

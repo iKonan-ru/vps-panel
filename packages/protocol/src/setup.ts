@@ -4,6 +4,7 @@
  * client-host - NAME.
  */
 export type SetupStepKind =
+  | 'ssh-port'
   | 'key'
   | 'baseline'
   | 'upgrade'

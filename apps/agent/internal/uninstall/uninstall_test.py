@@ -77,6 +77,10 @@ class UninstallTest(unittest.TestCase):
     def tearDown(self):
         self.tmp.cleanup()
 
+    def test_pending_ssh_port_blocks_cleanup(self):
+        self.e.write("/etc/vps-agent/ssh-port/state.json", "{}")
+        self.assertTrue(any("SSH-порта" in b for b in self.e.scan()["blockers"]))
+
     def request(self, extra=()):
         plan = self.e.scan()
         return dict(revision=plan["revision"], ids=[i["id"] for i in plan["items"] if i["owned"]] + list(extra),

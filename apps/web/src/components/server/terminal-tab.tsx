@@ -65,6 +65,12 @@ export function TerminalTab({ s }: { s: ServerDetail }) {
     ws.current?.close(CLOSE_EXPLICIT, 'closed by user');
   };
 
+  const sendInput = (data: string) => {
+    const socket = ws.current;
+    if (state !== 'open' || !socket || socket.readyState !== WebSocket.OPEN) return;
+    socket.send(JSON.stringify({ t: 'input', d: b64encode(data) }));
+    term.current?.focus();
+  };
   const ask = useConfirm();
   const connect = useCallback(() => {
     const el = box.current;
@@ -107,8 +113,8 @@ export function TerminalTab({ s }: { s: ServerDetail }) {
     ws.current = sock;
     setState('connecting');
     setNote(null);
-    sock.onopen = () => setState('open');
     sock.onmessage = (ev) => {
+      if (ws.current !== sock) return;
       let m: {
         t: string;
         d?: string;
@@ -125,6 +131,7 @@ export function TerminalTab({ s }: { s: ServerDetail }) {
       if (m.t === 'data' && m.d) t.write(b64decode(m.d));
       else if (m.t === 'session' && m.sid) {
         saveSid(s.id, m.sid);
+        setState('open');
         setResumed(m.resumed === true);
       } else if (m.t === 'exit') {
         saveSid(s.id, null);
@@ -135,6 +142,7 @@ export function TerminalTab({ s }: { s: ServerDetail }) {
       }
     };
     sock.onclose = (ev) => {
+      if (ws.current !== sock) return;
       setState('closed');
       if (ev.code === 4009) setNote('Сервер не в сети');
       else if (ev.code === 4001) setNote('Сессия панели истекла: нужно войти заново');
@@ -210,6 +218,44 @@ export function TerminalTab({ s }: { s: ServerDetail }) {
           {full ? <Minimize2 className="size-3.5" /> : <Maximize2 className="size-3.5" />}
         </Button>
       </div>
+      <div className="flex flex-wrap gap-2" aria-label="Кнопки терминала">
+        {[
+          ['Ctrl+C', '\x03', 'Прервать текущую команду'],
+          ['Ctrl+L', '\x0c', 'Очистить экран'],
+          ['Tab', '\t', 'Дополнить ввод'],
+          ['Назад', '\x1b[A', 'Предыдущая команда'],
+          ['Вперёд', '\x1b[B', 'Следующая команда'],
+        ].map(([label, data, title]) => (
+          <Button
+            key={label}
+            size="sm"
+            disabled={state !== 'open'}
+            title={title}
+            onClick={() => sendInput(data ?? '')}
+          >
+            {label}
+          </Button>
+        ))}
+        {['uptime', 'df -h', 'free -h', 'ss -lntup'].map((command) => (
+          <Button
+            key={command}
+            size="sm"
+            disabled={state !== 'open'}
+            title={`Вставить ${command} без запуска`}
+            onClick={() => {
+              if (state === 'open' && ws.current?.readyState === WebSocket.OPEN) {
+                term.current?.paste(command);
+                term.current?.focus();
+              }
+            }}
+          >
+            {command}
+          </Button>
+        ))}
+      </div>
+      <p className="text-xs text-muted">
+        Команды вставляются без запуска. Проверить строку перед Enter.
+      </p>
       {note && <Alert>{note}</Alert>}
       <div
         ref={box}

@@ -2,6 +2,7 @@ import { Breadcrumbs } from '@/components/breadcrumbs';
 import { ParamField, ParamFields } from '@/components/command-run/param-field';
 import { ProgressCard } from '@/components/server/setup/progress-card';
 import { type SetupSearch, SourceCard, wipeOf } from '@/components/server/setup/source-card';
+import { SshPortFields } from '@/components/server/ssh-port-fields';
 import { PortField } from '@/components/server/xui-inbound-fields';
 import { Alert } from '@/components/ui/alert';
 import { Button } from '@/components/ui/button';
@@ -42,6 +43,7 @@ function StepFields({
   set,
   expanded,
   toggle,
+  onBusy,
 }: {
   serverId: string;
   /** Свободный порт подбирает 3X-UI сервера: кнопка - только если она уже стоит. */
@@ -53,8 +55,21 @@ function StepFields({
   /** Все параметры команды; свёрнуто - только пароли (их нужно ввести). */
   expanded: boolean;
   toggle: () => void;
+  onBusy: (value: boolean) => void;
 }) {
   const a = step.answers ?? {};
+  if (step.kind === 'ssh-port')
+    return (
+      <SshPortFields
+        serverId={serverId}
+        port={a.PORT ?? ''}
+        ready={a.FIREWALL_READY === '1'}
+        onBusy={onBusy}
+        disabled={disabled}
+        onPort={(v) => set('PORT', v)}
+        onReady={(v) => set('FIREWALL_READY', v ? '1' : '')}
+      />
+    );
   if (step.kind === 'client-host')
     return (
       <Field
@@ -244,6 +259,7 @@ export function ServerSetupPage() {
     queryKey: ['setup-progress', id],
     queryFn: () => api<{ progress: SetupProgress | null }>(`/api/servers/${id}/setup/progress`),
   });
+  const [picking, setPicking] = useState(false);
   const [steps, setSteps] = useState<SetupStep[] | null>(null);
   const [planFor, setPlanFor] = useState<SetupPlan | null>(null);
   if (plan.data && plan.data !== planFor) {
@@ -299,7 +315,7 @@ export function ServerSetupPage() {
   }, [qc, id, progressAction, running]);
   const online = s?.status === 'online';
   const lock = s ? serverLock(s) : { busy: true, reason: undefined };
-  const busy = !online || lock.busy || act.busy || running || !steps || prog.isFetching;
+  const busy = picking || !online || lock.busy || act.busy || running || !steps || prog.isFetching;
 
   const set = (stepId: string, patch: Partial<SetupStep> | ((st: SetupStep) => SetupStep)) =>
     setSteps((list) =>
@@ -429,11 +445,12 @@ export function ServerSetupPage() {
                 />
               )}
               {st.enabled &&
-                ['service', 'inbounds', 'client-host'].includes(st.kind) &&
+                ['service', 'inbounds', 'client-host', 'ssh-port'].includes(st.kind) &&
                 !st.id.startsWith('awg-remove:') &&
                 (!st.modes || st.answers?.MODE === 'reinstall') && (
                   <div className="pl-6.5">
                     <StepFields
+                      onBusy={setPicking}
                       serverId={id}
                       canPickPort={Boolean(s?.services.some((x) => x.kind === 'xui'))}
                       step={st}

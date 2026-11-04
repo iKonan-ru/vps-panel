@@ -11,10 +11,14 @@ import { api } from './api';
 export const actions = {
   baselinePlan: (id: string) =>
     api<BaselinePlan>(`/api/servers/${id}/baseline/plan`, { method: 'POST' }),
-  baselineApply: (id: string, steps: string[]) =>
+  baselineApply: (
+    id: string,
+    steps: string[],
+    sshPort?: { port: number; externalFirewallReady: true },
+  ) =>
     api<{ actionId: string }>(`/api/servers/${id}/baseline/apply`, {
       method: 'POST',
-      json: { steps },
+      json: { steps, sshPort },
     }),
   firewallEnable: (id: string) =>
     api<{ actionId: string }>(`/api/servers/${id}/firewall/enable`, { method: 'POST' }),

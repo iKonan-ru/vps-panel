@@ -11,6 +11,7 @@ import (
 	"github.com/iKonan-ru/vps-panel/apps/agent/internal/inventory"
 	"github.com/iKonan-ru/vps-panel/apps/agent/internal/selfupdate"
 	"github.com/iKonan-ru/vps-panel/apps/agent/internal/shell"
+	"github.com/iKonan-ru/vps-panel/apps/agent/internal/sshport"
 	"github.com/iKonan-ru/vps-panel/apps/agent/internal/uninstall"
 )
 
@@ -18,6 +19,22 @@ import (
 // перезагрузка, обновление агента.
 func systemOps(panelURL string) map[string]op {
 	return map[string]op{
+		"ssh.port.pick": typed(func(ctx context.Context, p sshport.Request, _ stream) (any, error) {
+			return sshport.Call(ctx, "pick", p)
+		}),
+		"ssh.port.prepare": typed(func(ctx context.Context, p sshport.Request, _ stream) (any, error) {
+			return sshport.Call(ctx, "prepare", p)
+		}),
+		"ssh.port.commit": typed(func(ctx context.Context, p sshport.Request, _ stream) (any, error) {
+			return sshport.Call(ctx, "commit", p)
+		}),
+		"ssh.port.finish": typed(func(ctx context.Context, p sshport.Request, _ stream) (any, error) {
+			return sshport.Call(ctx, "finish", p)
+		}),
+		"ssh.port.rollback": typed(func(ctx context.Context, p sshport.Request, _ stream) (any, error) {
+			return sshport.Call(ctx, "rollback", p)
+		}),
+
 		"uninstall.scan": plain(func(ctx context.Context, _ stream) (any, error) {
 			return uninstall.Scan(ctx)
 		}),

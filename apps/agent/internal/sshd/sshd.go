@@ -44,3 +44,30 @@ func ParseFirstPort(out string) int {
 	}
 	return 22
 }
+
+// Ports - порты активного socket SSH или все Port из sshd -T, включая Include.
+func Ports(ctx context.Context) []int {
+	for _, unit := range []string{"ssh.socket", "sshd.socket"} {
+		if shell.Out(ctx, "systemctl", "is-active", unit) != "active" {
+			continue
+		}
+		var ports []int
+		for _, address := range strings.Fields(shell.Out(ctx, "systemctl", "show", unit, "--property=Listen", "--value")) {
+			if colon := strings.LastIndex(address, ":"); colon >= 0 {
+				if port, err := strconv.Atoi(address[colon+1:]); err == nil {
+					ports = append(ports, port)
+				}
+			}
+		}
+		return ports
+	}
+	var ports []int
+	for _, line := range strings.Split(shell.Out(ctx, "sshd", "-T"), "\n") {
+		if key, value, ok := strings.Cut(line, " "); ok && strings.EqualFold(key, "port") {
+			if port, err := strconv.Atoi(strings.TrimSpace(value)); err == nil {
+				ports = append(ports, port)
+			}
+		}
+	}
+	return ports
+}

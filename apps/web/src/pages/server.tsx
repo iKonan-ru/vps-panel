@@ -165,8 +165,8 @@ export function ServerPage() {
             <Button
               size="sm"
               variant="ghost"
-              aria-label="Изменить имя и теги"
-              title="Изменить имя и теги"
+              aria-label="Настройки сервера"
+              title="Настройки сервера"
               onClick={() => setRename(true)}
             >
               <Pencil className="size-3.5" />

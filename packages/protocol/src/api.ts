@@ -357,6 +357,7 @@ export interface BaselinePlan {
   blockers: string[];
   canApply: boolean;
   sshPort: number;
+  sshPorts?: number[];
   rootKeys: number;
 }
 

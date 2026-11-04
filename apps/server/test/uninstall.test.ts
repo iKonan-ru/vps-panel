@@ -86,11 +86,11 @@ afterEach(async () => {
   rmSync(dir, { recursive: true, force: true });
 });
 
-async function result() {
+async function result(extra: Record<string, unknown> = {}) {
   const response = await app.inject({
     method: 'POST',
     url: '/api/servers/s/uninstall',
-    payload: body,
+    payload: { ...body, ...extra },
   });
   expect(response.statusCode).toBe(200);
   const id = response.json().actionId as string;
@@ -101,6 +101,50 @@ async function result() {
 }
 
 describe('полная очистка сервера', () => {
+  it('сохраняет текущий SSH-порт без вызова смены', async () => {
+    db.update(servers).set({ sshPort: 24567 }).where(eq(servers.id, 's')).run();
+    request.mockImplementation(async (_id, method) =>
+      method === 'uninstall.prepare'
+        ? { token: 'b'.repeat(32), fingerprints: ['SHA256:known'], port: 24567 }
+        : { ok: true },
+    );
+    expect((await result({ sshPortMode: 'keep' }))?.exitCode).toBe(0);
+    expect(request.mock.calls.some((c) => String(c[1]).startsWith('ssh.port.'))).toBe(false);
+    expect(vi.mocked(sshRun).mock.calls[0]?.[0].port).toBe(24567);
+  });
+  it('возвращает порт 22 с проверкой ключа до подготовки пароля и удаления', async () => {
+    db.update(servers).set({ sshPort: 24567 }).where(eq(servers.id, 's')).run();
+    request.mockImplementation(async (_id, method) => {
+      if (method === 'ssh.port.prepare')
+        return {
+          token: 'c'.repeat(32),
+          port: 22,
+          oldPorts: [24567],
+          fingerprints: ['SHA256:known'],
+        };
+      if (method === 'uninstall.prepare')
+        return { token: 'b'.repeat(32), port: 22, fingerprints: ['SHA256:known'] };
+      return { ok: true };
+    });
+    expect((await result({ sshPortMode: 'reset', externalFirewallReady: true }))?.exitCode).toBe(0);
+    const methods = request.mock.calls.map((c) => c[1]);
+    expect(methods.indexOf('ssh.port.finish')).toBeLessThan(methods.indexOf('uninstall.prepare'));
+    expect(vi.mocked(sshRun).mock.calls.map((c) => c[0].port)).toEqual([22, 22, 22]);
+  });
+  it('недоступный порт 22 останавливает очистку и сохраняет прежний порт', async () => {
+    db.update(servers).set({ sshPort: 24567 }).where(eq(servers.id, 's')).run();
+    request.mockImplementation(async (_id, method) =>
+      method === 'ssh.port.prepare'
+        ? { token: 'c'.repeat(32), port: 22, oldPorts: [24567], fingerprints: ['SHA256:known'] }
+        : { ok: true },
+    );
+    vi.mocked(sshRun).mockRejectedValueOnce(new Error('порт закрыт'));
+    expect((await result({ sshPortMode: 'reset', externalFirewallReady: true }))?.exitCode).toBe(1);
+    expect(db.select().from(servers).where(eq(servers.id, 's')).get()?.sshPort).toBe(24567);
+    expect(request.mock.calls.some((c) => c[1] === 'uninstall.prepare')).toBe(false);
+    expect(request.mock.calls.some((c) => c[1] === 'ssh.port.rollback')).toBe(true);
+  });
+
   it('принимает JSON от веб-клиента по HTTP, но отклоняет текст до запуска очистки', async () => {
     const address = await app.listen({ host: '127.0.0.1', port: 0 });
     const url = `${address}/api/servers/s/uninstall`;

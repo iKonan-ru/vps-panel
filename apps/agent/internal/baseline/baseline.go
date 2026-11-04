@@ -50,6 +50,7 @@ type Plan struct {
 	Blockers  []string     `json:"blockers"`
 	CanApply  bool         `json:"canApply"`
 	SSHPort   int          `json:"sshPort"`
+	SSHPorts  []int        `json:"sshPorts"`
 	RootKeys  int          `json:"rootKeys"`
 	Reasoning string       `json:"reasoning,omitempty"`
 }
@@ -57,7 +58,10 @@ type Plan struct {
 // MakePlan показывает, что изменится, и какие порты закроются.
 func MakePlan(ctx context.Context) Plan {
 	ssh := sshd.Config(ctx)
-	p := Plan{SSHPort: sshd.Port(ssh), RootKeys: CountRootKeys(), Blockers: []string{}, Ports: []PortChange{}}
+	p := Plan{SSHPort: sshd.Port(ssh), SSHPorts: sshd.Ports(ctx), RootKeys: CountRootKeys(), Blockers: []string{}, Ports: []PortChange{}}
+	if len(p.SSHPorts) > 0 {
+		p.SSHPort = p.SSHPorts[0]
+	}
 	fw := firewall.State(ctx)
 	add := func(id, title string, needed bool, detail string) {
 		p.Steps = append(p.Steps, Step{ID: id, Title: title, Needed: needed, Detail: detail})

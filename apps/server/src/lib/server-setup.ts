@@ -1,4 +1,5 @@
 import { randomBytes } from 'node:crypto';
+import { SshPortChangeSchema } from '@vps/protocol';
 import {
   AWG_MAIN,
   SERVICES,
@@ -38,6 +39,7 @@ import type { SecretBox } from './secret-box.js';
 import { transferClients } from './server-migrate.js';
 import { removeServer } from './server-remove.js';
 import { deleteSetting, getJsonSetting, putSetting } from './settings.js';
+import { changeSshPort } from './ssh-port.js';
 import { keyFingerprint, loadPanelKey } from './ssh.js';
 import type { UiHub } from './ui-hub.js';
 import { listInbounds, ownVlessInbounds, xuiApi } from './xui-api.js';
@@ -263,6 +265,14 @@ export function serverSetup(deps: SetupDeps) {
         enabled: true,
         ...(pr.baseline?.length ? { note: `исправит: ${pr.baseline.join('; ')}` } : {}),
         ...off(pr.baseline?.length === 0, 'проблем не найдено'),
+      },
+      {
+        id: 'ssh-port',
+        kind: 'ssh-port',
+        title: 'Порт SSH',
+        enabled: false,
+        note: 'Выберите свободный порт и заранее разрешите его во внешнем firewall',
+        answers: { PORT: '', FIREWALL_READY: '' },
       },
       {
         id: 'upgrade',
@@ -656,9 +666,10 @@ export function serverSetup(deps: SetupDeps) {
     const ports = new Map<string, string>();
     const port = (step: SetupStep, label: string, v: string | undefined) => {
       if (!v) return;
-      const other = ports.get(v);
+      const key = /^\d+$/.test(v) ? String(Number(v)) : v;
+      const other = ports.get(key);
       if (other) out.push({ step: step.id, level: 'fail', text: `порт ${v}: ${label} и ${other}` });
-      else ports.set(v, `${step.title}, ${label}`);
+      else ports.set(key, `${step.title}, ${label}`);
     };
     for (const s of steps.filter((x) => x.enabled)) {
       if (s.kind === 'service' && s.command && willInstall(s)) {
@@ -669,6 +680,19 @@ export function serverSetup(deps: SetupDeps) {
             out.push({ step: s.id, level: 'fail', text: e });
         for (const p of c.params)
           if (p.type === 'port') port(s, p.label, s.answers?.[p.name]?.trim());
+      }
+      if (s.kind === 'ssh-port') {
+        const parsed = SshPortChangeSchema.safeParse({
+          port: Number(s.answers?.PORT),
+          externalFirewallReady: s.answers?.FIREWALL_READY === '1',
+        });
+        if (!parsed.success)
+          out.push({
+            step: s.id,
+            level: 'fail',
+            text: 'Выберите порт 1024-65535 (или 22) и подтвердите внешний firewall',
+          });
+        port(s, 'SSH', s.answers?.PORT);
       }
       if (s.kind === 'inbounds') {
         if (s.answers?.RAW) port(s, 'RAW', s.answers.RAW_PORT);
@@ -1122,6 +1146,17 @@ export function serverSetup(deps: SetupDeps) {
     const { action, say } = ctx;
     const a = s.answers ?? {};
     switch (s.kind) {
+      case 'ssh-port':
+        await changeSshPort(
+          deps,
+          id,
+          SshPortChangeSchema.parse({
+            port: Number(a.PORT),
+            externalFirewallReady: a.FIREWALL_READY === '1',
+          }),
+          say,
+        );
+        return 'SSH-порт проверен и сохранён';
       case 'key': {
         const key = loadPanelKey(env.DATA_DIR).publicKey;
         const r = await registry.request<{ added?: number }>(

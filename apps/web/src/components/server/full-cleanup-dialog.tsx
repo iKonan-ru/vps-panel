@@ -2,6 +2,7 @@ import { ActionOutput } from '@/components/action-output';
 import { Alert } from '@/components/ui/alert';
 import { Button } from '@/components/ui/button';
 import { Checkbox } from '@/components/ui/checkbox';
+import { CopyName } from '@/components/ui/copy-name';
 import { Dialog } from '@/components/ui/dialog';
 import { Field } from '@/components/ui/field';
 import { Input } from '@/components/ui/input';
@@ -19,6 +20,8 @@ export function FullCleanupDialog({ s, onClose }: { s: ServerDetail; onClose: ()
   const qc = useQueryClient();
   const [selected, setSelected] = useState<string[]>([]);
   const [name, setName] = useState('');
+  const [resetPort, setResetPort] = useState(false);
+  const [portReady, setPortReady] = useState(false);
   const [password, setPassword] = useState('');
   const [repeat, setRepeat] = useState('');
   const [peerPasswords, setPeerPasswords] = useState<
@@ -57,6 +60,8 @@ export function FullCleanupDialog({ s, onClose }: { s: ServerDetail; onClose: ()
           connectionsRevision: data.connections?.revision,
           ids,
           password,
+          sshPortMode: resetPort ? 'reset' : 'keep',
+          externalFirewallReady: portReady,
         },
       });
       setActionId(result.actionId);
@@ -76,6 +81,8 @@ export function FullCleanupDialog({ s, onClose }: { s: ServerDetail; onClose: ()
           connectionsRevision: data.connections?.revision,
           servers: (data.detachServers ?? []).map((peer) => ({
             ...peer,
+            sshPortMode: resetPort ? 'reset' : 'keep',
+            externalFirewallReady: portReady,
             password: peerPasswords[peer.id]?.password ?? '',
           })),
         },
@@ -110,6 +117,25 @@ export function FullCleanupDialog({ s, onClose }: { s: ServerDetail; onClose: ()
       }}
       wide
     >
+      <Checkbox
+        checked={resetPort}
+        disabled={disabled}
+        onChange={(e) => {
+          setResetPort(e.target.checked);
+          setPortReady(false);
+        }}
+        label="Вернуть SSH-порт 22"
+        hint="Без отметки сохраняется текущий порт. Для отвязки серверов выбор применяется ко всем серверам ниже."
+      />
+      {resetPort && (
+        <Checkbox
+          checked={portReady}
+          disabled={disabled}
+          onChange={(e) => setPortReady(e.target.checked)}
+          label="TCP 22 разрешён во внешнем firewall хостинга (или его нет)"
+          hint="До очистки панель проверит SSH-вход на порт 22 своим ключом. Если вход не удастся, очистка остановится."
+        />
+      )}
       {data?.connections && data.connections.items.length > 0 && (
         <div className="flex flex-col gap-3 rounded-lg border border-bad/30 p-3">
           <p className="font-medium">Связи, которые будут сняты до удаления</p>
@@ -129,7 +155,8 @@ export function FullCleanupDialog({ s, onClose }: { s: ServerDetail; onClose: ()
         <>
           <Alert>
             Сервер панели очищается по SSH. Команда покажет состав, запросит новый пароль root и
-            проверит вход перед удалением.
+            проверит вход перед удалением. Чтобы вернуть порт 22 на самом сервере панели, сначала
+            измените его в настройках сервера. Выбор порта ниже относится к отвязываемым серверам.
           </Alert>
           <code className="text-sm">vps-panel uninstall --full</code>
           <Button disabled={disabled} onClick={() => copy.copy('vps-panel uninstall --full')}>
@@ -185,7 +212,14 @@ export function FullCleanupDialog({ s, onClose }: { s: ServerDetail; onClose: ()
           ))}
           {data?.connections && (
             <>
-              <Field label={`Имя сервера для подтверждения: ${s.name}`} htmlFor="full-cleanup-name">
+              <Field
+                label={
+                  <>
+                    Имя сервера для подтверждения: <CopyName name={s.name} />
+                  </>
+                }
+                htmlFor="full-cleanup-name"
+              >
                 <Input
                   id="full-cleanup-name"
                   value={name}
@@ -198,6 +232,7 @@ export function FullCleanupDialog({ s, onClose }: { s: ServerDetail; onClose: ()
                 disabled={
                   disabled ||
                   name !== s.name ||
+                  (resetPort && !portReady) ||
                   data.connections.blockers.length > 0 ||
                   (data.detachServers ?? []).some(
                     (peer) =>
@@ -306,7 +341,14 @@ export function FullCleanupDialog({ s, onClose }: { s: ServerDetail; onClose: ()
                   onChange={(e) => setRepeat(e.target.value)}
                 />
               </Field>
-              <Field label={`Имя сервера для подтверждения: ${s.name}`} htmlFor="full-cleanup-name">
+              <Field
+                label={
+                  <>
+                    Имя сервера для подтверждения: <CopyName name={s.name} />
+                  </>
+                }
+                htmlFor="full-cleanup-name"
+              >
                 <Input
                   id="full-cleanup-name"
                   autoComplete="off"
@@ -320,7 +362,10 @@ export function FullCleanupDialog({ s, onClose }: { s: ServerDetail; onClose: ()
           {start.error && <Alert tone="bad">{start.error}</Alert>}
           {actionId && <ActionOutput actionId={actionId} onFinished={complete} />}
           {finished === 0 && (
-            <Alert tone="ok">Очистка завершена. Вход root по новому паролю сохранён.</Alert>
+            <Alert tone="ok">
+              Очистка завершена. Вход root по новому паролю сохранён.{' '}
+              {resetPort ? 'SSH-порт: 22.' : 'Текущий SSH-порт сохранён.'}
+            </Alert>
           )}
           <div className="flex flex-wrap justify-end gap-2">
             <Button
@@ -345,6 +390,7 @@ export function FullCleanupDialog({ s, onClose }: { s: ServerDetail; onClose: ()
                   Boolean(plan.error) ||
                   blockers.length > 0 ||
                   name !== s.name ||
+                  (resetPort && !portReady) ||
                   password.length < 12 ||
                   password !== repeat
                 }

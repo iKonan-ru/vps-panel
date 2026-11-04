@@ -24,6 +24,7 @@ import { PANEL_HOST_KEY } from '../src/lib/gclients.js';
 import { SecretBox } from '../src/lib/secret-box.js';
 import { serverSetup } from '../src/lib/server-setup.js';
 import { getSetting } from '../src/lib/settings.js';
+import { sshRun } from '../src/lib/ssh.js';
 import { keyFingerprint, loadPanelKey } from '../src/lib/ssh.js';
 import { savedXuiToken } from '../src/lib/xui-token.js';
 
@@ -124,6 +125,13 @@ const registry = {
       return { keys: rootKeys.map((fingerprint) => ({ fingerprint })), passwordLogin: false };
     if (method === 'baseline.plan' && baselineNeeded)
       return { steps: baselineNeeded.map((title) => ({ id: title, title, needed: true })) };
+    if (method === 'ssh.port.prepare')
+      return {
+        token: 'a'.repeat(32),
+        port: p.port,
+        oldPorts: [22],
+        fingerprints: ['SHA256:fixture'],
+      };
     if (method === 'baseline.apply' && baselineNothing) throw new Error('исправлять нечего');
     // свежая копия: агент "загружает" архив по токену и отвечает манифестом
     if (method === 'backup.create') {
@@ -186,6 +194,11 @@ function make() {
   });
 }
 
+vi.mock('../src/lib/ssh.js', async (orig) => ({
+  ...(await orig<typeof import('../src/lib/ssh.js')>()),
+  sshRun: vi.fn(async () => ({ exitCode: 0, fingerprint: 'SHA256:fixture' })),
+}));
+
 const PASSWORDS = {
   xui: { XUI_PASSWORD: 'secret-xui-1' },
   mtproxyl: { MTP_PASSWORD: 'secret-mtp-1' },
@@ -230,6 +243,35 @@ beforeEach(() => {
 afterEach(() => rmSync(dir, { recursive: true, force: true }));
 
 describe('настройка сервера', () => {
+  it('первоначальная настройка проверяет и сохраняет SSH-порт после установки ключа', async () => {
+    const setup = make();
+    const result = await setup.run('s1', {
+      steps: [
+        { id: 'key', enabled: true },
+        { id: 'ssh-port', enabled: true, answers: { PORT: '24567', FIREWALL_READY: '1' } },
+      ],
+    });
+    await vi.waitFor(() => expect(setup.progress('s1')?.finishedAt).toBeTruthy());
+    expect(setup.progress('s1')?.actionId).toBe(result.actionId);
+    expect(setup.progress('s1')?.steps.find((s) => s.id === 'ssh-port')?.state).toBe('done');
+    expect(calls.indexOf('ssh.keys.add')).toBeLessThan(calls.indexOf('ssh.port.prepare'));
+    expect(sshRun).toHaveBeenCalled();
+    expect(db.select().from(servers).get()?.sshPort).toBe(24567);
+  });
+
+  it('предлагает отдельный выбор SSH-порта и проверяет его до запуска', async () => {
+    const setup = make();
+    const plan = await setup.plan('s1');
+    expect(plan.steps.find((s) => s.id === 'ssh-port')).toMatchObject({
+      enabled: false,
+      kind: 'ssh-port',
+    });
+    const checks = await setup.preflight('s1', {
+      steps: [{ id: 'ssh-port', enabled: true, answers: { PORT: '70000' } }],
+    });
+    expect(checks.checks.some((c) => c.step === 'ssh-port' && c.level === 'fail')).toBe(true);
+  });
+
   it('план: отмечено всё, кроме второго AWG; пароли пустые', async () => {
     const plan = await make().plan('s1');
     const on = plan.steps.filter((s) => s.enabled).map((s) => s.id);

@@ -63,6 +63,13 @@ func Run(ctx context.Context, fw proto.FirewallState, containers []proto.Contain
 	// --- sshd
 	ssh := sshd.Config(ctx)
 	a.SSHPort = sshd.Port(ssh)
+	sshPorts := sshd.Ports(ctx)
+	if len(sshPorts) > 0 {
+		a.SSHPort = sshPorts[0]
+	}
+	if slices.Contains(sshPorts, 22) {
+		addURL("info", "SSH: стандартный порт 22", "сменить порт для снижения шума сканирования; ключи и fail2ban по-прежнему необходимы", "fix:ssh-port")
+	}
 	a.SSHPasswordAuth = ssh["passwordauthentication"] != "no"
 	a.SSHPermitRootLogin = ssh["permitrootlogin"]
 	if a.SSHPasswordAuth {

@@ -1,5 +1,9 @@
 import { isIP } from 'node:net';
-import type { PortsyncConfig as PortsyncConfigT } from '@vps/protocol';
+import {
+  type BaselinePlan,
+  type PortsyncConfig as PortsyncConfigT,
+  SshPortChangeSchema,
+} from '@vps/protocol';
 import { and, eq } from 'drizzle-orm';
 import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
@@ -8,6 +12,7 @@ import { firewallRules, portsyncConfigs } from '../db/schema.js';
 import { actionJournal } from '../lib/action-journal.js';
 import { type ServerRouteOpts, actionRunners } from '../lib/action-runners.js';
 import { newId } from '../lib/ids.js';
+import { changeSshPort } from '../lib/ssh-port.js';
 import { PortsyncConfig } from '../lib/validate.js';
 
 const Id = z.object({ id: z.string() });
@@ -18,23 +23,65 @@ export async function baselineFirewallRoutes(app: FastifyInstance, opts: ServerR
   const journal = actionJournal(db, hub, registry);
   const { runStreamed, quickAction } = actionRunners(registry, journal);
 
+  app.post('/api/servers/:id/ssh-port/pick', async (req) => {
+    const { id } = Id.parse(req.params);
+    return registry.request<{ port: number }>(id, 'ssh.port.pick', {});
+  });
+  app.post('/api/servers/:id/ssh-port', async (req) => {
+    const { id } = Id.parse(req.params);
+    const body = SshPortChangeSchema.parse(req.body);
+    requireOnline(registry, id);
+    return {
+      actionId: journal.background(id, 'ssh.port', { port: body.port }, async (action) => {
+        await changeSshPort(opts, id, body, (text) => action.stream('log', text));
+      }),
+    };
+  });
   app.post('/api/servers/:id/baseline/plan', async (req) => {
     const { id } = Id.parse(req.params);
-    return registry.request(id, 'baseline.plan', {}, { timeoutMs: 120_000 });
+    const plan = await registry.request<BaselinePlan>(
+      id,
+      'baseline.plan',
+      {},
+      { timeoutMs: 120_000 },
+    );
+    if ((plan.sshPorts ?? [plan.sshPort]).includes(22)) {
+      plan.steps.push({
+        id: 'ssh-port',
+        title: 'Изменить стандартный SSH-порт',
+        needed: true,
+        detail: 'Снижает шум сканирования; не заменяет ключи и fail2ban',
+        ...(!registry.supports(id, 'ssh.port.prepare')
+          ? { blocker: 'Сначала обновите агент' }
+          : {}),
+      });
+      plan.canApply = true;
+    }
+    return plan;
   });
-  /** Исправление проблем: steps - какие шаги плана применить (пусто = все нужные). */
   app.post('/api/servers/:id/baseline/apply', async (req) => {
     const { id } = Id.parse(req.params);
-    const { steps } = z
-      .object({ steps: z.array(z.string().max(40)).max(20).default([]) })
+    const { steps, sshPort } = z
+      .object({
+        steps: z.array(z.string().max(40)).max(20).default([]),
+        sshPort: SshPortChangeSchema.optional(),
+      })
       .parse(req.body ?? {});
-    const actionId = await runStreamed(
-      id,
-      'baseline.apply',
-      'baseline.apply',
-      { steps },
-      20 * 60_000,
-    );
+    if (steps.includes('ssh-port') && !sshPort)
+      throw new Error('выберите SSH-порт и подтвердите внешний firewall');
+    requireOnline(registry, id);
+    const actionId = journal.background(id, 'baseline.apply', { steps }, async (action) => {
+      const normal = steps.filter((s) => s !== 'ssh-port');
+      if (normal.length || steps.length === 0)
+        await registry.request(
+          id,
+          'baseline.apply',
+          { steps: normal },
+          { timeoutMs: 20 * 60_000, onStream: action.stream },
+        );
+      if (steps.includes('ssh-port') && sshPort)
+        await changeSshPort(opts, id, sshPort, (text) => action.stream('log', text));
+    });
     return { actionId };
   });
 

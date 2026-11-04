@@ -16,3 +16,4 @@ export * from './tags.js';
 export * from './watch.js';
 export * from './bot.js';
 export * from './uninstall.js';
+export * from './ssh-port.js';

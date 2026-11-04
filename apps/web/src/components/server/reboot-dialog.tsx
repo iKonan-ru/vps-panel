@@ -1,5 +1,6 @@
 import { Alert } from '@/components/ui/alert';
 import { Button } from '@/components/ui/button';
+import { CopyName } from '@/components/ui/copy-name';
 import { Dialog } from '@/components/ui/dialog';
 import { Field } from '@/components/ui/field';
 import { Input } from '@/components/ui/input';
@@ -27,7 +28,7 @@ export function RebootDialog({
       <Field
         label={
           <>
-            Имя для подтверждения: <span className="font-mono">{name}</span>
+            Имя для подтверждения: <CopyName name={name} />
           </>
         }
         htmlFor="reboot-name"

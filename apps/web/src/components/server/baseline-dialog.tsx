@@ -1,4 +1,5 @@
 import { ActionOutput } from '@/components/action-output';
+import { SshPortFields, validSshPort } from '@/components/server/ssh-port-fields';
 import { Alert } from '@/components/ui/alert';
 import { Button } from '@/components/ui/button';
 import { Checkbox } from '@/components/ui/checkbox';
@@ -31,6 +32,10 @@ export function BaselineDialog({
   const [error, setError] = useState<string | null>(null);
   const [actionId, setActionId] = useState<string | null>(null);
   const op = useAction();
+  const [picking, setPicking] = useState(false);
+  const busy = op.busy || picking;
+  const [sshPort, setSshPort] = useState('');
+  const [sshReady, setSshReady] = useState(false);
 
   const loadPlan = useCallback(() => {
     setPlan(null);
@@ -63,7 +68,11 @@ export function BaselineDialog({
 
   async function apply() {
     await op.run(async () => {
-      const r = await actions.baselineApply(serverId, [...chosen]);
+      const r = await actions.baselineApply(
+        serverId,
+        [...chosen],
+        chosen.has('ssh-port') ? { port: Number(sshPort), externalFirewallReady: true } : undefined,
+      );
       setActionId(r.actionId);
     });
   }
@@ -96,7 +105,7 @@ export function BaselineDialog({
               {needed.map((s) => (
                 <Checkbox
                   key={s.id}
-                  disabled={Boolean(s.blocker)}
+                  disabled={busy || Boolean(s.blocker)}
                   checked={chosen.has(s.id) || (s.id === 'portsync' && impliedPortsync)}
                   onChange={() => toggle(s.id)}
                   label={s.title}
@@ -155,12 +164,33 @@ export function BaselineDialog({
               </div>
             </div>
           )}
+          {chosen.has('ssh-port') && (
+            <SshPortFields
+              serverId={serverId}
+              port={sshPort}
+              ready={sshReady}
+              disabled={busy}
+              onPort={setSshPort}
+              onReady={setSshReady}
+              onBusy={setPicking}
+            />
+          )}
           <div className="text-xs text-muted">
             Порт SSH: {plan.sshPort}, ключей у root: {plan.rootKeys}
           </div>
           <div className="flex justify-end gap-2">
-            <Button onClick={onClose}>Отмена</Button>
-            <Button variant="primary" disabled={chosen.size === 0 || op.busy} onClick={apply}>
+            <Button onClick={onClose} disabled={busy}>
+              Отмена
+            </Button>
+            <Button
+              variant="primary"
+              disabled={
+                chosen.size === 0 ||
+                busy ||
+                (chosen.has('ssh-port') && (!sshReady || !validSshPort(sshPort)))
+              }
+              onClick={apply}
+            >
               Исправить: {chosen.size + (impliedPortsync ? 1 : 0)}
             </Button>
           </div>
