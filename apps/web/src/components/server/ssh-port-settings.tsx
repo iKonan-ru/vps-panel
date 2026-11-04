@@ -55,6 +55,8 @@ export function SshPortSettings({
         }}
       />
       <Button
+        variant="primary"
+        className="self-end"
         disabled={disabled || !ready || !validSshPort(port)}
         onClick={() =>
           void op.run(async () => {

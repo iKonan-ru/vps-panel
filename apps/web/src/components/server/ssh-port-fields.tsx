@@ -5,7 +5,8 @@ import { Field } from '@/components/ui/field';
 import { Input } from '@/components/ui/input';
 import { api } from '@/lib/api';
 import { useAction } from '@/lib/use-action';
-import { useId } from 'react';
+import { Shuffle } from 'lucide-react';
+import { useCallback, useEffect, useId, useRef } from 'react';
 
 /** Выбор известного заранее порта: внешний firewall настраивается до запуска операции. */
 export function SshPortFields({
@@ -27,11 +28,36 @@ export function SshPortFields({
 }) {
   const id = useId();
   const pick = useAction();
+  const initialized = useRef(false);
   const busy = disabled || pick.busy;
   const change = (value: string) => {
     onPort(value);
     onReady(false);
   };
+  const pickPort = useCallback(
+    () =>
+      pick.run(async () => {
+        onReady(false);
+        onBusy?.(true);
+        try {
+          const result = await api<{ port: number }>(`/api/servers/${serverId}/ssh-port/pick`, {
+            method: 'POST',
+          });
+          onPort(String(result.port));
+        } finally {
+          onBusy?.(false);
+        }
+      }),
+    [serverId, onPort, onReady, onBusy, pick.run],
+  );
+
+  useEffect(() => {
+    if (initialized.current || disabled) return;
+    // Только первое пустое поле: ручной ввод, включая очистку, сохраняется при рендерах.
+    initialized.current = true;
+    if (!port) void pickPort();
+  }, [disabled, port, pickPort]);
+
   return (
     <div className="flex flex-col gap-3">
       <Field
@@ -39,33 +65,23 @@ export function SshPortFields({
         htmlFor={id}
         hint="1024-65535. Порт 22 допустим для возврата стандартного порта."
       >
-        <div className="flex gap-2">
+        <div className="flex gap-1.5">
           <Input
             id={id}
             inputMode="numeric"
             value={port}
             disabled={busy}
             onChange={(e) => change(e.target.value)}
+            className="min-w-0 grow font-mono"
           />
           <Button
+            size="icon"
+            title="Случайный свободный порт"
+            aria-label="Случайный свободный порт"
             disabled={busy}
-            onClick={() =>
-              void pick.run(async () => {
-                onReady(false);
-                onBusy?.(true);
-                try {
-                  const result = await api<{ port: number }>(
-                    `/api/servers/${serverId}/ssh-port/pick`,
-                    { method: 'POST' },
-                  );
-                  change(String(result.port));
-                } finally {
-                  onBusy?.(false);
-                }
-              })
-            }
+            onClick={() => void pickPort()}
           >
-            Случайный свободный
+            <Shuffle className="size-4" />
           </Button>
         </div>
       </Field>
