@@ -16,6 +16,7 @@ import type { AgentRegistry } from '../agents/registry.js';
 import type { Db } from '../db/index.js';
 import { servers, sessions } from '../db/schema.js';
 import { TunnelSocket, tunnelConnection } from './agent-tunnel.js';
+import { sessionIdleCutoff } from './auth.js';
 
 /**
  * Панели сервисов через поддомены панели (<слаг сервера>-xui.<домен>, -mtproxyl): туннелем агента
@@ -365,7 +366,13 @@ export class PanelProxy {
       await this.db
         .select({ id: sessions.id })
         .from(sessions)
-        .where(and(eq(sessions.id, sid), gt(sessions.expiresAt, new Date().toISOString())))
+        .where(
+          and(
+            eq(sessions.id, sid),
+            gt(sessions.expiresAt, new Date().toISOString()),
+            gt(sessions.lastSeenAt, sessionIdleCutoff()),
+          ),
+        )
         .limit(1)
     )[0];
     const ok = Boolean(row);

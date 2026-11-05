@@ -10,8 +10,8 @@ import { findCommand, validateAnswers } from '../src/commands/index.js';
 import type { CommandDef } from '../src/commands/types.js';
 import { loadEnv } from '../src/config.js';
 import { createDb } from '../src/db/index.js';
-import { admins, firewallRules, servers, settings } from '../src/db/schema.js';
-import { createAdmin, createSession, saveTotp, sha256 } from '../src/lib/auth.js';
+import { admins, firewallRules, servers, sessions, settings } from '../src/db/schema.js';
+import { createAdmin, createSession, findSession, saveTotp, sha256 } from '../src/lib/auth.js';
 import { redactOutput } from '../src/lib/redact.js';
 import { SecretBox } from '../src/lib/secret-box.js';
 import { Telegram } from '../src/lib/telegram.js';
@@ -216,6 +216,33 @@ describe('step-up for bot controls', () => {
       payload: { level: 'view' },
     });
     expect(ok.statusCode).toBe(200);
+  });
+});
+
+describe('session lifetime', () => {
+  it('rejects an idle session and an expired absolute session', async () => {
+    const a = await createAdmin(db, 'idle-admin', 'password-123');
+    const s = await createSession(db, a.id, '127.0.0.1', 'test');
+    const row = db
+      .select()
+      .from(sessions)
+      .where(eq(sessions.id, sha256(s.token)))
+      .get();
+    expect(row?.lastSeenAt).toBeTruthy();
+    expect(await findSession(db, s.token)).toBeTruthy();
+    db.update(sessions)
+      .set({ lastSeenAt: new Date(Date.now() - 13 * 60 * 60_000).toISOString() })
+      .where(eq(sessions.id, sha256(s.token)))
+      .run();
+    expect(await findSession(db, s.token)).toBeNull();
+    db.update(sessions)
+      .set({
+        lastSeenAt: new Date().toISOString(),
+        expiresAt: new Date(Date.now() - 1000).toISOString(),
+      })
+      .where(eq(sessions.id, sha256(s.token)))
+      .run();
+    expect(await findSession(db, s.token)).toBeNull();
   });
 });
 

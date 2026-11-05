@@ -16,7 +16,7 @@
   "dependencies": {
     "@fastify/cookie": "^11.0.2",
     "@fastify/rate-limit": "^10.2.2",
-    "@fastify/static": "^10.1.5",
+    "@fastify/static": "^10.1.10",
     "@fastify/websocket": "^11.0.2",
     "@vps/protocol": "workspace:*",
     "argon2": "^0.41.1",

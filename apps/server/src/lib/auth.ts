@@ -7,7 +7,11 @@ import { admins, loginAttempts, sessions } from '../db/schema.js';
 import { newId, newToken } from './ids.js';
 import type { SecretBox } from './secret-box.js';
 
-const SESSION_TTL_DAYS = 30;
+const SESSION_TTL_DAYS = 7;
+/** Сессия без запросов столько минут завершается, даже если абсолютный срок ещё не вышел. */
+const SESSION_IDLE_MIN = 12 * 60;
+export const sessionIdleCutoff = () =>
+  new Date(Date.now() - SESSION_IDLE_MIN * 60_000).toISOString();
 const LOGIN_MAX_ATTEMPTS = 5;
 const LOGIN_WINDOW_MIN = 15;
 
@@ -207,9 +211,35 @@ export async function findAdminByLogin(db: Db, login: string) {
 
 export async function createSession(db: Db, adminId: string, ip: string, userAgent: string) {
   const token = newToken();
-  const expiresAt = new Date(Date.now() + SESSION_TTL_DAYS * 86_400_000).toISOString();
-  await db.insert(sessions).values({ id: sha256(token), adminId, expiresAt, ip, userAgent });
+  const now = new Date();
+  const expiresAt = new Date(now.getTime() + SESSION_TTL_DAYS * 86_400_000).toISOString();
+  await db.insert(sessions).values({
+    id: sha256(token),
+    adminId,
+    expiresAt,
+    ip,
+    userAgent,
+    lastSeenAt: now.toISOString(),
+  });
   return { token, expiresAt };
+}
+
+/** Обновлять last_seen не на каждый запрос, а раз в 5 минут. */
+const touched = new Map<string, number>();
+export async function touchSession(db: Db, token: string) {
+  const id = sha256(token);
+  const now = Date.now();
+  if (now - (touched.get(id) ?? 0) < 5 * 60_000) return;
+  touched.set(id, now);
+  await db
+    .update(sessions)
+    .set({ lastSeenAt: new Date(now).toISOString() })
+    .where(eq(sessions.id, id));
+  while (touched.size > 10_000) {
+    const first = touched.keys().next().value;
+    if (!first) break;
+    touched.delete(first);
+  }
 }
 
 export async function findSession(db: Db, token: string) {
@@ -222,7 +252,13 @@ export async function findSession(db: Db, token: string) {
     })
     .from(sessions)
     .innerJoin(admins, eq(admins.id, sessions.adminId))
-    .where(and(eq(sessions.id, sha256(token)), gt(sessions.expiresAt, new Date().toISOString())))
+    .where(
+      and(
+        eq(sessions.id, sha256(token)),
+        gt(sessions.expiresAt, new Date().toISOString()),
+        gt(sessions.lastSeenAt, sessionIdleCutoff()),
+      ),
+    )
     .limit(1);
   return rows[0] ?? null;
 }

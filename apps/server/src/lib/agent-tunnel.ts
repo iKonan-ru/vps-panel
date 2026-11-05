@@ -17,6 +17,8 @@ export class TunnelSocket extends Duplex {
   private opened = false;
   private remoteClosed = false;
   private queue: { data: string; cb: (e?: Error | null) => void }[] = [];
+  /** Пока агент не подтвердил открытие, копим не больше 1 MiB/64 кусков. */
+  private queued = 0;
   private idleMs = 0;
   private idleTimer: NodeJS.Timeout | undefined;
 
@@ -65,6 +67,7 @@ export class TunnelSocket extends Duplex {
     this.emit('tunnel-open');
     const queued = this.queue;
     this.queue = [];
+    this.queued = 0;
     for (const w of queued) this.send(w.data, w.cb);
   }
 
@@ -84,7 +87,13 @@ export class TunnelSocket extends Duplex {
     this.touch();
     const data = chunk.toString('base64');
     if (this.opened) this.send(data, cb);
-    else this.queue.push({ data, cb });
+    else if (this.queue.length >= 64 || this.queued + data.length > 1024 * 1024) {
+      this.destroy();
+      cb(new Error('tunnel: очередь до открытия переполнена'));
+    } else {
+      this.queue.push({ data, cb });
+      this.queued += data.length;
+    }
   }
 
   override _final(cb: (e?: Error | null) => void) {
@@ -97,6 +106,7 @@ export class TunnelSocket extends Duplex {
     this.closeRemote();
     for (const w of this.queue) w.cb();
     this.queue = [];
+    this.queued = 0;
     cb(null);
   }
 

@@ -15,6 +15,7 @@ import {
   sha256,
   tooManyAttempts,
   totpEnrollment,
+  touchSession,
   verifyPassword,
   verifyTotp,
   verifyUnknownPassword,
@@ -213,6 +214,7 @@ export async function authRoutes(
     reply.header('Cache-Control', 'no-store');
     const s = await sessionOf(db, sessionToken(req));
     if (!s) return reply.code(401).send({ error: 'вход не выполнен' });
+    await touchSession(db, sessionToken(req) ?? '');
     return { login: s.login, displayName: s.displayName, expiresAt: s.expiresAt };
   });
 
@@ -226,6 +228,7 @@ export async function authRoutes(
   app.post('/api/auth/logout-all', async (req, reply) => {
     const s = await sessionOf(db, sessionToken(req));
     if (!s) return reply.code(401).send({ error: 'вход не выполнен' });
+    await touchSession(db, sessionToken(req) ?? '');
     await deleteAllSessions(db, s.adminId);
     reply.clearCookie(sessionCookie(), { path: '/', secure });
     return { ok: true };
@@ -241,7 +244,7 @@ async function openSession(
   secure: boolean,
 ) {
   const s = await createSession(db, adminId, ip, ua);
-  reply.setCookie(sessionCookie(), s.token, cookieOpts(secure, 30 * 86_400));
+  reply.setCookie(sessionCookie(), s.token, cookieOpts(secure, 7 * 86_400));
   return { ok: true, expiresAt: s.expiresAt };
 }
 
@@ -305,5 +308,6 @@ export function requireAuth(db: Db) {
     if (isInternal(req)) return;
     const s = await sessionOf(db, sessionToken(req));
     if (!s) return reply.code(401).send({ error: 'вход не выполнен' });
+    await touchSession(db, sessionToken(req) ?? '');
   };
 }
