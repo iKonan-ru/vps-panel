@@ -1,7 +1,6 @@
 import json
 import importlib.util
 import fcntl
-import os
 from pathlib import Path
 import re
 import socket
@@ -95,7 +94,9 @@ class PortChangeTest(unittest.TestCase):
                     wan_interface='eth0', unknown_listeners=[], findings=[])
 
     def periodic_sync(self, args=None):
-        with patch.object(sys, 'argv', [str(m.PORTSYNC_BIN), *(args or [])]):
+        # Все пути и команды изолированы; тест не требует root на CI runner.
+        with patch.object(sys, 'argv', [str(m.PORTSYNC_BIN), *(args or [])]), \
+                patch.object(p.os, 'geteuid', return_value=0):
             return p.main()
 
     def firewall_command(self, args, check=False, **kwargs):
