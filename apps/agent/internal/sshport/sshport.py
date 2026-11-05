@@ -1,5 +1,7 @@
 """Смена порта SSH с независимым откатом до проверки нового входа панелью."""
 import fcntl
+from contextlib import contextmanager
+from functools import wraps
 import glob
 import json
 import os
@@ -15,14 +17,47 @@ STATE = Path('/etc/vps-agent/ssh-port')
 CONFIG = '/etc/ssh/sshd_config'
 FAIL2BAN = Path('/etc/fail2ban')
 PORTSYNC = Path('/etc/vps-portsync.conf')
+PORTSYNC_BIN = Path('/usr/local/sbin/vps-portsync')
+PORTSYNC_LOCK = Path('/run/vps-portsync.lock')
 SYSTEMD = Path('/etc/systemd/system')
+_portsync_lock = None
 
 
-def run(args, check=True):
-    p = subprocess.run(args, text=True, capture_output=True, timeout=40)
+def run(args, check=True, **kwargs):
+    p = subprocess.run(args, text=True, capture_output=True, timeout=kwargs.pop('timeout', 40), **kwargs)
     if check and p.returncode:
         raise RuntimeError(' '.join(args[:2]) + ': ' + p.stderr.strip())
     return p
+
+
+@contextmanager
+def firewall_lock():
+    global _portsync_lock
+    if _portsync_lock is not None:
+        yield
+        return
+    with PORTSYNC_LOCK.open('a+') as lock:
+        fcntl.flock(lock, fcntl.LOCK_EX)
+        _portsync_lock = lock
+        try:
+            yield
+        finally:
+            _portsync_lock = None
+
+
+def serialized_firewall(fn):
+    @wraps(fn)
+    def wrapped(*args, **kwargs):
+        with firewall_lock():
+            return fn(*args, **kwargs)
+    return wrapped
+
+
+def sync_firewall():
+    if PORTSYNC_BIN.exists():
+        # Дочерний процесс использует тот же flock, не отпуская его для таймера.
+        fd = _portsync_lock.fileno()
+        run([str(PORTSYNC_BIN), '--lock-fd', str(fd)], pass_fds=(fd,), timeout=300)
 
 
 def write(path, text, mode=0o600):
@@ -163,12 +198,13 @@ def apply(state, target):
             run(['fail2ban-client', 'reload', 'sshd'])
 
 
+@serialized_firewall
 def rollback(token):
     if not (STATE / 'state.json').exists():
         return {'ok': True}
     state = load(token)
     if state['stage'] == 'verified':
-        apply(state, sorted(set(state['old'] + [state['port']])))
+        restore_verified(state)
         return {'ok': True}
     for path, entry in state['files'].items():
         write(path, entry['text'], entry['mode'])
@@ -216,6 +252,7 @@ def arm(state):
          'python3', str(STATE / 'recover.py'), 'rollback', state['token']])
 
 
+@serialized_firewall
 def prepare(request):
     if (STATE / 'state.json').exists():
         pending = json.loads((STATE / 'state.json').read_text())
@@ -268,10 +305,9 @@ def prepare(request):
     try:
         arm(state)
         existing = ufw_rules()
+        state['sshRules'] = ssh_rules(existing, old)
         added = []
-        for rule in existing:
-            if not any(str(p) in rule or str(p) + '/tcp' in rule for p in old) and 'OpenSSH' not in rule:
-                continue
+        for rule in state['sshRules']:
             changed = [str(port) if v in [str(p) for p in old] else
                        str(port) + '/tcp' if v == 'OpenSSH' or v in [str(p) + '/tcp' for p in old] else v for v in rule]
             if changed != rule and changed not in existing and changed not in added:
@@ -297,25 +333,78 @@ def commit(token):
     return {'ok': True}
 
 
+def ssh_rules(rules, ports):
+    return [rule for rule in rules if rule[0] in ('allow', 'limit') and
+            (any(str(p) in rule or str(p) + '/tcp' in rule for p in ports) or 'OpenSSH' in rule)]
+
+
+def restore_portsync(state):
+    before = state.get('portsyncBeforeFinish')
+    if before is not None:
+        if before['text'] is None:
+            PORTSYNC.unlink(missing_ok=True)
+        else:
+            write(PORTSYNC, before['text'], before['mode'])
+
+
+def restore_verified(state):
+    # Каждая часть восстановления выполняется даже при отказе другой части.
+    # state.json остаётся: таймер повторит восстановление, port-sync сохранит SSH-правила.
+    errors = []
+    actions = [lambda: restore_portsync(state),
+               lambda: apply(state, sorted(set(state['old'] + [state['port']])))]
+    actions += [lambda rule=rule: run(['ufw', *rule])
+                for rule in state.get('sshRules', []) + state.get('addedRules', [])]
+    actions.append(sync_firewall)
+    for action in actions:
+        try:
+            action()
+        except Exception as error:
+            errors.append(str(error))
+    if errors:
+        raise RuntimeError('восстановление SSH/port-sync не завершено: ' + '; '.join(errors))
+
+
+@serialized_firewall
 def finish(token):
     state = load(token)
     if state['stage'] != 'verified':
         raise RuntimeError('сначала проверьте вход через новый порт')
+    arm(state)
+    if 'portsyncBeforeFinish' not in state:
+        state['portsyncBeforeFinish'] = dict(
+            text=PORTSYNC.read_text() if PORTSYNC.exists() else None,
+            mode=PORTSYNC.stat().st_mode & 0o777 if PORTSYNC.exists() else 0o600)
+    # Совместимость с переходом, подготовленным прежней версией агента.
+    if 'sshRules' not in state:
+        state['sshRules'] = ssh_rules(ufw_rules(), state['old'])
+    save(state)
+    # Обновить независимый recovery и при возобновлении перехода старого агента.
+    source = os.environ.get('VPS_SSH_PORT_SOURCE') or Path(__file__).read_text()
+    write(STATE / 'recover.py', source, 0o700)
     try:
-        apply(state, [state['port']])
         # Явно заданный порт port-sync должен совпадать с новым портом sshd.
         conf = PORTSYNC
         if conf.exists():
             cfg = json.loads(conf.read_text())
             cfg['ssh_port'] = state['port']
-            write(conf, json.dumps(cfg))
-        if Path('/usr/local/sbin/vps-portsync').exists():
-            run(['/usr/local/sbin/vps-portsync'])
-    except Exception:
-        apply(state, sorted(set(state['old'] + [state['port']])))
+            write(conf, json.dumps(cfg), conf.stat().st_mode & 0o777)
+        sync_firewall()
+        # До успешного firewall оба слушателя и их правила остаются доступны.
+        apply(state, [state['port']])
+        (STATE / 'state.json').unlink()
+    except Exception as error:
+        try:
+            restore_verified(state)
+        except Exception as recovery_error:
+            raise RuntimeError(str(error) + '; ' + str(recovery_error)) from error
         raise
-    run(['systemctl', 'stop', 'vps-ssh-port-' + token + '.timer'], False)
-    (STATE / 'state.json').unlink()
+    # После удаления журнала следующий port-sync уберёт старые управляемые правила.
+    # Поздний recovery без журнала ничего не меняет.
+    try:
+        run(['systemctl', 'stop', 'vps-ssh-port-' + token + '.timer'], False)
+    except (OSError, subprocess.SubprocessError):
+        pass  # Операция уже завершена, поздний таймер увидит отсутствие журнала.
     return {'ok': True}
 
 

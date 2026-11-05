@@ -38,6 +38,7 @@ AGENT = ROOT + "/usr/local/bin/vps-agent"
 # Один запуск за раз (таймер, path-юнит, docker-watch, агент): иначе правки ufw и state.json
 # перемешиваются. Тот же замок берёт агент, меняя ручные правила ufw.
 LOCK = ROOT + "/run/vps-portsync.lock"
+SSH_TRANSITION = ROOT + "/etc/vps-agent/ssh-port/state.json"
 STATE_DIR = ROOT + "/var/lib/vps-portsync"
 STATE = STATE_DIR + "/state.json"
 CHAIN = "VPS-PORTSYNC"
@@ -242,6 +243,30 @@ def ufw_tuples(rule, ipv6):
     return [(False, v4 + (src,) + tail)]
 
 
+def ssh_transition_rules(current):
+    """Сохранять проверенные пути до удаления журнала SSH-перехода.
+
+    Снимок содержит исходные правила с их ограничениями по источнику, а не новые
+    разрешения для всего Интернета. Повреждённый журнал - отказ до правок firewall.
+    """
+    try:
+        with open(SSH_TRANSITION) as f:
+            state = json.load(f)
+    except FileNotFoundError:
+        return []
+    rules = state.get("sshRules")
+    if rules is None:
+        # Переход мог быть подготовлен до обновления агента.
+        ports = state["old"] + [state["port"]]
+        rules = [r for r in current if any(str(port) in r or str(port) + '/tcp' in r for port in ports)
+                 or 'OpenSSH' in r]
+    rules = rules + state.get("addedRules", [])
+    if not all(isinstance(r, list) and r and r[0] in ("allow", "limit")
+               and all(isinstance(v, str) for v in r) for r in rules):
+        raise StateError("неверные правила SSH-перехода")
+    return rules
+
+
 def apply_ufw(desired, plan, log):
     labels = desired.get("labels", {})
     wanted = []
@@ -253,22 +278,31 @@ def apply_ufw(desired, plan, log):
 
     state = load_state()
     current = [list(r) for r in state.get("ufw_rules", [])]
+    managed = list(wanted)
+    current_bases = {rule_base(r) for r in current}
+    for rule in ssh_transition_rules(current):
+        if rule_base(rule) not in {rule_base(r) for r in wanted}:
+            wanted.append(rule)
+            # Ручные правила не становятся собственностью port-sync.
+            if rule_base(rule) in current_bases:
+                managed.append(rule)
     # Сравнение - без комментария. ufw: то же правило с другим комментарием - "Rule updated"
     # на месте, без разрыва; delete срабатывает только с точным текущим комментарием (или
     # совсем без него). Поэтому смена подписи - повторный allow, а delete - только для порта,
     # который больше не нужен, и с тем комментарием, с которым правило ставили.
     wanted_bases = {rule_base(r) for r in wanted}
-    for rule in current:
-        if rule_base(rule) in wanted_bases:
-            continue
+    obsolete = [r for r in current if rule_base(r) not in wanted_bases]
+    for rule in obsolete:
         log("ufw delete %s" % " ".join(rule))
-        if not plan:
-            run(["ufw", "delete"] + list(rule))
     current_set = {tuple(r) for r in current}
     for rule in wanted:
         if tuple(rule) not in current_set:
             log("ufw %s" % " ".join(rule))
     if not plan:
+        # Журнал намерения: после частичного отказа повторный проход знает и старые,
+        # и добавляемые правила. Успех не записывается до проверки всех команд.
+        state["ufw_rules"] = current + [r for r in managed if r not in current]
+        save_state(state)
         # allow идемпотентен: существующее правило ufw пропускает, с другим комментарием -
         # обновляет комментарий; правило, что уже стоит с тем же комментарием, не трогаем
         present, ipv6 = ufw_present(), ufw_ipv6()
@@ -278,9 +312,12 @@ def apply_ufw(desired, plan, log):
             if tuples and all(t in present for t in tuples):
                 same += 1
                 continue
-            run(["ufw"] + rule)
+            run(["ufw"] + rule, check=True)
         log("ufw: уже стоят %d из %d правил" % (same, len(wanted)))
-        state["ufw_rules"] = [list(r) for r in wanted]
+        # Сначала открыть новые пути, только затем удалять устаревшие.
+        for rule in obsolete:
+            run(["ufw", "delete"] + list(rule), check=True)
+        state["ufw_rules"] = [list(r) for r in managed]
         save_state(state)
 
 
@@ -349,11 +386,30 @@ def main():
     ap.add_argument("--plan", action="store_true", help="только показать действия")
     ap.add_argument("--json", action="store_true", help="желаемое состояние в JSON")
     ap.add_argument("--verbose", action="store_true")
+    ap.add_argument("--lock-fd", type=int, help=argparse.SUPPRESS)
     args = ap.parse_args()
 
     if os.geteuid() != 0 and not args.json:
         print("нужен root", file=sys.stderr)
         return 2
+    if args.json:
+        return execute(args)
+    if args.lock_fd is None:
+        lock = open(LOCK, "a+")
+    else:
+        # Только унаследованный дескриптор того же файла; flock остаётся у родителя.
+        lock = os.fdopen(os.dup(args.lock_fd), "a+")
+        if not os.path.samestat(os.fstat(lock.fileno()), os.stat(LOCK)):
+            lock.close()
+            raise StateError("неверный дескриптор блокировки port-sync")
+    with lock:
+        fcntl.flock(lock, fcntl.LOCK_EX)
+        return execute(args)
+
+
+def execute(args):
+    # Считать состояние после захвата замка: ожидавший таймер не должен применить
+    # конфигурацию, прочитанную до finish/rollback.
     try:
         desired = agent_state()
     except StateError as e:
@@ -367,9 +423,6 @@ def main():
     if args.json:
         print(json.dumps(desired, indent=2, ensure_ascii=False))
         return 0
-
-    lock = open(LOCK, "w")
-    fcntl.flock(lock, fcntl.LOCK_EX)
 
     lines = []
 
