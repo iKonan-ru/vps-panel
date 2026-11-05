@@ -309,7 +309,7 @@ agent_key() { python3 -c 'import json,sys; print(json.load(open(sys.argv[1])).ge
 AGENT_CFG=/etc/vps-agent/agent.json
 SELF_SERVER=""
 attach_self_agent() { # attach_self_agent <внешний IP>
-  local url js name cmd log n
+  local url js name iurl itoken ikey log n proto
   url="https://$(env_get PANEL_DOMAIN)"
   if [ -f "$AGENT_CFG" ] && ! own_agent "$1"; then
     SELF_SERVER="не добавлен: здесь стоит агент другой панели"
@@ -328,8 +328,18 @@ attach_self_agent() { # attach_self_agent <внешний IP>
     return 0
   fi
   name="$(echo "$js" | json_field name)"
-  cmd="$(echo "$js" | json_field installCommand)"
-  if ! sh -c "$cmd" >"$log" 2>&1; then
+  iurl="$(echo "$js" | json_field installUrl)"
+  itoken="$(echo "$js" | json_field installToken)"
+  ikey="$(echo "$js" | json_field installKey)"
+  [ -n "$iurl" ] && [ -n "$itoken" ] && [ -n "$ikey" ] || {
+    SELF_SERVER="$name: панель не вернула параметры установки агента"
+    rm -f "$log"
+    return 0
+  }
+  iurl="${iurl%/}"
+  proto=()
+  case "$iurl" in https://*) proto=(--proto '=https') ;; esac
+  if ! { curl "${proto[@]}" -fsSL "$iurl/agent/install.sh" | sh -s -- --panel "$iurl" --token "$itoken" --key "$ikey"; } >"$log" 2>&1; then
     tail -n 5 "$log" >&2
     rm -f "$log"
     SELF_SERVER="$name: агент не установлен - \"Установить агент\" в карточке сервера"

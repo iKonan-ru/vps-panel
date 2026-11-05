@@ -52,13 +52,17 @@ export async function issueRegistration(db: Db, serverId: string): Promise<strin
   return res.length ? token : null;
 }
 
+const shellQuote = (s: string) => `'${s.replace(/'/g, `'\\''`)}'`;
+
 /**
  * Команда установки агента на сервер: скрипт с панели, одноразовый токен регистрации и ключ
  * панели - агент с первого подключения верит ключу, а не домену. На https -
  * curl только по https (`--proto =https`).
  */
 export function installCommand(env: Env, registrationToken: string): string {
-  const url = env.PANEL_PUBLIC_URL;
+  const url = env.PANEL_PUBLIC_URL.replace(/\/+$/, '');
   const proto = url.startsWith('https://') ? " --proto '=https'" : '';
-  return `curl${proto} -fsSL ${url}/agent/install.sh | sh -s -- --panel ${url} --token ${registrationToken} --key ${panelKey(env.DATA_DIR).b64}`;
+  const key = panelKey(env.DATA_DIR).b64;
+  const script = `${url}/agent/install.sh`;
+  return `curl${proto} -fsSL ${shellQuote(script)} | sh -s -- --panel ${shellQuote(url)} --token ${shellQuote(registrationToken)} --key ${shellQuote(key)}`;
 }

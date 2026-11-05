@@ -195,8 +195,10 @@ describe('консоль: vps-panel admin', () => {
       expect(a).toMatchObject({ name: 'Сервер панели', created: true });
       const key = JSON.parse((await cli('panel-key')).stdout).key;
       expect(key).toMatch(/^[A-Za-z0-9+/]{43}=$/);
-      expect(a.installCommand).toContain('--panel https://203.0.113.10 --token ');
-      expect(a.installCommand).toContain(`--key ${key}`);
+      expect(a.installCommand).toContain("--panel 'https://203.0.113.10' --token '");
+      expect(a.installCommand).toContain(`--key '${key}'`);
+      expect(a).toMatchObject({ installUrl: 'https://203.0.113.10', installKey: key });
+      expect(a.installToken).toBeTruthy();
       // без адреса - адрес панели; та же строка, новый токен
       const b = await self();
       expect(b).toMatchObject({ id: a.id, created: false });

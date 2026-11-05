@@ -14,6 +14,9 @@ export type UiEvent =
   | { type: 'agents.rollout' }
   | { type: 'gclients.sync'; syncing: boolean };
 
+const MAX_CLIENTS = 64;
+const MAX_BUFFERED = 1024 * 1024;
+
 export class UiHub {
   private clients = new Set<WebSocket>();
   private watchers = new Set<(count: number) => void>();
@@ -28,6 +31,10 @@ export class UiHub {
   }
 
   add(ws: WebSocket) {
+    if (this.clients.size >= MAX_CLIENTS) {
+      ws.close(1013, 'too many ui clients');
+      return;
+    }
     this.clients.add(ws);
     this.changed();
     const drop = () => {
@@ -58,7 +65,18 @@ export class UiHub {
     }
     const msg = JSON.stringify(ev);
     for (const ws of this.clients) {
-      if (ws.readyState === ws.OPEN) ws.send(msg);
+      if (ws.readyState !== ws.OPEN) continue;
+      // медленная вкладка не должна бесконечно копить события в буфере процесса
+      if (ws.bufferedAmount > MAX_BUFFERED) {
+        ws.close(1013, 'ui client too slow');
+        this.clients.delete(ws);
+        continue;
+      }
+      try {
+        ws.send(msg);
+      } catch {
+        this.clients.delete(ws);
+      }
     }
   }
 }
