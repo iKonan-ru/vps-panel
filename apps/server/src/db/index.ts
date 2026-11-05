@@ -167,6 +167,12 @@ const STEPS: ((sqlite: Database.Database) => void)[] = [
       sqlite.exec('alter table session add column last_seen_at text');
     sqlite.exec('update session set last_seen_at = created_at where last_seen_at is null');
   },
+  // 29: отметка последнего успешного канала агента (v3 отключает для него слабый v2)
+  (sqlite) => {
+    const cols = sqlite.prepare('pragma table_info(server)').all() as { name: string }[];
+    if (!cols.some((c) => c.name === 'agent_protocol'))
+      sqlite.exec("alter table server add column agent_protocol text not null default ''");
+  },
 ];
 
 /** Шаги, которых база ещё не видела, - по порядку, каждый с отметкой версии. */

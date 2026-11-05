@@ -33,6 +33,8 @@ const EnvSchema = z.object({
    * vps-panel domain): Caddy спрашивает о нём /api/proxy/ask для запросов без SNI.
    */
   PANEL_SNI: z.string().default(''),
+  /** Совместимость с агентами канала v2; после обновления парка можно выключить. */
+  AGENT_V2_COMPAT: z.preprocess((v) => v !== '0' && v !== 'false', z.boolean()).default(true),
   /** Канал обновлений установки (vps-panel install --beta): по умолчанию в "Версии панели". */
   PANEL_CHANNEL: z.preprocess(
     (v) => (v === 'beta' ? 'beta' : 'stable'),

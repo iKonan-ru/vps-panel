@@ -88,14 +88,34 @@ func (f *fakePanel) handler(t *testing.T) http.HandlerFunc {
 		f.mu.Lock()
 		f.gotAuth = auth
 		f.mu.Unlock()
-		if auth == nil || auth["proof"] != proof(f.credHash, "agent", th) {
+		if auth == nil {
+			_ = conn.WriteMessage(websocket.CloseMessage, websocket.FormatCloseMessage(4003, "bad token"))
+			return
+		}
+		v3 := r.URL.Query().Get("v") == "3"
+		panelCred := f.credHash
+		if v3 {
+			token, _ := auth["token"].(string)
+			if token == "" || TokenHash(token) != f.credHash {
+				_ = conn.WriteMessage(websocket.CloseMessage, websocket.FormatCloseMessage(4003, "bad token"))
+				return
+			}
+			if auth["reg"] == true {
+				next, _ := auth["newToken"].(string)
+				if next == "" {
+					_ = conn.WriteMessage(websocket.CloseMessage, websocket.FormatCloseMessage(4003, "bad registration"))
+					return
+				}
+				panelCred = TokenHash(next)
+			}
+		} else if auth["proof"] != proof(f.credHash, "agent", th) {
 			_ = conn.WriteMessage(websocket.CloseMessage, websocket.FormatCloseMessage(4003, "bad token"))
 			return
 		}
 		if hello := read(); hello == nil || hello["type"] != "hello" {
 			return
 		}
-		pr := proof(f.credHash, "panel", th)
+		pr := proof(panelCred, "panel", th)
 		if f.badProof {
 			pr = proof("чужой", "panel", th)
 		}
@@ -115,12 +135,23 @@ func (f *fakePanel) handler(t *testing.T) http.HandlerFunc {
 }
 
 func run(t *testing.T, f *fakePanel, token string, pinned ed25519.PublicKey, setup ...func(*Client)) (*Client, chan string, chan error) {
+	return runWithProtocol(t, f, token, pinned, false, setup...)
+}
+
+func runV3(t *testing.T, f *fakePanel, token string, pinned ed25519.PublicKey, setup ...func(*Client)) (*Client, chan string, chan error) {
+	return runWithProtocol(t, f, token, pinned, true, setup...)
+}
+
+func runWithProtocol(t *testing.T, f *fakePanel, token string, pinned ed25519.PublicKey, v3 bool, setup ...func(*Client)) (*Client, chan string, chan error) {
 	srv := httptest.NewServer(f.handler(t))
 	t.Cleanup(srv.Close)
 	welcome := make(chan string, 1)
 	c := New(srv.URL, token, pinned, map[string]any{}, func(context.Context, string, json.RawMessage, func(string, string)) (any, error) {
 		return map[string]any{"pong": true}, nil
 	}, slog.New(slog.NewTextHandler(io.Discard, nil)))
+	if !v3 {
+		c.url = strings.Replace(c.url, "?v=3", "?v=2", 1)
+	}
 	c.OnWelcome = func(_, _ string, tok string) { welcome <- tok }
 	for _, fn := range setup {
 		fn(c)
@@ -156,6 +187,41 @@ func TestRegistrationOverSecureChannel(t *testing.T) {
 		}
 	case <-time.After(3 * time.Second):
 		t.Fatal("нет ответа на запрос")
+	}
+}
+
+func TestPersistentTokenV3(t *testing.T) {
+	_, key, _ := ed25519.GenerateKey(rand.Reader)
+	f := &fakePanel{key: key, credHash: TokenHash("persistent-token"), gotResult: make(chan map[string]any, 1)}
+	_, _, errs := runV3(t, f, "persistent-token", key.Public().(ed25519.PublicKey))
+	select {
+	case <-f.gotResult:
+		a := f.auth()
+		if a["proof"] != nil || TokenHash(a["token"].(string)) != f.credHash {
+			t.Fatalf("v3 должен передавать токен, а не proof: %v", a)
+		}
+	case err := <-errs:
+		t.Fatalf("v3 соединение не удалось: %v", err)
+	case <-time.After(3 * time.Second):
+		t.Fatal("нет ответа на запрос")
+	}
+}
+
+func TestRegistrationV3(t *testing.T) {
+	_, key, _ := ed25519.GenerateKey(rand.Reader)
+	f := &fakePanel{key: key, credHash: TokenHash("regtok"), gotResult: make(chan map[string]any, 1)}
+	_, welcome, _ := runV3(t, f, "reg:regtok", key.Public().(ed25519.PublicKey))
+	select {
+	case tok := <-welcome:
+		a := f.auth()
+		if tok == "" || a["token"] != "regtok" || a["newToken"] != tok {
+			t.Fatalf("v3 регистрация передала не те данные: %v", a)
+		}
+		if a["proof"] != nil {
+			t.Fatal("v3 не должен использовать proof от хеша")
+		}
+	case <-time.After(3 * time.Second):
+		t.Fatal("нет welcome")
 	}
 }
 

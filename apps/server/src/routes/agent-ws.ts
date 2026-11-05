@@ -21,6 +21,7 @@ import {
   serverHandshake,
   toBuffer,
 } from '../lib/agent-channel.js';
+import { sha256 } from '../lib/auth.js';
 
 /**
  * Очередь сообщений сокета на время рукопожатия: агент шлёт auth и hello подряд, и пока панель
@@ -99,6 +100,22 @@ const AuthSchema = z.object({
     .regex(/^[0-9a-f]{64}$/)
     .optional(),
 });
+/** v3: токен идёт внутри уже проверенного шифрованного канала, в базе остаётся только хеш. */
+const AuthV3Schema = z.object({
+  type: z.literal('auth'),
+  token: z
+    .string()
+    .min(16)
+    .max(256)
+    .regex(/^[A-Za-z0-9_-]+$/),
+  reg: z.boolean().optional(),
+  newToken: z
+    .string()
+    .min(16)
+    .max(256)
+    .regex(/^[A-Za-z0-9_-]+$/)
+    .optional(),
+});
 
 // Ограничение частоты рукопожатий с одного адреса: ws-upgrade не проходит rate-limit Fastify.
 const wsAttempts = new Map<string, { n: number; at: number }>();
@@ -118,15 +135,16 @@ function wsAllowed(ip: string, now = Date.now()): boolean {
 }
 
 /**
- * /ws/agent (`?v=2`): рукопожатие с ключом панели и шифрованный канал, токен по сети не ходит -
- * агент доказывает знание его хеша.
+ * /ws/agent: v3 (`?v=3`) передаёт токен внутри проверенного шифрованного канала, v2 - только
+ * HMAC от хеша токена и оставлен для перехода старых агентов.
  */
 export async function agentWsRoutes(
   app: FastifyInstance,
-  opts: { db: Db; registry: AgentRegistry; dataDir: string },
+  opts: { db: Db; registry: AgentRegistry; dataDir: string; allowV2?: boolean },
 ) {
-  const { db, registry, dataDir } = opts;
+  const { db, registry, dataDir, allowV2 = true } = opts;
   const key = panelKey(dataDir);
+  const v2Warned = new Set<string>();
 
   /** Общая часть после проверки учётных данных: hello, версия, реестр, welcome. */
   async function attach(
@@ -159,17 +177,23 @@ export async function agentWsRoutes(
     return { hello: hello.data };
   }
 
-  async function secure(socket: WebSocket, addr: string) {
+  async function openSecure(socket: WebSocket) {
     const raw = new Inbox(socket);
     const h = Hello2Schema.safeParse(parseJson(await raw.next()));
     raw.stop();
-    if (!h.success) return socket.close(4002, 'bad hello2');
+    if (!h.success) return null;
     const ephA = Buffer.from(h.data.eph, 'base64');
-    if (ephA.length !== 32) return socket.close(4002, 'bad hello2');
+    if (ephA.length !== 32) return null;
     const { reply, channel, th } = serverHandshake(ephA, key);
     socket.send(JSON.stringify(reply));
     const sock = new SecureAgentSocket(socket, channel);
-    const inbox = new Inbox(sock);
+    return { sock, inbox: new Inbox(sock), th };
+  }
+
+  async function secure(socket: WebSocket, addr: string) {
+    const opened = await openSecure(socket);
+    if (!opened) return socket.close(4002, 'bad hello2');
+    const { sock, inbox, th } = opened;
 
     const auth = AuthSchema.safeParse(parseJson(await inbox.next()));
     if (!auth.success) return socket.close(4002, 'bad auth');
@@ -199,17 +223,22 @@ export async function agentWsRoutes(
       }
     } else {
       const rows = await db
-        .select({ id: servers.id, hash: servers.agentTokenHash })
+        .select({ id: servers.id, hash: servers.agentTokenHash, protocol: servers.agentProtocol })
         .from(servers)
         .where(isNotNull(servers.agentTokenHash));
       for (const r of rows) {
         if (r.hash && same(proof(r.hash, 'agent', th), a.proof)) {
+          if (r.protocol === 'v3') return socket.close(4007, 'agent v3 only: upgrade agent');
           serverId = r.id;
           credHash = r.hash;
         }
       }
     }
     if (!serverId) return socket.close(4003, 'bad token');
+    if (!v2Warned.has(serverId)) {
+      v2Warned.add(serverId);
+      app.log.warn({ serverId }, 'агент использует канал v2: обновите агент для token v3');
+    }
 
     const res = readHello(await inbox.next());
     inbox.stop();
@@ -235,10 +264,84 @@ export async function agentWsRoutes(
     );
   }
 
+  async function secureV3(socket: WebSocket, addr: string) {
+    const opened = await openSecure(socket);
+    if (!opened) return socket.close(4002, 'bad hello2');
+    const { sock, inbox, th } = opened;
+
+    const auth = AuthV3Schema.safeParse(parseJson(await inbox.next()));
+    if (!auth.success) return socket.close(4002, 'bad auth');
+    const a = auth.data;
+    const tokenHash = sha256(a.token);
+    let serverId: string | null = null;
+    let credHash = '';
+    let registrationHash: string | null = null;
+    if (a.reg) {
+      if (!a.newToken) return socket.close(4002, 'bad auth');
+      const row = (
+        await db
+          .select({ id: servers.id })
+          .from(servers)
+          .where(
+            and(
+              eq(servers.registrationToken, tokenHash),
+              gt(servers.registrationExpiresAt, new Date().toISOString()),
+            ),
+          )
+          .limit(1)
+      )[0];
+      if (!row) return socket.close(4003, 'bad registration token');
+      serverId = row.id;
+      registrationHash = tokenHash;
+      credHash = sha256(a.newToken);
+    } else {
+      const row = (
+        await db
+          .select({ id: servers.id })
+          .from(servers)
+          .where(eq(servers.agentTokenHash, tokenHash))
+          .limit(1)
+      )[0];
+      if (!row) return socket.close(4003, 'bad token');
+      serverId = row.id;
+      credHash = tokenHash;
+      await db.update(servers).set({ agentProtocol: 'v3' }).where(eq(servers.id, serverId));
+    }
+
+    const res = readHello(await inbox.next());
+    inbox.stop();
+    if (res.error === 'bad hello') return socket.close(4002, 'bad hello');
+    if (res.error) return socket.close(4004, `protocol ${PROTOCOL_VERSION} required`);
+
+    if (registrationHash) {
+      const done = db
+        .update(servers)
+        .set({
+          agentTokenHash: credHash,
+          agentProtocol: 'v3',
+          registrationToken: null,
+          registrationExpiresAt: null,
+        })
+        .where(and(eq(servers.id, serverId), eq(servers.registrationToken, registrationHash)))
+        .run();
+      if (done.changes !== 1) return socket.close(4003, 'bad registration token');
+    }
+    await attach(
+      sock as unknown as AgentSocket,
+      serverId,
+      res.hello,
+      { proof: proof(credHash, 'panel', th) },
+      addr,
+    );
+  }
+
   app.get('/ws/agent', { websocket: true }, async (socket, req) => {
     if (!wsAllowed(req.socket?.remoteAddress ?? 'unknown'))
       return socket.close(1013, 'too many connections');
-    if ((req.query as { v?: string }).v === '2') return secure(socket, req.ip);
+    const v = (req.query as { v?: string }).v;
+    if (v === '3') return secureV3(socket, req.ip);
+    if (v === '2' && allowV2) return secure(socket, req.ip);
+    if (v === '2') return socket.close(4007, 'agent v2 disabled: upgrade agent');
     // без v=2 - не наш агент или слишком старый: переустановка (команда - в карточке сервера)
     return socket.close(4006, 'agent too old: reinstall');
   });

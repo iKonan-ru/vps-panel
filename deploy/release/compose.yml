@@ -30,6 +30,8 @@ services:
       PANEL_SNI: ${PANEL_SNI:-}
       # канал установки (install --beta): канал по умолчанию в "Версии панели"
       PANEL_CHANNEL: ${PANEL_CHANNEL:-stable}
+      # после обновления всех агентов на v3 можно выставить 0
+      AGENT_V2_COMPAT: ${AGENT_V2_COMPAT:-1}
     volumes:
       - ./data:/data
     expose:

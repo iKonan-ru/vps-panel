@@ -286,7 +286,12 @@ export async function buildApp(opts: AppOptions) {
     password: () => panelBackups.password(),
   });
   await app.register(probeRoutes);
-  await app.register(agentWsRoutes, { db, registry, dataDir: env.DATA_DIR });
+  await app.register(agentWsRoutes, {
+    db,
+    registry,
+    dataDir: env.DATA_DIR,
+    allowV2: env.AGENT_V2_COMPAT,
+  });
   await app.register(proxyRoutes, {
     proxy: panelProxy,
     db,
