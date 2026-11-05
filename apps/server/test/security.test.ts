@@ -231,7 +231,7 @@ describe('session lifetime', () => {
     expect(row?.lastSeenAt).toBeTruthy();
     expect(await findSession(db, s.token)).toBeTruthy();
     db.update(sessions)
-      .set({ lastSeenAt: new Date(Date.now() - 13 * 60 * 60_000).toISOString() })
+      .set({ lastSeenAt: new Date(Date.now() - 73 * 60 * 60_000).toISOString() })
       .where(eq(sessions.id, sha256(s.token)))
       .run();
     expect(await findSession(db, s.token)).toBeNull();

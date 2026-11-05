@@ -244,7 +244,7 @@ async function openSession(
   secure: boolean,
 ) {
   const s = await createSession(db, adminId, ip, ua);
-  reply.setCookie(sessionCookie(), s.token, cookieOpts(secure, 7 * 86_400));
+  reply.setCookie(sessionCookie(), s.token, cookieOpts(secure, 30 * 86_400));
   return { ok: true, expiresAt: s.expiresAt };
 }
 

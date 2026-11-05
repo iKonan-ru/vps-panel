@@ -7,9 +7,9 @@ import { admins, loginAttempts, sessions } from '../db/schema.js';
 import { newId, newToken } from './ids.js';
 import type { SecretBox } from './secret-box.js';
 
-const SESSION_TTL_DAYS = 7;
+const SESSION_TTL_DAYS = 30;
 /** Сессия без запросов столько минут завершается, даже если абсолютный срок ещё не вышел. */
-const SESSION_IDLE_MIN = 12 * 60;
+const SESSION_IDLE_MIN = 72 * 60;
 export const sessionIdleCutoff = () =>
   new Date(Date.now() - SESSION_IDLE_MIN * 60_000).toISOString();
 const LOGIN_MAX_ATTEMPTS = 5;

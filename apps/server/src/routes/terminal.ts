@@ -57,6 +57,7 @@ export async function terminalRoutes(
     } else {
       const sid = newId();
       const created = sessions.create(sid, serverId, auth.login, peer);
+      if (!created) return socket.close(1013, 'too many terminal sessions');
       s = created;
       peer.send({ t: 'session', sid, resumed: false });
       const actionId = newId();
@@ -101,11 +102,13 @@ export async function terminalRoutes(
     // каждое своим запросом, приходили бы в терминал вперемешку ("clear" -> "clesar"). Пока один
     // запрос в пути, следующие нажатия копятся и уходят одним куском после его ответа.
     let queued: Buffer[] = [];
+    let queuedBytes = 0;
     let sending = false;
     const flush = () => {
       if (sending || !queued.length) return;
       const data = Buffer.concat(queued).toString('base64');
       queued = [];
+      queuedBytes = 0;
       sending = true;
       registry
         .request(serverId, 'term.input', { id: session.sid, data }, { timeoutMs: 10_000 })
@@ -125,7 +128,10 @@ export async function terminalRoutes(
       }
       if (session.peer !== peer) return;
       if (m.t === 'input' && typeof m.d === 'string') {
-        queued.push(Buffer.from(m.d, 'base64'));
+        const chunk = Buffer.from(m.d, 'base64');
+        queued.push(chunk);
+        queuedBytes += chunk.length;
+        if (queuedBytes > 256 * 1024) return socket.close(1013, 'input backlog');
         flush();
       } else if (m.t === 'resize' && m.cols && m.rows) {
         registry

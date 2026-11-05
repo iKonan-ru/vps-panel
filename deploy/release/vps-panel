@@ -923,6 +923,15 @@ MSG
 # Восстановление из бэкапа панели (Настройки -> Бэкап панели) на установленной панели: база,
 # ключ панели для агентов, ключ SSH панели (если есть), выход xray и SESSION_SECRET. Прежние
 # данные этой установки - в data/before-restore-<время>.
+/** Архив копии не должен содержать абсолютных путей, `..` и ссылок. */
+check_backup_tar() {
+  local f="$1" bad
+  bad="$(tar tzf "$f" 2>/dev/null | grep -E '(^/|(^|/)\.\.(/|$))' | head -1 || true)"
+  [ -z "$bad" ] || die "в архиве небезопасный путь: $bad"
+  bad="$(tar tvzf "$f" 2>/dev/null | grep -E '^[lh]' | head -1 || true)"
+  [ -z "$bad" ] || die "в архиве символическая или жёсткая ссылка - распаковка остановлена"
+}
+
 cmd_restore() {
   need_root
   [ -f "$ENV_FILE" ] || die "панель не установлена в $ROOT: сначала установка (install), потом restore"
@@ -938,13 +947,20 @@ cmd_restore() {
   local b="$TMPD/vps-panel-backup"
   if [ "$(head -c 6 "$file")" = "VPSBK2" ]; then
     # v2 (AES-GCM): расшифровывает панельный образ, чтобы не тащить crypto в shell
-    if ! compose run --rm --no-deps -T -e BACKUP_PASSWORD="$pw" panel       node server/dist/decrypt-backup.js < "$file" > "$TMPD/backup.tar.gz" 2>/dev/null; then
+    if ! compose run --rm --no-deps -T -e BACKUP_PASSWORD="$pw" panel \
+      node server/dist/decrypt-backup.js < "$file" > "$TMPD/backup.tar.gz" 2>/dev/null; then
       die "не удалось расшифровать v2: неверный пароль или это не резервная копия панели"
     fi
+    check_backup_tar "$TMPD/backup.tar.gz"
     tar xzf "$TMPD/backup.tar.gz" -C "$TMPD" 2>/dev/null ||
       die "не удалось распаковать резервную копию"
-  elif ! printf '%s' "$pw" | openssl enc -d -aes-256-cbc -pbkdf2 -iter 100000 -pass stdin -in "$file" 2>/dev/null | tar xz -C "$TMPD" 2>/dev/null; then
-    die "не удалось расшифровать: неверный пароль или это не резервная копия панели"
+  else
+    if ! printf '%s' "$pw" | openssl enc -d -aes-256-cbc -pbkdf2 -iter 100000 -pass stdin -in "$file" -out "$TMPD/backup.tar.gz" 2>/dev/null; then
+      die "не удалось расшифровать: неверный пароль или это не резервная копия панели"
+    fi
+    check_backup_tar "$TMPD/backup.tar.gz"
+    tar xzf "$TMPD/backup.tar.gz" -C "$TMPD" 2>/dev/null ||
+      die "не удалось распаковать резервную копию"
   fi
   [ -f "$b/panel.db" ] && [ -f "$b/panel.env" ] && [ -f "$b/panel_agent_ed25519.pem" ] || die "в архиве нет panel.db, panel.env или ключа панели"
   local secret

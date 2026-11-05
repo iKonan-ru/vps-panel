@@ -8,13 +8,18 @@ function peer() {
   return { p, sent, closed };
 }
 
+const must = <T>(v: T | null): T => {
+  if (v === null) throw new Error('TermSessions.create вернул null');
+  return v;
+};
+
 describe('сессии терминала', () => {
   it('уход браузера закрывает сессию только через время, возврат её подхватывает', () => {
     vi.useFakeTimers();
     const closeRemote = vi.fn();
     const ts = new TermSessions(closeRemote, 1000);
     const a = peer();
-    const s = ts.create('sid1', 'srv', 'admin', a.p);
+    const s = must(ts.create('sid1', 'srv', 'admin', a.p));
     ts.output(s, 'AAAA');
     ts.detach(s, a.p, false);
     vi.advanceTimersByTime(900);
@@ -35,7 +40,7 @@ describe('сессии терминала', () => {
     const closeRemote = vi.fn();
     const ts = new TermSessions(closeRemote, 1000);
     const a = peer();
-    const s = ts.create('sid2', 'srv', 'admin', a.p);
+    const s = must(ts.create('sid2', 'srv', 'admin', a.p));
     expect(ts.resumable('sid2', 'other', 'admin')).toBeNull();
     expect(ts.resumable('sid2', 'srv', 'other')).toBeNull();
     ts.detach(s, a.p, true);
@@ -50,7 +55,7 @@ describe('сессии терминала', () => {
     const ts = new TermSessions(closeRemote, 1000);
     const a = peer();
     const b = peer();
-    const s = ts.create('sid3', 'srv', 'admin', a.p);
+    const s = must(ts.create('sid3', 'srv', 'admin', a.p));
     ts.attach(s, b.p);
     expect(a.closed).toEqual([4010]);
     ts.detach(s, a.p, false);
@@ -61,10 +66,17 @@ describe('сессии терминала', () => {
     vi.useRealTimers();
   });
 
+  it('не больше 50 одновременных терминалов', () => {
+    const ts = new TermSessions(() => {}, 1000);
+    for (let i = 0; i < 50; i++)
+      expect(ts.create(`s${i}`, 'srv', 'admin', peer().p)).not.toBeNull();
+    expect(ts.create('overflow', 'srv', 'admin', peer().p)).toBeNull();
+  });
+
   it('буфер хранит только последний вывод', () => {
     const ts = new TermSessions(() => {}, 1000);
     const a = peer();
-    const s = ts.create('sid4', 'srv', 'admin', a.p);
+    const s = must(ts.create('sid4', 'srv', 'admin', a.p));
     const big = 'x'.repeat(BUFFER_CHARS / 2);
     ts.output(s, big);
     ts.output(s, big);
