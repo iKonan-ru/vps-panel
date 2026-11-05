@@ -66,7 +66,7 @@ bash <(curl -fsSL https://github.com/iKonan-ru/vps-panel/releases/latest/downloa
 
 ```
 ================================================================
- VPS Panel 1.21.0 установлена
+ VPS Panel 1.21.1 установлена
 ================================================================
  Адрес:      https://panel.example.com
  Логин:      admin-k7m2qa
