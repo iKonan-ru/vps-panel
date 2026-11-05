@@ -17,20 +17,6 @@ vet, test, govulncheck), `pnpm audit`, проверка `bash -n install.sh depl
 только клавиатурные символы в файлах. То же на GitHub - `.github/workflows/ci.yml` на каждый
 push и pull request.
 
-### Чек-лист релиза
-
-1. Записать изменения в `CHANGELOG.md` разделом `## X.Y.Z`.
-2. Прогнать `tools/check.sh`; отдельно проверить `bash -n install.sh deploy/release/vps-panel`.
-3. Собрать Docker-образ и агента (`make -C apps/agent build-all`), проверить `/api/health`.
-4. Выпустить `tools/release.sh X.Y.Z` (предварительная версия - `X.Y.Z-beta.N`).
-5. Дождаться успеха `release.yml` и проверить, что у релиза есть файлы `vps-panel`,
-   `release.sha256`, `install.sh`, `compose.yml`, `Caddyfile` и бинарники агента.
-6. Обновить одну тестовую панель вручную, проверить `vps-panel status`, health, агентов и
-   отсутствие ошибок в журнале.
-7. Только после этого включать автообновление на остальном парке. Не откатываться на
-   1.20.2/1.21.0 без замены host-скрипта.
-
-Внутренние планы аудита, SAST-отчёты и risk register в репозиторий не добавляются.
 Операционные процедуры - в [operations.md](operations.md).
 
 Правила проекта: код, комментарии, интерфейс и документы - на русском; в файлах только

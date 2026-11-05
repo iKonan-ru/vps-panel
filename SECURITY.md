@@ -69,4 +69,4 @@
 
 ## Участие
 
-Правила разработки и релиза - в [docs/development.md](docs/development.md). Внутренние планы аудита и security-отчёты в репозиторий не добавляются.
+Правила разработки - в [docs/development.md](docs/development.md).
