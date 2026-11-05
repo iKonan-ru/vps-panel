@@ -32,7 +32,7 @@
 ## Установка
 
 ```bash
-bash <(curl -fsSL https://raw.githubusercontent.com/iKonan-ru/vps-panel/main/install.sh)
+bash <(curl -fsSL https://github.com/iKonan-ru/vps-panel/releases/latest/download/install.sh)
 ```
 
 | Ключ | Что делает |
@@ -66,7 +66,7 @@ bash <(curl -fsSL https://raw.githubusercontent.com/iKonan-ru/vps-panel/main/ins
 
 ```
 ================================================================
- VPS Panel 1.19.3 установлена
+ VPS Panel 1.20.0 установлена
 ================================================================
  Адрес:      https://panel.example.com
  Логин:      admin-k7m2qa
