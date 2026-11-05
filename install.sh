@@ -1,7 +1,7 @@
 #!/bin/bash
 # Установка VPS Panel из релиза на GitHub:
 #
-#   bash <(curl -fsSL https://raw.githubusercontent.com/iKonan-ru/vps-panel/main/install.sh)
+#   bash <(curl -fsSL https://github.com/iKonan-ru/vps-panel/releases/latest/download/install.sh)
 #
 # Скачивает команду vps-panel из релиза и запускает "vps-panel install" с теми же ключами:
 #   -y              без вопросов (из окружения: PANEL_DOMAIN - пусто значит панель по IP,
@@ -40,8 +40,16 @@ if [ -z "$ver" ]; then
   ver="${tag#v}"
 fi
 tmp="$(mktemp)"
-trap 'rm -f "$tmp"' EXIT
+sums="$(mktemp)"
+trap 'rm -f "$tmp" "$sums"' EXIT
 curl -fsSL -m 60 --retry 3 "https://github.com/$REPO/releases/download/v$ver/vps-panel" -o "$tmp" || { echo "не скачалась команда vps-panel релиза v$ver" >&2; exit 1; }
+if ! curl -fsSL -m 30 --retry 3 "https://github.com/$REPO/releases/download/v$ver/release.sha256" -o "$sums"; then
+  echo "не скачался release.sha256 релиза v$ver: проверка подлинности обязательна" >&2
+  exit 1
+fi
+want="$(awk '$2 == "vps-panel" { print $1 }' "$sums")"
+[ -n "$want" ] || { echo "в release.sha256 нет vps-panel" >&2; exit 1; }
+printf '%s  %s\n' "$want" "$tmp" | sha256sum -c --quiet - || { echo "sha256 vps-panel не совпал: файл подменён" >&2; exit 1; }
 install -m 755 "$tmp" /usr/local/bin/vps-panel
 args=("$@")
 printf '%s\n' "${args[@]}" | grep -qx -- '--version' || args+=(--version "$ver")

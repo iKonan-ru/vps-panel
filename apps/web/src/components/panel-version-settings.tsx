@@ -9,6 +9,7 @@ import { Select } from '@/components/ui/select';
 import { Switch } from '@/components/ui/switch';
 import { api } from '@/lib/api';
 import { ago, utcHourLocal } from '@/lib/format';
+import { isSafeHref } from '@/lib/safe-url';
 import { useAction } from '@/lib/use-action';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import type { PanelUpdateView } from '@vps/protocol';
@@ -145,14 +146,16 @@ export function PanelVersionSettings() {
                     {r.version}
                     {r.prerelease && <Chip>предварительная</Chip>}
                     <span className="text-xs font-normal text-muted">{ago(r.publishedAt)}</span>
-                    <a
-                      href={r.url}
-                      target="_blank"
-                      rel="noreferrer"
-                      className="inline-flex items-center gap-1 text-xs font-normal text-accent"
-                    >
-                      GitHub <ExternalLink className="size-3" />
-                    </a>
+                    {isSafeHref(r.url) && (
+                      <a
+                        href={r.url}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="inline-flex items-center gap-1 text-xs font-normal text-accent"
+                      >
+                        GitHub <ExternalLink className="size-3" />
+                      </a>
+                    )}
                   </div>
                   <div className="whitespace-pre-wrap text-xs text-muted">{r.notes.trim()}</div>
                 </div>

@@ -7,9 +7,9 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { type Db, createDb } from '../src/db/index.js';
 import { actionLog, servers } from '../src/db/schema.js';
 import {
-  PBKDF2_ITER,
   PanelBackups,
   createPanelBackup,
+  decryptBackup,
   opensslDecrypt,
   opensslEncrypt,
 } from '../src/lib/panel-backup.js';
@@ -44,7 +44,7 @@ describe('шифрование как у openssl enc', () => {
 });
 
 describe('createPanelBackup', () => {
-  it('архив расшифровывается обычным openssl, внутри база, секрет и ключ', async () => {
+  it('v2: архив с AES-GCM, внутри база, секрет и ключ', async () => {
     const b = await createPanelBackup({
       db,
       dataDir: dir,
@@ -56,12 +56,14 @@ describe('createPanelBackup', () => {
     const out = join(dir, 'out');
     const enc = join(dir, 'b.enc');
     writeFileSync(enc, b.data);
+    expect(b.data.subarray(0, 6).toString()).toBe('VPSBK2');
     execFileSync('mkdir', ['-p', out]);
-    // ровно та команда, что в подсказке: openssl enc -d ... | tar xz
-    execFileSync('sh', [
-      '-c',
-      `openssl enc -d -aes-256-cbc -pbkdf2 -iter ${PBKDF2_ITER} -pass pass:'correct horse' -in ${enc} | tar xz -C ${out}`,
-    ]);
+    writeFileSync(join(dir, 'b.tar.gz'), decryptBackup(b.data, 'correct horse'));
+    execFileSync('tar', ['xzf', join(dir, 'b.tar.gz'), '-C', out]);
+    // подмена байта ломает auth tag, а не даёт мусор
+    const bad = Buffer.from(b.data);
+    bad[bad.length - 20] = (bad[bad.length - 20] ?? 0) ^ 1;
+    expect(() => decryptBackup(bad, 'correct horse')).toThrow();
     const root = join(out, 'vps-panel-backup');
     expect(readFileSync(join(root, 'panel.env'), 'utf8')).toContain(
       `SESSION_SECRET=${'S'.repeat(40)}`,
@@ -99,9 +101,7 @@ describe('PanelBackups', () => {
     expect(last).toMatchObject({ to: 'telegram', ok: true });
     expect(sent).toHaveLength(1);
     // команда - блоком кода, с именем присланного файла; HTML экранирован
-    expect(sent[0]?.caption).toContain(
-      `<pre>openssl enc -d -aes-256-cbc -pbkdf2 -iter ${PBKDF2_ITER} -in ${sent[0]?.name} | tar xz</pre>`,
-    );
+    expect(sent[0]?.caption).toContain(`<pre>vps-panel restore ${sent[0]?.name}</pre>`);
     expect(pb.status()).toMatchObject({ passwordSet: true, telegram: true, last: { ok: true } });
     tgError = 'Telegram: 403 бот заблокирован';
     expect(await pb.sendToTelegram()).toMatchObject({ ok: false, error: tgError });

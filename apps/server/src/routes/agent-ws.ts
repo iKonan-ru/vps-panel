@@ -28,21 +28,38 @@ import {
  */
 class Inbox {
   private queue: string[] = [];
+  private bytes = 0;
+  private overflow = false;
   private waiter: ((m: string | null) => void) | null = null;
+  /** До auth/hello рукопожатие принимает только небольшой запас сообщений. */
+  private static readonly MAX_QUEUE = 32;
+  private static readonly MAX_BYTES = 1024 * 1024;
   private readonly on = (raw: Buffer | ArrayBuffer | Buffer[]) => {
     const m = toBuffer(raw).toString();
     if (this.waiter) {
       const w = this.waiter;
       this.waiter = null;
       w(m);
-    } else this.queue.push(m);
+      return;
+    }
+    const n = Buffer.byteLength(m);
+    if (this.queue.length >= Inbox.MAX_QUEUE || this.bytes + n > Inbox.MAX_BYTES) {
+      this.overflow = true;
+      return;
+    }
+    this.queue.push(m);
+    this.bytes += n;
   };
   constructor(private sock: EventEmitter) {
     sock.on('message', this.on);
   }
-  next(timeoutMs = 10_000): Promise<string | null> {
+  next(timeoutMs = 5_000): Promise<string | null> {
     const q = this.queue.shift();
-    if (q !== undefined) return Promise.resolve(q);
+    if (q !== undefined) {
+      this.bytes -= Buffer.byteLength(q);
+      return Promise.resolve(q);
+    }
+    if (this.overflow) return Promise.resolve(null);
     return new Promise((resolve) => {
       const t = setTimeout(() => {
         this.waiter = null;
@@ -82,6 +99,23 @@ const AuthSchema = z.object({
     .regex(/^[0-9a-f]{64}$/)
     .optional(),
 });
+
+// Ограничение частоты рукопожатий с одного адреса: ws-upgrade не проходит rate-limit Fastify.
+const wsAttempts = new Map<string, { n: number; at: number }>();
+function wsAllowed(ip: string, now = Date.now()): boolean {
+  const e = wsAttempts.get(ip);
+  if (!e || now - e.at > 60_000) {
+    wsAttempts.set(ip, { n: 1, at: now });
+    while (wsAttempts.size > 1000) {
+      const first = wsAttempts.keys().next().value;
+      if (!first) break;
+      wsAttempts.delete(first);
+    }
+    return true;
+  }
+  e.n += 1;
+  return e.n <= 60;
+}
 
 /**
  * /ws/agent (`?v=2`): рукопожатие с ключом панели и шифрованный канал, токен по сети не ходит -
@@ -202,6 +236,8 @@ export async function agentWsRoutes(
   }
 
   app.get('/ws/agent', { websocket: true }, async (socket, req) => {
+    if (!wsAllowed(req.socket?.remoteAddress ?? 'unknown'))
+      return socket.close(1013, 'too many connections');
     if ((req.query as { v?: string }).v === '2') return secure(socket, req.ip);
     // без v=2 - не наш агент или слишком старый: переустановка (команда - в карточке сервера)
     return socket.close(4006, 'agent too old: reinstall');

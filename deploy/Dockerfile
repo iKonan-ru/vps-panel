@@ -1,4 +1,4 @@
-FROM node:22-alpine AS build
+FROM node:24-alpine@sha256:8a32c8cf649a49915a66e81e7a609223c708d0adabf288ee3f4077d765542f85 AS build
 RUN corepack enable && corepack prepare pnpm@10.34.5 --activate
 WORKDIR /src
 # системные пакеты - до package.json: смена зависимостей не пересобирает этот слой
@@ -16,7 +16,7 @@ RUN pnpm --filter @vps/protocol build && pnpm --filter @vps/web build && pnpm --
 RUN --mount=type=cache,id=pnpm-store,target=/pnpm-store pnpm --filter @vps/server --prod --legacy deploy /out/server --store-dir /pnpm-store
 
 # xray-клиент для выхода панели в Telegram (запускается панелью как дочерний процесс)
-FROM alpine:3 AS xray
+FROM alpine:3@sha256:be2656061b536c1883c4034790e21d0a09c5aaaf51968b89368a3c0371ea2c9a AS xray
 ARG XRAY_VERSION=v26.3.27
 # sha256 архивов этой версии (SHA2-256 из .dgst релиза): xray живёт в образе рядом с секретами,
 # скачанное проверяется; при смене версии - обновить
@@ -31,10 +31,10 @@ RUN apk add --no-cache curl unzip && \
 
 # Агент (vps-agent-linux-*) и сборки naive и wdtt для раздачи серверам: релиз (release.yml)
 # подставляет их вместо этой стадии (--build-context artifacts=<каталог>).
-FROM alpine:3 AS artifacts
+FROM alpine:3@sha256:be2656061b536c1883c4034790e21d0a09c5aaaf51968b89368a3c0371ea2c9a AS artifacts
 RUN mkdir -p /agent-dist /files
 
-FROM node:22-alpine
+FROM node:24-alpine@sha256:8a32c8cf649a49915a66e81e7a609223c708d0adabf288ee3f4077d765542f85
 # версия релиза (тег без v) и коммит: их показывает панель и по ним сверяет обновления
 ARG PANEL_VERSION=dev
 ARG PANEL_COMMIT=

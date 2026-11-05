@@ -45,12 +45,18 @@ export type Env = z.infer<typeof EnvSchema>;
 export function loadEnv(source: NodeJS.ProcessEnv = process.env): Env {
   const env = EnvSchema.parse(source);
   if (!env.SUB_PUBLIC_URL && env.SUB_DOMAIN) env.SUB_PUBLIC_URL = `https://${env.SUB_DOMAIN}`;
-  if (env.NODE_ENV === 'production' && !env.SESSION_SECRET) {
-    throw new Error('SESSION_SECRET обязателен в production (32+ символа)');
-  }
   // агенты и install.sh ходят только по https; http - лишь панель на
   // этой же машине (docker-compose.dev.yml, стенд)
   const pub = new URL(env.PANEL_PUBLIC_URL);
+  if (!env.SESSION_SECRET && env.NODE_ENV !== 'test') {
+    const loopbackHost = ['127.0.0.1', '::1', '[::1]', 'localhost'].includes(env.PANEL_HOST);
+    const loopbackUrl = ['localhost', '127.0.0.1', '[::1]'].includes(pub.hostname);
+    if (env.NODE_ENV === 'production' || !loopbackHost || !loopbackUrl) {
+      throw new Error(
+        'SESSION_SECRET обязателен в production или если панель слушает не только loopback / её адрес не localhost (32+ символа)',
+      );
+    }
+  }
   if (
     env.NODE_ENV === 'production' &&
     pub.protocol !== 'https:' &&

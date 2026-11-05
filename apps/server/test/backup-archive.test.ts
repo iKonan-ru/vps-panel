@@ -10,7 +10,7 @@ import { type Db, createDb } from '../src/db/index.js';
 import { backups, servers } from '../src/db/schema.js';
 import { readArchiveManifest } from '../src/lib/backup-archive.js';
 import { BackupRestorer } from '../src/lib/backup-restore.js';
-import { opensslDecrypt, opensslEncrypt } from '../src/lib/panel-backup.js';
+import { V3_MAGIC, opensslEncrypt } from '../src/lib/panel-backup.js';
 import { backupRoutes } from '../src/routes/backups.js';
 
 /** tar из файлов (имя -> содержимое), как пишет агент: обычные файлы, два нулевых блока в конце. */
@@ -150,7 +150,7 @@ describe('загрузка файла копии', () => {
       ]),
     );
 
-  it('скачивание - зашифровано паролем копий, загрузка зашифрованного - обратно', async () => {
+  it('скачивание v3 - GCM, загрузка зашифрованного - обратно', async () => {
     const a = await app();
     const plain = archive();
     const up = await upload(a, plain);
@@ -161,9 +161,8 @@ describe('загрузка файла копии', () => {
     expect(dl.headers['content-disposition']).toMatch(/\.tar\.gz\.enc"/);
     const enc = dl.rawPayload;
     expect(Number(dl.headers['content-length'])).toBe(enc.length);
-    expect(enc.subarray(0, 8).toString()).toBe('Salted__');
-    // формат openssl: расшифровывается тем же паролем
-    expect(opensslDecrypt(enc, 'backup-pass-1').equals(plain)).toBe(true);
+    expect(enc.subarray(0, 6).toString()).toBe(V3_MAGIC);
+    // v3 проверяет GCM-тег; загрузка обратно подтверждает, что архив читается
     // загрузка зашифрованного файла
     const again = await a.inject({
       method: 'POST',

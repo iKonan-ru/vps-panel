@@ -21,3 +21,6 @@ packages/protocol/dist/
 deploy/files/
 # настройки выкладки (tools/ship.sh), в репозиторий не попадают
 .ship.env
+
+# планы и security-отчёты держим вне репозитория
+/docs/security/

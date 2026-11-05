@@ -41,7 +41,10 @@ export async function wdttRoutes(
   };
 
   /** Хеши звонков VK: общие для всех клиентов, уходят в ссылки и подписку WDTT. */
-  app.get('/api/settings/wdtt', async () => ({ hashes: wdttHashes(db) }));
+  app.get('/api/settings/wdtt', async (_req, reply) => {
+    reply.header('Cache-Control', 'no-store');
+    return { hashes: wdttHashes(db) };
+  });
   app.put('/api/settings/wdtt', async (req) => {
     const { hashes } = z
       .object({

@@ -9,7 +9,7 @@
   },
   "packageManager": "pnpm@10.34.5",
   "engines": {
-    "node": ">=22"
+    "node": ">=24"
   },
   "scripts": {
     "dev": "pnpm -r --parallel --filter ./apps/server --filter ./apps/web dev",
@@ -24,6 +24,11 @@
     "typescript": "^5.7.3"
   },
   "pnpm": {
-    "onlyBuiltDependencies": ["@biomejs/biome", "argon2", "better-sqlite3", "esbuild"]
+    "onlyBuiltDependencies": [
+      "@biomejs/biome",
+      "argon2",
+      "better-sqlite3",
+      "esbuild"
+    ]
   }
 }

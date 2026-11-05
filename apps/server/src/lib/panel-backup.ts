@@ -4,6 +4,7 @@ import { existsSync } from 'node:fs';
 import { cp, mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
+import { Transform } from 'node:stream';
 import Database from 'better-sqlite3';
 import { sql } from 'drizzle-orm';
 import type { Db } from '../db/index.js';
@@ -17,8 +18,7 @@ import { esc } from './telegram.js';
 export const PBKDF2_ITER = 100_000;
 
 /** Команда расшифровки и распаковки архива file. */
-const decryptCommand = (file: string) =>
-  `openssl enc -d -aes-256-cbc -pbkdf2 -iter ${PBKDF2_ITER} -in ${file} | tar xz`;
+const decryptCommand = (file: string) => `vps-panel restore ${file}`;
 
 /** Та же команда для человека (README архива, Настройки). */
 const DECRYPT_HINT = decryptCommand('<файл>.enc');
@@ -66,6 +66,89 @@ export function opensslDecrypt(data: Buffer, pass: string): Buffer {
   return Buffer.concat([d.update(data.subarray(16)), d.final()]);
 }
 
+/** Новый формат копии панели: AES-256-GCM, PBKDF2 600k, версия и явный auth tag. */
+export const V2_MAGIC = 'VPSBK2';
+export const V2_ITER = 600_000;
+const V2_SALT = 16;
+const V2_IV = 12;
+const V2_TAG = 16;
+const V2_BASE = 7; // magic 6 + version 1
+const V2_HEAD = V2_BASE + V2_SALT + V2_IV + V2_TAG;
+
+export function encryptBackupV2(data: Buffer, pass: string): Buffer {
+  const salt = randomBytes(V2_SALT);
+  const iv = randomBytes(V2_IV);
+  const key = pbkdf2Sync(pass, salt, V2_ITER, 32, 'sha256');
+  const c = createCipheriv('aes-256-gcm', key, iv);
+  const enc = Buffer.concat([c.update(data), c.final()]);
+  return Buffer.concat([Buffer.from(V2_MAGIC), Buffer.from([2]), salt, iv, c.getAuthTag(), enc]);
+}
+
+export function decryptBackupV2(data: Buffer, pass: string): Buffer {
+  if (data.subarray(0, 6).toString() !== V2_MAGIC || data[6] !== 2)
+    throw new Error('не резервная копия панели v2');
+  const salt = data.subarray(V2_BASE, V2_BASE + V2_SALT);
+  const iv = data.subarray(V2_BASE + V2_SALT, V2_BASE + V2_SALT + V2_IV);
+  const tag = data.subarray(V2_BASE + V2_SALT + V2_IV, V2_HEAD);
+  const key = pbkdf2Sync(pass, salt, V2_ITER, 32, 'sha256');
+  const d = createDecipheriv('aes-256-gcm', key, iv);
+  d.setAuthTag(tag);
+  return Buffer.concat([d.update(data.subarray(V2_HEAD)), d.final()]);
+}
+
+/** v3 - потоковая копия сервера: AES-256-GCM, auth tag в конце, без чтения в память. */
+export const V3_MAGIC = 'VPSBK3';
+const V3_SALT = 16;
+const V3_IV = 12;
+const V3_TAG = 16;
+const V3_HEAD = 7 + V3_SALT + V3_IV;
+
+export const encryptedStreamSize = (plain: number) => V3_HEAD + plain + V3_TAG;
+
+export function encryptStreamV3(pass: string) {
+  const salt = randomBytes(V3_SALT);
+  const iv = randomBytes(V3_IV);
+  const key = pbkdf2Sync(pass, salt, V2_ITER, 32, 'sha256');
+  const cipher = createCipheriv('aes-256-gcm', key, iv);
+  const header = Buffer.concat([Buffer.from(V3_MAGIC), Buffer.from([3]), salt, iv]);
+  return { header, cipher, tag: () => cipher.getAuthTag() };
+}
+
+/** Поток: ciphertext без тега -> tailer (отрезает тег) -> decipher (проверяет тег в final). */
+export function decryptStreamV3(header: Buffer, pass: string) {
+  if (header.subarray(0, 6).toString() !== V3_MAGIC || header[6] !== 3)
+    throw new Error('не резервная копия v3');
+  const salt = header.subarray(7, 7 + V3_SALT);
+  const iv = header.subarray(7 + V3_SALT, V3_HEAD);
+  const key = pbkdf2Sync(pass, salt, V2_ITER, 32, 'sha256');
+  const decipher = createDecipheriv('aes-256-gcm', key, iv);
+  const tailer = new Transform({
+    transform(chunk: Buffer, _enc, cb) {
+      const data = this as unknown as { _tail?: Buffer };
+      const b = data._tail ? Buffer.concat([data._tail, chunk]) : chunk;
+      if (b.length > V3_TAG) {
+        data._tail = b.subarray(b.length - V3_TAG);
+        this.push(b.subarray(0, b.length - V3_TAG));
+      } else data._tail = b;
+      cb();
+    },
+    flush(cb) {
+      const data = this as unknown as { _tail?: Buffer };
+      if (!data._tail || data._tail.length !== V3_TAG) return cb(new Error('нет auth tag v3'));
+      decipher.setAuthTag(data._tail);
+      cb();
+    },
+  });
+  return { decipher, tailer };
+}
+
+/** v2, иначе старый openssl-совместимый v1. */
+export function decryptBackup(data: Buffer, pass: string): Buffer {
+  return data.subarray(0, 6).toString() === V2_MAGIC
+    ? decryptBackupV2(data, pass)
+    : opensslDecrypt(data, pass);
+}
+
 function run(cmd: string, args: string[]): Promise<void> {
   return new Promise((resolve, reject) => {
     const p = spawn(cmd, args, { stdio: ['ignore', 'ignore', 'pipe'] });
@@ -97,7 +180,7 @@ const README = (panelUrl: string) => `Резервная копия VPS Panel ($
 
 Вручную (подробно - docs/install.md, раздел "Резервная копия и восстановление"; каталог
 установки из релиза - /opt/vps-panel, из исходников - deploy):
-1. ${DECRYPT_HINT}
+1. ${DECRYPT_HINT} (пароль - вопросом или в BACKUP_PASSWORD)
 2. cd /opt/vps-panel && docker compose stop panel
 3. panel.db, panel_agent_ed25519.pem, panel_ssh_ed25519(.pub) и xray/ - в data (владелец
    uid 1000, у ключей права 600); старые panel.db-wal и panel.db-shm удалить.
@@ -153,7 +236,7 @@ export async function createPanelBackup(o: {
     await writeFile(join(dir, 'README.txt'), README(o.panelUrl));
     const archive = join(tmp, 'backup.tar.gz');
     await run('tar', ['czf', archive, '-C', tmp, 'vps-panel-backup']);
-    const data = opensslEncrypt(await readFile(archive), o.password);
+    const data = encryptBackupV2(await readFile(archive), o.password);
     const ts = new Date().toISOString().slice(0, 16).replace(/[-:]/g, '').replace('T', '-');
     return { name: `vps-panel-backup-${ts}.tar.gz.enc`, data };
   } finally {

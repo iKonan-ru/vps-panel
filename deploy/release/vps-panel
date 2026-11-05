@@ -936,7 +936,14 @@ cmd_restore() {
   fi
   TMPD="$(mktemp -d)"
   local b="$TMPD/vps-panel-backup"
-  if ! printf '%s' "$pw" | openssl enc -d -aes-256-cbc -pbkdf2 -iter 100000 -pass stdin -in "$file" 2>/dev/null | tar xz -C "$TMPD" 2>/dev/null; then
+  if [ "$(head -c 6 "$file")" = "VPSBK2" ]; then
+    # v2 (AES-GCM): расшифровывает панельный образ, чтобы не тащить crypto в shell
+    if ! compose run --rm --no-deps -T -e BACKUP_PASSWORD="$pw" panel       node server/dist/decrypt-backup.js < "$file" > "$TMPD/backup.tar.gz" 2>/dev/null; then
+      die "не удалось расшифровать v2: неверный пароль или это не резервная копия панели"
+    fi
+    tar xzf "$TMPD/backup.tar.gz" -C "$TMPD" 2>/dev/null ||
+      die "не удалось распаковать резервную копию"
+  elif ! printf '%s' "$pw" | openssl enc -d -aes-256-cbc -pbkdf2 -iter 100000 -pass stdin -in "$file" 2>/dev/null | tar xz -C "$TMPD" 2>/dev/null; then
     die "не удалось расшифровать: неверный пароль или это не резервная копия панели"
   fi
   [ -f "$b/panel.db" ] && [ -f "$b/panel.env" ] && [ -f "$b/panel_agent_ed25519.pem" ] || die "в архиве нет panel.db, panel.env или ключа панели"

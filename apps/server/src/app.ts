@@ -44,6 +44,7 @@ import { SecretBox } from './lib/secret-box.js';
 import { onServerRemoved } from './lib/server-remove.js';
 import { serverSetup } from './lib/server-setup.js';
 import { ServiceUpdates } from './lib/service-updates.js';
+import { StepUp } from './lib/step-up.js';
 import { Telegram } from './lib/telegram.js';
 import { UiHub } from './lib/ui-hub.js';
 import { UninstallLinks } from './lib/uninstall-links.js';
@@ -184,7 +185,7 @@ export async function buildApp(opts: AppOptions) {
     secret: sessionSecret,
   });
   await app.register(fastifyRateLimit, { global: false });
-  await app.register(fastifyWebsocket);
+  await app.register(fastifyWebsocket, { options: { maxPayload: 4 * 1024 * 1024 } });
 
   app.setErrorHandler((err: unknown, _req, reply) => {
     if (err instanceof ZodError) {
@@ -224,8 +225,9 @@ export async function buildApp(opts: AppOptions) {
     version: PANEL_VERSION,
     now: new Date().toISOString(),
   }));
-  await app.register(authRoutes, { db, secure });
   const box = new SecretBox(sessionSecret);
+  const stepUp = new StepUp();
+  await app.register(authRoutes, { db, secure, stepUp, box, pepper: sessionSecret });
   // xray-клиент для выхода в Telegram: дочерний процесс панели
   const xray = new XrayManager(db, env.DATA_DIR, app.log);
   /** Запросы панели наружу (GitHub, реестр образов): через выход xray, если он задан. */
@@ -269,7 +271,7 @@ export async function buildApp(opts: AppOptions) {
   await app.register(systemRoutes, serverRouteOpts);
   await app.register(installRoutes, { db, env, registry, hub });
   await app.register(securityRoutes, { db });
-  await app.register(accountRoutes, { db, secure });
+  await app.register(accountRoutes, { db, secure, box, pepper: sessionSecret });
   await app.register(commandRoutes, { db, env, registry, hub, box, certs: panelCerts });
   await app.register(accessRoutes, { db, box });
   const restorer = new BackupRestorer(db, env, registry);
@@ -515,10 +517,11 @@ export async function buildApp(opts: AppOptions) {
   await app.register(appRoutes, { apps: appReleases });
   // личная страница клиента (подписка, MTProxy, AWG, приложения) - без входа
   await app.register(personalRoutes, { db, registry, box, env, apps: appReleases });
-  await app.register(panelBackupRoutes, { backups: panelBackups });
+  await app.register(panelBackupRoutes, { backups: panelBackups, stepUp, secure });
   // управление через Telegram-бота: тот же бот, что для уведомлений; данные - из API панели
   const bot = new Bot({
     db,
+    box,
     telegram,
     inject: (o) => app.inject(o),
     panelUrl: env.PANEL_PUBLIC_URL,
@@ -526,7 +529,7 @@ export async function buildApp(opts: AppOptions) {
     log: app.log,
     hub,
   });
-  await app.register(botRoutes, { bot });
+  await app.register(botRoutes, { bot, stepUp, secure });
   if (env.NODE_ENV !== 'test')
     app.addHook('onReady', async () => {
       stops.push(bot.start());

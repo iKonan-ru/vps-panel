@@ -10,7 +10,8 @@ const param = (k: keyof NotifyParams) =>
 export async function notifyRoutes(app: FastifyInstance, opts: { telegram: Telegram }) {
   const { telegram } = opts;
 
-  app.get('/api/notify/telegram', async () => {
+  app.get('/api/notify/telegram', async (_req, reply) => {
+    reply.header('Cache-Control', 'no-store');
     const st = await telegram.settings();
     return {
       ...st,

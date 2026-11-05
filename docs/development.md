@@ -1,6 +1,6 @@
 # Разработка
 
-Нужны Node.js 22+, pnpm (через corepack) и Go 1.26+ (агент; сборка Caddy naive).
+Нужны Node.js 24+, pnpm (через corepack) и Go 1.26+ (агент; сборка Caddy naive).
 
 ```bash
 corepack pnpm install

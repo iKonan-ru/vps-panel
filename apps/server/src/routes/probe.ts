@@ -113,6 +113,8 @@ function connectAndBanner(
     sock.on('data', (d: Buffer) => {
       banner += d.toString('latin1');
       if (banner.includes('\n')) done({ ok: true, banner: banner.split('\n')[0]?.trim() ?? '' });
+      // Баннер чужого сервиса может быть бесконечным: не копим больше 8 КиБ.
+      else if (banner.length > 8192) done({ ok: true, banner: banner.slice(0, 8192).trim() });
     });
   });
 }

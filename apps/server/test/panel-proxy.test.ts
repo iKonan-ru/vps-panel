@@ -66,6 +66,25 @@ function get(host: string, path: string, headers: Record<string, string> = {}) {
   );
 }
 
+function post(host: string, path: string, headers: Record<string, string> = {}) {
+  return new Promise<{ status: number; headers: Record<string, unknown>; body: string }>(
+    (resolve, reject) => {
+      const r = request(
+        { host: '127.0.0.1', port, path, method: 'POST', headers: { host, ...headers } },
+        (res) => {
+          let body = '';
+          res.on('data', (d) => {
+            body += d;
+          });
+          res.on('end', () => resolve({ status: res.statusCode ?? 0, headers: res.headers, body }));
+        },
+      );
+      r.on('error', reject);
+      r.end();
+    },
+  );
+}
+
 describe('поддомены панелей сервисов', () => {
   it('слаг из имени', () => {
     expect(slugify('NetCore')).toBe('netcore');
@@ -138,6 +157,27 @@ describe('поддомены панелей сервисов', () => {
       cookie: `__Host-vps_proxy=netcore-xui.${'a'.repeat(64)}.${Date.now() + 1e6}.bad`,
     });
     expect(forged.status).toBe(401);
+  });
+
+  it('чужой Origin на POST отклоняется до туннеля', async () => {
+    const open = await get('panel.example', '/api/proxy/open/netcore-xui?go=1', {
+      cookie: `__Host-vps_session=${session}`,
+    });
+    const loc = new URL(String(open.headers.location));
+    const auth = await get('netcore-xui.panel.example', `${loc.pathname}${loc.search}`);
+    const proxyCookie = String((auth.headers['set-cookie'] as string[])[0]).split(';')[0] ?? '';
+    const orig = built.registry.isOnline.bind(built.registry);
+    built.registry.isOnline = () => true;
+    try {
+      const bad = await post('netcore-xui.panel.example', '/secretpath/', {
+        cookie: proxyCookie,
+        origin: 'https://evil.example',
+      });
+      expect(bad.status).toBe(403);
+      expect(bad.body).toContain('Чужой Origin');
+    } finally {
+      built.registry.isOnline = orig;
+    }
   });
 
   it('probe: без сессии - 401, агент не на связи - шаг agent, неизвестная метка - target', async () => {

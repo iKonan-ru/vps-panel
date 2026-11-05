@@ -1,3 +1,4 @@
+import { isIP } from 'node:net';
 import {
   HostingSchema,
   type ServerDetail,
@@ -24,9 +25,21 @@ import { removeServer } from '../lib/server-remove.js';
 import { ensureTags } from '../lib/tags.js';
 import type { UiHub } from '../lib/ui-hub.js';
 
+const Host = z
+  .string()
+  .trim()
+  .toLowerCase()
+  .max(253)
+  .refine(
+    (v) =>
+      isIP(v) !== 0 ||
+      /^[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?(\.[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?)+$/.test(v),
+    'host: IP-адрес или доменное имя',
+  );
+
 const CreateSchema = z.object({
   name: z.string().min(1).max(64),
-  host: z.string().min(1).max(253),
+  host: Host,
   sshPort: z.number().int().min(1).max(65535).default(22),
   tags: z
     .array(z.string().max(TAG_MAX * 2))

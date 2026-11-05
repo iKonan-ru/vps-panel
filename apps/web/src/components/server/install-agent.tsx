@@ -1,6 +1,7 @@
 import { ActionOutput } from '@/components/action-output';
 import { Alert } from '@/components/ui/alert';
 import { Button } from '@/components/ui/button';
+import { Dialog } from '@/components/ui/dialog';
 import { Field } from '@/components/ui/field';
 import { InfoTip } from '@/components/ui/info-tip';
 import { Input } from '@/components/ui/input';
@@ -30,6 +31,10 @@ export function InstallAgent({
   // установка закончилась: до этого "Повторить" не даёт запустить второй установщик поверх
   const [finished, setFinished] = useState(false);
   const [keyReset, setKeyReset] = useState(false);
+  const [pending, setPending] = useState<{
+    json: Record<string, unknown>;
+    fingerprint: string;
+  } | null>(null);
   const key = useQuery({
     queryKey: ['panel-ssh-key'],
     queryFn: () => api<{ publicKey: string }>('/api/panel/ssh-key'),
@@ -42,14 +47,28 @@ export function InstallAgent({
       if (mode === 'manual') {
         const r = await actions.registration(serverId);
         setCommand(r.installCommand);
-      } else {
-        const r = await api<{ actionId: string }>(`/api/servers/${serverId}/install`, {
-          method: 'POST',
-          json: mode === 'password' ? { mode, password } : { mode },
-        });
-        setPassword('');
-        setActionId(r.actionId);
+        return;
       }
+      const json = mode === 'password' ? { mode, password } : { mode };
+      const r = await api<{ fingerprint: string }>(`/api/servers/${serverId}/ssh-host-key`, {
+        method: 'POST',
+        json,
+      });
+      setPending({ json, fingerprint: r.fingerprint });
+    });
+  }
+
+  async function install() {
+    if (!pending) return;
+    const auth = pending;
+    setPending(null);
+    await op.run(async () => {
+      const r = await api<{ actionId: string }>(`/api/servers/${serverId}/install`, {
+        method: 'POST',
+        json: { ...auth.json, fingerprint: auth.fingerprint },
+      });
+      setPassword('');
+      setActionId(r.actionId);
     });
   }
 
@@ -110,85 +129,110 @@ export function InstallAgent({
   }
 
   return (
-    <form onSubmit={start} className="flex flex-col gap-4">
-      <div className="grid gap-2 sm:grid-cols-3">
-        <ModeCard
-          active={mode === 'password'}
-          onClick={() => setMode('password')}
-          title="Пароль root"
-          text="Используется один раз и не хранится"
-        />
-        <ModeCard
-          active={mode === 'key'}
-          onClick={() => setMode('key')}
-          title="Ключ панели"
-          text="Ключ панели уже добавлен на сервер"
-        />
-        <ModeCard
-          active={mode === 'manual'}
-          onClick={() => setMode('manual')}
-          title="Вручную"
-          text="Команда для запуска на сервере"
-        />
-      </div>
+    <>
+      <form onSubmit={start} className="flex flex-col gap-4">
+        <div className="grid gap-2 sm:grid-cols-3">
+          <ModeCard
+            active={mode === 'password'}
+            onClick={() => setMode('password')}
+            title="Пароль root"
+            text="Используется один раз и не хранится"
+          />
+          <ModeCard
+            active={mode === 'key'}
+            onClick={() => setMode('key')}
+            title="Ключ панели"
+            text="Ключ панели уже добавлен на сервер"
+          />
+          <ModeCard
+            active={mode === 'manual'}
+            onClick={() => setMode('manual')}
+            title="Вручную"
+            text="Команда для запуска на сервере"
+          />
+        </div>
 
-      {mode === 'password' && (
-        <Field label={<>Пароль root для {host}</>} htmlFor="inst-pass">
-          <Input
-            id="inst-pass"
-            type="password"
-            autoComplete="off"
-            value={password}
-            onChange={(e) => setPassword(e.target.value)}
-            required
-          />
-        </Field>
-      )}
-      {mode === 'key' && (
-        <div className="flex flex-col gap-2 text-[13px]">
-          <div className="text-muted">Добавление ключа панели, под root:</div>
-          <pre className="overflow-x-auto console rounded-lg p-3 font-mono text-xs whitespace-pre-wrap break-all">
-            {key.data
-              ? `mkdir -p /root/.ssh && echo '${key.data.publicKey}' >> /root/.ssh/authorized_keys`
-              : 'Загрузка\u2026'}
-          </pre>
-          <CopyButton
-            text={
-              key.data
+        {mode === 'password' && (
+          <Field label={<>Пароль root для {host}</>} htmlFor="inst-pass">
+            <Input
+              id="inst-pass"
+              type="password"
+              autoComplete="off"
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
+              required
+            />
+          </Field>
+        )}
+        {mode === 'key' && (
+          <div className="flex flex-col gap-2 text-[13px]">
+            <div className="text-muted">Добавление ключа панели, под root:</div>
+            <pre className="overflow-x-auto console rounded-lg p-3 font-mono text-xs whitespace-pre-wrap break-all">
+              {key.data
                 ? `mkdir -p /root/.ssh && echo '${key.data.publicKey}' >> /root/.ssh/authorized_keys`
-                : ''
-            }
-          />
-        </div>
-      )}
-      {mode === 'manual' && command && (
-        <div className="flex flex-col gap-2 text-[13px]">
-          <div className="text-muted">
-            Под root на сервере. Токен одноразовый, действует 1&nbsp;ч.
+                : 'Загрузка\u2026'}
+            </pre>
+            <CopyButton
+              text={
+                key.data
+                  ? `mkdir -p /root/.ssh && echo '${key.data.publicKey}' >> /root/.ssh/authorized_keys`
+                  : ''
+              }
+            />
           </div>
-          <pre className="overflow-x-auto console rounded-lg p-3 font-mono text-xs whitespace-pre-wrap break-all">
-            {command}
-          </pre>
-          <CopyButton text={command} />
+        )}
+        {mode === 'manual' && command && (
+          <div className="flex flex-col gap-2 text-[13px]">
+            <div className="text-muted">
+              Под root на сервере. Токен одноразовый, действует 1&nbsp;ч.
+            </div>
+            <pre className="overflow-x-auto console rounded-lg p-3 font-mono text-xs whitespace-pre-wrap break-all">
+              {command}
+            </pre>
+            <CopyButton text={command} />
+          </div>
+        )}
+        {op.error && <Alert tone="bad">{op.error}</Alert>}
+        <div className="flex items-center gap-3">
+          <InfoTip>
+            Агент ставится systemd-службой. Docker, VPN и firewall не затрагиваются.
+          </InfoTip>
+          <div className="grow" />
+          <Button
+            type="submit"
+            variant="primary"
+            disabled={op.busy || (mode === 'password' && !password)}
+          >
+            {mode === 'manual'
+              ? command
+                ? 'Получить новую команду'
+                : 'Показать команду'
+              : 'Установить'}
+          </Button>
         </div>
-      )}
-      {op.error && <Alert tone="bad">{op.error}</Alert>}
-      <div className="flex items-center gap-3">
-        <InfoTip>Агент ставится systemd-службой. Docker, VPN и firewall не затрагиваются.</InfoTip>
-        <div className="grow" />
-        <Button
-          type="submit"
-          variant="primary"
-          disabled={op.busy || (mode === 'password' && !password)}
-        >
-          {mode === 'manual'
-            ? command
-              ? 'Получить новую команду'
-              : 'Показать команду'
-            : 'Установить'}
-        </Button>
-      </div>
-    </form>
+      </form>
+      <Dialog open={pending !== null} onClose={() => setPending(null)} title="Проверка ключа SSH">
+        {pending && (
+          <div className="flex flex-col gap-4">
+            <div className="text-sm text-muted">
+              Сверьте отпечаток с тем, что показывает сервер или хостер. Если он не совпадает,
+              продолжать нельзя: на адресе может отвечать чужой сервер.
+            </div>
+            <code className="break-all rounded-md bg-surface-2 p-3 text-xs">
+              {pending.fingerprint}
+            </code>
+            <div className="flex justify-end gap-2">
+              <Button type="button" variant="ghost" onClick={() => setPending(null)}>
+                Отмена
+              </Button>
+              <Button type="button" variant="primary" onClick={install} disabled={op.busy}>
+                Отпечаток совпадает
+              </Button>
+            </div>
+          </div>
+        )}
+      </Dialog>
+    </>
   );
 }
 

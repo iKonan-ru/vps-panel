@@ -49,8 +49,8 @@ function box() {
   );
   chmodSync(join(bin, 'curl'), 0o755);
   const run = (env: Record<string, string>) =>
-    execFileSync('bash', ['-c', TG_SCRIPT], {
-      env: { PATH: `${bin}:${process.env.PATH}`, MT_DIR: dir, ...env },
+    execFileSync('bash', ['--noprofile', '--norc', '-c', TG_SCRIPT], {
+      env: { PATH: `${bin}:${process.env.PATH}`, HOME: process.env.HOME, MT_DIR: dir, ...env },
       encoding: 'utf8',
     });
   const file = (name: string) =>

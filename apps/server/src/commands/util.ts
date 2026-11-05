@@ -29,6 +29,8 @@ apt_wait() {
 }
 apt_install() { need apt-get || { echo "поддерживаются только Debian и Ubuntu" >&2; exit 2; }; apt_wait; dpkg --configure -a >/dev/null 2>&1 || true; apt-get update -qq; apt-get -o DPkg::Lock::Timeout=300 install -y -qq "$@"; }
 fetch() { curl -fsSL --retry 3 --retry-delay 2 "$@"; }
+# fetch_sha URL FILE SHA256 - скачать и проверить закреплённый файл.
+fetch_sha() { local url="$1" out="$2" want="$3"; fetch "$url" -o "$out"; echo "$want  $out" | sha256sum -c --quiet - || { echo "sha256 не совпал: $url" >&2; rm -f "$out"; exit 3; }; }
 `;
 
 /**

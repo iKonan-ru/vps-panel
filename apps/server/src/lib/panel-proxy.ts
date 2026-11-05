@@ -126,11 +126,15 @@ export function tlsMismatch(tls: boolean, status: number | string): boolean {
   return status === 400;
 }
 
+const escHtml = (s: string) => s.replace(/[&<>"']/g, (c) => `&#${c.charCodeAt(0)};`);
+
 function page(title: string, text: string): string {
-  return `<!doctype html><html lang="ru"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width"><title>${title}</title>
+  const t = escHtml(title);
+  const p = escHtml(text);
+  return `<!doctype html><html lang="ru"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width"><title>${t}</title>
 <style>body{font-family:system-ui,sans-serif;background:#0f1115;color:#e6e8ec;display:flex;align-items:center;justify-content:center;min-height:100vh;margin:0;padding:16px}
 div{max-width:420px;padding:24px;border:1px solid #2a2f3a;border-radius:12px}h1{font-size:18px;margin:0 0 8px}p{color:#9aa3b2;margin:0}</style></head>
-<body><div><h1>${title}</h1><p>${text}</p></div></body></html>`;
+<body><div><h1>${t}</h1><p>${p}</p></div></body></html>`;
 }
 
 type Log = { warn: (o: unknown, m?: string) => void; info: (o: unknown, m?: string) => void };
@@ -273,7 +277,12 @@ export class PanelProxy {
   /** Сервер и панель по метке; null - нет такой (или два сервера с одним слагом). */
   async target(label: string): Promise<ProxyTarget | null> {
     const c = this.targets.get(label);
-    if (c && Date.now() - c.at < 10_000) return c.t;
+    if (c && Date.now() - c.at < 10_000) {
+      // LRU: недавно использованная метка - в конец очереди вытеснения.
+      this.targets.delete(label);
+      this.targets.set(label, c);
+      return c.t;
+    }
     let t: ProxyTarget | null = null;
     const kind = PROXIED_KINDS.find((k) => label.endsWith(`-${k}`));
     if (kind) {
@@ -293,7 +302,33 @@ export class PanelProxy {
       }
     }
     this.targets.set(label, { t, at: Date.now() });
+    // Сканер может перебирать любые метки; держим только последние 1000.
+    while (this.targets.size > 1000) {
+      const first = this.targets.keys().next().value;
+      if (!first) break;
+      this.targets.delete(first);
+    }
     return t;
+  }
+
+  /** Путь возврата после входа: только свой origin, без обратного слэша и control-символов. */
+  private backPath(label: string, back: string, basePath: string): string {
+    if (
+      !back ||
+      !back.startsWith('/') ||
+      back.startsWith('//') ||
+      back.includes('\\') ||
+      [...back].some((c) => c.charCodeAt(0) < 0x20 || c.charCodeAt(0) === 0x7f)
+    )
+      return basePath;
+    try {
+      const base = new URL(`https://${label}.${this.domain}`);
+      const u = new URL(back, base);
+      if (u.origin !== base.origin) return basePath;
+      return `${u.pathname}${u.search}${u.hash}`;
+    } catch {
+      return basePath;
+    }
   }
 
   openUrl(label: string, back: string): string {
@@ -431,7 +466,7 @@ export class PanelProxy {
         res.writeHead(302, { location: this.openUrl(label, back), 'cache-control': 'no-store' });
         return res.end();
       }
-      const to = back.startsWith('/') && !back.startsWith('//') ? back : t.basePath;
+      const to = this.backPath(label, back, t.basePath);
       res.writeHead(302, {
         location: to,
         'cache-control': 'no-store',
@@ -440,7 +475,10 @@ export class PanelProxy {
       return res.end();
     }
     // манифест PWA и favicon браузер просит без cookie; секретов там нет
-    const publicFile = /(^|\/)(manifest\.(webmanifest|json)|favicon\.ico)$/.test(url.pathname);
+    const publicFile =
+      url.pathname === '/manifest.webmanifest' ||
+      url.pathname === '/manifest.json' ||
+      url.pathname === '/favicon.ico';
     if (!publicFile && !(await this.verifyCookie(this.cookieOf(req), label))) {
       if (req.method === 'GET' && (req.headers.accept ?? '').includes('text/html')) {
         res.writeHead(302, {
@@ -454,6 +492,9 @@ export class PanelProxy {
     }
     if (!this.registry.isOnline(t.serverId))
       return this.fail(res, 502, 'Сервер не в сети', 'Агент сервера не подключён к VPS Panel');
+    // Панели сервисов проверяют CSRF по-своему, но не все; cookie Lax уже не спасает от
+    // same-site POST. Браузер всегда шлёт Origin на небезопасный метод - требуем свой.
+    if (!this.originOk(req)) return this.fail(res, 403, 'Запрос отклонён', 'Чужой Origin');
 
     const upstream = {
       headers: this.upstreamHeaders(req),
@@ -562,6 +603,17 @@ export class PanelProxy {
     });
   }
 
+  private originOk(req: IncomingMessage): boolean {
+    if (req.method === 'GET' || req.method === 'HEAD' || req.method === 'OPTIONS') return true;
+    const origin = req.headers.origin;
+    if (!origin) return true;
+    try {
+      return new URL(origin).host === req.headers.host;
+    } catch {
+      return false;
+    }
+  }
+
   /** WebSocket к поддомену. false - хост не наш. Никогда не бросает. */
   async handleUpgrade(req: IncomingMessage, socket: Socket, head: Buffer): Promise<boolean> {
     const label = this.labelOf(req.headers.host);
@@ -569,8 +621,19 @@ export class PanelProxy {
     socket.on('error', () => socket.destroy());
     try {
       const t = await this.target(label);
+      const origin = req.headers.origin;
+      const sameOrigin =
+        !origin ||
+        (() => {
+          try {
+            return new URL(origin).host === req.headers.host;
+          } catch {
+            return false;
+          }
+        })();
       if (
         !t ||
+        !sameOrigin ||
         !(await this.verifyCookie(this.cookieOf(req), label)) ||
         !this.registry.isOnline(t.serverId)
       ) {
