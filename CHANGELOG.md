@@ -3,6 +3,13 @@
 Версии - [semver](https://semver.org/lang/ru/): X.Y.Z - стабильный релиз, X.Y.Z-beta.N -
 предварительная версия (предварительный канал, beta). Текст раздела версии становится описанием релиза на GitHub.
 
+## 1.21.2 - 06.11.2026
+
+- L-07: `strangers` в Telegram-боте ограничен 1000 записями с очисткой старых; медленные UI-клиенты отключаются по `bufferedAmount`, число UI-подключений ограничено; в compose добавлены `pids_limit` и `ulimits`.
+- L-09: `installCommand` экранирует URL, токен и ключ; установка агента сервера панели больше не идёт через `sh -c`, а получает параметры отдельными полями.
+- Добавлены `SECURITY.md` и `docs/operations.md`; обновлены `architecture.md`, `install.md`, `development.md` и `README`.
+- В release checklist добавлена проверка `bash -n`, наличие ассетов и canary-обновление.
+
 ## 1.21.1 - 05.11.2026
 
 - Исправлена критическая ошибка в host-скрипте `vps-panel`: JSDoc-комментарий попал в shell и ломал запуск `serve-request`/`update` (`..: command not found`, systemd start limit). Обновление из интерфейса снова работает.

@@ -13,11 +13,25 @@ cd apps/agent && go vet ./... && go test ./... && make build-all
 ```
 
 Перед коммитом - `tools/check.sh`: протокол, типы, biome, тесты сервера, агент (gofmt,
-vet, test, govulncheck), `pnpm audit`, только клавиатурные символы в файлах. То же на
-GitHub - `.github/workflows/ci.yml` на каждый push и pull request.
+vet, test, govulncheck), `pnpm audit`, проверка `bash -n install.sh deploy/release/vps-panel`,
+только клавиатурные символы в файлах. То же на GitHub - `.github/workflows/ci.yml` на каждый
+push и pull request.
 
-Релиз: раздел `## X.Y.Z` в `CHANGELOG.md` и `tools/release.sh X.Y.Z` (предварительная версия -
-`X.Y.Z-beta.N`) - тег, сборка образов и релиза в GitHub Actions (`release.yml`, около 15 минут).
+### Чек-лист релиза
+
+1. Записать изменения в `CHANGELOG.md` разделом `## X.Y.Z`.
+2. Прогнать `tools/check.sh`; отдельно проверить `bash -n install.sh deploy/release/vps-panel`.
+3. Собрать Docker-образ и агента (`make -C apps/agent build-all`), проверить `/api/health`.
+4. Выпустить `tools/release.sh X.Y.Z` (предварительная версия - `X.Y.Z-beta.N`).
+5. Дождаться успеха `release.yml` и проверить, что у релиза есть файлы `vps-panel`,
+   `release.sha256`, `install.sh`, `compose.yml`, `Caddyfile` и бинарники агента.
+6. Обновить одну тестовую панель вручную, проверить `vps-panel status`, health, агентов и
+   отсутствие ошибок в журнале.
+7. Только после этого включать автообновление на остальном парке. Не откатываться на
+   1.20.2/1.21.0 без замены host-скрипта.
+
+Внутренние планы аудита, SAST-отчёты и risk register в репозиторий не добавляются.
+Операционные процедуры - в [operations.md](operations.md).
 
 Правила проекта: код, комментарии, интерфейс и документы - на русском; в файлах только
 символы с клавиатуры. В документах и консоли - дефис вместо тире и прямые кавычки;
@@ -60,3 +74,5 @@ tools/          check.sh, ship.sh, release.sh, сборка wdtt-server и Caddy
 | `apps/agent/README.md` | агент: установка, конфиг, флаги, канал, операции, сборка, отладка, удаление |
 | `apps/extension/README.md` | расширение Chrome и Firefox: файлы, установка, подпись, обновление |
 | `deploy/README.md` | файлы выкладки и сборка релиза: Caddy, fail2ban, маршрут до Telegram, файлы команд |
+| `SECURITY.md` | как сообщить об уязвимости, поддерживаемые версии, правила тестирования |
+| `docs/operations.md` | обновление, откат, бэкапы, ротация ключей, инциденты |

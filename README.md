@@ -19,6 +19,8 @@
 
 ![Список серверов](docs/screenshots/servers.png)
 
+Безопасность и эксплуатация: [SECURITY.md](SECURITY.md), [docs/operations.md](docs/operations.md).
+
 ## Установка
 
 Нужен сервер с Linux (проверено на Ubuntu 24.04), root и свободные порты 80 и 443. Домен - по
@@ -37,7 +39,7 @@ bash <(curl -fsSL https://github.com/iKonan-ru/vps-panel/releases/latest/downloa
 
 ```
 ================================================================
- VPS Panel 1.21.1 установлена
+ VPS Panel 1.21.2 установлена
 ================================================================
  Адрес:      https://panel.example.com
  Логин:      admin-k7m2qa
