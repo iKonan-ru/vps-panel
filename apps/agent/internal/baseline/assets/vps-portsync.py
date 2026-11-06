@@ -25,6 +25,7 @@ port-sync берёт из 3X-UI, или полный проход был бол�
 """
 import argparse
 import fcntl
+import ipaddress
 import json
 import os
 import re
@@ -169,10 +170,22 @@ def ufw_rule_args(proto, port, src=None, label=""):
 
 
 def rule_base(rule):
-    """Правило без комментария: ufw считает правила с разным комментарием одним и тем же."""
+    """Одна идентичность для сохранённых правил и сокращённого вывода ufw show added."""
     rule = list(rule)
     if "comment" in rule:
         rule = rule[:rule.index("comment")]
+    if len(rule) == 2:
+        short = re.fullmatch(r"(\d+)/(tcp|udp)", rule[1])
+        if short:
+            rule = [rule[0], "from", "any", "to", "any", "port", short[1], "proto", short[2]]
+    for marker in ("from", "to"):
+        if marker in rule:
+            i = rule.index(marker) + 1
+            try:
+                net = ipaddress.ip_network(rule[i], strict=False)
+                rule[i] = str(net.network_address) if net.prefixlen == net.max_prefixlen else str(net)
+            except ValueError:
+                pass
     return tuple(rule)
 
 

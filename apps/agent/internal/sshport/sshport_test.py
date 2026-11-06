@@ -170,6 +170,55 @@ class PortChangeTest(unittest.TestCase):
         self.assertTrue(any('24567' in r for r in self.rules))
         self.assertEqual(p.load_state()['ufw_rules'], self.rules)
 
+    def test_short_ufw_rules_survive_partial_failure_and_periodic_recovery(self):
+        self.enable_portsync()
+        # UFW сокращает общее правило, хотя port-sync хранит полную команду.
+        shown = [['allow', '2222/tcp', 'comment', 'vps-portsync: SSH'], self.rules[1]]
+        with patch.object(m, 'ufw_rules', return_value=shown):
+            self.token = self.prepare()['token']
+        m.commit(self.token)
+        self.firewall_events.clear()
+        self.sync_failures = 1
+        with self.assertRaisesRegex(RuntimeError, 'port-sync частично'):
+            m.finish(self.token)
+        self.periodic_sync()
+        m.rollback(self.token)
+        self.assertEqual(m.ports(), [2222, 24567])
+        self.assertFalse(any(args[1] == 'delete' for args, _ in self.firewall_events))
+        for port in (2222, 24567):
+            self.assertTrue(any(str(port) in r or str(port) + '/tcp' in r for r in self.rules))
+        m.finish(self.token)
+        self.periodic_sync()
+        self.assertFalse(any('2222' in r or '2222/tcp' in r for r in self.rules))
+        self.assertTrue(any('24567' in r or '24567/tcp' in r for r in self.rules))
+
+    def test_ufw_host_prefixes_preserve_managed_and_manual_rules(self):
+        self.enable_portsync()
+        addresses = ['203.0.113.5/32', '2001:db8::5/128']
+        self.rules = [self.rules[0], *(p.ufw_rule_args('tcp', 2222, ip, 'SSH admin') for ip in addresses)]
+        p.save_state({'ufw_rules': list(self.rules)})
+        manual = ['allow', 'from', '2001:db8:1::/64', 'to', 'any', 'port', '2222', 'proto', 'tcp']
+        self.rules.append(manual)
+        # UFW печатает адреса отдельного хоста без /32 и /128.
+        shown = [[v.removesuffix('/32').removesuffix('/128') for v in rule] for rule in self.rules]
+        with patch.object(m, 'ufw_rules', return_value=shown):
+            self.token = self.prepare()['token']
+        m.commit(self.token)
+        self.firewall_events.clear()
+        self.sync_failures = 1
+        with patch.object(p, 'agent_state', lambda: {**self.desired(), 'admin_ips': addresses}):
+            with self.assertRaisesRegex(RuntimeError, 'port-sync частично'):
+                m.finish(self.token)
+            self.periodic_sync()
+            m.rollback(self.token)
+            self.assertFalse(any(args[1] == 'delete' for args, _ in self.firewall_events))
+            for rule in (manual, [v if v != '2222' else '24567' for v in manual]):
+                self.assertIn(rule, self.rules)
+                self.assertNotIn(rule, p.load_state()['ufw_rules'])
+            m.finish(self.token)
+            self.periodic_sync()
+        self.assertIn(manual, self.rules)
+
     def test_recovery_failure_keeps_journal_and_independent_timer_can_retry(self):
         self.verified_transition()
         self.sync_failures = 2
