@@ -24,17 +24,21 @@ export async function proxyRoutes(
    * выпускать сертификаты на что угодно. Ещё - имена сервисов самого сервера панели: запросы к
    * ним панель не обслуживает.
    */
-  app.get('/api/proxy/ask', async (req, reply) => {
-    const { domain } = z.object({ domain: z.string().max(253) }).parse(req.query);
-    // Свой IP панели: запрос без имени (https://<IP>: браузер, curl и агенты не передают SNI для
-    // адреса) Caddy ведёт по правилу on_demand, хотя сертификат на IP уже выпущен. Отказ здесь рвёт
-    // рукопожатие; разрешение - Caddy берёт готовый сертификат из хранилища, ничего не выпуская.
-    if (selfIp && domain === selfIp) return reply.send('ok');
-    if (certs && (await certs.allowed(domain))) return reply.send('ok');
-    const label = proxy.labelOf(domain);
-    if (!label || !(await proxy.target(label))) return reply.code(404).send('no');
-    return reply.send('ok');
-  });
+  app.get(
+    '/api/proxy/ask',
+    { config: { rateLimit: { max: 120, timeWindow: '1 minute' } } },
+    async (req, reply) => {
+      const { domain } = z.object({ domain: z.string().max(253) }).parse(req.query);
+      // Свой IP панели: запрос без имени (https://<IP>: браузер, curl и агенты не передают SNI для
+      // адреса) Caddy ведёт по правилу on_demand, хотя сертификат на IP уже выпущен. Отказ здесь рвёт
+      // рукопожатие; разрешение - Caddy берёт готовый сертификат из хранилища, ничего не выпуская.
+      if (selfIp && domain === selfIp) return reply.send('ok');
+      if (certs && (await certs.allowed(domain))) return reply.send('ok');
+      const label = proxy.labelOf(domain);
+      if (!label || !(await proxy.target(label))) return reply.code(404).send('no');
+      return reply.send('ok');
+    },
+  );
 
   /**
    * Переход с панели на поддомен. Без сессии - на вход с возвратом. Сначала - страница

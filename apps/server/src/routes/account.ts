@@ -10,6 +10,7 @@ import {
   deleteOtherSessions,
   findAdminById,
   generateBackupCodes,
+  openTotp,
   recordAttempt,
   saveTotp,
   setBackupCodes,
@@ -21,6 +22,7 @@ import {
   verifyPassword,
   verifyTotp,
 } from '../lib/auth.js';
+import type { SecretBox } from '../lib/secret-box.js';
 import { sessionCookie, sessionOf, sessionToken } from './auth.js';
 
 /** Новая 2FA из аккаунта: ждёт первого кода, по сессии (sha256 токена). */
@@ -37,8 +39,11 @@ const fail = (code: number, error: string) => Object.assign(new Error(error), { 
  * считается неудачной попыткой входа - те же 5 за 15 минут и fail2ban. Восстановления пароля
  * нет: сброс - только из консоли сервера панели (vps-panel admin).
  */
-export async function accountRoutes(app: FastifyInstance, opts: { db: Db; secure: boolean }) {
-  const { db, secure } = opts;
+export async function accountRoutes(
+  app: FastifyInstance,
+  opts: { db: Db; secure: boolean; box: SecretBox; pepper: string },
+) {
+  const { db, secure, box, pepper } = opts;
 
   async function me(req: FastifyRequest) {
     const token = sessionToken(req);
@@ -65,7 +70,8 @@ export async function accountRoutes(app: FastifyInstance, opts: { db: Db; secure
 
   const limited = { config: { rateLimit: { max: 10, timeWindow: '1 minute' } } };
 
-  app.get('/api/account', async (req) => {
+  app.get('/api/account', async (req, reply) => {
+    reply.header('Cache-Control', 'no-store');
     const { admin } = await me(req);
     return {
       login: admin.login,
@@ -125,8 +131,9 @@ export async function accountRoutes(app: FastifyInstance, opts: { db: Db; secure
       .parse(req.body);
     await checkPassword(req, admin, b.password);
     const ok =
-      (admin.totpSecret ? verifyTotp(admin.totpSecret, b.code) : false) ||
-      (await consumeBackupCode(db, admin.id, b.code));
+      (openTotp(box, admin.totpSecret)
+        ? verifyTotp(openTotp(box, admin.totpSecret) ?? '', b.code)
+        : false) || (await consumeBackupCode(db, admin.id, b.code, pepper));
     if (!ok) {
       await recordAttempt(db, req.ip, admin.login, false);
       throw fail(400, 'неверный код 2FA');
@@ -139,12 +146,17 @@ export async function accountRoutes(app: FastifyInstance, opts: { db: Db; secure
   app.post('/api/account/totp/confirm', limited, async (req) => {
     const { admin, token } = await me(req);
     const { code } = z.object({ code: z.string().min(6).max(8) }).parse(req.body);
+    if (await tooManyAttempts(db, req.ip))
+      throw fail(429, 'слишком много попыток, следующая\u00a0\u2014 через 15\u00a0минут');
     const key = sha256(token);
     const e = enrolling.get(key);
     if (!e || e.expires < Date.now())
       throw fail(400, 'время настройки истекло, нужно начать заново');
-    if (!verifyTotp(e.secret, code)) throw fail(400, 'неверный код');
-    await saveTotp(db, admin.id, e.secret, e.codes);
+    if (!verifyTotp(e.secret, code)) {
+      await recordAttempt(db, req.ip, admin.login, false);
+      throw fail(400, 'неверный код');
+    }
+    await saveTotp(db, admin.id, e.secret, e.codes, box, pepper);
     enrolling.delete(key);
     await deleteOtherSessions(db, admin.id, token);
     return { ok: true };
@@ -156,7 +168,7 @@ export async function accountRoutes(app: FastifyInstance, opts: { db: Db; secure
     const { password } = z.object({ password: z.string().min(1).max(200) }).parse(req.body);
     await checkPassword(req, admin, password);
     const codes = generateBackupCodes();
-    await setBackupCodes(db, admin.id, codes);
+    await setBackupCodes(db, admin.id, codes, pepper);
     return { backupCodes: codes };
   });
 

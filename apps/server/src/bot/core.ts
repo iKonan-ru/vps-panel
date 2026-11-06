@@ -1,5 +1,6 @@
 import type { BotLevel } from '@vps/protocol';
 import type { Db } from '../db/index.js';
+import type { SecretBox } from '../lib/secret-box.js';
 import type { Telegram } from '../lib/telegram.js';
 import type { UiEvent } from '../lib/ui-hub.js';
 import type { Risk } from './actions.js';
@@ -20,6 +21,8 @@ export type BotTelegram = Pick<
 
 export interface BotDeps {
   db: Db;
+  /** Нужен для расшифровки TOTP-секрета; в тестах без 2FA можно не передавать. */
+  box?: SecretBox;
   telegram: BotTelegram;
   /** запрос к API панели (app.inject): бот видит то же, что интерфейс */
   inject: Inject;

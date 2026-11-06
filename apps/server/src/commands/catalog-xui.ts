@@ -47,7 +47,7 @@ export const xuiCmd: CommandDef = {
   script: `${PROLOGUE}
 ${XUI_FUNCS}
 say "Скачиваю установщик 3X-UI"
-fetch https://raw.githubusercontent.com/mhsanaei/3x-ui/master/install.sh -o /tmp/xui-install.sh
+fetch_sha https://raw.githubusercontent.com/mhsanaei/3x-ui/83ea59fb693fee1815d867dff4d33028ddaf12a9/install.sh /tmp/xui-install.sh cb28d4fe277c9ee3c1b06c3a4fb0daeda033db24645a1ec8c6921a38571d3eec
 # без HTTPS - панель слушает только 127.0.0.1, вход через VPS Panel
 export XUI_NONINTERACTIVE=1 XUI_ENABLE_FAIL2BAN=false XUI_SSL_MODE=none
 export XUI_USERNAME XUI_PASSWORD XUI_PANEL_PORT

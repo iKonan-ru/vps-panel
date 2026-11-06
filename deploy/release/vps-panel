@@ -309,7 +309,7 @@ agent_key() { python3 -c 'import json,sys; print(json.load(open(sys.argv[1])).ge
 AGENT_CFG=/etc/vps-agent/agent.json
 SELF_SERVER=""
 attach_self_agent() { # attach_self_agent <внешний IP>
-  local url js name cmd log n
+  local url js name iurl itoken ikey log n proto
   url="https://$(env_get PANEL_DOMAIN)"
   if [ -f "$AGENT_CFG" ] && ! own_agent "$1"; then
     SELF_SERVER="не добавлен: здесь стоит агент другой панели"
@@ -328,8 +328,18 @@ attach_self_agent() { # attach_self_agent <внешний IP>
     return 0
   fi
   name="$(echo "$js" | json_field name)"
-  cmd="$(echo "$js" | json_field installCommand)"
-  if ! sh -c "$cmd" >"$log" 2>&1; then
+  iurl="$(echo "$js" | json_field installUrl)"
+  itoken="$(echo "$js" | json_field installToken)"
+  ikey="$(echo "$js" | json_field installKey)"
+  [ -n "$iurl" ] && [ -n "$itoken" ] && [ -n "$ikey" ] || {
+    SELF_SERVER="$name: панель не вернула параметры установки агента"
+    rm -f "$log"
+    return 0
+  }
+  iurl="${iurl%/}"
+  proto=()
+  case "$iurl" in https://*) proto=(--proto '=https') ;; esac
+  if ! { curl "${proto[@]}" -fsSL "$iurl/agent/install.sh" | sh -s -- --panel "$iurl" --token "$itoken" --key "$ikey"; } >"$log" 2>&1; then
     tail -n 5 "$log" >&2
     rm -f "$log"
     SELF_SERVER="$name: агент не установлен - \"Установить агент\" в карточке сервера"
@@ -923,6 +933,15 @@ MSG
 # Восстановление из бэкапа панели (Настройки -> Бэкап панели) на установленной панели: база,
 # ключ панели для агентов, ключ SSH панели (если есть), выход xray и SESSION_SECRET. Прежние
 # данные этой установки - в data/before-restore-<время>.
+# Архив копии не должен содержать абсолютных путей, `..` и ссылок.
+check_backup_tar() {
+  local f="$1" bad
+  bad="$(tar tzf "$f" 2>/dev/null | grep -E '(^/|(^|/)\.\.(/|$))' | head -1 || true)"
+  [ -z "$bad" ] || die "в архиве небезопасный путь: $bad"
+  bad="$(tar tvzf "$f" 2>/dev/null | grep -E '^[lh]' | head -1 || true)"
+  [ -z "$bad" ] || die "в архиве символическая или жёсткая ссылка - распаковка остановлена"
+}
+
 cmd_restore() {
   need_root
   [ -f "$ENV_FILE" ] || die "панель не установлена в $ROOT: сначала установка (install), потом restore"
@@ -936,8 +955,22 @@ cmd_restore() {
   fi
   TMPD="$(mktemp -d)"
   local b="$TMPD/vps-panel-backup"
-  if ! printf '%s' "$pw" | openssl enc -d -aes-256-cbc -pbkdf2 -iter 100000 -pass stdin -in "$file" 2>/dev/null | tar xz -C "$TMPD" 2>/dev/null; then
-    die "не удалось расшифровать: неверный пароль или это не резервная копия панели"
+  if [ "$(head -c 6 "$file")" = "VPSBK2" ]; then
+    # v2 (AES-GCM): расшифровывает панельный образ, чтобы не тащить crypto в shell
+    if ! compose run --rm --no-deps -T -e BACKUP_PASSWORD="$pw" panel \
+      node server/dist/decrypt-backup.js < "$file" > "$TMPD/backup.tar.gz" 2>/dev/null; then
+      die "не удалось расшифровать v2: неверный пароль или это не резервная копия панели"
+    fi
+    check_backup_tar "$TMPD/backup.tar.gz"
+    tar xzf "$TMPD/backup.tar.gz" -C "$TMPD" 2>/dev/null ||
+      die "не удалось распаковать резервную копию"
+  else
+    if ! printf '%s' "$pw" | openssl enc -d -aes-256-cbc -pbkdf2 -iter 100000 -pass stdin -in "$file" -out "$TMPD/backup.tar.gz" 2>/dev/null; then
+      die "не удалось расшифровать: неверный пароль или это не резервная копия панели"
+    fi
+    check_backup_tar "$TMPD/backup.tar.gz"
+    tar xzf "$TMPD/backup.tar.gz" -C "$TMPD" 2>/dev/null ||
+      die "не удалось распаковать резервную копию"
   fi
   [ -f "$b/panel.db" ] && [ -f "$b/panel.env" ] && [ -f "$b/panel_agent_ed25519.pem" ] || die "в архиве нет panel.db, panel.env или ключа панели"
   local secret

@@ -76,5 +76,5 @@ export const PortsyncConfig = z.object({
 });
 
 /** Схема и тип протокола - одно и то же: расхождение не соберётся. */
-const _portsync: z.ZodType<PortsyncConfigT, z.ZodTypeDef, unknown> = PortsyncConfig;
+const _portsync: z.ZodType<PortsyncConfigT, unknown> = PortsyncConfig;
 void _portsync;

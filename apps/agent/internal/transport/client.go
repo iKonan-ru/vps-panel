@@ -28,6 +28,7 @@ const maxMessage = 16 << 20
 
 type Client struct {
 	url     string
+	urlV2   string
 	token   string
 	hello   any
 	handler Handler
@@ -56,7 +57,8 @@ type Client struct {
 // New - клиент панели. panelKey - ключ панели из конфига: другой панели агент не поверит.
 func New(panelURL, token string, panelKey ed25519.PublicKey, hello any, h Handler, log *slog.Logger) *Client {
 	ws := strings.Replace(strings.Replace(panelURL, "https://", "wss://", 1), "http://", "ws://", 1)
-	return &Client{url: strings.TrimRight(ws, "/") + "/ws/agent?v=2", token: token, panelKey: panelKey, hello: hello, handler: h, log: log}
+	base := strings.TrimRight(ws, "/") + "/ws/agent"
+	return &Client{url: base + "?v=3", urlV2: base + "?v=2", token: token, panelKey: panelKey, hello: hello, handler: h, log: log}
 }
 
 type request struct {
@@ -95,9 +97,10 @@ func (c *Client) Run(ctx context.Context) {
 	}
 }
 
-// handshake - рукопожатие v2 (secure.go): ключ панели, канал, доказательство токена, hello.
+// handshake - рукопожатие (secure.go): ключ панели, канал, аутентификация, hello.
+// v3 передаёт токен внутри шифрованного канала; v2 - только HMAC от хеша токена.
 // Возвращает канал, стенограмму и хеш учётных данных (для проверки welcome).
-func (c *Client) handshake(conn *websocket.Conn, tok string) (*channel, []byte, string, string, error) {
+func (c *Client) handshake(conn *websocket.Conn, tok string, v3 bool) (*channel, []byte, string, string, error) {
 	priv, err := ecdh.X25519().GenerateKey(rand.Reader)
 	if err != nil {
 		return nil, nil, "", "", err
@@ -126,8 +129,25 @@ func (c *Client) handshake(conn *websocket.Conn, tok string) (*channel, []byte, 
 	}
 	auth := map[string]any{"type": "auth"}
 	var credHash, newToken string
-	if reg, ok := strings.CutPrefix(tok, "reg:"); ok {
-		// постоянный токен создаёт сам агент: панель получает только его хеш
+	if v3 {
+		if reg, ok := strings.CutPrefix(tok, "reg:"); ok {
+			// v3: панель получает сам одноразовый токен и новый постоянный токен,
+			// но хранит только их хеши.
+			b := make([]byte, 32)
+			if _, err := rand.Read(b); err != nil {
+				return nil, nil, "", "", err
+			}
+			newToken = base64.RawURLEncoding.EncodeToString(b)
+			auth["token"] = reg
+			auth["reg"] = true
+			auth["newToken"] = newToken
+			credHash = TokenHash(newToken)
+		} else {
+			auth["token"] = tok
+			credHash = TokenHash(tok)
+		}
+	} else if reg, ok := strings.CutPrefix(tok, "reg:"); ok {
+		// v2: постоянный токен создаёт агент, панель получает только его хеш
 		b := make([]byte, 32)
 		if _, err := rand.Read(b); err != nil {
 			return nil, nil, "", "", err
@@ -136,10 +156,11 @@ func (c *Client) handshake(conn *websocket.Conn, tok string) (*channel, []byte, 
 		credHash = TokenHash(reg)
 		auth["reg"] = true
 		auth["tokenHash"] = TokenHash(newToken)
+		auth["proof"] = proof(credHash, "agent", th)
 	} else {
 		credHash = TokenHash(tok)
+		auth["proof"] = proof(credHash, "agent", th)
 	}
-	auth["proof"] = proof(credHash, "agent", th)
 	for _, m := range []any{auth, map[string]any{"type": "hello", "protocol": "1.0", "host": c.hello, "methods": c.Methods}} {
 		b, err := json.Marshal(m)
 		if err != nil {
@@ -170,8 +191,14 @@ func (c *Client) session(ctx context.Context) error {
 	}
 	defer conn.Close()
 	conn.SetReadLimit(maxMessage)
-	ch, th, credHash, newToken, err := c.handshake(conn, tok)
+	v3 := strings.HasSuffix(c.url, "?v=3")
+	ch, th, credHash, newToken, err := c.handshake(conn, tok, v3)
 	if err != nil {
+		// новая панель принимает v3; старая закроет соединение - переходим на v2
+		if v3 && c.urlV2 != "" {
+			c.url, c.urlV2 = c.urlV2, ""
+			c.log.Warn("панель не приняла v3, перехожу на v2")
+		}
 		return err
 	}
 	defer func() {

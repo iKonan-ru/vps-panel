@@ -1,6 +1,6 @@
 # Разработка
 
-Нужны Node.js 22+, pnpm (через corepack) и Go 1.26+ (агент; сборка Caddy naive).
+Нужны Node.js 24+, pnpm (через corepack) и Go 1.26+ (агент; сборка Caddy naive).
 
 ```bash
 corepack pnpm install
@@ -13,11 +13,11 @@ cd apps/agent && go vet ./... && go test ./... && make build-all
 ```
 
 Перед коммитом - `tools/check.sh`: протокол, типы, biome, тесты сервера, агент (gofmt,
-vet, test, govulncheck), `pnpm audit`, только клавиатурные символы в файлах. То же на
-GitHub - `.github/workflows/ci.yml` на каждый push и pull request.
+vet, test, govulncheck), `pnpm audit`, проверка `bash -n install.sh deploy/release/vps-panel`,
+только клавиатурные символы в файлах. То же на GitHub - `.github/workflows/ci.yml` на каждый
+push и pull request.
 
-Релиз: раздел `## X.Y.Z` в `CHANGELOG.md` и `tools/release.sh X.Y.Z` (предварительная версия -
-`X.Y.Z-beta.N`) - тег, сборка образов и релиза в GitHub Actions (`release.yml`, около 15 минут).
+Операционные процедуры - в [operations.md](operations.md).
 
 Правила проекта: код, комментарии, интерфейс и документы - на русском; в файлах только
 символы с клавиатуры. В документах и консоли - дефис вместо тире и прямые кавычки;
@@ -60,3 +60,5 @@ tools/          check.sh, ship.sh, release.sh, сборка wdtt-server и Caddy
 | `apps/agent/README.md` | агент: установка, конфиг, флаги, канал, операции, сборка, отладка, удаление |
 | `apps/extension/README.md` | расширение Chrome и Firefox: файлы, установка, подпись, обновление |
 | `deploy/README.md` | файлы выкладки и сборка релиза: Caddy, fail2ban, маршрут до Telegram, файлы команд |
+| `SECURITY.md` | как сообщить об уязвимости, поддерживаемые версии, правила тестирования |
+| `docs/operations.md` | обновление, откат, бэкапы, ротация ключей, инциденты |

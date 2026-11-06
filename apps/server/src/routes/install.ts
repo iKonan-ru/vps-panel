@@ -14,6 +14,15 @@ const AuthSchema = z.discriminatedUnion('mode', [
   z.object({ mode: z.literal('password'), password: z.string().min(1).max(200) }),
   z.object({ mode: z.literal('key') }),
 ]);
+const InstallBody = AuthSchema.and(
+  z.object({
+    fingerprint: z
+      .string()
+      .regex(/^SHA256:[A-Za-z0-9+/]+$/)
+      .max(100)
+      .optional(),
+  }),
+);
 
 /**
  * Установка агента по SSH. Пароль root используется один раз и нигде не
@@ -29,11 +38,41 @@ export async function installRoutes(
 
   app.get('/api/panel/ssh-key', async () => ({ publicKey: loadPanelKey(env.DATA_DIR).publicKey }));
 
-  app.post('/api/servers/:id/install', async (req, reply) => {
+  /** Первое подключение: только отпечаток ключа хоста, без запуска установщика. */
+  app.post('/api/servers/:id/ssh-host-key', async (req, reply) => {
     const { id } = z.object({ id: z.string() }).parse(req.params);
     const auth = AuthSchema.parse(req.body);
     const row = (await db.select().from(servers).where(eq(servers.id, id)).limit(1))[0];
     if (!row) return reply.code(404).send({ error: 'сервер не найден' });
+    const target = {
+      host: row.host,
+      port: row.sshPort,
+      knownFingerprint: '',
+      auth:
+        auth.mode === 'password'
+          ? auth
+          : { mode: 'key' as const, privateKey: loadPanelKey(env.DATA_DIR).privateKey },
+    };
+    try {
+      const res = await sshRun(target, 'true', () => undefined, 30_000);
+      if (!res.fingerprint) return reply.code(502).send({ error: 'SSH не вернул ключ хоста' });
+      return { fingerprint: res.fingerprint };
+    } catch (e) {
+      return reply.code(502).send({ error: (e as Error).message });
+    }
+  });
+
+  app.post('/api/servers/:id/install', async (req, reply) => {
+    const { id } = z.object({ id: z.string() }).parse(req.params);
+    const auth = InstallBody.parse(req.body);
+    const row = (await db.select().from(servers).where(eq(servers.id, id)).limit(1))[0];
+    if (!row) return reply.code(404).send({ error: 'сервер не найден' });
+    const knownFingerprint = auth.fingerprint ?? row.hostKeyFingerprint;
+    if (!knownFingerprint) {
+      return reply
+        .code(400)
+        .send({ error: 'сначала проверьте отпечаток SSH-хоста', code: 'host_key_required' });
+    }
 
     // Новый одноразовый токен регистрации на каждую установку.
     const registrationToken = (await issueRegistration(db, id)) ?? '';
@@ -51,13 +90,16 @@ export async function installRoutes(
         const target = {
           host: row.host,
           port: row.sshPort,
-          knownFingerprint: row.hostKeyFingerprint,
+          knownFingerprint,
           auth:
             auth.mode === 'password'
               ? auth
               : { mode: 'key' as const, privateKey: loadPanelKey(env.DATA_DIR).privateKey },
         };
         const res = await sshRun(target, installCommand(env, registrationToken), out);
+        if (res.fingerprint && res.fingerprint !== knownFingerprint) {
+          throw new Error(`SSH: ключ хоста не совпадает с подтверждённым ${knownFingerprint}`);
+        }
         if (!row.hostKeyFingerprint && res.fingerprint) {
           await db
             .update(servers)

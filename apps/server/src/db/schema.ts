@@ -45,6 +45,7 @@ export const sessions = sqliteTable('session', {
     .notNull()
     .references(() => admins.id, { onDelete: 'cascade' }),
   createdAt: text('created_at').notNull().default(now),
+  lastSeenAt: text('last_seen_at').notNull().default(now),
   expiresAt: text('expires_at').notNull(),
   ip: text('ip').notNull().default(''),
   userAgent: text('user_agent').notNull().default(''),
@@ -82,6 +83,8 @@ export const servers = sqliteTable('server', {
   billingMonths: integer('billing_months').notNull().default(1),
   nextPaymentAt: text('next_payment_at'),
   agentTokenHash: text('agent_token_hash'),
+  /** Канал, которым агент последний раз успешно подключился: v3 или пусто. */
+  agentProtocol: text('agent_protocol').notNull().default(''),
   agentVersion: text('agent_version'),
   /** sha256 одноразового токена регистрации агента (сам токен - только в команде установки). */
   registrationToken: text('registration_token'),

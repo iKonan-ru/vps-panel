@@ -6,6 +6,7 @@
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
+bash -n install.sh deploy/release/vps-panel
 corepack pnpm --filter @vps/protocol build >/dev/null
 corepack pnpm -r --filter @vps/protocol --filter @vps/server --filter @vps/web exec tsc --noEmit
 npx biome check apps/web/src apps/server/src apps/server/test packages/protocol/src >/dev/null

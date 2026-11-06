@@ -15,6 +15,8 @@ export class PanelCerts {
   private pending = new Map<string, number>();
   /** Известные имена (разрешённые и из снимков): запросы к ним панель не обслуживает. */
   private names = new Set<string>();
+  /** Снимок имён из БД: ask от Caddy не должен сканировать таблицу на каждый сертификат. */
+  private installedCache: { at: number; names: string[] } | null = null;
 
   constructor(
     private db: Db,
@@ -27,17 +29,21 @@ export class PanelCerts {
     this.names.add(n);
   }
 
-  /** Имена прокси сервера панели из снимков. */
+  /** Имена прокси сервера панели из снимков (кэш 30 с). */
   private async installed(): Promise<string[]> {
+    if (this.installedCache && Date.now() - this.installedCache.at < 30_000)
+      return this.installedCache.names;
     const ips = await panelAddresses(this.panelUrl);
     const rows = await this.db
       .select({ host: servers.host, cache: servers.statusCache })
       .from(servers);
-    return rows
+    const names = rows
       .filter((r) => isPanelHost(r.host, r.cache?.inventory, ips))
       .flatMap((r) => r.cache?.inventory?.services ?? [])
       .filter((s) => s.kind === 'naive' && typeof s.details?.domain === 'string')
       .map((s) => String(s.details?.domain).toLowerCase());
+    this.installedCache = { at: Date.now(), names };
+    return names;
   }
 
   async allowed(name: string): Promise<boolean> {
@@ -52,6 +58,7 @@ export class PanelCerts {
 
   /** Перечитать имена из снимков (старт панели, раз в 5 минут). */
   async refresh() {
+    this.installedCache = null;
     for (const n of await this.installed()) this.names.add(n);
   }
 

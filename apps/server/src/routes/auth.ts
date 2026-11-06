@@ -9,15 +9,21 @@ import {
   findAdminByLogin,
   findSession,
   isSetupDone,
+  openTotp,
   recordAttempt,
   saveTotp,
+  sha256,
   tooManyAttempts,
   totpEnrollment,
+  touchSession,
   verifyPassword,
   verifyTotp,
+  verifyUnknownPassword,
 } from '../lib/auth.js';
 import { newToken } from '../lib/ids.js';
 import { isInternal } from '../lib/internal-auth.js';
+import type { SecretBox } from '../lib/secret-box.js';
+import { STEP_UP_TTL_MS, type StepUp, stepUpCookie } from '../lib/step-up.js';
 
 /**
  * Префикс имён cookie: на https - `__Host-`. Такую cookie браузер принимает только с Secure,
@@ -57,8 +63,11 @@ function cookieOpts(secure: boolean, maxAgeSec: number) {
   return { path: '/', httpOnly: true, sameSite: 'strict' as const, secure, maxAge: maxAgeSec };
 }
 
-export async function authRoutes(app: FastifyInstance, opts: { db: Db; secure: boolean }) {
-  const { db, secure } = opts;
+export async function authRoutes(
+  app: FastifyInstance,
+  opts: { db: Db; secure: boolean; stepUp: StepUp; box: SecretBox; pepper: string },
+) {
+  const { db, secure, stepUp, box, pepper } = opts;
 
   // Администратор создаётся при установке (vps-panel install) или из консоли (vps-panel admin):
   // мастера в браузере нет - до него панель была бы открыта первому зашедшему.
@@ -78,7 +87,9 @@ export async function authRoutes(app: FastifyInstance, opts: { db: Db; secure: b
           .send({ error: 'слишком много попыток, следующая\u00a0\u2014 через 15\u00a0минут' });
       }
       const admin = await findAdminByLogin(db, login);
-      const ok = admin ? await verifyPassword(admin.passwordHash, password) : false;
+      const ok = admin
+        ? await verifyPassword(admin.passwordHash, password)
+        : await verifyUnknownPassword(password);
       await recordAttempt(db, req.ip, login, ok);
       if (!admin || !ok) return reply.code(401).send({ error: 'неверный логин или пароль' });
       sweep();
@@ -115,11 +126,15 @@ export async function authRoutes(app: FastifyInstance, opts: { db: Db; secure: b
       const pend = p ? pending.get(p) : undefined;
       if (!p || !pend?.enroll || pend.expires < Date.now())
         return reply.code(401).send({ error: 'время входа истекло, нужно войти заново' });
+      if (await tooManyAttempts(db, req.ip))
+        return reply
+          .code(429)
+          .send({ error: 'слишком много попыток, следующая\u00a0\u2014 через 15\u00a0минут' });
       const { code } = z.object({ code: z.string().min(6).max(8) }).parse(req.body);
       const ok = verifyTotp(pend.enroll.secret, code);
       await recordAttempt(db, req.ip, pend.login, ok);
       if (!ok) return reply.code(400).send({ error: 'неверный код' });
-      await saveTotp(db, pend.adminId, pend.enroll.secret, pend.enroll.codes);
+      await saveTotp(db, pend.adminId, pend.enroll.secret, pend.enroll.codes, box, pepper);
       pending.delete(p);
       reply.clearCookie(pendingCookie(), { path: '/', secure });
       return openSession(db, reply, pend.adminId, req.ip, req.headers['user-agent'] ?? '', secure);
@@ -135,12 +150,17 @@ export async function authRoutes(app: FastifyInstance, opts: { db: Db; secure: b
       const pend = p ? pending.get(p) : undefined;
       if (!p || !pend || pend.expires < Date.now())
         return reply.code(401).send({ error: 'время входа истекло, нужно войти заново' });
+      if (await tooManyAttempts(db, req.ip))
+        return reply
+          .code(429)
+          .send({ error: 'слишком много попыток, следующая\u00a0\u2014 через 15\u00a0минут' });
       const { code } = z.object({ code: z.string().min(6).max(12) }).parse(req.body);
       const admin = await findAdminByLogin(db, pend.login);
       if (!admin?.totpEnabled || pend.enroll)
         return reply.code(401).send({ error: 'время входа истекло, нужно войти заново' });
-      const okTotp = admin.totpSecret ? verifyTotp(admin.totpSecret, code) : false;
-      const okBackup = okTotp ? false : await consumeBackupCode(db, admin.id, code);
+      const secret = openTotp(box, admin.totpSecret);
+      const okTotp = secret ? verifyTotp(secret, code) : false;
+      const okBackup = okTotp ? false : await consumeBackupCode(db, admin.id, code, pepper);
       await recordAttempt(db, req.ip, admin.login, okTotp || okBackup);
       if (!okTotp && !okBackup) return reply.code(401).send({ error: 'неверный код' });
       pending.delete(p);
@@ -149,9 +169,52 @@ export async function authRoutes(app: FastifyInstance, opts: { db: Db; secure: b
     },
   );
 
+  /** Подтверждение для скачивания бэкапа панели и управления Telegram-ботом: 5 минут. */
+  app.post(
+    '/api/auth/step-up',
+    { config: { rateLimit: { max: 10, timeWindow: '1 minute' } } },
+    async (req, reply) => {
+      const token = sessionToken(req);
+      if (!token) return reply.code(401).send({ error: 'нужен вход в панель' });
+      const s = await sessionOf(db, token);
+      if (!s) return reply.code(401).send({ error: 'нужен вход в панель' });
+      if (await tooManyAttempts(db, req.ip))
+        return reply
+          .code(429)
+          .send({ error: 'слишком много попыток, следующая\u00a0\u2014 через 15\u00a0минут' });
+      const { password, code } = z
+        .object({
+          password: z.string().min(1).max(200),
+          code: z.string().max(12).optional(),
+        })
+        .parse(req.body ?? {});
+      const admin = await findAdminByLogin(db, s.login);
+      const okPassword = admin ? await verifyPassword(admin.passwordHash, password) : false;
+      let ok = okPassword;
+      if (okPassword && admin?.totpEnabled) {
+        if (!code) return reply.code(400).send({ error: 'нужен код 2FA' });
+        ok =
+          verifyTotp(openTotp(box, admin.totpSecret) ?? '', code) ||
+          (await consumeBackupCode(db, admin.id, code, pepper));
+      }
+      await recordAttempt(db, req.ip, s.login, ok);
+      if (!ok) return reply.code(401).send({ error: 'неверный пароль или код' });
+      reply.setCookie(stepUpCookie(secure), stepUp.issue(sha256(token)), {
+        path: '/',
+        httpOnly: true,
+        sameSite: 'strict',
+        secure,
+        maxAge: STEP_UP_TTL_MS / 1000,
+      });
+      return { ok: true, expiresIn: STEP_UP_TTL_MS / 1000 };
+    },
+  );
+
   app.get('/api/auth/me', async (req, reply) => {
+    reply.header('Cache-Control', 'no-store');
     const s = await sessionOf(db, sessionToken(req));
     if (!s) return reply.code(401).send({ error: 'вход не выполнен' });
+    await touchSession(db, sessionToken(req) ?? '');
     return { login: s.login, displayName: s.displayName, expiresAt: s.expiresAt };
   });
 
@@ -165,6 +228,7 @@ export async function authRoutes(app: FastifyInstance, opts: { db: Db; secure: b
   app.post('/api/auth/logout-all', async (req, reply) => {
     const s = await sessionOf(db, sessionToken(req));
     if (!s) return reply.code(401).send({ error: 'вход не выполнен' });
+    await touchSession(db, sessionToken(req) ?? '');
     await deleteAllSessions(db, s.adminId);
     reply.clearCookie(sessionCookie(), { path: '/', secure });
     return { ok: true };
@@ -244,5 +308,6 @@ export function requireAuth(db: Db) {
     if (isInternal(req)) return;
     const s = await sessionOf(db, sessionToken(req));
     if (!s) return reply.code(401).send({ error: 'вход не выполнен' });
+    await touchSession(db, sessionToken(req) ?? '');
   };
 }

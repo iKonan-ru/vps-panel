@@ -1,12 +1,17 @@
-import { createHash, randomInt } from 'node:crypto';
+import { createHash, createHmac, randomInt } from 'node:crypto';
 import argon2 from 'argon2';
 import { and, eq, gt, ne, sql } from 'drizzle-orm';
 import { authenticator } from 'otplib';
 import type { Db } from '../db/index.js';
 import { admins, loginAttempts, sessions } from '../db/schema.js';
 import { newId, newToken } from './ids.js';
+import type { SecretBox } from './secret-box.js';
 
 const SESSION_TTL_DAYS = 30;
+/** Сессия без запросов столько минут завершается, даже если абсолютный срок ещё не вышел. */
+const SESSION_IDLE_MIN = 72 * 60;
+export const sessionIdleCutoff = () =>
+  new Date(Date.now() - SESSION_IDLE_MIN * 60_000).toISOString();
 const LOGIN_MAX_ATTEMPTS = 5;
 const LOGIN_WINDOW_MIN = 15;
 
@@ -20,6 +25,21 @@ async function hashPassword(password: string): Promise<string> {
 
 export function verifyPassword(hash: string, password: string): Promise<boolean> {
   return argon2.verify(hash, password);
+}
+
+/** Резервный код: HMAC с секретом панели, а не бессолый SHA-256. */
+export function backupCodeHash(pepper: string, code: string): string {
+  return createHmac('sha256', pepper).update(`backup:${code}`).digest('hex');
+}
+
+/** TOTP-секрет мог быть сохранён старым форматом без v1:; SecretBox.open это поддерживает. */
+export function openTotp(box: SecretBox, value: string | null): string | null {
+  if (!value) return null;
+  try {
+    return box.open(value);
+  } catch {
+    return null;
+  }
 }
 
 /** Резервные коды: 8 штук по 10 цифр, показываются один раз. */
@@ -57,6 +77,18 @@ function randomString(len: number, alphabet = ALNUM): string {
 export const randomPassword = () => randomString(20);
 /** Логин, если при установке его не задали: admin- и 6 строчных букв и цифр. */
 export const randomLogin = () => `admin-${randomString(6, 'abcdefghijkmnpqrstuvwxyz23456789')}`;
+
+/** Хеш случайного пароля: неизвестный логин тратит столько же времени, сколько известный. */
+const unknownPasswordHash = hashPassword(randomString(32));
+
+/** Проверка пароля для несуществующего логина: результат не важен, важно время. */
+export async function verifyUnknownPassword(password: string): Promise<boolean> {
+  try {
+    return await argon2.verify(await unknownPasswordHash, password);
+  } catch {
+    return false;
+  }
+}
 
 export async function isSetupDone(db: Db): Promise<boolean> {
   const row = await db.select({ id: admins.id }).from(admins).limit(1);
@@ -126,10 +158,21 @@ export async function setLogin(db: Db, adminId: string, login: string) {
 }
 
 /** Включить 2FA с подтверждённым секретом и новыми резервными кодами. */
-export async function saveTotp(db: Db, adminId: string, secret: string, codes: string[]) {
+export async function saveTotp(
+  db: Db,
+  adminId: string,
+  secret: string,
+  codes: string[],
+  box?: SecretBox,
+  pepper = '',
+) {
   await db
     .update(admins)
-    .set({ totpSecret: secret, totpEnabled: true, backupCodesHash: codes.map(sha256) })
+    .set({
+      totpSecret: box ? box.seal(secret) : secret,
+      totpEnabled: true,
+      backupCodesHash: codes.map((c) => (pepper ? backupCodeHash(pepper, c) : sha256(c))),
+    })
     .where(eq(admins.id, adminId));
 }
 
@@ -141,10 +184,10 @@ export async function resetTotp(db: Db, adminId: string) {
     .where(eq(admins.id, adminId));
 }
 
-export async function setBackupCodes(db: Db, adminId: string, codes: string[]) {
+export async function setBackupCodes(db: Db, adminId: string, codes: string[], pepper: string) {
   await db
     .update(admins)
-    .set({ backupCodesHash: codes.map(sha256) })
+    .set({ backupCodesHash: codes.map((c) => backupCodeHash(pepper, c)) })
     .where(eq(admins.id, adminId));
 }
 
@@ -168,9 +211,35 @@ export async function findAdminByLogin(db: Db, login: string) {
 
 export async function createSession(db: Db, adminId: string, ip: string, userAgent: string) {
   const token = newToken();
-  const expiresAt = new Date(Date.now() + SESSION_TTL_DAYS * 86_400_000).toISOString();
-  await db.insert(sessions).values({ id: sha256(token), adminId, expiresAt, ip, userAgent });
+  const now = new Date();
+  const expiresAt = new Date(now.getTime() + SESSION_TTL_DAYS * 86_400_000).toISOString();
+  await db.insert(sessions).values({
+    id: sha256(token),
+    adminId,
+    expiresAt,
+    ip,
+    userAgent,
+    lastSeenAt: now.toISOString(),
+  });
   return { token, expiresAt };
+}
+
+/** Обновлять last_seen не на каждый запрос, а раз в 5 минут. */
+const touched = new Map<string, number>();
+export async function touchSession(db: Db, token: string) {
+  const id = sha256(token);
+  const now = Date.now();
+  if (now - (touched.get(id) ?? 0) < 5 * 60_000) return;
+  touched.set(id, now);
+  await db
+    .update(sessions)
+    .set({ lastSeenAt: new Date(now).toISOString() })
+    .where(eq(sessions.id, id));
+  while (touched.size > 10_000) {
+    const first = touched.keys().next().value;
+    if (!first) break;
+    touched.delete(first);
+  }
 }
 
 export async function findSession(db: Db, token: string) {
@@ -183,7 +252,13 @@ export async function findSession(db: Db, token: string) {
     })
     .from(sessions)
     .innerJoin(admins, eq(admins.id, sessions.adminId))
-    .where(and(eq(sessions.id, sha256(token)), gt(sessions.expiresAt, new Date().toISOString())))
+    .where(
+      and(
+        eq(sessions.id, sha256(token)),
+        gt(sessions.expiresAt, new Date().toISOString()),
+        gt(sessions.lastSeenAt, sessionIdleCutoff()),
+      ),
+    )
     .limit(1);
   return rows[0] ?? null;
 }
@@ -204,15 +279,28 @@ export async function deleteOtherSessions(db: Db, adminId: string, keepToken: st
 }
 
 /** Использовать резервный код: удаляет его из списка при совпадении. */
-export async function consumeBackupCode(db: Db, adminId: string, code: string): Promise<boolean> {
+export async function consumeBackupCode(
+  db: Db,
+  adminId: string,
+  code: string,
+  pepper = '',
+): Promise<boolean> {
   const rows = await db.select().from(admins).where(eq(admins.id, adminId)).limit(1);
   const admin = rows[0];
   if (!admin) return false;
-  const h = sha256(code.replace(/\s+/g, ''));
-  if (!admin.backupCodesHash.includes(h)) return false;
+  const norm = code.replace(/\s+/g, '');
+  const h = backupCodeHash(pepper, norm);
+  // старые коды (SHA-256 без соли) продолжают работать до первого успешного входа
+  const legacy = sha256(norm);
+  const used = admin.backupCodesHash.includes(h)
+    ? h
+    : admin.backupCodesHash.includes(legacy)
+      ? legacy
+      : null;
+  if (!used) return false;
   await db
     .update(admins)
-    .set({ backupCodesHash: admin.backupCodesHash.filter((c) => c !== h) })
+    .set({ backupCodesHash: admin.backupCodesHash.filter((c) => c !== used) })
     .where(eq(admins.id, adminId));
   return true;
 }

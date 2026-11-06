@@ -91,13 +91,13 @@ func deriveChannel(shared, ephA, ephP []byte) (*channel, error) {
 	return &channel{send: send, recv: recv}, nil
 }
 
-// TokenHash - sha256 токена в hex: так токен хранит панель, этим же ключом считается proof.
+// TokenHash - sha256 токена в hex: так панель хранит токен; в v2 он же был ключом proof.
 func TokenHash(token string) string {
 	s := sha256.Sum256([]byte(token))
 	return hex.EncodeToString(s[:])
 }
 
-// proof - HMAC-SHA256(ключ - hex sha256 токена, метка || стенограмма) в base64.
+// proof - HMAC-SHA256(ключ - hex sha256 токена, метка || стенограмма) для совместимого v2; v3 шлёт токен внутри канала.
 func proof(tokenHash, label string, th []byte) string {
 	m := hmac.New(sha256.New, []byte(tokenHash))
 	m.Write([]byte(label))

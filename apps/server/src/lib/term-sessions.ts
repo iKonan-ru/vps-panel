@@ -9,6 +9,8 @@
 const DETACH_MS = 3 * 60_000;
 /** Сколько последнего вывода (base64) помнить для повтора при возврате. */
 export const BUFFER_CHARS = 512 * 1024;
+/** Больше одновременных терминалов не держим: каждый - shell на сервере. */
+const MAX_SESSIONS = 50;
 
 /** Подключённый браузер: то, что нужно сессии от websocket. */
 export interface TermPeer {
@@ -48,7 +50,8 @@ export class TermSessions {
     return s && s.serverId === serverId && s.login === login ? s : null;
   }
 
-  create(sid: string, serverId: string, login: string, peer: TermPeer): TermSession {
+  create(sid: string, serverId: string, login: string, peer: TermPeer): TermSession | null {
+    if (this.map.size >= MAX_SESSIONS) return null;
     const s: TermSession = {
       sid,
       serverId,

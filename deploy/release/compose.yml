@@ -30,6 +30,8 @@ services:
       PANEL_SNI: ${PANEL_SNI:-}
       # канал установки (install --beta): канал по умолчанию в "Версии панели"
       PANEL_CHANNEL: ${PANEL_CHANNEL:-stable}
+      # после обновления всех агентов на v3 можно выставить 0
+      AGENT_V2_COMPAT: ${AGENT_V2_COMPAT:-1}
     volumes:
       - ./data:/data
     expose:
@@ -40,6 +42,9 @@ services:
     tmpfs:
       - /tmp:size=64m,mode=1777
     mem_limit: 320m
+    pids_limit: 256
+    ulimits:
+      nofile: 65535
     logging: *logging
     healthcheck:
       test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:3000/api/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
@@ -76,6 +81,9 @@ services:
     tmpfs:
       - /tmp:size=16m
     mem_limit: 128m
+    pids_limit: 128
+    ulimits:
+      nofile: 65535
     logging: *logging
 
 # Имена томов - из .env: при переезде со сборки из исходников остаются прежние (deploy_*),

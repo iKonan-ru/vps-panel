@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -186,6 +187,12 @@ func missingPackages(ctx context.Context) []string {
 // Apply выполняет эталон, стримит ход работ. Останавливается на первой ошибке.
 func Apply(ctx context.Context, steps []string, stream func(channel, chunk string)) error {
 	log := func(f string, a ...any) { stream("log", fmt.Sprintf(f, a...)+"\n") }
+	if len(steps) == 0 || slices.Contains(steps, "sshd") {
+		// Каталог нужен уже при чтении портов через sshd -T в MakePlan.
+		if err := os.MkdirAll("/run/sshd", 0o755); err != nil {
+			return fmt.Errorf("не удалось подготовить каталог sshd: %w", err)
+		}
+	}
 	plan := MakePlan(ctx)
 	sel, err := selectSteps(plan, steps)
 	if err != nil {

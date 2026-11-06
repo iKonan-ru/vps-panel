@@ -11,7 +11,7 @@ import {
   readNotifyEvents,
 } from '@vps/protocol';
 import { ProxyAgent, fetch as ufetch } from 'undici';
-import { AGENT_OUTDATED, type AgentRegistry } from '../agents/registry.js';
+import type { AgentRegistry } from '../agents/registry.js';
 import type { Db } from '../db/index.js';
 import { settings } from '../db/schema.js';
 import type { SecretBox } from './secret-box.js';
@@ -159,7 +159,7 @@ export class Telegram {
     private db: Db,
     /** Токен бота хранится зашифрованным, как пароли в "Доступах". */
     private box: SecretBox,
-    private registry: AgentRegistry,
+    _registry: AgentRegistry,
     private log: { info: (o: unknown, m?: string) => void; warn: (o: unknown, m?: string) => void },
     /** Выходы xray по порядку (пусто, если xray не запущен) и отметка "через этот дошло". */
     private xray: { routes: () => XrayRoute[]; worked: (serverId: string) => void } = {
@@ -484,47 +484,14 @@ export class Telegram {
     return { ok: false, error: `Telegram недоступен: ${errors.slice(0, 3).join('; ')}` };
   }
 
-  private async viaAgent(
-    serverId: string,
-    token: string,
-    method: TgMethod,
-    params: Record<string, unknown>,
-  ): Promise<{ raw?: string; err?: string }> {
-    try {
-      if (method === 'sendMessage') {
-        await this.registry.request(
-          serverId,
-          'telegram.send',
-          { token, chatId: params.chat_id, text: params.text },
-          { timeoutMs: 30_000 },
-        );
-        return { raw: '{"ok":true}' };
-      }
-      const r = (await this.registry.request(
-        serverId,
-        'telegram.updates',
-        { token },
-        { timeoutMs: 30_000 },
-      )) as { raw?: string };
-      return { raw: r?.raw ?? '' };
-    } catch (e) {
-      const m = (e as Error).message;
-      // агент дошёл до Telegram, но тот отказал: "telegram ответил 403: {...}"
-      const hit = /telegram ответил (\d{3}): (.*)$/s.exec(m);
-      if (hit) return { err: this.explain(Number(hit[1]), hit[2] ?? '') };
-      return { err: m };
-    }
-  }
-
   private isTelegramAnswer(err: string): boolean {
     return err.startsWith('Telegram');
   }
 
   /**
    * Вызов Bot API. Пути по порядку: выходы xray (последний рабочий первым) и прокси из
-   * окружения - напрямую - через агентов на серверах (api.telegram.org с хоста панели в РФ
-   * недоступен). Рабочий путь запоминаем на час; ответ самого Telegram (401/403/400) -
-   * окончательный, другие пути не пробуем. via в ответе - каким путём дошло.
+   * окружения - напрямую. Токен не уходит агентам: они не должны его видеть или хранить.
+   * Рабочий путь запоминаем на час; ответ самого Telegram (401/403/400) - окончательный.
    */
   async call(
     token: string,
@@ -534,7 +501,6 @@ export class Telegram {
     const proxies = this.proxies();
     const attempt = (via: string) => {
       if (via === 'direct') return this.direct(token, method, params, null);
-      if (via.startsWith('agent:')) return this.viaAgent(via.slice(6), token, method, params);
       const p = proxies.find((x) => x.via === via);
       return p
         ? this.direct(token, method, params, p.dispatcher)
@@ -544,12 +510,7 @@ export class Telegram {
       this.lastRoute = { via, at: new Date().toISOString() };
       if (via.startsWith('proxy:')) this.xray.worked(via.slice(6));
     };
-    // Агент - запасной путь: при настроенных выходах xray (или прокси) он запоминается на 10
-    // минут, потом снова пробуем основной - иначе после настройки маршрута до Telegram сообщения
-    // ещё час шли бы через агента.
-    const ttl =
-      this.route?.via.startsWith('agent:') && proxies.length > 0 ? 10 * 60_000 : 60 * 60_000;
-    const fresh = this.route && Date.now() - this.route.at < ttl;
+    const fresh = this.route && Date.now() - this.route.at < 60 * 60_000;
     if (fresh && this.route) {
       const via = this.route.via;
       const r = await attempt(via);
@@ -558,11 +519,7 @@ export class Telegram {
       this.route = null;
     }
     const errors: string[] = [];
-    const paths = [
-      ...proxies.map((p) => p.via),
-      'direct',
-      ...this.registry.onlineIds().map((id) => `agent:${id}`),
-    ];
+    const paths = [...proxies.map((p) => p.via), 'direct'];
     for (const via of paths) {
       const r = await attempt(via);
       if (!r.err) {
@@ -575,14 +532,8 @@ export class Telegram {
       if (this.isTelegramAnswer(r.err)) return { ...r, via };
       errors.push(`${via}: ${r.err}`);
     }
-    const agentErrors = errors.filter((e) => !e.startsWith('proxy:') && !e.startsWith('direct:'));
-    if (agentErrors.length > 0 && agentErrors.every((e) => e.includes(AGENT_OUTDATED))) {
-      return {
-        err: 'Telegram недоступен с сервера панели, а агенты на серверах устарели: нужно обновить агенты',
-      };
-    }
     return {
-      err: `Telegram недоступен ни с сервера панели, ни через агенты: ${errors.slice(0, 3).join('; ')}`,
+      err: `Telegram недоступен с сервера панели: ${errors.slice(0, 3).join('; ')}`,
     };
   }
 

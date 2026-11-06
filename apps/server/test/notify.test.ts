@@ -67,7 +67,7 @@ describe('Telegram.send', () => {
 });
 
 describe('Telegram: путь доставки', () => {
-  it('агент - запасной: после настройки выхода xray через 10 минут снова основной', async () => {
+  it('агенты не используются; выход xray запоминается на час', async () => {
     const routes: { serverId: string; serverName: string; dispatcher: never }[] = [];
     const n = new Telegram(
       createDb(':memory:'),
@@ -81,13 +81,13 @@ describe('Telegram: путь доставки', () => {
       ...a: unknown[]
     ) => (a[3] ? { raw: '{"ok":true}' } : { err: 'timeout' });
     const call = () => n.call('1:t', 'sendMessage', { chat_id: '42', text: 'x' });
-    expect((await call()).via).toBe('agent:fin');
+    // агент не должен быть запасным путём: токен не уходит с панели
+    const noRoute = await call();
+    expect(noRoute.via).toBeUndefined();
+    expect(noRoute.err).toContain('Telegram недоступен');
     routes.push({ serverId: 'fin', serverName: 'Finland', dispatcher: {} as never });
-    expect((await call()).via).toBe('agent:fin');
-    const r = n as unknown as { route: { via: string; at: number } };
-    r.route.at -= 11 * 60_000;
     expect((await call()).via).toBe('proxy:fin');
-    // рабочий выход xray запоминается на час
+    const r = n as unknown as { route: { via: string; at: number } };
     r.route.at -= 30 * 60_000;
     expect((await call()).via).toBe('proxy:fin');
   });

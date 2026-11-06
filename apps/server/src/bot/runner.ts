@@ -2,7 +2,7 @@ import { randomBytes } from 'node:crypto';
 import { type ActionListRow, actionTitle } from '@vps/protocol';
 import { eq } from 'drizzle-orm';
 import { sessions } from '../db/schema.js';
-import { deleteAllSessions, theAdmin, verifyTotp } from '../lib/auth.js';
+import { deleteAllSessions, openTotp, theAdmin, verifyTotp } from '../lib/auth.js';
 import { esc } from '../lib/telegram.js';
 import type { UiEvent } from '../lib/ui-hub.js';
 import { type ActionDeps, type ActionSpec, type RunResult, actionSpec } from './actions.js';
@@ -186,7 +186,10 @@ export class Runner {
       if (Date.now() < this.lockedUntil)
         return answer('Слишком много неверных кодов: действия недоступны 15 минут', true);
       const admin = await theAdmin(this.core.deps.db);
-      if (!admin?.totpEnabled || !admin.totpSecret)
+      const secret = this.core.deps.box
+        ? openTotp(this.core.deps.box, admin?.totpSecret ?? null)
+        : (admin?.totpSecret ?? null);
+      if (!admin?.totpEnabled || !secret)
         return answer('Двухфакторная аутентификация не настроена: войдите в панель', true);
       c.expires = Date.now() + CONFIRM_TTL_MS;
       this.codeWait = { token, chat, mid: msg.message_id, expires: c.expires };
@@ -211,10 +214,10 @@ export class Runner {
     const admin = await theAdmin(this.core.deps.db);
     const now = Date.now();
     for (const [k, at] of this.usedCodes) if (now - at > 120_000) this.usedCodes.delete(k);
-    const ok =
-      Boolean(admin?.totpSecret) &&
-      !this.usedCodes.has(code) &&
-      verifyTotp(admin?.totpSecret ?? '', code);
+    const secret = this.core.deps.box
+      ? openTotp(this.core.deps.box, admin?.totpSecret ?? null)
+      : (admin?.totpSecret ?? null);
+    const ok = Boolean(secret) && !this.usedCodes.has(code) && verifyTotp(secret ?? '', code);
     const spec = await this.spec(c.op, c.args).catch(() => null);
     if (!ok) {
       this.codeFails++;

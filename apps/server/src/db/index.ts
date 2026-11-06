@@ -160,6 +160,19 @@ const STEPS: ((sqlite: Database.Database) => void)[] = [
   (sqlite) => {
     sqlite.exec(BOT_STATE_SQL);
   },
+  // 28: idle-таймаут сессии - last_seen_at; старым сессиям ставим время создания
+  (sqlite) => {
+    const cols = sqlite.prepare('pragma table_info(session)').all() as { name: string }[];
+    if (!cols.some((c) => c.name === 'last_seen_at'))
+      sqlite.exec('alter table session add column last_seen_at text');
+    sqlite.exec('update session set last_seen_at = created_at where last_seen_at is null');
+  },
+  // 29: отметка последнего успешного канала агента (v3 отключает для него слабый v2)
+  (sqlite) => {
+    const cols = sqlite.prepare('pragma table_info(server)').all() as { name: string }[];
+    if (!cols.some((c) => c.name === 'agent_protocol'))
+      sqlite.exec("alter table server add column agent_protocol text not null default ''");
+  },
 ];
 
 /** Шаги, которых база ещё не видела, - по порядку, каждый с отметкой версии. */
@@ -194,6 +207,7 @@ create table if not exists admin (
 create table if not exists session (
   id text primary key, admin_id text not null references admin(id) on delete cascade,
   created_at text not null default (strftime('%Y-%m-%dT%H:%M:%fZ','now')),
+  last_seen_at text not null default (strftime('%Y-%m-%dT%H:%M:%fZ','now')),
   expires_at text not null, ip text not null default '', user_agent text not null default ''
 );
 create table if not exists login_attempt (

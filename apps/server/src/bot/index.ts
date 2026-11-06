@@ -115,6 +115,8 @@ export class Bot {
   private username: string | null = null;
   private code: { value: string; expires: number } | null = null;
   private strangers = new Map<number, number>();
+  /** Чужие аккаунты помним не больше 1000; запись живёт 10 минут. */
+  private static readonly MAX_STRANGERS = 1000;
   private commandsFor: string | null = null;
   private unlisten: (() => void) | null;
   private pruneTimer: NodeJS.Timeout | null = null;
@@ -361,6 +363,14 @@ export class Bot {
     if (!u) return;
     const now = Date.now();
     if (now - (this.strangers.get(u.id) ?? 0) < 10 * 60_000) return;
+    if (this.strangers.size >= Bot.MAX_STRANGERS) {
+      for (const [id, at] of this.strangers) if (now - at > 10 * 60_000) this.strangers.delete(id);
+      while (this.strangers.size >= Bot.MAX_STRANGERS) {
+        const first = this.strangers.keys().next().value;
+        if (first === undefined) break;
+        this.strangers.delete(first);
+      }
+    }
     this.strangers.set(u.id, now);
     this.deps.log.warn({ userId: u.id }, 'бот: сообщение от непривязанного аккаунта, без ответа');
   }

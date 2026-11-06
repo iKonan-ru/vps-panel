@@ -5,6 +5,7 @@ import { useConfirm } from '@/components/ui/confirm';
 import { Dialog } from '@/components/ui/dialog';
 import { QrCode } from '@/components/ui/qr-code';
 import { Select } from '@/components/ui/select';
+import { useStepUp } from '@/components/ui/step-up';
 import { Switch } from '@/components/ui/switch';
 import { api } from '@/lib/api';
 import { useAction } from '@/lib/use-action';
@@ -48,6 +49,7 @@ export function BotSettingsRow({ tokenSet }: { tokenSet: boolean }) {
   const [link, setLink] = useState<BotLink | null>(null);
   const { data: bot, isFetching } = useBot(link !== null);
   const op = useAction();
+  const { stepUp, dialog } = useStepUp();
 
   // аккаунт привязался - окно ссылки больше не нужно
   useEffect(() => {
@@ -60,6 +62,7 @@ export function BotSettingsRow({ tokenSet }: { tokenSet: boolean }) {
   const busy = op.busy;
 
   async function toggle() {
+    if (!(await stepUp())) return;
     await op.run(async () => {
       await api('/api/notify/bot', { method: 'PATCH', json: { on: !bot?.on } });
       await qc.invalidateQueries({ queryKey: KEY });
@@ -67,6 +70,7 @@ export function BotSettingsRow({ tokenSet }: { tokenSet: boolean }) {
   }
 
   async function setLevel(level: BotLevel) {
+    if (!(await stepUp())) return;
     await op.run(async () => {
       await api('/api/notify/bot', { method: 'PATCH', json: { level } });
       await qc.invalidateQueries({ queryKey: KEY });
@@ -74,6 +78,7 @@ export function BotSettingsRow({ tokenSet }: { tokenSet: boolean }) {
   }
 
   async function bind() {
+    if (!(await stepUp())) return;
     await op.run(async () => {
       setLink(await api<BotLink>('/api/notify/bot/link', { method: 'POST' }));
       await qc.invalidateQueries({ queryKey: KEY });
@@ -90,6 +95,7 @@ export function BotSettingsRow({ tokenSet }: { tokenSet: boolean }) {
       }))
     )
       return;
+    if (!(await stepUp())) return;
     await op.run(async () => {
       await api('/api/notify/bot/unbind', { method: 'POST' });
       await qc.invalidateQueries({ queryKey: KEY });
@@ -100,81 +106,83 @@ export function BotSettingsRow({ tokenSet }: { tokenSet: boolean }) {
     ? `${bot.admin.name}${bot.admin.username ? ` (@${bot.admin.username})` : ''}`
     : null;
   return (
-    <div className="flex flex-col gap-2 border-t border-border px-3 py-2">
-      <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
-        <div className="min-w-0 grow">
-          <div className="flex flex-wrap items-center gap-2 text-[13px]">
-            Управление через бота
-            <Chip tone={state.tone} title={bot.poll.error ?? undefined}>
-              {state.label}
-            </Chip>
-          </div>
-          <div className="text-xs text-muted">
-            {who ?? 'сводка, серверы и журнал в чате с ботом'}
-          </div>
-        </div>
-        {bot.admin ? (
-          <Button size="sm" variant="ghost" disabled={busy} onClick={unbind} label="Отвязать">
-            <Unlink className="size-3.5" />
-          </Button>
-        ) : (
-          <Button size="sm" disabled={busy || !tokenSet} onClick={bind} label="Привязать аккаунт">
-            <Link2 className="size-3.5" />
-          </Button>
-        )}
-        <Switch
-          label="Управление через бота"
-          checked={bot.on}
-          disabled={busy || isFetching || !tokenSet}
-          onChange={toggle}
-        />
-      </div>
-      {bot.admin && (
+    <>
+      <div className="flex flex-col gap-2 border-t border-border px-3 py-2">
         <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
-          <div className="min-w-0 grow text-xs text-muted">
-            действия через бота; удаление сервера действия через бота; опасные&nbsp;&mdash; с кодом
-            2FAnbsp; действия через бота; опасные&nbsp;&mdash; с кодом 2FAmdash; с кодом 2FA
+          <div className="min-w-0 grow">
+            <div className="flex flex-wrap items-center gap-2 text-[13px]">
+              Управление через бота
+              <Chip tone={state.tone} title={bot.poll.error ?? undefined}>
+                {state.label}
+              </Chip>
+            </div>
+            <div className="text-xs text-muted">
+              {who ?? 'сводка, серверы и журнал в чате с ботом'}
+            </div>
           </div>
-          <Select
-            size="sm"
-            className="w-52 shrink-0"
-            aria-label="Действия через бота"
-            value={bot.level}
-            disabled={busy || isFetching}
-            onChange={(e) => setLevel(e.target.value as BotLevel)}
-          >
-            {LEVELS.map((l) => (
-              <option key={l.id} value={l.id}>
-                {l.title}
-              </option>
-            ))}
-          </Select>
+          {bot.admin ? (
+            <Button size="sm" variant="ghost" disabled={busy} onClick={unbind} label="Отвязать">
+              <Unlink className="size-3.5" />
+            </Button>
+          ) : (
+            <Button size="sm" disabled={busy || !tokenSet} onClick={bind} label="Привязать аккаунт">
+              <Link2 className="size-3.5" />
+            </Button>
+          )}
+          <Switch
+            label="Управление через бота"
+            checked={bot.on}
+            disabled={busy || isFetching || !tokenSet}
+            onChange={toggle}
+          />
         </div>
-      )}
-      {bot.on && bot.poll.ok === false && bot.poll.error && (
-        <Alert tone="bad">{bot.poll.error}</Alert>
-      )}
-      {op.error && <Alert tone="bad">{op.error}</Alert>}
-      <Dialog open={link !== null} onClose={() => setLink(null)} title="Привязка аккаунта">
-        {link && (
-          <div className="flex flex-col gap-3">
-            <QrCode
-              text={link.url}
-              alt="Ссылка на бота"
-              note="Откройте камерой телефона и запустите бота"
-            />
-            <div className="flex justify-center">
-              <ButtonAnchor href={link.url} target="_blank" rel="noreferrer" variant="primary">
-                <Send className="size-4" />
-                Открыть в Telegram
-              </ButtonAnchor>
+        {bot.admin && (
+          <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
+            <div className="min-w-0 grow text-xs text-muted">
+              действия через бота; удаление сервера и опасные действия&nbsp;&mdash; с кодом 2FA
             </div>
-            <div className="text-center text-xs text-muted">
-              Ссылка одноразовая и действует 10&nbsp;минут
-            </div>
+            <Select
+              size="sm"
+              className="w-52 shrink-0"
+              aria-label="Действия через бота"
+              value={bot.level}
+              disabled={busy || isFetching}
+              onChange={(e) => setLevel(e.target.value as BotLevel)}
+            >
+              {LEVELS.map((l) => (
+                <option key={l.id} value={l.id}>
+                  {l.title}
+                </option>
+              ))}
+            </Select>
           </div>
         )}
-      </Dialog>
-    </div>
+        {bot.on && bot.poll.ok === false && bot.poll.error && (
+          <Alert tone="bad">{bot.poll.error}</Alert>
+        )}
+        {op.error && <Alert tone="bad">{op.error}</Alert>}
+        <Dialog open={link !== null} onClose={() => setLink(null)} title="Привязка аккаунта">
+          {link && (
+            <div className="flex flex-col gap-3">
+              <QrCode
+                text={link.url}
+                alt="Ссылка на бота"
+                note="Откройте камерой телефона и запустите бота"
+              />
+              <div className="flex justify-center">
+                <ButtonAnchor href={link.url} target="_blank" rel="noreferrer" variant="primary">
+                  <Send className="size-4" />
+                  Открыть в Telegram
+                </ButtonAnchor>
+              </div>
+              <div className="text-center text-xs text-muted">
+                Ссылка одноразовая и действует 10&nbsp;минут
+              </div>
+            </div>
+          )}
+        </Dialog>
+      </div>
+      {dialog}
+    </>
   );
 }

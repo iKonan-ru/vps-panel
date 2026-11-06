@@ -112,7 +112,8 @@ export async function gclientRoutes(
    * Пул документов OpenFlux: ссылки на документы с редактированием по ссылке,
    * каждый выдаётся одному каналу клиента. Список - с тем, кому выдан.
    */
-  app.get('/api/openflux/docs', async () => {
+  app.get('/api/openflux/docs', async (_req, reply) => {
+    reply.header('Cache-Control', 'no-store');
     const names = serverNames();
     const rows = db
       .select({ d: openfluxDocs, b: gclientBindings, c: gclients })
@@ -194,7 +195,8 @@ export async function gclientRoutes(
       });
   });
 
-  app.get('/api/gclients/:id', async (req): Promise<GClientDetail> => {
+  app.get('/api/gclients/:id', async (req, reply): Promise<GClientDetail> => {
+    reply.header('Cache-Control', 'no-store');
     const c = getClient(Id.parse(req.params).id);
     const names = serverNames();
     return {
@@ -353,7 +355,8 @@ export async function gclientRoutes(
    * Новая ссылка: новый токен подписки и личной страницы, старый перестаёт работать
    * сразу. На серверах ничего не меняется - токен живёт только в панели.
    */
-  app.post('/api/gclients/:id/rotate-token', async (req) => {
+  app.post('/api/gclients/:id/rotate-token', async (req, reply) => {
+    reply.header('Cache-Control', 'no-store');
     const c = getClient(Id.parse(req.params).id);
     const token = newClientToken();
     db.update(gclients).set({ token }).where(eq(gclients.id, c.id)).run();
@@ -448,7 +451,8 @@ export async function gclientRoutes(
   app.post('/api/gclients/sync/stop', async () => ({ ok: gc.stop() }));
 
   /** Чьи записи в сервисах сервера: для ссылок на клиента во вкладках сервисов. */
-  app.get('/api/servers/:id/gclient-owners', async (req): Promise<GOwner[]> => {
+  app.get('/api/servers/:id/gclient-owners', async (req, reply): Promise<GOwner[]> => {
+    reply.header('Cache-Control', 'no-store');
     const { id } = Id.parse(req.params);
     const devices = new Map(
       db

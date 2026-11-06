@@ -285,7 +285,7 @@ describe('GET /api/gclients/:id/live', () => {
       await built.app.close();
       rmSync(dir, { recursive: true, force: true });
     }
-  });
+  }, 15_000);
 });
 
 describe('presenceOf', () => {

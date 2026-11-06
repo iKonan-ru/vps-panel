@@ -31,7 +31,8 @@ export async function accessRoutes(app: FastifyInstance, opts: { db: Db; box: Se
   });
   const seal = (fields: AccessFields) => sealFields(box, fields);
 
-  app.get('/api/servers/:id/access', async (req) => {
+  app.get('/api/servers/:id/access', async (req, reply) => {
+    reply.header('Cache-Control', 'no-store');
     const { id } = z.object({ id: z.string() }).parse(req.params);
     const rows = await db
       .select()

@@ -33,6 +33,7 @@ const dir = mkdtempSync(join(tmpdir(), 'vps-agentws-'));
 const env = loadEnv({ NODE_ENV: 'test', DATA_DIR: dir });
 let built: Awaited<ReturnType<typeof buildApp>>;
 let url = '';
+let urlV3 = '';
 
 beforeAll(async () => {
   built = await buildApp({ env, db: createDb(':memory:') });
@@ -57,8 +58,28 @@ beforeAll(async () => {
       registrationExpiresAt: new Date(Date.now() - 1000).toISOString(),
     } as never)
     .run();
+  built.db
+    .insert(servers)
+    .values({
+      id: 's3',
+      name: 's3',
+      host: '1.1.1.3',
+      agentTokenHash: sha256('persistent-token'),
+    } as never)
+    .run();
+  built.db
+    .insert(servers)
+    .values({
+      id: 's4',
+      name: 's4',
+      host: '1.1.1.4',
+      registrationToken: sha256('regtoken-v3-long'),
+      registrationExpiresAt: new Date(Date.now() + 3600_000).toISOString(),
+    } as never)
+    .run();
   const addr = await built.app.listen({ port: 0, host: '127.0.0.1' });
   url = `${addr.replace('http', 'ws')}/ws/agent?v=2`;
+  urlV3 = `${addr.replace('http', 'ws')}/ws/agent?v=3`;
 });
 afterAll(async () => {
   await built.app.close();
@@ -66,8 +87,11 @@ afterAll(async () => {
 });
 
 /** Агент: рукопожатие, auth и hello; возвращает welcome, сокет и шифрование. */
-async function agent(credential: string, opts: { reg?: string; tamper?: boolean } = {}) {
-  const ws = new WebSocket(url);
+async function agent(
+  credential: string,
+  opts: { reg?: string; tamper?: boolean; v3?: boolean } = {},
+) {
+  const ws = new WebSocket(opts.v3 ? urlV3 : url);
   const queue: { data: Buffer; binary: boolean }[] = [];
   const waiters: ((m: { data: Buffer; binary: boolean }) => void)[] = [];
   let closed: number | null = null;
@@ -126,9 +150,19 @@ async function agent(credential: string, opts: { reg?: string; tamper?: boolean 
       Buffer.concat([d.update(b.subarray(0, b.length - 16)), d.final()]).toString(),
     );
   };
-  const credHash = sha256(credential);
-  const auth: Record<string, unknown> = { type: 'auth', proof: proof(credHash, 'agent', th) };
-  if (opts.reg) Object.assign(auth, { reg: true, tokenHash: sha256(opts.reg) });
+  let credHash = sha256(credential);
+  const auth: Record<string, unknown> = { type: 'auth' };
+  if (opts.v3) {
+    auth.token = credential.startsWith('reg:') ? credential.slice(4) : credential;
+    if (opts.reg) {
+      auth.reg = true;
+      auth.newToken = opts.reg;
+      credHash = sha256(opts.reg);
+    }
+  } else {
+    auth.proof = proof(credHash, 'agent', th);
+    if (opts.reg) Object.assign(auth, { reg: true, tokenHash: sha256(opts.reg) });
+  }
   ws.send(seal(auth));
   const host = {
     hostname: 'h',
@@ -234,5 +268,42 @@ describe('канал агента v2', () => {
       .update(Buffer.concat([Buffer.alloc(32, 2), Buffer.alloc(32, 3)]))
       .digest();
     expect(t.equals(want)).toBe(true);
+  });
+});
+
+describe('канал агента v3', () => {
+  it('постоянный токен передаётся внутри канала, в базе остаётся только хеш', async () => {
+    const a = await agent('persistent-token', { v3: true });
+    expect(a.sigOk).toBe(true);
+    expect(a.welcome?.type).toBe('welcome');
+    expect(a.welcome?.serverId).toBe('s3');
+    expect(a.welcome?.proof).toBe(proof(a.credHash, 'panel', a.th));
+    a.ws.close();
+  });
+
+  it('регистрация: панель получает новый токен и хранит только его хеш', async () => {
+    const a = await agent('regtoken-v3-long', { v3: true, reg: 'agent-made-token-v3' });
+    expect(a.welcome?.type).toBe('welcome');
+    expect(a.welcome?.serverId).toBe('s4');
+    const row = built.db
+      .select()
+      .from(servers)
+      .all()
+      .find((r) => r.id === 's4');
+    expect(row?.agentTokenHash).toBe(sha256('agent-made-token-v3'));
+    expect(row?.registrationToken).toBeNull();
+    a.ws.close();
+  });
+
+  it('v2 для сервера, уже подключившегося по v3, отклоняется', async () => {
+    const a = await agent('persistent-token');
+    expect(a.welcome).toBeNull();
+    a.ws.close();
+  });
+
+  it('хеш токена из базы нельзя использовать как токен', async () => {
+    const a = await agent(sha256('persistent-token'), { v3: true });
+    expect(a.welcome).toBeNull();
+    a.ws.close();
   });
 });

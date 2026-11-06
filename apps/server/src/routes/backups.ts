@@ -25,7 +25,13 @@ import { readArchiveManifest } from '../lib/backup-archive.js';
 import type { BackupRestorer } from '../lib/backup-restore.js';
 import type { BackupSetup } from '../lib/backup-setup.js';
 import { newId } from '../lib/ids.js';
-import { encryptedSize, opensslDecryptStream, opensslEncryptStream } from '../lib/panel-backup.js';
+import {
+  V3_MAGIC,
+  decryptStreamV3,
+  encryptStreamV3,
+  encryptedStreamSize,
+  opensslDecryptStream,
+} from '../lib/panel-backup.js';
 import type { UiHub } from '../lib/ui-hub.js';
 
 /** Предел архива бэкапа: тело - поток, bodyLimit Fastify его не ограничивает. */
@@ -212,8 +218,30 @@ export async function backupRoutes(
         );
         // скачанная копия зашифрована паролем резервных копий; незашифрованный файл -
         // как есть. В панели копия хранится расшифрованной (как созданная агентом).
-        const head = await readHead(raw, 16);
-        if (head.subarray(0, 8).toString() === 'Salted__') {
+        const head = await readHead(raw, 64);
+        if (head.subarray(0, 6).toString() === V3_MAGIC) {
+          const pass = password();
+          if (!pass) throw noPassword();
+          try {
+            const dec = decryptStreamV3(head.subarray(0, 35), pass);
+            await pipeline(
+              createReadStream(raw, { start: 35 }),
+              dec.tailer,
+              dec.decipher,
+              hashed,
+              createWriteStream(file(backupId), { mode: 0o600 }),
+            );
+            const gz = await readHead(file(backupId), 2);
+            if (gz[0] !== 0x1f || gz[1] !== 0x8b) throw new Error('не gzip');
+          } catch {
+            throw Object.assign(
+              new Error(
+                'не удалось расшифровать: копия зашифрована другим паролем или файл повреждён',
+              ),
+              { statusCode: 400 },
+            );
+          }
+        } else if (head.subarray(0, 8).toString() === 'Salted__') {
           const pass = password();
           if (!pass) throw noPassword();
           try {
@@ -296,12 +324,21 @@ export async function backupRoutes(
         /[^\w.-]+/g,
         '_',
       );
-    const enc = opensslEncryptStream(pass);
+    const enc = encryptStreamV3(pass);
     const out = new PassThrough();
     out.write(enc.header);
-    void pipeline(createReadStream(file(bid)), enc.cipher, out).catch(() => out.destroy());
+    const tag = new Transform({
+      transform(d, _enc, cb) {
+        cb(null, d);
+      },
+      flush(cb) {
+        this.push(enc.tag());
+        cb();
+      },
+    });
+    void pipeline(createReadStream(file(bid)), enc.cipher, tag, out).catch(() => out.destroy());
     reply.header('content-disposition', `attachment; filename="${name}"`);
-    reply.header('content-length', String(encryptedSize(statSync(file(bid)).size)));
+    reply.header('content-length', String(encryptedStreamSize(statSync(file(bid)).size)));
     reply.header('cache-control', 'no-store');
     reply.type('application/octet-stream');
     return reply.send(out);

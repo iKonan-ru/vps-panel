@@ -19,12 +19,14 @@ jobs:
   node:
     runs-on: ubuntu-24.04
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
-          node-version: 22
+          node-version: 24
       - run: corepack enable
       - run: pnpm install --frozen-lockfile
+      - name: зависимости без High
+        run: pnpm audit --prod --audit-level=high
       - run: pnpm --filter @vps/protocol build
       - run: pnpm -r --filter @vps/protocol --filter @vps/server --filter @vps/web exec tsc --noEmit
       - run: npx biome check apps/web/src apps/server/src apps/server/test packages/protocol/src
@@ -39,9 +41,9 @@ jobs:
       run:
         working-directory: apps/agent
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       # последний стабильный Go: им собираются и установки (сборка Caddy naive требует новый)
-      - uses: actions/setup-go@v5
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
           go-version: stable
           cache-dependency-path: apps/agent/go.sum
@@ -49,12 +51,14 @@ jobs:
         run: test -z "$(gofmt -l .)" || { gofmt -l .; exit 1; }
       - run: go vet ./...
       - run: go test ./...
+      - name: govulncheck
+        run: go run golang.org/x/vuln/cmd/govulncheck@latest ./...
       - run: make build-all
 
   text:
     runs-on: ubuntu-24.04
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - name: только клавиатурные символы в своих файлах
         run: |
           bad="$(git ls-files | grep -v -E '^deploy/files/' | xargs -d '\n' grep -IlP '[^\x00-\x7F\p{Cyrillic}]' || true)"

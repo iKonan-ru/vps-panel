@@ -19,6 +19,10 @@
 ghcr.io, файлы из `release/`, `Caddyfile`, `fail2ban-panel.conf`, `install.sh` и бинарники
 агента - в релиз на GitHub.
 
+Docker-слои сборки сохраняются в ghcr.io под тегом `vps-panel:buildcache` и используются
+между релизными тегами. Go-сборки используют каталоги `GOPATH` и `GOCACHE`, восстановленные
+`actions/setup-go`. Actions закреплены полными SHA и используют Node.js 24.
+
 ## Caddy
 
 Панель - на домене панели (`PANEL_DOMAIN`), подписки и личные страницы - на имени подписок

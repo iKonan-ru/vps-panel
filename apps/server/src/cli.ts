@@ -110,7 +110,13 @@ async function main(argv: string[]) {
       const s = await ensurePanelServer(db, ips, host);
       const token = await issueRegistration(db, s.id);
       if (!token) throw new CliError('сервер панели не найден');
-      return { ...s, installCommand: installCommand(env, token) };
+      return {
+        ...s,
+        installCommand: installCommand(env, token),
+        installUrl: env.PANEL_PUBLIC_URL,
+        installToken: token,
+        installKey: panelKey(dataDir).b64,
+      };
     }
     case 'panel-key':
       return { key: panelKey(dataDir).b64 };

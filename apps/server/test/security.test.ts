@@ -3,14 +3,15 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { eq } from 'drizzle-orm';
 import { authenticator } from 'otplib';
-import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
+import WebSocket from 'ws';
 import { buildApp } from '../src/app.js';
 import { findCommand, validateAnswers } from '../src/commands/index.js';
 import type { CommandDef } from '../src/commands/types.js';
 import { loadEnv } from '../src/config.js';
 import { createDb } from '../src/db/index.js';
-import { admins, firewallRules, servers, settings } from '../src/db/schema.js';
-import { createAdmin, createSession } from '../src/lib/auth.js';
+import { admins, firewallRules, servers, sessions, settings } from '../src/db/schema.js';
+import { createAdmin, createSession, findSession, saveTotp, sha256 } from '../src/lib/auth.js';
 import { redactOutput } from '../src/lib/redact.js';
 import { SecretBox } from '../src/lib/secret-box.js';
 import { Telegram } from '../src/lib/telegram.js';
@@ -190,12 +191,126 @@ describe('login after 2FA reset from the console', () => {
   });
 });
 
+describe('step-up for bot controls', () => {
+  it('is required for changes and works after password confirmation', async () => {
+    const denied = await app.inject({
+      method: 'PATCH',
+      url: '/api/notify/bot',
+      headers: { cookie },
+      payload: { level: 'view' },
+    });
+    expect(denied.statusCode).toBe(403);
+    expect(denied.json().code).toBe('step_up_required');
+    const su = await app.inject({
+      method: 'POST',
+      url: '/api/auth/step-up',
+      headers: { cookie },
+      payload: { password: 'password-123' },
+    });
+    expect(su.statusCode).toBe(200);
+    const step = su.cookies.find((c) => c.name.endsWith('vps_stepup'));
+    const ok = await app.inject({
+      method: 'PATCH',
+      url: '/api/notify/bot',
+      headers: { cookie: `${cookie}; ${step?.name}=${step?.value}` },
+      payload: { level: 'view' },
+    });
+    expect(ok.statusCode).toBe(200);
+  });
+});
+
+describe('session lifetime', () => {
+  it('rejects an idle session and an expired absolute session', async () => {
+    const a = await createAdmin(db, 'idle-admin', 'password-123');
+    const s = await createSession(db, a.id, '127.0.0.1', 'test');
+    const row = db
+      .select()
+      .from(sessions)
+      .where(eq(sessions.id, sha256(s.token)))
+      .get();
+    expect(row?.lastSeenAt).toBeTruthy();
+    expect(await findSession(db, s.token)).toBeTruthy();
+    db.update(sessions)
+      .set({ lastSeenAt: new Date(Date.now() - 73 * 60 * 60_000).toISOString() })
+      .where(eq(sessions.id, sha256(s.token)))
+      .run();
+    expect(await findSession(db, s.token)).toBeNull();
+    db.update(sessions)
+      .set({
+        lastSeenAt: new Date().toISOString(),
+        expiresAt: new Date(Date.now() - 1000).toISOString(),
+      })
+      .where(eq(sessions.id, sha256(s.token)))
+      .run();
+    expect(await findSession(db, s.token)).toBeNull();
+  });
+});
+
+describe('sensitive GET responses', () => {
+  it('are not cached by the browser', async () => {
+    const res = await app.inject({
+      method: 'GET',
+      url: '/api/account',
+      headers: { cookie },
+    });
+    expect(res.statusCode).toBe(200);
+    expect(res.headers['cache-control']).toBe('no-store');
+  });
+});
+
+describe('agent websocket limits', () => {
+  it('closes a frame larger than 4 MiB', async () => {
+    const addr = await app.listen({ port: 0, host: '127.0.0.1' });
+    const ws = new WebSocket(`${addr.replace(/^http/, 'ws')}/ws/agent?v=2`);
+    await new Promise<void>((resolve, reject) => {
+      ws.once('open', () => resolve());
+      ws.once('error', reject);
+    });
+    const closed = new Promise<number>((resolve) => ws.on('close', (c) => resolve(c)));
+    ws.send(Buffer.alloc(5 * 1024 * 1024));
+    expect(await closed).toBe(1009);
+  });
+});
+
 describe('agent channel v1', () => {
   // регистрация и вход - только v2 (agent-ws-v2.test.ts)
   it('is refused even with a valid-looking token', async () => {
     const ws = await app.injectWS('/ws/agent', { headers: { authorization: 'Bearer reg:x' } });
     const code = await new Promise<number>((resolve) => ws.on('close', (c) => resolve(c)));
     expect(code).toBe(4006);
+  });
+});
+
+describe('2FA storage', () => {
+  it('encrypts the TOTP secret and HMACs backup codes', async () => {
+    const a = await createAdmin(db, 'totp-store', 'password-123');
+    const box = new SecretBox('dev-only-secret-change-me-please-32b');
+    await saveTotp(db, a.id, 'JBSWY3DPEHPK3PXP', ['1234567890'], box, 'pepper');
+    const row = db.select().from(admins).where(eq(admins.id, a.id)).get();
+    expect(row?.totpSecret).toMatch(/^v1:/);
+    expect(row?.backupCodesHash).toHaveLength(1);
+    expect(row?.backupCodesHash[0]).not.toBe(sha256('1234567890'));
+  });
+});
+
+describe('telegram token stays in the panel', () => {
+  it('never calls an agent when direct delivery fails', async () => {
+    const request = vi.fn();
+    const tg = new Telegram(
+      createDb(':memory:'),
+      new SecretBox('x'.repeat(32)),
+      { request } as never,
+      { info: () => undefined, warn: () => undefined },
+    );
+    const original = globalThis.fetch;
+    globalThis.fetch = vi.fn().mockRejectedValue(new Error('offline'));
+    try {
+      const r = await tg.call('123:secret', 'sendMessage', { chat_id: '1', text: 'x' });
+      expect(r.err).toContain('Telegram недоступен');
+      expect(request).not.toHaveBeenCalled();
+    } finally {
+      globalThis.fetch = original;
+    }
   });
 });
 

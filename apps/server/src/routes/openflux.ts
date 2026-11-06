@@ -25,7 +25,8 @@ export async function openfluxRoutes(app: FastifyInstance, opts: ServerRouteOpts
     requireOnline(registry, id);
   };
 
-  app.get('/api/servers/:id/openflux', async (req) => {
+  app.get('/api/servers/:id/openflux', async (req, reply) => {
+    reply.header('Cache-Control', 'no-store');
     const { id } = Id.parse(req.params);
     online(id);
     return registry.request(id, 'openflux.status', {}, { timeoutMs: 60_000 });
