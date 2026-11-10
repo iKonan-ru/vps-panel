@@ -39,37 +39,14 @@ export const MetricsSchema = z.object({
   uptimeSec: z.number().int().nonnegative(),
   load1: z.number().nonnegative(),
   /**
-   * Подключения клиентов сейчас: TCP к внешним портам сервисов (без SSH), уникальные адреса
-   * клиентов (ips), пиры AWG и порты с наибольшим числом соединений. Агент старее - нет.
+   * Клиенты на связи сейчас: число клиентов (пользователи xray, MTProxy, WDTT и пиры AWG), уникальные
+   * адреса TCP и пиры AWG. Агент старее - нет.
    */
   conns: z
     .object({
-      tcp: z.number().int().nonnegative(),
+      clients: z.number().int().nonnegative().optional(),
       ips: z.number().int().nonnegative().optional(),
       awg: z.number().int().nonnegative(),
-      /** Клиенты на связи: пользователи xray, MTProxy, WDTT и пиры AWG; нет - агент не определил. */
-      clients: z.number().int().nonnegative().optional(),
-      ports: z
-        .array(
-          z.object({
-            port: z.number().int(),
-            conns: z.number().int().nonnegative(),
-            ips: z.number().int().nonnegative(),
-          }),
-        )
-        .optional(),
-      /** Пользователи xray с наибольшим числом соединений; name и kind проставляет панель. */
-      top: z
-        .array(
-          z.object({
-            ref: z.string(),
-            conns: z.number().int().nonnegative(),
-            ips: z.number().int().nonnegative(),
-            name: z.string().optional(),
-            kind: z.enum(['client', 'cascade']).optional(),
-          }),
-        )
-        .optional(),
     })
     .optional()
     .catch(undefined),

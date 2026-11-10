@@ -1,5 +1,5 @@
 import { type DeployInfo, markPanelUpdate, useDeploy } from '@/components/deploy-banner';
-import { ReleaseNotes } from '@/components/release-notes';
+import { Markdown } from '@/components/markdown';
 import { Alert } from '@/components/ui/alert';
 import { Button } from '@/components/ui/button';
 import { Chip } from '@/components/ui/chip';
@@ -158,7 +158,7 @@ export function PanelVersionSettings() {
                       </a>
                     )}
                   </div>
-                  <ReleaseNotes text={r.notes} />
+                  <Markdown text={r.notes} />
                 </div>
               ))}
             </div>

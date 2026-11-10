@@ -21,7 +21,6 @@ import { actionLog, servers } from '../db/schema.js';
 import { installCommand, issueRegistration, latestAgentVersion } from '../lib/agent-dist.js';
 import { rollPaymentDate } from '../lib/billing.js';
 import { buildConns } from '../lib/conn-detail.js';
-import { labelConns } from '../lib/conn-labels.js';
 import { newId } from '../lib/ids.js';
 import { panelAddresses } from '../lib/panel-host.js';
 import type { PanelProxy } from '../lib/panel-proxy.js';
@@ -83,10 +82,8 @@ export async function serverRoutes(
   opts: { db: Db; registry: AgentRegistry; env: Env; hub: UiHub; proxy?: PanelProxy },
 ) {
   const { db, registry, env, hub, proxy } = opts;
-  const withLinks = (s: ServerSummary): ServerSummary => {
-    const labelled = { ...s, metrics: labelConns(db, s.id, s.metrics) };
-    return proxy ? { ...labelled, panelLinks: proxy.links(s.id, s.name, s.services) } : labelled;
-  };
+  const withLinks = (s: ServerSummary): ServerSummary =>
+    proxy ? { ...s, panelLinks: proxy.links(s.id, s.name, s.services) } : s;
 
   const panelIps = () => panelAddresses(env.PANEL_PUBLIC_URL);
 

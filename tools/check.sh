@@ -19,6 +19,8 @@ git ls-files apps packages tools deploy | grep -vE '^deploy/files/|/dist/' |
 log="$(mktemp)"
 (cd apps/server && npx vitest run >"$log" 2>&1) || { grep -P "FAIL|\x{00D7}" "$log" | head; rm -f "$log"; exit 1; }
 grep -E "Tests " "$log"
+(cd apps/web && npx vitest run >"$log" 2>&1) || { grep -P "FAIL|\x{00D7}" "$log" | head; rm -f "$log"; exit 1; }
+grep -E "Tests " "$log"
 rm -f "$log"
 
 # Известные уязвимости зависимостей: предупреждение, не падение - обновление

@@ -27,38 +27,16 @@ type Metrics struct {
 	NetTxBps    float64 `json:"netTxBps"`
 	UptimeSec   uint64  `json:"uptimeSec"`
 	Load1       float64 `json:"load1"`
-	// Conns - подключения клиентов к серверу; нет - не посчитаны.
+	// Conns - клиенты на связи; нет - не посчитаны.
 	Conns *Conns `json:"conns,omitempty"`
 }
 
-// Conns - подключения клиентов сейчас: установленные TCP к внешним портам сервисов (без SSH) и
-// пиры AWG с недавним handshake.
+// Conns - клиенты сервера на связи сейчас: уникальные TCP-адреса клиентов, пиры AWG с недавним
+// handshake и число клиентов (нет - не определено; подробности - метод conns.list).
 type Conns struct {
-	TCP int `json:"tcp"`
-	// IPs - уникальные адреса клиентов среди TCP-соединений (NAT даёт один адрес на многих).
-	IPs int `json:"ips"`
-	AWG int `json:"awg"`
-	// Clients - клиенты на связи: пользователи xray, MTProxy, WDTT и пиры AWG; нет - не определено.
+	IPs     int  `json:"ips"`
+	AWG     int  `json:"awg"`
 	Clients *int `json:"clients,omitempty"`
-	// Ports - порты с наибольшим числом соединений.
-	Ports []PortConns `json:"ports,omitempty"`
-	// Top - пользователи xray (email клиента или служебного клиента каскада) с наибольшим числом
-	// соединений; нет - xray не отдаёт онлайн-адреса.
-	Top []UserConns `json:"top,omitempty"`
-}
-
-// UserConns - соединения пользователя xray и число его активных адресов.
-type UserConns struct {
-	Ref   string `json:"ref"`
-	Conns int    `json:"conns"`
-	IPs   int    `json:"ips"`
-}
-
-// PortConns - соединения и уникальные адреса клиентов на одном порту сервиса.
-type PortConns struct {
-	Port  int `json:"port"`
-	Conns int `json:"conns"`
-	IPs   int `json:"ips"`
 }
 
 // HostInfo соответствует HostInfoSchema.

@@ -149,18 +149,12 @@ func TestActiveAwgPeers(t *testing.T) {
 	}
 }
 
-func TestConnStats(t *testing.T) {
+func TestConnsByIP(t *testing.T) {
 	ss := "0 0 10.0.0.1:443 5.5.5.5:1000\n0 0 10.0.0.1:443 5.5.5.5:1001\n0 0 [::ffff:10.0.0.1]:443 [::ffff:6.6.6.6]:2\n" +
 		"0 0 10.0.0.1:8443 7.7.7.7:3\n0 0 10.0.0.1:443 127.0.0.1:4\n0 0 10.0.0.1:22 9.9.9.9:5\n"
-	c, byIP := connStats(ss, map[int]bool{443: true, 8443: true})
-	if byIP["5.5.5.5"] != 2 {
-		t.Errorf("по адресам: %v", byIP)
-	}
-	if c.TCP != 4 || c.IPs != 3 {
-		t.Fatalf("всего %d, адресов %d, ждали 4 и 3", c.TCP, c.IPs)
-	}
-	if len(c.Ports) != 2 || c.Ports[0].Port != 443 || c.Ports[0].Conns != 3 || c.Ports[0].IPs != 2 {
-		t.Errorf("порты: %+v", c.Ports)
+	got := connsByIP(ss, map[int]bool{443: true, 8443: true})
+	if len(got) != 3 || got["5.5.5.5"] != 2 || got["6.6.6.6"] != 1 || got["7.7.7.7"] != 1 {
+		t.Errorf("по адресам: %v", got)
 	}
 }
 

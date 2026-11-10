@@ -41,14 +41,13 @@ export function ClientsChip({ s }: { s: ServerSummary }) {
   );
 }
 
-/** Шапка сервера: "клиентов 23, подключений 1712"; нет счётчика - ничего. */
+/** Шапка сервера: "клиентов 23"; нет счётчика - ничего. */
 export function ServerConns({ m }: { m: Metrics | null | undefined }) {
-  if (!m?.conns) return null;
-  const { tcp, awg } = m.conns;
   const clients = clientsOf(m);
+  if (clients === null) return null;
   return (
     <span className="whitespace-nowrap tabular-nums" title={CLIENTS_HINT}>
-      {clients !== null && <>клиентов {clients}, </>}подключений {tcp + awg}
+      клиентов {clients}
     </span>
   );
 }

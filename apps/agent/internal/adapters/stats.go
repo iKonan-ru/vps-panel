@@ -14,7 +14,6 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
-	"sort"
 	"strconv"
 	"strings"
 	"sync"
@@ -681,17 +680,12 @@ var awgConns struct {
 	at time.Time
 }
 
-// ServerConns - подключения клиентов к серверу для метрик: TCP к внешним портам (кроме sshd) и
-// пиры AWG. Сервисов нет - нули.
+// ServerConns - клиенты сервера для метрик: адреса TCP к внешним портам (кроме sshd), пиры AWG и
+// число клиентов на связи. Сервисов нет - нули.
 func ServerConns(ctx context.Context) metrics.Conns {
-	ports := firewall.PublicTCPPorts(ctx, "sshd")
 	out := metrics.Conns{}
-	if len(ports) > 0 {
-		var byIP map[string]int
-		out, byIP = connStats(shell.Out(ctx, "ss", "-Htn", "state", "established"), ports)
-		if users := xrayOnlineUsers(ctx); len(users) > 0 {
-			out.Top = userConns(users, byIP)
-		}
+	if ports := firewall.PublicTCPPorts(ctx, "sshd"); len(ports) > 0 {
+		out.IPs = len(connsByIP(shell.Out(ctx, "ss", "-Htn", "state", "established"), ports))
 	}
 	clients := onlineClients(ctx)
 	awgConns.Lock()
@@ -750,20 +744,10 @@ func onlineClients(ctx context.Context) *int {
 	return &n
 }
 
-// maxPortConns - сколько портов с наибольшим числом соединений уходит в метрики.
-const maxPortConns = 8
-
-// connStats - установленные TCP к портам ports из "ss -Htn state established": всего, уникальные
-// адреса клиентов (loopback не клиент), соединения по адресам и разбивка по портам, самые
-// нагруженные первыми.
-func connStats(text string, ports map[int]bool) (metrics.Conns, map[string]int) {
-	type acc struct {
-		conns int
-		ips   map[string]bool
-	}
-	byPort := map[int]*acc{}
-	all := map[string]int{}
-	out := metrics.Conns{}
+// connsByIP - установленные TCP к портам ports из "ss -Htn state established": соединения по
+// адресам клиентов (loopback не клиент).
+func connsByIP(text string, ports map[int]bool) map[string]int {
+	out := map[string]int{}
 	for _, line := range strings.Split(text, "\n") {
 		f := strings.Fields(line)
 		if len(f) < 4 {
@@ -777,34 +761,11 @@ func connStats(text string, ports map[int]bool) (metrics.Conns, map[string]int) 
 		if err != nil || !ports[port] {
 			continue
 		}
-		ip := peerIP(f[3])
-		if ip == "" {
-			continue
+		if ip := peerIP(f[3]); ip != "" {
+			out[ip]++
 		}
-		a := byPort[port]
-		if a == nil {
-			a = &acc{ips: map[string]bool{}}
-			byPort[port] = a
-		}
-		a.conns++
-		a.ips[ip] = true
-		all[ip]++
-		out.TCP++
 	}
-	out.IPs = len(all)
-	for port, a := range byPort {
-		out.Ports = append(out.Ports, metrics.PortConns{Port: port, Conns: a.conns, IPs: len(a.ips)})
-	}
-	sort.Slice(out.Ports, func(i, j int) bool {
-		if out.Ports[i].Conns != out.Ports[j].Conns {
-			return out.Ports[i].Conns > out.Ports[j].Conns
-		}
-		return out.Ports[i].Port < out.Ports[j].Port
-	})
-	if len(out.Ports) > maxPortConns {
-		out.Ports = out.Ports[:maxPortConns]
-	}
-	return out, all
+	return out
 }
 
 // peerIP - адрес клиента из "ip:port" ss ([v6]:port, ::ffff:v4); loopback и пустое - "".
@@ -842,9 +803,9 @@ func fillXuiConns(ctx context.Context, m map[string]XuiClientStat) {
 		return
 	}
 	ports := firewall.PublicTCPPorts(ctx, "sshd")
-	_, byIP := connStats(shell.Out(ctx, "ss", "-Htn", "state", "established"), ports)
-	per := map[string]metrics.UserConns{}
-	for _, u := range userConnsAll(users, byIP) {
+	byIP := connsByIP(shell.Out(ctx, "ss", "-Htn", "state", "established"), ports)
+	per := map[string]userConn{}
+	for _, u := range userConns(users, byIP) {
 		per[u.Ref] = u
 	}
 	for email, s := range m {

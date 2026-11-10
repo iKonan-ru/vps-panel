@@ -10,7 +10,6 @@ import (
 	"sync"
 	"time"
 
-	"github.com/iKonan-ru/vps-panel/apps/agent/internal/metrics"
 	"github.com/iKonan-ru/vps-panel/apps/agent/internal/shell"
 )
 
@@ -22,9 +21,6 @@ const xrayOnlineWindow = 2 * time.Minute
 
 // xrayOnlineTTL - xray спрашивается через его CLI: не чаще раза в 10 секунд.
 const xrayOnlineTTL = 10 * time.Second
-
-// maxUserConns - сколько пользователей с наибольшим числом соединений уходит в метрики.
-const maxUserConns = 8
 
 var xrayOnline struct {
 	sync.Mutex
@@ -111,25 +107,23 @@ func xrayOnlineUsers(ctx context.Context) map[string][]string {
 	return xrayOnline.users
 }
 
-// userConns - userConnsAll, но только maxUserConns самых нагруженных.
-func userConns(users map[string][]string, byIP map[string]int) []metrics.UserConns {
-	out := userConnsAll(users, byIP)
-	if len(out) > maxUserConns {
-		out = out[:maxUserConns]
-	}
-	return out
+// userConn - соединения пользователя xray и число его активных адресов.
+type userConn struct {
+	Ref   string
+	Conns int
+	IPs   int
 }
 
-// userConnsAll - соединения по пользователям xray: соединения адреса делятся поровну между
+// userConns - соединения по пользователям xray: соединения адреса делятся поровну между
 // пользователями, у которых он активен (общий NAT), самые нагруженные первыми.
-func userConnsAll(users map[string][]string, byIP map[string]int) []metrics.UserConns {
+func userConns(users map[string][]string, byIP map[string]int) []userConn {
 	owners := map[string]int{}
 	for _, ips := range users {
 		for _, ip := range ips {
 			owners[ip]++
 		}
 	}
-	var out []metrics.UserConns
+	var out []userConn
 	for ref, ips := range users {
 		share := 0.0
 		n := 0
@@ -140,7 +134,7 @@ func userConnsAll(users map[string][]string, byIP map[string]int) []metrics.User
 			}
 		}
 		if n > 0 {
-			out = append(out, metrics.UserConns{Ref: ref, Conns: int(share + 0.5), IPs: n})
+			out = append(out, userConn{Ref: ref, Conns: int(share + 0.5), IPs: n})
 		}
 	}
 	sort.Slice(out, func(i, j int) bool {

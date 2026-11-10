@@ -10,7 +10,7 @@ const walk = (d) => {
   for (const n of readdirSync(d)) {
     const p = join(d, n);
     if (statSync(p).isDirectory()) walk(p);
-    else if (/\.(ts|tsx)$/.test(n)) files.push(p);
+    else if (/\.(ts|tsx)$/.test(n) && !/\.test\.tsx?$/.test(n)) files.push(p);
   }
 };
 walk(root);

@@ -13,15 +13,15 @@ const base = {
   load1: 0,
 };
 
-describe('метрики: подключения клиентов', () => {
-  it('агент со счётчиком - подключения доходят, без него и с мусором - нет', () => {
-    expect(MetricsSchema.parse({ ...base, conns: { tcp: 7, awg: 2 } }).conns).toEqual({
-      tcp: 7,
-      awg: 2,
-    });
-    const full = { tcp: 3, ips: 2, awg: 0, ports: [{ port: 443, conns: 3, ips: 2 }] };
+describe('метрики: клиенты на связи', () => {
+  it('агент со счётчиком - числа доходят, без него и с мусором - нет', () => {
+    const full = { clients: 3, ips: 2, awg: 1 };
     expect(MetricsSchema.parse({ ...base, conns: full }).conns).toEqual(full);
+    expect(MetricsSchema.parse({ ...base, conns: { ips: 2, awg: 0 } }).conns).toEqual({
+      ips: 2,
+      awg: 0,
+    });
     expect(MetricsSchema.parse(base).conns).toBeUndefined();
-    expect(MetricsSchema.parse({ ...base, conns: { tcp: -1 } }).conns).toBeUndefined();
+    expect(MetricsSchema.parse({ ...base, conns: { awg: -1 } }).conns).toBeUndefined();
   });
 });
