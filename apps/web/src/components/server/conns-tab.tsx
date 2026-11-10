@@ -20,7 +20,7 @@ import type {
   ConnsView,
   ServerDetail,
 } from '@vps/protocol';
-import { ArrowDown, ArrowUp, Ban, ExternalLink } from 'lucide-react';
+import { ArrowDown, ArrowUp, Ban, ExternalLink, ShieldOff } from 'lucide-react';
 import { type ReactNode, useState } from 'react';
 
 const KINDS: Record<ConnKind, { title: string; tone: 'accent' | 'update' | 'muted' | 'warn' }> = {
@@ -226,6 +226,19 @@ function AwgRow({ p }: { p: ConnAwgView }) {
   );
 }
 
+/** Правило "Своих правил" firewall: запрет всех портов с адреса - так блокирует эта вкладка. */
+interface FwRule {
+  id: string;
+  portFrom: number;
+  portTo: number;
+  source: string;
+  action: string;
+  comment: string;
+  createdAt: string;
+}
+const isBlock = (r: FwRule) =>
+  r.action === 'deny' && r.portFrom === 1 && r.portTo === 65535 && r.source !== 'any';
+
 type AddrSort = 'conns' | 'ip' | 'name' | 'kind';
 type AwgSort = 'name' | 'handshake' | 'traffic' | 'ip';
 type PortSort = 'port' | 'conns' | 'ips';
@@ -250,9 +263,29 @@ export function ConnsTab({ s }: { s: ServerDetail }) {
     enabled: online,
     refetchInterval: 5_000,
   });
+  const rules = useQuery({
+    queryKey: ['fw-rules', s.id],
+    queryFn: () => api<FwRule[]>(`/api/servers/${s.id}/firewall/rules`),
+    enabled: online,
+  });
   if (!online) return <LoadState offline />;
   if (isLoading || (error && !data)) return <LoadState error={error} />;
   if (!data) return null;
+  const blockedList = (rules.data ?? []).filter(isBlock);
+
+  async function unblock(r: FwRule) {
+    const ok = await ask({
+      title: `Снять блокировку ${r.source}?`,
+      text: 'Адрес снова сможет подключаться ко всем портам сервера.',
+      okLabel: 'Снять блокировку',
+    });
+    if (!ok) return;
+    await op.run(async () => {
+      await api(`/api/servers/${s.id}/firewall/rules/${r.id}`, { method: 'DELETE' });
+      await qc.invalidateQueries({ queryKey: ['fw-rules', s.id] });
+      await qc.invalidateQueries({ queryKey: ['servers', s.id, 'connections'] });
+    });
+  }
 
   async function block(ip: string) {
     const ok = await ask({
@@ -400,6 +433,30 @@ export function ConnsTab({ s }: { s: ServerDetail }) {
           </div>
           {awg.map((p) => (
             <AwgRow key={`${p.name}-${p.ip}-${p.handshakeAt}`} p={p} />
+          ))}
+        </Section>
+      )}
+
+      {blockedList.length > 0 && (
+        <Section
+          title="Заблокированные адреса"
+          info="Блокировка постоянная: правило ufw остаётся, пока его не снять. Те же правила видны во вкладке Firewall, в &laquo;Своих правилах&raquo;"
+        >
+          {blockedList.map((r) => (
+            <div
+              key={r.id}
+              className="flex flex-wrap items-center gap-x-3 gap-y-1 border-b border-border px-4 py-2.5 text-[13px] last:border-b-0"
+            >
+              <span className="font-mono select-all">{r.source}</span>
+              <span className="min-w-0 grow text-xs text-muted">
+                заблокирован {ago(r.createdAt)}
+                {r.comment && r.comment !== 'Блокировка из подключений' ? `: ${r.comment}` : ''}
+              </span>
+              <Button size="sm" disabled={op.busy} onClick={() => void unblock(r)}>
+                <ShieldOff className="size-3.5" />
+                Снять блокировку
+              </Button>
+            </div>
           ))}
         </Section>
       )}
