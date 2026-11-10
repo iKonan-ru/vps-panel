@@ -38,6 +38,11 @@ export const MetricsSchema = z.object({
   netTxBps: z.number().nonnegative(),
   uptimeSec: z.number().int().nonnegative(),
   load1: z.number().nonnegative(),
+  /** Подключения клиентов сейчас: TCP к внешним портам сервисов (без SSH) и пиры AWG. Агент старее - нет. */
+  conns: z
+    .object({ tcp: z.number().int().nonnegative(), awg: z.number().int().nonnegative() })
+    .optional()
+    .catch(undefined),
 });
 export type Metrics = z.infer<typeof MetricsSchema>;
 

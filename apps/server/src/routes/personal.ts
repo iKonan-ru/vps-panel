@@ -390,7 +390,7 @@ ${appsLink(token, 'amneziawg', 'Скачать AmneziaWG', os)}`,
     if (services.has('xui'))
       body += card(
         'VPN по подписке',
-        await appBlock('happ', 'Добавьте в нём подписку: серверы будут обновляться автоматически.'),
+        `<p class="hint">Подойдёт любое приложение: добавьте в нём подписку, серверы будут обновляться автоматически.</p>${await appBlock('happ', 'Для Android, iPhone и компьютера.')}${await appBlock('hiddify', 'Для Android, iPhone и компьютера.')}${await appBlock('incy', 'Для Android, iPhone, Mac и компьютера; версия для компьютера предварительная.')}${await appBlock('v2rayng', 'Для Android. Для iPhone приложения нет.')}${await appBlock('v2rayn', 'Для Windows, macOS и Linux.')}`,
         'vless',
       );
     if (services.has('awg'))

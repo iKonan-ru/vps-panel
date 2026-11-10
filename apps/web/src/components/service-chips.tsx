@@ -2,11 +2,15 @@ import { Chip } from '@/components/ui/chip';
 import { isSafeHref } from '@/lib/safe-url';
 import { type Service, serviceByKind } from '@vps/protocol';
 import { ExternalLink } from 'lucide-react';
+import { useState } from 'react';
 
 /** Плашки сервисов вне каталога панели. */
 const other: Record<string, string> = { wireguard: 'WG', 'wg-easy': 'wg-easy', custom: '' };
 
-/** Плашки сервисов; у тех, где есть панель, плашка - ссылка. */
+/**
+ * Плашки сервисов; у тех, где есть панель, плашка - ссылка. С max лишние свёрнуты в "+N", плашка
+ * раскрывает и сворачивает их; без max - все, с переносом на новые строки.
+ */
 export function ServiceChips({
   services,
   max,
@@ -17,8 +21,9 @@ export function ServiceChips({
   /** Вход в панели через поддомены (ServerSummary.panelLinks). */
   links?: Record<string, string>;
 }) {
+  const [open, setOpen] = useState(false);
   if (services.length === 0) return <span className="text-muted">нет</span>;
-  const shown = max ? services.slice(0, max) : services;
+  const shown = max && !open ? services.slice(0, max) : services;
   const seen = new Set<string>();
   return (
     <div className="flex flex-wrap gap-1.5">
@@ -53,7 +58,16 @@ export function ServiceChips({
           </Chip>
         );
       })}
-      {max && services.length > max && <Chip>+{services.length - max}</Chip>}
+      {max && services.length > max && (
+        <button
+          type="button"
+          aria-expanded={open}
+          title={open ? 'Свернуть' : 'Показать все сервисы'}
+          onClick={() => setOpen((v) => !v)}
+        >
+          <Chip>{open ? 'свернуть' : `+${services.length - max}`}</Chip>
+        </button>
+      )}
     </div>
   );
 }

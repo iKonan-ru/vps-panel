@@ -72,18 +72,12 @@ export function buildSubscription(db: Db, token: string): { name: string; links:
   );
   // каскады: порт inbound-а входа -> выход (ссылка через вход подписывается по выходу)
   const via = new Map<string, Map<number, string>>();
-  // выход -> входы его каскадов: у выхода с несколькими входами в подписи - имя входа
-  const entriesOf = new Map<string, Set<string>>();
   for (const r of db.select().from(cascades).all()) {
-    // каскад с ошибкой не ведёт через выход: такую ссылку "через РФ" не подписываем
+    // каскад с ошибкой не ведёт через выход: такую ссылку с входом в подписи не подписываем
     if (!r.entryPort || r.error) continue;
     const m = via.get(r.entryServerId) ?? new Map<number, string>();
     m.set(r.entryPort, r.exitServerId);
     via.set(r.entryServerId, m);
-    entriesOf.set(
-      r.exitServerId,
-      (entriesOf.get(r.exitServerId) ?? new Set()).add(r.entryServerId),
-    );
   }
   const items: { name: string; rank: number; link: string }[] = [];
   for (const { b, s } of rows) {
@@ -101,15 +95,13 @@ export function buildSubscription(db: Db, token: string): { name: string; links:
           country: exit.country,
           serverName: exit.name,
         }).title;
-        // один вход - "через РФ"; несколько - различимо: "через РФ (Вход)"
-        const several = (entriesOf.get(exit.id)?.size ?? 0) > 1;
-        const through = s.country !== 'RU' ? s.name : several ? `РФ (${s.name})` : 'РФ';
+        // подпись выхода с именем входа: "Страна :: Выход (Вход)"
         items.push({
           name: exit.name,
           rank: 1,
           link: rewriteLink(l, {
             host: clientHost(s),
-            title: `${exitTitle} через ${through}`,
+            title: `${exitTitle} (${s.name})`,
             email: b.ref,
             withInbound: false,
           }),

@@ -437,11 +437,11 @@ describe('каскады', () => {
     const links = buildSubscription(db, 'tk')?.links ?? [];
     expect(links.map((l) => decodeURIComponent(l.split('#')[1] ?? ''))).toEqual([
       '\u{1F1F8}\u{1F1EA} Швеция :: NetCore',
-      '\u{1F1F8}\u{1F1EA} Швеция :: NetCore через РФ',
+      '\u{1F1F8}\u{1F1EA} Швеция :: NetCore (Kappa)',
     ]);
     expect(links[1]).toContain('@198.51.100.5:20443');
 
-    // второй российский вход к тому же выходу: подписи различаются именем входа
+    // второй вход к тому же выходу: подписи различаются именем входа
     db.insert(servers)
       .values({ id: 'entry2', name: 'SkyHost', host: '198.51.100.9', country: 'RU' } as never)
       .run();
@@ -471,8 +471,8 @@ describe('каскады', () => {
     );
     expect(two).toEqual([
       '\u{1F1F8}\u{1F1EA} Швеция :: NetCore',
-      '\u{1F1F8}\u{1F1EA} Швеция :: NetCore через РФ (Kappa)',
-      '\u{1F1F8}\u{1F1EA} Швеция :: NetCore через РФ (SkyHost)',
+      '\u{1F1F8}\u{1F1EA} Швеция :: NetCore (Kappa)',
+      '\u{1F1F8}\u{1F1EA} Швеция :: NetCore (SkyHost)',
     ]);
   });
 

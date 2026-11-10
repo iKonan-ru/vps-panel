@@ -8,7 +8,17 @@ import type { ServerDetail } from '@vps/protocol';
 import { FitAddon } from '@xterm/addon-fit';
 import { Terminal } from '@xterm/xterm';
 import '@xterm/xterm/css/xterm.css';
-import { Maximize2, Minimize2, Power, RefreshCw } from 'lucide-react';
+import {
+  ArrowDown,
+  ArrowLeft,
+  ArrowRight,
+  ArrowUp,
+  Eraser,
+  Maximize2,
+  Minimize2,
+  Power,
+  RefreshCw,
+} from 'lucide-react';
 import { useCallback, useEffect, useRef, useState } from 'react';
 
 function b64encode(s: string): string {
@@ -42,6 +52,28 @@ function saveSid(serverId: string, sid: string | null) {
   } catch {}
 }
 
+/** Клавиши, которых нет на экранной клавиатуре телефона: подпись, что отправить, подсказка. */
+const KEYS: [label: string, data: string, title: string][] = [
+  ['Esc', '\x1b', 'Escape'],
+  ['Tab', '\t', 'Дополнить ввод'],
+  ['Ctrl+C', '\x03', 'Прервать текущую команду'],
+  ['Home', '\x1b[H', 'В начало строки'],
+  ['End', '\x1b[F', 'В конец строки'],
+  ['PgUp', '\x1b[5~', 'Страница вверх'],
+  ['PgDn', '\x1b[6~', 'Страница вниз'],
+  ['|', '|', 'Вертикальная черта'],
+  ['/', '/', 'Косая черта'],
+  ['-', '-', 'Дефис'],
+  ['~', '~', 'Тильда'],
+];
+/** Стрелки: в приложениях (vim, less) терминал ждёт другой префикс, чем в оболочке. */
+const ARROWS = [
+  ['A', ArrowUp, 'Вверх, предыдущая команда'],
+  ['B', ArrowDown, 'Вниз, следующая команда'],
+  ['D', ArrowLeft, 'Влево'],
+  ['C', ArrowRight, 'Вправо'],
+] as const;
+
 /** Код закрытия сокета "закрыть сессию сразу" - тот же, что у сервера. */
 const CLOSE_EXPLICIT = 4000;
 
@@ -58,6 +90,13 @@ export function TerminalTab({ s }: { s: ServerDetail }) {
   const [gen, setGen] = useState(0);
   // сессия подхвачена (вывод - повтор с панели), а не открыта заново
   const [resumed, setResumed] = useState(false);
+  // Ctrl с экрана: следующая набранная буква уходит как Ctrl+буква
+  const [ctrl, setCtrlState] = useState(false);
+  const ctrlRef = useRef(false);
+  const setCtrl = (on: boolean) => {
+    ctrlRef.current = on;
+    setCtrlState(on);
+  };
 
   /** "Закрыть": сессия закрывается на сервере сразу, без ожидания возврата. */
   const closeNow = () => {
@@ -149,7 +188,15 @@ export function TerminalTab({ s }: { s: ServerDetail }) {
       else if (ev.code === 4010) setNote('Сессию подхватила другая вкладка или окно');
     };
     t.onData((d) => {
-      if (sock.readyState === sock.OPEN) sock.send(JSON.stringify({ t: 'input', d: b64encode(d) }));
+      let data = d;
+      if (ctrlRef.current && d.length === 1) {
+        const code = d.toLowerCase().charCodeAt(0);
+        if (code >= 97 && code <= 122) data = String.fromCharCode(code - 96);
+        ctrlRef.current = false;
+        setCtrlState(false);
+      }
+      if (sock.readyState === sock.OPEN)
+        sock.send(JSON.stringify({ t: 'input', d: b64encode(data) }));
     });
     t.onResize(({ cols, rows }) => {
       if (sock.readyState === sock.OPEN) sock.send(JSON.stringify({ t: 'resize', cols, rows }));
@@ -218,44 +265,76 @@ export function TerminalTab({ s }: { s: ServerDetail }) {
           {full ? <Minimize2 className="size-3.5" /> : <Maximize2 className="size-3.5" />}
         </Button>
       </div>
-      <div className="flex flex-wrap gap-2" aria-label="Кнопки терминала">
-        {[
-          ['Ctrl+C', '\x03', 'Прервать текущую команду'],
-          ['Ctrl+L', '\x0c', 'Очистить экран'],
-          ['Tab', '\t', 'Дополнить ввод'],
-          ['Назад', '\x1b[A', 'Предыдущая команда'],
-          ['Вперёд', '\x1b[B', 'Следующая команда'],
-        ].map(([label, data, title]) => (
+      {/* клавиши без экранной клавиатуры: ряд прокручивается, фокус остаётся в терминале */}
+      <div
+        className="-mx-1 flex gap-1.5 overflow-x-auto px-1 pb-1"
+        aria-label="Клавиши терминала"
+        onMouseDown={(e) => e.preventDefault()}
+      >
+        <Button
+          size="sm"
+          variant={ctrl ? 'primary' : 'default'}
+          aria-pressed={ctrl}
+          disabled={state !== 'open'}
+          title="Следующая буква уйдёт как Ctrl+буква"
+          onClick={() => {
+            setCtrl(!ctrl);
+            term.current?.focus();
+          }}
+        >
+          Ctrl
+        </Button>
+        {KEYS.slice(0, 3).map(([label, data, title]) => (
           <Button
             key={label}
             size="sm"
             disabled={state !== 'open'}
             title={title}
-            onClick={() => sendInput(data ?? '')}
+            onClick={() => sendInput(data)}
           >
             {label}
           </Button>
         ))}
-        {['uptime', 'df -h', 'free -h', 'ss -lntup'].map((command) => (
+        {ARROWS.map(([code, Icon, title]) => (
           <Button
-            key={command}
+            key={code}
             size="sm"
             disabled={state !== 'open'}
-            title={`Вставить ${command} без запуска`}
-            onClick={() => {
-              if (state === 'open' && ws.current?.readyState === WebSocket.OPEN) {
-                term.current?.paste(command);
-                term.current?.focus();
-              }
-            }}
+            title={title}
+            aria-label={title}
+            onClick={() =>
+              sendInput(
+                `${term.current?.modes.applicationCursorKeysMode ? '\x1bO' : '\x1b['}${code}`,
+              )
+            }
           >
-            {command}
+            <Icon className="size-3.5" />
           </Button>
         ))}
+        {KEYS.slice(3).map(([label, data, title]) => (
+          <Button
+            key={label}
+            size="sm"
+            disabled={state !== 'open'}
+            title={title}
+            onClick={() => sendInput(data)}
+          >
+            {label}
+          </Button>
+        ))}
+        <Button
+          size="sm"
+          title="Очистить экран и историю вывода"
+          onClick={() => {
+            term.current?.clear();
+            sendInput('\x0c');
+            term.current?.focus();
+          }}
+        >
+          <Eraser className="size-3.5" />
+          Очистить
+        </Button>
       </div>
-      <p className="text-xs text-muted">
-        Команды вставляются без запуска. Проверить строку перед Enter.
-      </p>
       {note && <Alert>{note}</Alert>}
       <div
         ref={box}

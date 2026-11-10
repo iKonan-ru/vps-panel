@@ -15,3 +15,14 @@ udp   UNCONN 0 0    0.0.0.0:68      0.0.0.0:* users:(("dhclient",pid=3,fd=6))`
 		t.Fatalf("%+v", got)
 	}
 }
+
+func TestPublicTCPPorts(t *testing.T) {
+	out := `tcp LISTEN 0 4096 0.0.0.0:22 0.0.0.0:* users:(("sshd",pid=1,fd=3))
+tcp LISTEN 0 4096 *:443 *:* users:(("xray",pid=2,fd=4))
+tcp LISTEN 0 4096 127.0.0.1:2053 0.0.0.0:* users:(("x-ui",pid=3,fd=5))
+udp UNCONN 0 0 0.0.0.0:51820 0.0.0.0:*`
+	got := publicTCPPorts(parseSockets(out), []string{"sshd"})
+	if len(got) != 1 || !got[443] {
+		t.Errorf("порты %v, ждали только 443", got)
+	}
+}

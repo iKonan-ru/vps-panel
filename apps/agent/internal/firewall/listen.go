@@ -128,3 +128,23 @@ func TCPListening(ctx context.Context, port int) bool {
 	}
 	return false
 }
+
+// PublicTCPPorts - TCP-порты на внешних адресах, куда приходят клиенты: без портов процессов skip
+// (sshd - вход администратора, а не клиент).
+func PublicTCPPorts(ctx context.Context, skip ...string) map[int]bool {
+	return publicTCPPorts(sockets(ctx), skip)
+}
+
+func publicTCPPorts(socks []socket, skip []string) map[int]bool {
+	out := map[int]bool{}
+	for _, s := range socks {
+		if s.proto != "tcp" || IsLoopback(s.addr) {
+			continue
+		}
+		if slices.ContainsFunc(s.procs, func(p string) bool { return slices.Contains(skip, p) }) {
+			continue
+		}
+		out[s.port] = true
+	}
+	return out
+}

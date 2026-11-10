@@ -1,4 +1,5 @@
 import { type DeployInfo, markPanelUpdate, useDeploy } from '@/components/deploy-banner';
+import { ReleaseNotes } from '@/components/release-notes';
 import { Alert } from '@/components/ui/alert';
 import { Button } from '@/components/ui/button';
 import { Chip } from '@/components/ui/chip';
@@ -157,7 +158,7 @@ export function PanelVersionSettings() {
                       </a>
                     )}
                   </div>
-                  <div className="whitespace-pre-wrap text-xs text-muted">{r.notes.trim()}</div>
+                  <ReleaseNotes text={r.notes} />
                 </div>
               ))}
             </div>

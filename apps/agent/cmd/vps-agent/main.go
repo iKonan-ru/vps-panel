@@ -234,6 +234,11 @@ func main() {
 		go pushInventory()
 	}
 
+	sendMetrics := func(m metrics.Metrics) {
+		c := adapters.ServerConns(ctx)
+		m.Conns = &c
+		_ = client.Send(map[string]any{"type": "metrics", "metrics": m})
+	}
 	go func() {
 		hb := time.NewTicker(10 * time.Second)
 		mt := time.NewTicker(slowMetrics)
@@ -257,11 +262,11 @@ func main() {
 				mt.Reset(d)
 				// ускорили - свежий замер сразу, не ждать прежнего тика
 				if m, err := collector.Collect(ctx); err == nil {
-					_ = client.Send(map[string]any{"type": "metrics", "metrics": m})
+					sendMetrics(m)
 				}
 			case <-mt.C:
 				if m, err := collector.Collect(ctx); err == nil {
-					_ = client.Send(map[string]any{"type": "metrics", "metrics": m})
+					sendMetrics(m)
 				}
 			case <-inv.C:
 				go pushInventory()

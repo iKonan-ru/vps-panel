@@ -1,5 +1,6 @@
 import { ActionOutput } from '@/components/action-output';
 import { Breadcrumbs } from '@/components/breadcrumbs';
+import { ServerConns } from '@/components/server-conns';
 import { ServerStatusChip } from '@/components/server-status';
 import { ActiveActions } from '@/components/server/active-actions';
 import { AwgTab } from '@/components/server/awg/awg-tab';
@@ -198,6 +199,7 @@ export function ServerPage() {
               </>
             )}
             {s.metrics && <span>аптайм {uptime(s.metrics.uptimeSec)}</span>}
+            {online && <ServerConns m={s.metrics} />}
           </div>
         </div>
         <div className="grow" />

@@ -27,6 +27,15 @@ type Metrics struct {
 	NetTxBps    float64 `json:"netTxBps"`
 	UptimeSec   uint64  `json:"uptimeSec"`
 	Load1       float64 `json:"load1"`
+	// Conns - подключения клиентов к серверу; нет - не посчитаны.
+	Conns *Conns `json:"conns,omitempty"`
+}
+
+// Conns - подключения клиентов сейчас: установленные TCP к внешним портам сервисов (без SSH) и
+// пиры AWG с недавним handshake.
+type Conns struct {
+	TCP int `json:"tcp"`
+	AWG int `json:"awg"`
 }
 
 // HostInfo соответствует HostInfoSchema.

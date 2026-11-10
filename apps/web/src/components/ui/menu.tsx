@@ -185,7 +185,12 @@ export function Menu({
                     it.danger ? 'text-bad' : 'text-text',
                   )}
                 >
-                  <span className="flex size-4 shrink-0 items-center justify-center text-muted [&>svg]:size-4">
+                  <span
+                    className={cn(
+                      'flex size-4 shrink-0 items-center justify-center [&>svg]:size-4',
+                      it.danger ? 'text-bad' : 'text-muted',
+                    )}
+                  >
                     {it.icon}
                   </span>
                   <span className="min-w-0">{it.label}</span>

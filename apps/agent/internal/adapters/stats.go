@@ -20,6 +20,8 @@ import (
 	"time"
 
 	"github.com/iKonan-ru/vps-panel/apps/agent/internal/dockerapi"
+	"github.com/iKonan-ru/vps-panel/apps/agent/internal/firewall"
+	"github.com/iKonan-ru/vps-panel/apps/agent/internal/metrics"
 	"github.com/iKonan-ru/vps-panel/apps/agent/internal/services"
 	"github.com/iKonan-ru/vps-panel/apps/agent/internal/shell"
 )
@@ -657,4 +659,55 @@ func countEstablished(text string) map[int]int {
 		}
 	}
 	return out
+}
+
+// ---- Подключения сервера ----
+
+// awgActiveWindow - пир AWG считается подключённым, если handshake был не раньше.
+const awgActiveWindow = 3 * time.Minute
+
+// awgConnsTTL - пиры AWG спрашиваются через docker exec: не чаще раза в минуту.
+const awgConnsTTL = time.Minute
+
+var awgConns struct {
+	sync.Mutex
+	n  int
+	at time.Time
+}
+
+// ServerConns - подключения клиентов к серверу для метрик: TCP к внешним портам (кроме sshd) и
+// пиры AWG. Сервисов нет - нули.
+func ServerConns(ctx context.Context) metrics.Conns {
+	ports := firewall.PublicTCPPorts(ctx, "sshd")
+	out := metrics.Conns{}
+	if len(ports) > 0 {
+		for port, n := range countEstablished(shell.Out(ctx, "ss", "-Htn", "state", "established")) {
+			if ports[port] {
+				out.TCP += n
+			}
+		}
+	}
+	awgConns.Lock()
+	defer awgConns.Unlock()
+	if time.Since(awgConns.at) >= awgConnsTTL {
+		c, cancel := context.WithTimeout(ctx, statsTimeout)
+		all, _ := awgStatsAll(c)
+		cancel()
+		awgConns.n, awgConns.at = activeAwgPeers(all, time.Now()), time.Now()
+	}
+	out.AWG = awgConns.n
+	return out
+}
+
+// activeAwgPeers - пиры всех контейнеров с handshake за последние awgActiveWindow.
+func activeAwgPeers(all map[string]map[string]AwgPeerStat, now time.Time) int {
+	n := 0
+	for _, peers := range all {
+		for _, p := range peers {
+			if p.Handshake > 0 && now.Sub(time.Unix(p.Handshake, 0)) <= awgActiveWindow {
+				n++
+			}
+		}
+	}
+	return n
 }

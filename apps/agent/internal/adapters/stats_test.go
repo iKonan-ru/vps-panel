@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"strings"
 	"testing"
+	"time"
 )
 
 func TestParseXuiClients(t *testing.T) {
@@ -134,5 +135,16 @@ func TestParseOfShowAndSs(t *testing.T) {
 	c := countEstablished(ss)
 	if c[32960] != 2 || c[22] != 1 {
 		t.Errorf("%v", c)
+	}
+}
+
+func TestActiveAwgPeers(t *testing.T) {
+	now := time.Unix(10_000, 0)
+	all := map[string]map[string]AwgPeerStat{
+		"awg1": {"a": {Handshake: 10_000 - 60}, "b": {Handshake: 10_000 - 600}, "c": {}},
+		"awg2": {"d": {Handshake: 10_000 - 179}},
+	}
+	if n := activeAwgPeers(all, now); n != 2 {
+		t.Errorf("активных пиров %d, ждали 2", n)
 	}
 }

@@ -113,6 +113,123 @@ const APPS: AppDef[] = [
     },
   },
   {
+    id: 'hiddify',
+    name: 'Hiddify',
+    purpose: 'VLESS: подписка 3X-UI',
+    platforms: {
+      android: [
+        {
+          repo: 'hiddify/hiddify-app',
+          asset: /^Hiddify-Android-universal\.apk$/,
+          label: 'APK',
+        },
+        {
+          url: 'https://play.google.com/store/apps/details?id=app.hiddify.com',
+          label: 'Google Play',
+        },
+      ],
+      ios: [
+        {
+          url: 'https://apps.apple.com/us/app/hiddify-proxy-vpn/id6596777532',
+          label: 'App Store',
+        },
+      ],
+      windows: [
+        {
+          repo: 'hiddify/hiddify-app',
+          asset: /^Hiddify-Windows-Setup-x64\.exe$/,
+          label: 'EXE x64',
+        },
+      ],
+      macos: [{ repo: 'hiddify/hiddify-app', asset: /^Hiddify-MacOS\.dmg$/, label: 'DMG' }],
+      linux: [
+        { repo: 'hiddify/hiddify-app', asset: /^Hiddify-Debian-x64\.deb$/, label: 'DEB x64' },
+        {
+          repo: 'hiddify/hiddify-app',
+          asset: /^Hiddify-Linux-x64-AppImage\.AppImage$/,
+          label: 'AppImage x64',
+        },
+      ],
+    },
+  },
+  {
+    id: 'incy',
+    name: 'INCY',
+    purpose: 'VLESS: подписка 3X-UI',
+    platforms: {
+      android: [
+        { repo: 'INCY-DEV/incy-platforms', asset: /^Incy\.apk$/, label: 'APK' },
+        {
+          url: 'https://play.google.com/store/apps/details?id=llc.itdev.incy',
+          label: 'Google Play',
+        },
+      ],
+      ios: [{ url: 'https://apps.apple.com/ru/app/incy/id6756943388', label: 'App Store' }],
+      windows: [
+        {
+          repo: 'INCY-DEV/incy-platforms',
+          asset: /^incy-windows-setup\.exe$/,
+          label: 'EXE',
+          note: 'pre-alpha: предварительная версия',
+        },
+      ],
+      macos: [
+        { url: 'https://apps.apple.com/ru/app/incy/id6756943388', label: 'App Store' },
+        {
+          repo: 'INCY-DEV/incy-platforms',
+          asset: /^incy-macos-arm64\.dmg$/,
+          label: 'DMG Apple',
+          note: 'pre-alpha: предварительная версия',
+        },
+        {
+          repo: 'INCY-DEV/incy-platforms',
+          asset: /^incy-macos-intel\.dmg$/,
+          label: 'DMG Intel',
+          note: 'pre-alpha: предварительная версия',
+        },
+      ],
+      linux: [
+        {
+          repo: 'INCY-DEV/incy-platforms',
+          asset: /^incy-linux-x64\.deb$/,
+          label: 'DEB x64',
+          note: 'pre-alpha: предварительная версия',
+        },
+      ],
+    },
+  },
+  {
+    id: 'v2rayng',
+    name: 'v2rayNG',
+    purpose: 'VLESS: подписка 3X-UI',
+    platforms: {
+      android: [
+        {
+          repo: '2dust/v2rayNG',
+          asset: /^v2rayNG_[\d.]+_universal\.apk$/,
+          label: 'APK',
+        },
+        {
+          url: 'https://play.google.com/store/apps/details?id=com.v2ray.ang',
+          label: 'Google Play',
+        },
+      ],
+    },
+  },
+  {
+    id: 'v2rayn',
+    name: 'v2rayN',
+    purpose: 'VLESS: подписка 3X-UI',
+    platforms: {
+      windows: [{ repo: '2dust/v2rayN', asset: /^v2rayN-windows-64\.zip$/, label: 'ZIP x64' }],
+      macos: [
+        { repo: '2dust/v2rayN', asset: /^v2rayN-macos-arm64\.dmg$/, label: 'DMG Apple' },
+        { repo: '2dust/v2rayN', asset: /^v2rayN-macos-64\.dmg$/, label: 'DMG Intel' },
+      ],
+      linux: [{ repo: '2dust/v2rayN', asset: /^v2rayN-linux-64\.deb$/, label: 'DEB x64' }],
+    },
+  },
+  {
     id: 'openflux',
     name: 'OpenFlux',
     purpose: 'OpenFlux: ссылка openflux:// или QR',
