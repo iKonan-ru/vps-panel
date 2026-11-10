@@ -90,7 +90,16 @@ func (r ManualRule) args() ([]string, error) {
 	if r.Action == "deny" {
 		act = "deny"
 	}
-	a := []string{act, "from", src, "to", "any", "port", port}
+	// запрет - первым правилом: ufw берёт первое подходящее, и запрет после "allow порт" не
+	// сработал бы; запрет всех портов без протокола - правило на весь адрес
+	var a []string
+	if act == "deny" {
+		a = []string{"insert", "1"}
+	}
+	if act == "deny" && src != "any" && r.PortFrom == 1 && r.PortTo == 65535 && r.Proto != "tcp" && r.Proto != "udp" {
+		return append(a, act, "from", src, "comment", "panel:"+r.ID), nil
+	}
+	a = append(a, act, "from", src, "to", "any", "port", port)
 	if r.Proto == "tcp" || r.Proto == "udp" {
 		a = append(a, "proto", r.Proto)
 	}

@@ -31,9 +31,11 @@ type Metrics struct {
 	Conns *Conns `json:"conns,omitempty"`
 }
 
-// Conns - клиенты сервера на связи сейчас: уникальные TCP-адреса клиентов, пиры AWG с недавним
+// Conns - клиенты сервера на связи сейчас: TCP-соединения к внешним портам сервисов (без SSH),
+// уникальные адреса клиентов, пиры AWG с недавним
 // handshake и число клиентов (нет - не определено; подробности - метод conns.list).
 type Conns struct {
+	TCP     int  `json:"tcp"`
 	IPs     int  `json:"ips"`
 	AWG     int  `json:"awg"`
 	Clients *int `json:"clients,omitempty"`

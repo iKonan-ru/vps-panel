@@ -107,6 +107,9 @@ export function notifyButtons(n: NotifyInfo, level: BotLevel, ref: (v: string) =
       rows.push([server, { text: 'Docker', data: cb('o', 'dk', sid) }]);
       if (act) rows.push([{ text: 'Перезагрузить', data: cb('rb', sid) }]);
       break;
+    case 'connsUnknown':
+      rows.push([server]);
+      break;
     case 'loginFails':
       rows.push([
         { text: 'Сессии', data: cb('o', 'ss') },

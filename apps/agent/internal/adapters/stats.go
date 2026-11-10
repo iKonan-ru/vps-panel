@@ -685,7 +685,11 @@ var awgConns struct {
 func ServerConns(ctx context.Context) metrics.Conns {
 	out := metrics.Conns{}
 	if ports := firewall.PublicTCPPorts(ctx, "sshd"); len(ports) > 0 {
-		out.IPs = len(connsByIP(shell.Out(ctx, "ss", "-Htn", "state", "established"), ports))
+		byIP := connsByIP(shell.Out(ctx, "ss", "-Htn", "state", "established"), ports)
+		out.IPs = len(byIP)
+		for _, n := range byIP {
+			out.TCP += n
+		}
 	}
 	clients := onlineClients(ctx)
 	awgConns.Lock()

@@ -15,6 +15,15 @@ export function clientsOf(m: Metrics | null | undefined): number | null {
   return c.ips === undefined ? null : c.ips + c.awg;
 }
 
+/** TCP-соединения клиентов к портам сервисов и пиры AWG; агент без счётчика - null. */
+export function connsOf(m: Metrics | null | undefined): number | null {
+  const c = m?.conns;
+  return c?.tcp === undefined ? null : c.tcp + c.awg;
+}
+
+const CONNS_HINT =
+  'TCP-соединения к внешним портам сервисов (без SSH) и пиры AWG. У одного клиента их десятки, а вход каскада объединяет соединения всех своих клиентов';
+
 const CLIENTS_HINT =
   'Клиенты на связи сейчас: пользователи VLESS, MTProxy и WDTT с активным соединением и пиры AWG. Вход каскада считается не клиентом, а сервером';
 
@@ -41,13 +50,30 @@ export function ClientsChip({ s }: { s: ServerSummary }) {
   );
 }
 
-/** Шапка сервера: "клиентов 23"; нет счётчика - ничего. */
+/** Число подключений текстом, как аптайм в списке серверов; нет счётчика - ничего. */
+export function ConnsCount({
+  m,
+  short = false,
+}: { m: Metrics | null | undefined; short?: boolean }) {
+  const n = connsOf(m);
+  if (n === null) return null;
+  return (
+    <span className="whitespace-nowrap tabular-nums" title={CONNS_HINT}>
+      {short ? 'подкл.' : 'подключений'} {n}
+    </span>
+  );
+}
+
+/** Шапка сервера: "клиентов 23, подключений 1712"; нет счётчика - ничего. */
 export function ServerConns({ m }: { m: Metrics | null | undefined }) {
   const clients = clientsOf(m);
-  if (clients === null) return null;
+  const conns = connsOf(m);
+  if (clients === null && conns === null) return null;
   return (
-    <span className="whitespace-nowrap tabular-nums" title={CLIENTS_HINT}>
-      клиентов {clients}
+    <span className="whitespace-nowrap tabular-nums" title={`${CLIENTS_HINT}. ${CONNS_HINT}`}>
+      {clients !== null && <>клиентов {clients}</>}
+      {clients !== null && conns !== null && ', '}
+      {conns !== null && <>подключений {conns}</>}
     </span>
   );
 }

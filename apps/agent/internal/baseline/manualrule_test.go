@@ -12,7 +12,9 @@ func TestManualRuleArgs(t *testing.T) {
 	}{
 		{ManualRule{ID: "a1", PortFrom: 443, Proto: "tcp"}, "allow from any to any port 443 proto tcp comment panel:a1"},
 		{ManualRule{ID: "b", PortFrom: 1000, PortTo: 2000, Proto: "udp", Source: "203.0.113.0/24", Action: "deny"},
-			"deny from 203.0.113.0/24 to any port 1000:2000 proto udp comment panel:b"},
+			"insert 1 deny from 203.0.113.0/24 to any port 1000:2000 proto udp comment panel:b"},
+		{ManualRule{ID: "d", PortFrom: 1, PortTo: 65535, Proto: "any", Source: "198.51.100.7", Action: "deny"},
+			"insert 1 deny from 198.51.100.7 comment panel:d"},
 		{ManualRule{ID: "c", PortFrom: 22, Source: "2001:db8::1"}, "allow from 2001:db8::1 to any port 22 comment panel:c"},
 	}
 	for _, c := range ok {

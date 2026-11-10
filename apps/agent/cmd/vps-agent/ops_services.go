@@ -116,6 +116,10 @@ func serviceOps() map[string]op {
 			return adapters.ConnsListAll(ctx), nil
 		}),
 
+		"conns.kill": typed(func(ctx context.Context, p adapters.ConnsKillRequest, _ stream) (any, error) {
+			return adapters.ConnsKill(ctx, p)
+		}),
+
 		"telegram.send": typed(func(ctx context.Context, p adapters.TelegramSend, _ stream) (any, error) {
 			return adapters.TelegramSendMessage(ctx, p)
 		}),

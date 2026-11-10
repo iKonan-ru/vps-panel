@@ -29,6 +29,9 @@ export type ConnKind = 'client' | 'cascade' | 'server' | 'unknown';
 export interface ConnUser {
   name: string;
   kind: 'client' | 'cascade' | 'other';
+  /** карточка клиента панели или сервер входа каскада; нет - в панели не найден */
+  clientId?: string;
+  serverId?: string;
 }
 
 /** Порт с названием сервиса и числом соединений. */
@@ -44,6 +47,9 @@ export interface ConnAddrView {
   kind: ConnKind;
   /** имя клиента, входа каскада или сервера; null - не опознан */
   name: string | null;
+  /** сервер панели (kind server или cascade) и клиент (kind client, один) - для ссылки */
+  serverId?: string;
+  clientId?: string;
   users: ConnUser[];
   /** что это за адрес и откуда соединения, одной фразой */
   note: string;
@@ -62,6 +68,7 @@ export interface ConnAwgView {
   /** "Клиент, устройство" или "неизвестный пир" */
   name: string;
   kind: 'client' | 'unknown';
+  clientId?: string;
   handshakeAt: string;
   rx: number;
   tx: number;

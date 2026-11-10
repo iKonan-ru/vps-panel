@@ -8,6 +8,7 @@ import type {
   Service,
 } from '@vps/protocol';
 import { and, eq } from 'drizzle-orm';
+import type { AgentRegistry } from '../agents/registry.js';
 import type { Db } from '../db/index.js';
 import { gclientBindings, gclientDevices, gclients, servers } from '../db/schema.js';
 import { cascadeClientEmail, isCascadeClient } from './cascades.js';
@@ -46,51 +47,64 @@ export function buildConns(
 ): ConnsView {
   const clientByRef = new Map(
     db
-      .select({ ref: gclientBindings.ref, name: gclients.name })
+      .select({ ref: gclientBindings.ref, name: gclients.name, id: gclients.id })
       .from(gclientBindings)
       .innerJoin(gclients, eq(gclients.id, gclientBindings.clientId))
       .where(and(eq(gclientBindings.serverId, serverId), eq(gclientBindings.service, 'xui')))
       .all()
-      .map((r) => [r.ref, r.name]),
+      .map((r) => [r.ref, { name: r.name, id: r.id }]),
   );
   const all = db
     .select({ id: servers.id, name: servers.name, host: servers.host })
     .from(servers)
     .all();
-  const entryByEmail = new Map(all.map((s) => [cascadeClientEmail(s.id), s.name]));
-  const serverByHost = new Map(all.map((s) => [s.host, s.name]));
+  const entryByEmail = new Map(all.map((s) => [cascadeClientEmail(s.id), s]));
+  const serverByHost = new Map(all.map((s) => [s.host, s]));
   const panel = new Set(ctx.panelIps);
 
   const userOf = (email: string): ConnUser => {
-    if (isCascadeClient(email))
-      return { name: entryByEmail.get(email) ?? 'удалённый вход', kind: 'cascade' };
-    const name = clientByRef.get(email);
-    return name !== undefined ? { name, kind: 'client' } : { name: email, kind: 'other' };
+    if (isCascadeClient(email)) {
+      const entry = entryByEmail.get(email);
+      return entry
+        ? { name: entry.name, kind: 'cascade', serverId: entry.id }
+        : { name: 'удалённый вход', kind: 'cascade' };
+    }
+    const client = clientByRef.get(email);
+    return client
+      ? { name: client.name, kind: 'client', clientId: client.id }
+      : { name: email, kind: 'other' };
   };
 
   const addrs: ConnAddrView[] = snap.addrs.map((a) => {
     const users = a.users.map(userOf);
     const cascade = users.find((u) => u.kind === 'cascade');
-    const clientNames = users.filter((u) => u.kind !== 'cascade').map((u) => u.name);
+    const clients = users.filter((u) => u.kind !== 'cascade');
     let kind: ConnKind = 'unknown';
     let name: string | null = null;
+    let serverId: string | undefined;
+    let clientId: string | undefined;
     if (cascade) {
       kind = 'cascade';
       name = cascade.name;
+      serverId = cascade.serverId;
     } else if (panel.has(a.ip)) {
       kind = 'server';
       name = 'сервер панели';
     } else if (serverByHost.has(a.ip)) {
       kind = 'server';
-      name = serverByHost.get(a.ip) ?? null;
-    } else if (clientNames.length > 0) {
+      name = serverByHost.get(a.ip)?.name ?? null;
+      serverId = serverByHost.get(a.ip)?.id;
+    } else if (clients.length > 0) {
       kind = 'client';
-      name = clientNames.join(', ');
+      name = clients.map((u) => u.name).join(', ');
+      if (clients.length === 1) clientId = clients[0]?.clientId;
     }
     return {
       ip: a.ip,
       kind,
       name,
+      ...(serverId ? { serverId } : {}),
+      ...(clientId ? { clientId } : {}),
       users,
       note: NOTES[kind](name, a.conns),
       conns: a.conns,
@@ -106,6 +120,7 @@ export function buildConns(
     .select({
       ref: gclientBindings.ref,
       client: gclients.name,
+      clientId: gclients.id,
       device: gclientDevices.name,
     })
     .from(gclientBindings)
@@ -122,6 +137,7 @@ export function buildConns(
       ip: p.ip,
       name: b ? [b.client, b.device].filter(Boolean).join(', ') : 'неизвестный пир',
       kind: b ? 'client' : 'unknown',
+      ...(b ? { clientId: b.clientId } : {}),
       handshakeAt: new Date(p.handshake * 1000).toISOString(),
       rx: p.rx,
       tx: p.tx,
@@ -145,4 +161,26 @@ export function buildConns(
     awg,
     errors: snap.errors ?? {},
   };
+}
+
+/** Снимок conns.list агента и его разбор панелью: вкладка "Подключения" и проверка уведомлений. */
+export async function loadConns(
+  db: Db,
+  registry: Pick<AgentRegistry, 'request' | 'latestMetrics'>,
+  serverId: string,
+  panelIps: string[],
+): Promise<ConnsView | null> {
+  const row = db.select().from(servers).where(eq(servers.id, serverId)).get();
+  if (!row) return null;
+  const snap = await registry.request<ConnsListSnapshot>(
+    serverId,
+    'conns.list',
+    {},
+    { timeoutMs: 10_000 },
+  );
+  return buildConns(db, serverId, snap, {
+    services: row.statusCache?.inventory?.services ?? [],
+    panelIps,
+    clients: registry.latestMetrics(serverId)?.metrics.conns?.clients ?? null,
+  });
 }

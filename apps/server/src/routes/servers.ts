@@ -1,6 +1,5 @@
 import { isIP } from 'node:net';
 import {
-  type ConnsListSnapshot,
   type ConnsView,
   HostingSchema,
   type ServerDetail,
@@ -20,7 +19,7 @@ import type { Db } from '../db/index.js';
 import { actionLog, servers } from '../db/schema.js';
 import { installCommand, issueRegistration, latestAgentVersion } from '../lib/agent-dist.js';
 import { rollPaymentDate } from '../lib/billing.js';
-import { buildConns } from '../lib/conn-detail.js';
+import { loadConns } from '../lib/conn-detail.js';
 import { newId } from '../lib/ids.js';
 import { panelAddresses } from '../lib/panel-host.js';
 import type { PanelProxy } from '../lib/panel-proxy.js';
@@ -152,17 +151,7 @@ export async function serverRoutes(
     const { id } = z.object({ id: z.string() }).parse(req.params);
     const row = (await db.select().from(servers).where(eq(servers.id, id)).limit(1))[0];
     if (!row) return reply.code(404).send({ error: 'сервер не найден' });
-    const snap = await registry.request<ConnsListSnapshot>(
-      id,
-      'conns.list',
-      {},
-      { timeoutMs: 10_000 },
-    );
-    return buildConns(db, id, snap, {
-      services: row.statusCache?.inventory?.services ?? [],
-      panelIps: await panelIps(),
-      clients: registry.latestMetrics(id)?.metrics.conns?.clients ?? null,
-    });
+    return (await loadConns(db, registry, id, await panelIps())) ?? undefined;
   });
 
   app.patch('/api/servers/:id', async (req, reply) => {

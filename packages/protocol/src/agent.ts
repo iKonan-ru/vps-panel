@@ -39,12 +39,13 @@ export const MetricsSchema = z.object({
   uptimeSec: z.number().int().nonnegative(),
   load1: z.number().nonnegative(),
   /**
-   * Клиенты на связи сейчас: число клиентов (пользователи xray, MTProxy, WDTT и пиры AWG), уникальные
-   * адреса TCP и пиры AWG. Агент старее - нет.
+   * Клиенты на связи сейчас: число клиентов (пользователи xray, MTProxy, WDTT и пиры AWG),
+   * TCP-соединения к портам сервисов, их уникальные адреса и пиры AWG. Агент старее - нет.
    */
   conns: z
     .object({
       clients: z.number().int().nonnegative().optional(),
+      tcp: z.number().int().nonnegative().optional(),
       ips: z.number().int().nonnegative().optional(),
       awg: z.number().int().nonnegative(),
     })

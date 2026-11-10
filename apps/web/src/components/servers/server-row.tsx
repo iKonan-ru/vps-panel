@@ -1,4 +1,4 @@
-import { ClientsChip } from '@/components/server-conns';
+import { ClientsChip, ConnsCount } from '@/components/server-conns';
 import { ServerStatusChip } from '@/components/server-status';
 import { AttentionChips } from '@/components/servers/attention';
 import { ServerTags } from '@/components/servers/server-tags';
@@ -102,12 +102,18 @@ export function ServerRow({ s, i = 0, tag, onTag }: { s: ServerSummary; i?: numb
         <PayCell s={s} />
       </td>
       <td>
-        <div className="flex flex-wrap items-center gap-1.5">
-          <ServerStatusChip s={s} />
+        <ServerStatusChip s={s} />
+        {/* всегда со своей строки: рядом со статусом плашка то помещалась, то переносилась */}
+        <div className="mt-1.5 flex empty:hidden">
           <ClientsChip s={s} />
         </div>
+        {s.status === 'online' && (
+          <div className="mt-1 text-xs text-muted empty:hidden">
+            <ConnsCount m={s.metrics} />
+          </div>
+        )}
         {s.metrics && s.status === 'online' && (
-          <div className="mt-1 text-xs text-muted">аптайм {uptime(s.metrics.uptimeSec)}</div>
+          <div className="mt-0.5 text-xs text-muted">аптайм {uptime(s.metrics.uptimeSec)}</div>
         )}
         <div className="mt-0.5 text-xs text-muted empty:hidden">
           <RuRtt s={s} />
@@ -174,6 +180,7 @@ export function ServerCard({ s, i = 0, tag, onTag }: { s: ServerSummary; i?: num
             <span>
               Диск {Math.round((s.metrics.diskUsedGb / Math.max(1, s.metrics.diskTotalGb)) * 100)}%
             </span>
+            <ConnsCount m={s.metrics} short />
             <RuRtt s={s} short />
           </div>
         )}

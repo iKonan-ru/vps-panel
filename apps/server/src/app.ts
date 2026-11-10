@@ -341,7 +341,9 @@ export async function buildApp(opts: AppOptions) {
     env.TG_PROXY_URL,
   );
   await app.register(notifyRoutes, { telegram });
-  const notifier = new Notifier(db, registry, telegram, env.PANEL_PUBLIC_URL);
+  const notifier = new Notifier(db, registry, telegram, env.PANEL_PUBLIC_URL, () =>
+    panelAddresses(env.PANEL_PUBLIC_URL),
+  );
   onPanelRelease = (r) => notifier.panelRelease(r);
   // остановка фоновых таймеров при закрытии: в тестах и при выключении они не трогают базу
   const stops: (() => void)[] = [];

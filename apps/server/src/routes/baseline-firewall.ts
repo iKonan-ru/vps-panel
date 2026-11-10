@@ -8,10 +8,12 @@ import { and, eq } from 'drizzle-orm';
 import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
 import { requireOnline } from '../agents/registry.js';
-import { firewallRules, portsyncConfigs } from '../db/schema.js';
+import { firewallRules, portsyncConfigs, servers } from '../db/schema.js';
 import { actionJournal } from '../lib/action-journal.js';
 import { type ServerRouteOpts, actionRunners } from '../lib/action-runners.js';
+import { loadConns } from '../lib/conn-detail.js';
 import { newId } from '../lib/ids.js';
+import { panelAddresses } from '../lib/panel-host.js';
 import { changeSshPort } from '../lib/ssh-port.js';
 import { PortsyncConfig } from '../lib/validate.js';
 
@@ -260,6 +262,63 @@ export async function baselineFirewallRoutes(app: FastifyInstance, opts: ServerR
       .delete(firewallRules)
       .where(and(eq(firewallRules.serverId, id), eq(firewallRules.id, rid)));
     return { ok: true };
+  });
+  /**
+   * Блокировка адреса из "Подключений": запрет всех портов с этого адреса (правило в "Своих
+   * правилах" firewall, снимается там же) и сброс его соединений - ufw пропускает уже
+   * установленные. Серверы панели, входы каскадов и сервер панели не блокируются.
+   */
+  app.post('/api/servers/:id/connections/block', async (req) => {
+    const { id } = Id.parse(req.params);
+    const { ip } = z.object({ ip: z.string().trim().max(64) }).parse(req.body);
+    if (!isIP(ip)) throw Object.assign(new Error('неверный адрес'), { statusCode: 400 });
+    const own = [
+      ...(await panelAddresses(opts.env.PANEL_PUBLIC_URL)),
+      ...db
+        .select({ host: servers.host })
+        .from(servers)
+        .all()
+        .map((s) => s.host),
+    ];
+    const view = await loadConns(db, registry, id, own).catch(() => null);
+    const kind = view?.addrs.find((a) => a.ip === ip)?.kind;
+    if (own.includes(ip) || kind === 'server' || kind === 'cascade')
+      throw Object.assign(
+        new Error('это адрес сервера панели или входа каскада: блокировать нельзя'),
+        {
+          statusCode: 409,
+        },
+      );
+    const rules = await rulesOf(id);
+    let ruleId = rules.find(
+      (r) => r.source === ip && r.action === 'deny' && r.portTo === 65535,
+    )?.id;
+    if (!ruleId) {
+      const rule = {
+        id: newId(),
+        serverId: id,
+        portFrom: 1,
+        portTo: 65535,
+        proto: 'any',
+        source: ip,
+        action: 'deny',
+        comment: 'Блокировка из подключений',
+      };
+      await pushRules(id, [...rules, rule]);
+      await db.insert(firewallRules).values(rule);
+      ruleId = rule.id;
+    }
+    const killed = registry.supports(id, 'conns.kill')
+      ? await registry
+          .request<{ before: number; after: number }>(
+            id,
+            'conns.kill',
+            { ip },
+            { timeoutMs: 30_000 },
+          )
+          .catch(() => null)
+      : null;
+    return { ruleId, before: killed?.before ?? null, after: killed?.after ?? null };
   });
   const rulesOf = (serverId: string) =>
     db.select().from(firewallRules).where(eq(firewallRules.serverId, serverId));

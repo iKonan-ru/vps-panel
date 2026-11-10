@@ -25,6 +25,7 @@ export const NOTIFY_EVENTS = [
   'updPanel',
   'diskFull',
   'cpuHigh',
+  'connsUnknown',
   'loginFails',
 ] as const;
 export type NotifyEvent = (typeof NOTIFY_EVENTS)[number];
@@ -40,6 +41,8 @@ export interface NotifyParams {
   cpuPercent: number;
   /** неудачных входов в панель за час */
   loginFails: number;
+  /** соединений неопознанного адреса, с которых о нём сообщается */
+  unknownConns: number;
 }
 export const NOTIFY_PARAM_DEFAULTS: NotifyParams = {
   offlineMinutes: 3,
@@ -48,6 +51,7 @@ export const NOTIFY_PARAM_DEFAULTS: NotifyParams = {
   diskPercent: 90,
   cpuPercent: 90,
   loginFails: 10,
+  unknownConns: 100,
 };
 export const NOTIFY_PARAM_LIMITS: Record<keyof NotifyParams, [number, number]> = {
   offlineMinutes: [1, 120],
@@ -56,6 +60,7 @@ export const NOTIFY_PARAM_LIMITS: Record<keyof NotifyParams, [number, number]> =
   diskPercent: [50, 99],
   cpuPercent: [50, 100],
   loginFails: [1, 1000],
+  unknownConns: [10, 10_000],
 };
 /** Сколько минут подряд загрузка CPU должна быть выше порога. */
 export const CPU_HIGH_MINUTES = 15;
@@ -111,6 +116,12 @@ export const NOTIFY_GROUPS: NotifyGroup[] = [
         title: 'Долго высокая загрузка CPU',
         hint: '15\u00a0минут подряд выше порога; и когда спала',
         param: { key: 'cpuPercent', label: 'выше, %' },
+      },
+      {
+        key: 'connsUnknown',
+        title: 'Неопознанный адрес держит много соединений',
+        hint: 'адрес не клиент и не сервер панели; две проверки подряд (раз в 5\u00a0минут); и когда соединений стало меньше',
+        param: { key: 'unknownConns', label: 'соединений, от' },
       },
     ],
   },

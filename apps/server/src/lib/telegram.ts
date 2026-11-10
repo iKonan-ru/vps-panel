@@ -243,6 +243,7 @@ export class Telegram {
     out.diskPercent = num('tg_disk_percent', 'diskPercent');
     out.cpuPercent = num('tg_cpu_percent', 'cpuPercent');
     out.loginFails = num('tg_login_fails', 'loginFails');
+    out.unknownConns = num('tg_unknown_conns', 'unknownConns');
     return out;
   }
 
@@ -268,6 +269,7 @@ export class Telegram {
     if (patch.diskPercent !== undefined) await put('tg_disk_percent', String(patch.diskPercent));
     if (patch.cpuPercent !== undefined) await put('tg_cpu_percent', String(patch.cpuPercent));
     if (patch.loginFails !== undefined) await put('tg_login_fails', String(patch.loginFails));
+    if (patch.unknownConns !== undefined) await put('tg_unknown_conns', String(patch.unknownConns));
   }
 
   /** Кто последний раз успешно доставил: 'direct' или id сервера-ретранслятора. */

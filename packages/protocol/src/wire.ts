@@ -112,6 +112,7 @@ export const AgentMethodSchema = z.enum([
   'wdtt.api',
   'clients.stats',
   'conns.list',
+  'conns.kill',
 ]);
 export type AgentMethod = z.infer<typeof AgentMethodSchema>;
 

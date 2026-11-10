@@ -42,6 +42,7 @@ export async function notifyRoutes(app: FastifyInstance, opts: { telegram: Teleg
         diskPercent: param('diskPercent'),
         cpuPercent: param('cpuPercent'),
         loginFails: param('loginFails'),
+        unknownConns: param('unknownConns'),
       })
       .parse(req.body ?? {});
     // пустой токен с формы = "не менять"; явное удаление токена - пустая строка через clearToken

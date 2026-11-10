@@ -305,3 +305,48 @@ describe('события уведомлений', () => {
     stop();
   });
 });
+
+describe('неопознанные адреса с большим числом соединений', () => {
+  it('две проверки подряд - одно сообщение, потом правка; клиент и вход каскада не в счёт', async () => {
+    const { db, tg, sent, reg, n } = await make();
+    db.insert(servers)
+      .values({ id: 's1', name: 'NetCore', host: '198.51.100.1' } as never)
+      .run();
+    let conns = 150;
+    const snap = () => ({
+      at: Date.now(),
+      listeners: [],
+      addrs: [
+        { ip: '203.0.113.5', conns, ports: [{ port: 8443, conns }], users: [] },
+        { ip: '203.0.113.6', conns: 900, ports: [{ port: 8443, conns: 900 }], users: ['manual-x'] },
+      ],
+      awg: [],
+      truncated: false,
+      errors: {},
+    });
+    Object.assign(reg, {
+      isOnline: () => true,
+      supports: () => true,
+      request: async () => snap(),
+      latestMetrics: () => undefined,
+    });
+    const resolved: string[] = [];
+    tg.resolve = async (ref: string) => {
+      resolved.push(ref);
+      return null;
+    };
+    (n as unknown as { startedAt: number }).startedAt = 0;
+    const check = () => (n as unknown as { checkConns(): Promise<void> }).checkConns();
+    await check();
+    expect(sent).toHaveLength(0);
+    await check();
+    expect(sent).toHaveLength(1);
+    expect(sent[0]).toContain('203.0.113.5');
+    expect(sent[0]).not.toContain('203.0.113.6');
+    await check();
+    expect(sent).toHaveLength(1);
+    conns = 5;
+    await check();
+    expect(resolved).toEqual(['conns:s1:203.0.113.5']);
+  });
+});

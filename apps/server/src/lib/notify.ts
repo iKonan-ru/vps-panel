@@ -15,6 +15,7 @@ import type { Db } from '../db/index.js';
 import { loginAttempts, servers } from '../db/schema.js';
 import { busyAction } from './action-lock.js';
 import { daysToPayment, rollPaymentDate } from './billing.js';
+import { loadConns } from './conn-detail.js';
 import { schedule } from './schedule.js';
 import { getJsonSetting, putSetting } from './settings.js';
 import { type Telegram, esc, tgSpan } from './telegram.js';
@@ -92,6 +93,8 @@ export class Notifier {
   /** Загрузка CPU выше порога: с какого момента (по метрикам подряд). */
   private cpuSince = new Map<string, number>();
   private loginNotifiedAt = 0;
+  /** serverId -> адрес -> подряд проверок с числом соединений не ниже порога и сказали ли. */
+  private unknownAddrs = new Map<string, Map<string, { streak: number; notified: boolean }>>();
   /** Настройки на 30 с: метрики приходят часто (раз в 2 с, пока открыта панель). */
   private stCache: { at: number; v: Awaited<ReturnType<Telegram['settings']>> } | null = null;
   /** serverId -> сервис (kind:title) -> с какого момента down и сказали ли. */
@@ -107,6 +110,8 @@ export class Notifier {
     private tg: Telegram,
     /** Адрес панели для ссылок на серверы (PANEL_PUBLIC_URL); пусто - без ссылок. */
     private panelUrl = '',
+    /** Адреса домена панели: подключения от сервера панели - не чужие. */
+    private panelIps: () => Promise<string[]> = async () => [],
   ) {}
 
   /** Имя сервера ссылкой на его карточку; tab - вкладка, где разбираться с событием. */
@@ -144,9 +149,15 @@ export class Notifier {
       60_000,
       5 * 60_000,
     );
+    const stopConns = schedule(
+      () => void this.checkConns().catch(() => undefined),
+      3 * 60_000,
+      5 * 60_000,
+    );
     return () => {
       stopPayments();
       stopLogins();
+      stopConns();
       for (const t of this.offlineTimers.values()) clearTimeout(t);
       for (const t of this.confirmTimers.values()) clearTimeout(t);
     };
@@ -176,6 +187,7 @@ export class Notifier {
     this.paymentNotified.delete(id);
     this.downs.delete(id);
     this.cpuSince.delete(id);
+    this.unknownAddrs.delete(id);
     this.setFlag('disk', id, false);
     this.setFlag('cpu', id, false);
   }
@@ -538,6 +550,65 @@ export class Notifier {
         }
       }
     }
+  }
+
+  /**
+   * Неопознанные адреса (не клиент, не вход каскада, не сервер) с числом соединений не ниже
+   * порога: две проверки подряд - одно сообщение, соединений стало меньше - правка исходного.
+   */
+  private async checkConns() {
+    if (this.quiet()) return;
+    const st = await this.cachedSettings();
+    if (!st.token || !st.chatId || !st.events.connsUnknown) return;
+    const ips = await this.panelIps();
+    const rows = this.db.select({ id: servers.id }).from(servers).all();
+    for (const { id } of rows) {
+      if (!this.registry.isOnline(id) || !this.registry.supports(id, 'conns.list')) continue;
+      const view = await loadConns(this.db, this.registry, id, ips).catch(() => null);
+      if (!view) continue;
+      const seen = this.unknownAddrs.get(id) ?? new Map();
+      this.unknownAddrs.set(id, seen);
+      const unknown = new Map(view.addrs.filter((a) => a.kind === 'unknown').map((a) => [a.ip, a]));
+      for (const [ip, a] of unknown) {
+        const cur = seen.get(ip) ?? { streak: 0, notified: false };
+        if (a.conns < st.unknownConns) {
+          await this.unknownAddrBack(id, ip, a.conns, cur, seen);
+          continue;
+        }
+        cur.streak++;
+        seen.set(ip, cur);
+        if (cur.streak >= 2 && !cur.notified) {
+          cur.notified = true;
+          if (await this.tg.wants('connsUnknown', id)) {
+            const port = a.ports[0];
+            await this.tg.send(
+              `${await this.serverName(id, 'conns')}: неопознанный адрес <code>${esc(ip)}</code> держит ${a.conns}\u00a0соед.${port ? `, порт ${port.port}${port.label ? ` (${esc(port.label)})` : ''}` : ''}. Адрес не клиент и не сервер панели`,
+              { meta: { event: 'connsUnknown', serverId: id, ref: `conns:${id}:${ip}` } },
+            );
+          }
+        }
+      }
+      // адрес пропал совсем или стал опознанным
+      for (const [ip, cur] of seen) {
+        if (!unknown.has(ip)) await this.unknownAddrBack(id, ip, 0, cur, seen);
+      }
+    }
+  }
+
+  private async unknownAddrBack(
+    id: string,
+    ip: string,
+    conns: number,
+    cur: { streak: number; notified: boolean },
+    seen: Map<string, { streak: number; notified: boolean }>,
+  ) {
+    seen.delete(ip);
+    if (!cur.notified || !(await this.tg.wants('connsUnknown', id))) return;
+    const name = await this.serverName(id, 'conns');
+    await this.tg.resolve(
+      `conns:${id}:${ip}`,
+      () => `\u2705 ${name}: адрес <code>${esc(ip)}</code>, соединений ${conns}`,
+    );
   }
 
   /** Неудачные входы в панель за час: порог - одно сообщение, не чаще раза в час. */
