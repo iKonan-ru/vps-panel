@@ -47,6 +47,7 @@ import { useNavigate, useParams } from '@tanstack/react-router';
 import { type ServerDetail, cpuModelLabel } from '@vps/protocol';
 import {
   ArrowLeftRight,
+  ChevronDown,
   Pencil,
   Power,
   RefreshCw,
@@ -104,6 +105,8 @@ export function ServerPage() {
   const id = params.id;
   const navigate = useNavigate();
   const [fullCleanup, setFullCleanup] = useState<ServerDetail | null>(null);
+  // на узком экране в шапке всегда только адрес, остальное раскрывается
+  const [infoOpen, setInfoOpen] = useState(false);
   const { data: serverData, isLoading, error } = useServer(id);
   const s = serverData ?? fullCleanup;
   // вкладка - в адресе; неизвестная или без сервиса на сервере - обзор. OpenFlux открывается и
@@ -143,6 +146,8 @@ export function ServerPage() {
   if ((error && !fullCleanup) || !s)
     return <Card className="p-8 text-bad">{cap(error?.message ?? 'сервер не найден')}</Card>;
   const inv = s.inventory;
+  // сведения шапки, кроме адреса: на узком экране свёрнуты
+  const more = infoOpen ? '' : 'max-md:hidden';
   const online = s.status === 'online';
   const noAgent = s.status === 'no-agent';
   const lock = serverLock(s);
@@ -177,15 +182,17 @@ export function ServerPage() {
           <ServerTags tags={s.tags} onPick={(tag) => void navigate({ to: '/', search: { tag } })} />
           <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-[13px] leading-7 text-muted [&>*]:inline-flex [&>*]:h-7 [&>*]:items-center">
             <CopyText text={s.host} />
-            <span>SSH {s.sshPort}</span>
+            <span className={more}>SSH {s.sshPort}</span>
             {inv && (
               <>
-                <span>{inv.host.os}</span>
-                <span>ядро {inv.host.kernel}</span>
+                <span className={more}>{inv.host.os}</span>
+                <span className={more}>ядро {inv.host.kernel}</span>
                 {cpuModelLabel(inv.host.cpuModel) && (
-                  <span title={inv.host.cpuModel}>{cpuModelLabel(inv.host.cpuModel)}</span>
+                  <span title={inv.host.cpuModel} className={more}>
+                    {cpuModelLabel(inv.host.cpuModel)}
+                  </span>
                 )}
-                <span title={inv.host.agentVersion} className="gap-1.5">
+                <span title={inv.host.agentVersion} className={cn('gap-1.5', more)}>
                   агент {agentVersionShort(s.agentVersion ?? inv.host.agentVersion)}
                   {agentUpdating ? (
                     <Chip tone="update" dot pulse className="text-[11px]">
@@ -201,8 +208,23 @@ export function ServerPage() {
                 </span>
               </>
             )}
-            {s.metrics && <span>аптайм {uptime(s.metrics.uptimeSec)}</span>}
-            {online && <ServerConns m={s.metrics} />}
+            {s.metrics && <span className={more}>аптайм {uptime(s.metrics.uptimeSec)}</span>}
+            {online && (
+              <span className={more}>
+                <ServerConns m={s.metrics} />
+              </span>
+            )}
+            <button
+              type="button"
+              aria-expanded={infoOpen}
+              onClick={() => setInfoOpen((v) => !v)}
+              className="gap-1 text-xs text-accent md:hidden"
+            >
+              {infoOpen ? 'Скрыть' : 'Подробнее'}
+              <ChevronDown
+                className={cn('size-3.5 transition-transform', infoOpen && 'rotate-180')}
+              />
+            </button>
           </div>
         </div>
         <div className="grow" />

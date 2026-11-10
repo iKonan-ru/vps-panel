@@ -482,15 +482,18 @@ export function ConnsTab({ s }: { s: ServerDetail }) {
           <div className="px-4 py-3 text-[13px] text-muted">Внешних портов сервисов нет</div>
         )}
         {ports.map((p) => (
+          // число соединений и адресов - всегда справа в одну строку, переносится только описание
           <div
             key={p.port}
-            className="flex flex-wrap items-center gap-x-3 gap-y-0.5 border-b border-border px-4 py-2.5 text-[13px] last:border-b-0"
+            className="flex items-start gap-3 border-b border-border px-4 py-2.5 text-[13px] last:border-b-0"
           >
-            <span className="font-mono">{p.port}</span>
-            <span className="min-w-0 grow text-muted">
-              {[p.label, p.process].filter(Boolean).join(', ') || 'процесс не определён'}
-            </span>
-            <span className="tabular-nums">
+            <div className="min-w-0 grow">
+              <span className="font-mono">{p.port}</span>{' '}
+              <span className="text-muted">
+                {[p.label, p.process].filter(Boolean).join(', ') || 'процесс не определён'}
+              </span>
+            </div>
+            <span className="shrink-0 whitespace-nowrap tabular-nums">
               {p.conns}
               <span className="text-xs text-muted"> соед., </span>
               {p.ips}
