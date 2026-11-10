@@ -111,9 +111,18 @@ func xrayOnlineUsers(ctx context.Context) map[string][]string {
 	return xrayOnline.users
 }
 
-// userConns - соединения по пользователям xray: соединения адреса делятся поровну между
-// пользователями, у которых он активен (общий NAT), самые нагруженные первыми.
+// userConns - userConnsAll, но только maxUserConns самых нагруженных.
 func userConns(users map[string][]string, byIP map[string]int) []metrics.UserConns {
+	out := userConnsAll(users, byIP)
+	if len(out) > maxUserConns {
+		out = out[:maxUserConns]
+	}
+	return out
+}
+
+// userConnsAll - соединения по пользователям xray: соединения адреса делятся поровну между
+// пользователями, у которых он активен (общий NAT), самые нагруженные первыми.
+func userConnsAll(users map[string][]string, byIP map[string]int) []metrics.UserConns {
 	owners := map[string]int{}
 	for _, ips := range users {
 		for _, ip := range ips {
@@ -140,8 +149,5 @@ func userConns(users map[string][]string, byIP map[string]int) []metrics.UserCon
 		}
 		return out[i].Ref < out[j].Ref
 	})
-	if len(out) > maxUserConns {
-		out = out[:maxUserConns]
-	}
 	return out
 }

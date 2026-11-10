@@ -143,6 +143,10 @@ export function liveBinding(b: LiveRef, samples: Sample[]): GLiveBinding {
       if (!s) return set('missing', 'клиента нет в 3X-UI: ждёт синхронизации');
       withCounters();
       if (s.lastOnline > 0) out.lastSeen = iso(s.lastOnline);
+      if (s.conns !== undefined) {
+        out.conns = s.conns;
+        out.ips = s.ips ?? null;
+      }
       return set(s.online ? 'online' : s.lastOnline > 0 ? 'idle' : 'never');
     }
     case 'awg': {

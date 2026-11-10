@@ -185,8 +185,11 @@ export interface GServer {
 export interface ClientStatsSnapshot {
   /** время снимка на сервере, unix мс */
   at: number;
-  /** 3X-UI по email: up - от клиента, down - к клиенту, lastOnline - мс */
-  xui?: Record<string, { up: number; down: number; lastOnline: number; online: boolean }>;
+  /** 3X-UI по email: up - от клиента, down - к клиенту, lastOnline - мс, conns и ips - соединения и адреса сейчас (есть не везде) */
+  xui?: Record<
+    string,
+    { up: number; down: number; lastOnline: number; online: boolean; conns?: number; ips?: number }
+  >;
   /** AWG: контейнер -> ключ пира; rx - от клиента, tx - к клиенту, handshake - unix с */
   awg?: Record<string, Record<string, { handshake: number; rx: number; tx: number }>>;
   /** telemt по метке: in - от клиента, out - к клиенту (с запуска), подключений и адресов сейчас */

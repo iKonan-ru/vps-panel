@@ -320,3 +320,28 @@ describe('presenceOf', () => {
     });
   });
 });
+
+describe('соединения клиента 3X-UI', () => {
+  const one = (conns?: number, ips?: number): Sample[] => [
+    {
+      at: T0,
+      snap: snap(T0, {
+        xui: {
+          'ivan-a1b2': {
+            up: 0,
+            down: 0,
+            lastOnline: T0,
+            online: true,
+            ...(conns !== undefined && ips !== undefined ? { conns, ips } : {}),
+          },
+        },
+      }),
+    },
+  ];
+  it('агент прислал - соединения и адреса попадают в привязку, нет - null', () => {
+    const l = liveBinding(xuiRef, one(120, 2));
+    expect([l.conns, l.ips]).toEqual([120, 2]);
+    const none = liveBinding(xuiRef, one());
+    expect([none.conns, none.ips]).toEqual([null, null]);
+  });
+});

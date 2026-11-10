@@ -44,6 +44,10 @@ type XuiClientStat struct {
 	Down       int64 `json:"down"`
 	LastOnline int64 `json:"lastOnline"`
 	Online     bool  `json:"online"`
+	// Conns и IPs - соединения клиента и его активные адреса сейчас; нет - xray не отдаёт
+	// онлайн-адреса.
+	Conns *int `json:"conns,omitempty"`
+	IPs   *int `json:"ips,omitempty"`
 }
 
 // AwgPeerStat - пир AWG: последний handshake (unix с), байты от клиента (rx) и к клиенту (tx).
@@ -116,6 +120,7 @@ func ClientStatsAll(ctx context.Context, req ClientStatsRequest) ClientStats {
 	}
 	run("xui", func(c context.Context) error {
 		m, err := xuiClientStats(c, req.XuiToken)
+		fillXuiConns(c, m)
 		mu.Lock()
 		out.Xui = m
 		mu.Unlock()
@@ -782,4 +787,25 @@ func activeAwgPeers(all map[string]map[string]AwgPeerStat, now time.Time) int {
 		}
 	}
 	return n
+}
+
+// fillXuiConns - соединения и адреса клиентов 3X-UI из онлайн-адресов xray и сокетов сервера.
+// Клиент без активных адресов - нули; xray не отдаёт адреса - поля не заполняются.
+func fillXuiConns(ctx context.Context, m map[string]XuiClientStat) {
+	users := xrayOnlineUsers(ctx)
+	if len(m) == 0 || len(users) == 0 {
+		return
+	}
+	ports := firewall.PublicTCPPorts(ctx, "sshd")
+	_, byIP := connStats(shell.Out(ctx, "ss", "-Htn", "state", "established"), ports)
+	per := map[string]metrics.UserConns{}
+	for _, u := range userConnsAll(users, byIP) {
+		per[u.Ref] = u
+	}
+	for email, s := range m {
+		u := per[email]
+		conns, ips := u.Conns, u.IPs
+		s.Conns, s.IPs = &conns, &ips
+		m[email] = s
+	}
 }
