@@ -38,9 +38,25 @@ export const MetricsSchema = z.object({
   netTxBps: z.number().nonnegative(),
   uptimeSec: z.number().int().nonnegative(),
   load1: z.number().nonnegative(),
-  /** Подключения клиентов сейчас: TCP к внешним портам сервисов (без SSH) и пиры AWG. Агент старее - нет. */
+  /**
+   * Подключения клиентов сейчас: TCP к внешним портам сервисов (без SSH), уникальные адреса
+   * клиентов (ips), пиры AWG и порты с наибольшим числом соединений. Агент старее - нет.
+   */
   conns: z
-    .object({ tcp: z.number().int().nonnegative(), awg: z.number().int().nonnegative() })
+    .object({
+      tcp: z.number().int().nonnegative(),
+      ips: z.number().int().nonnegative().optional(),
+      awg: z.number().int().nonnegative(),
+      ports: z
+        .array(
+          z.object({
+            port: z.number().int(),
+            conns: z.number().int().nonnegative(),
+            ips: z.number().int().nonnegative(),
+          }),
+        )
+        .optional(),
+    })
     .optional()
     .catch(undefined),
 });

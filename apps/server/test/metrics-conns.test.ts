@@ -19,6 +19,8 @@ describe('метрики: подключения клиентов', () => {
       tcp: 7,
       awg: 2,
     });
+    const full = { tcp: 3, ips: 2, awg: 0, ports: [{ port: 443, conns: 3, ips: 2 }] };
+    expect(MetricsSchema.parse({ ...base, conns: full }).conns).toEqual(full);
     expect(MetricsSchema.parse(base).conns).toBeUndefined();
     expect(MetricsSchema.parse({ ...base, conns: { tcp: -1 } }).conns).toBeUndefined();
   });

@@ -14,6 +14,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"sort"
 	"strconv"
 	"strings"
 	"sync"
@@ -681,11 +682,7 @@ func ServerConns(ctx context.Context) metrics.Conns {
 	ports := firewall.PublicTCPPorts(ctx, "sshd")
 	out := metrics.Conns{}
 	if len(ports) > 0 {
-		for port, n := range countEstablished(shell.Out(ctx, "ss", "-Htn", "state", "established")) {
-			if ports[port] {
-				out.TCP += n
-			}
-		}
+		out = connStats(shell.Out(ctx, "ss", "-Htn", "state", "established"), ports)
 	}
 	awgConns.Lock()
 	defer awgConns.Unlock()
@@ -697,6 +694,76 @@ func ServerConns(ctx context.Context) metrics.Conns {
 	}
 	out.AWG = awgConns.n
 	return out
+}
+
+// maxPortConns - сколько портов с наибольшим числом соединений уходит в метрики.
+const maxPortConns = 8
+
+// connStats - установленные TCP к портам ports из "ss -Htn state established": всего, уникальные
+// адреса клиентов (loopback не клиент) и разбивка по портам, самые нагруженные первыми.
+func connStats(text string, ports map[int]bool) metrics.Conns {
+	type acc struct {
+		conns int
+		ips   map[string]bool
+	}
+	byPort := map[int]*acc{}
+	all := map[string]bool{}
+	out := metrics.Conns{}
+	for _, line := range strings.Split(text, "\n") {
+		f := strings.Fields(line)
+		if len(f) < 4 {
+			continue
+		}
+		i := strings.LastIndex(f[2], ":")
+		if i < 0 {
+			continue
+		}
+		port, err := strconv.Atoi(f[2][i+1:])
+		if err != nil || !ports[port] {
+			continue
+		}
+		ip := peerIP(f[3])
+		if ip == "" {
+			continue
+		}
+		a := byPort[port]
+		if a == nil {
+			a = &acc{ips: map[string]bool{}}
+			byPort[port] = a
+		}
+		a.conns++
+		a.ips[ip] = true
+		all[ip] = true
+		out.TCP++
+	}
+	out.IPs = len(all)
+	for port, a := range byPort {
+		out.Ports = append(out.Ports, metrics.PortConns{Port: port, Conns: a.conns, IPs: len(a.ips)})
+	}
+	sort.Slice(out.Ports, func(i, j int) bool {
+		if out.Ports[i].Conns != out.Ports[j].Conns {
+			return out.Ports[i].Conns > out.Ports[j].Conns
+		}
+		return out.Ports[i].Port < out.Ports[j].Port
+	})
+	if len(out.Ports) > maxPortConns {
+		out.Ports = out.Ports[:maxPortConns]
+	}
+	return out
+}
+
+// peerIP - адрес клиента из "ip:port" ss ([v6]:port, ::ffff:v4); loopback и пустое - "".
+func peerIP(peer string) string {
+	i := strings.LastIndex(peer, ":")
+	if i < 0 {
+		return ""
+	}
+	ip := strings.TrimSuffix(strings.TrimPrefix(peer[:i], "["), "]")
+	ip = strings.TrimPrefix(ip, "::ffff:")
+	if ip == "" || strings.HasPrefix(ip, "127.") || ip == "::1" {
+		return ""
+	}
+	return ip
 }
 
 // activeAwgPeers - пиры всех контейнеров с handshake за последние awgActiveWindow.

@@ -35,7 +35,18 @@ type Metrics struct {
 // пиры AWG с недавним handshake.
 type Conns struct {
 	TCP int `json:"tcp"`
+	// IPs - уникальные адреса клиентов среди TCP-соединений (NAT даёт один адрес на многих).
+	IPs int `json:"ips"`
 	AWG int `json:"awg"`
+	// Ports - порты с наибольшим числом соединений.
+	Ports []PortConns `json:"ports,omitempty"`
+}
+
+// PortConns - соединения и уникальные адреса клиентов на одном порту сервиса.
+type PortConns struct {
+	Port  int `json:"port"`
+	Conns int `json:"conns"`
+	IPs   int `json:"ips"`
 }
 
 // HostInfo соответствует HostInfoSchema.
