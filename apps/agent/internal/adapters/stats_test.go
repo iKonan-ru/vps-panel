@@ -152,11 +152,32 @@ func TestActiveAwgPeers(t *testing.T) {
 func TestConnStats(t *testing.T) {
 	ss := "0 0 10.0.0.1:443 5.5.5.5:1000\n0 0 10.0.0.1:443 5.5.5.5:1001\n0 0 [::ffff:10.0.0.1]:443 [::ffff:6.6.6.6]:2\n" +
 		"0 0 10.0.0.1:8443 7.7.7.7:3\n0 0 10.0.0.1:443 127.0.0.1:4\n0 0 10.0.0.1:22 9.9.9.9:5\n"
-	c := connStats(ss, map[int]bool{443: true, 8443: true})
+	c, byIP := connStats(ss, map[int]bool{443: true, 8443: true})
+	if byIP["5.5.5.5"] != 2 {
+		t.Errorf("по адресам: %v", byIP)
+	}
 	if c.TCP != 4 || c.IPs != 3 {
 		t.Fatalf("всего %d, адресов %d, ждали 4 и 3", c.TCP, c.IPs)
 	}
 	if len(c.Ports) != 2 || c.Ports[0].Port != 443 || c.Ports[0].Conns != 3 || c.Ports[0].IPs != 2 {
 		t.Errorf("порты: %+v", c.Ports)
+	}
+}
+
+func TestParseXrayOnlineIPsAndUserConns(t *testing.T) {
+	raw := []byte(`{"users":[
+		{"email":"anna-1","ips":[{"ip":"1.1.1.1","lastSeen":1000},{"ip":"2.2.2.2","lastSeen":10}]},
+		{"email":"boris-2","ips":[{"ip":"1.1.1.1","lastSeen":990}]},
+		{"email":"vp-cascade-x","ips":[{"ip":"3.3.3.3","lastSeen":1000}]}]}`)
+	users := parseXrayOnlineIPs(raw, 500)
+	if len(users["anna-1"]) != 1 || users["anna-1"][0] != "1.1.1.1" {
+		t.Fatalf("устаревший адрес не отброшен: %v", users)
+	}
+	top := userConns(users, map[string]int{"1.1.1.1": 10, "3.3.3.3": 40})
+	if len(top) != 3 || top[0].Ref != "vp-cascade-x" || top[0].Conns != 40 {
+		t.Fatalf("top: %+v", top)
+	}
+	if top[1].Conns != 5 || top[2].Conns != 5 {
+		t.Errorf("общий адрес делится поровну: %+v", top)
 	}
 }

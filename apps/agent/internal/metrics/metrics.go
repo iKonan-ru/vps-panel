@@ -40,6 +40,16 @@ type Conns struct {
 	AWG int `json:"awg"`
 	// Ports - порты с наибольшим числом соединений.
 	Ports []PortConns `json:"ports,omitempty"`
+	// Top - пользователи xray (email клиента или служебного клиента каскада) с наибольшим числом
+	// соединений; нет - xray не отдаёт онлайн-адреса.
+	Top []UserConns `json:"top,omitempty"`
+}
+
+// UserConns - соединения пользователя xray и число его активных адресов.
+type UserConns struct {
+	Ref   string `json:"ref"`
+	Conns int    `json:"conns"`
+	IPs   int    `json:"ips"`
 }
 
 // PortConns - соединения и уникальные адреса клиентов на одном порту сервиса.

@@ -5,7 +5,7 @@ import type { Metrics, ServerDetail } from '@vps/protocol';
 const clientsOf = (c: NonNullable<Metrics['conns']>) =>
   c.ips === undefined ? null : c.ips + c.awg;
 
-/** Подключения клиентов к серверу сейчас: "подключений 1712, клиентов 23"; нет счётчика - ничего. */
+/** Подключения клиентов к серверу сейчас: "клиентов 23, подключений 1712"; нет счётчика - ничего. */
 export function ServerConns({
   m,
   short = false,
@@ -18,12 +18,12 @@ export function ServerConns({
       className="whitespace-nowrap tabular-nums"
       title={`Сейчас: TCP-соединений ${tcp} (внешние порты сервисов, кроме SSH), пиров AWG ${awg}. Клиент: уникальный адрес. За одним адресом (NAT, мобильная сеть) может быть несколько человек, а у одного человека бывает несколько адресов`}
     >
-      {short ? 'подкл.' : 'подключений'} {tcp + awg}
       {clients !== null && (
         <>
-          , {short ? 'кл.' : 'клиентов'} {clients}
+          {short ? 'кл.' : 'клиентов'} {clients},{' '}
         </>
       )}
+      {short ? 'подкл.' : 'подключений'} {tcp + awg}
     </span>
   );
 }
@@ -66,6 +66,34 @@ export function ConnsSection({ s }: { s: ServerDetail }) {
           <div className="tabular-nums">{c.awg}</div>
         </div>
       )}
+      {(c.top ?? []).length > 0 && (
+        <div className="border-t border-border px-4 pt-2.5 pb-1 text-xs text-muted">
+          Больше всего соединений: вход каскада объединяет трафик всех своих клиентов
+        </div>
+      )}
+      {(c.top ?? []).map((u) => (
+        <div
+          key={u.ref}
+          className="flex items-center gap-3 px-4 py-2 text-[13px]"
+          title={u.name ? u.ref : undefined}
+        >
+          <div className="min-w-0 grow truncate">
+            {u.kind === 'cascade' ? (
+              <>
+                <span className="text-muted">вход каскада</span> {u.name}
+              </>
+            ) : (
+              (u.name ?? <span className="font-mono text-xs">{u.ref}</span>)
+            )}
+          </div>
+          <div className="shrink-0 tabular-nums">
+            {u.conns}
+            <span className="text-xs text-muted"> соед., </span>
+            {u.ips}
+            <span className="text-xs text-muted"> адр.</span>
+          </div>
+        </div>
+      ))}
       {(c.ports ?? []).length === 0 && c.awg === 0 && (
         <div className="px-4 py-3 text-[13px] text-muted">Подключений нет</div>
       )}

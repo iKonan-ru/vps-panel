@@ -56,6 +56,18 @@ export const MetricsSchema = z.object({
           }),
         )
         .optional(),
+      /** Пользователи xray с наибольшим числом соединений; name и kind проставляет панель. */
+      top: z
+        .array(
+          z.object({
+            ref: z.string(),
+            conns: z.number().int().nonnegative(),
+            ips: z.number().int().nonnegative(),
+            name: z.string().optional(),
+            kind: z.enum(['client', 'cascade']).optional(),
+          }),
+        )
+        .optional(),
     })
     .optional()
     .catch(undefined),

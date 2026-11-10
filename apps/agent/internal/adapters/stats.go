@@ -682,7 +682,11 @@ func ServerConns(ctx context.Context) metrics.Conns {
 	ports := firewall.PublicTCPPorts(ctx, "sshd")
 	out := metrics.Conns{}
 	if len(ports) > 0 {
-		out = connStats(shell.Out(ctx, "ss", "-Htn", "state", "established"), ports)
+		var byIP map[string]int
+		out, byIP = connStats(shell.Out(ctx, "ss", "-Htn", "state", "established"), ports)
+		if users := xrayOnlineUsers(ctx); len(users) > 0 {
+			out.Top = userConns(users, byIP)
+		}
 	}
 	awgConns.Lock()
 	defer awgConns.Unlock()
@@ -700,14 +704,15 @@ func ServerConns(ctx context.Context) metrics.Conns {
 const maxPortConns = 8
 
 // connStats - установленные TCP к портам ports из "ss -Htn state established": всего, уникальные
-// адреса клиентов (loopback не клиент) и разбивка по портам, самые нагруженные первыми.
-func connStats(text string, ports map[int]bool) metrics.Conns {
+// адреса клиентов (loopback не клиент), соединения по адресам и разбивка по портам, самые
+// нагруженные первыми.
+func connStats(text string, ports map[int]bool) (metrics.Conns, map[string]int) {
 	type acc struct {
 		conns int
 		ips   map[string]bool
 	}
 	byPort := map[int]*acc{}
-	all := map[string]bool{}
+	all := map[string]int{}
 	out := metrics.Conns{}
 	for _, line := range strings.Split(text, "\n") {
 		f := strings.Fields(line)
@@ -733,7 +738,7 @@ func connStats(text string, ports map[int]bool) metrics.Conns {
 		}
 		a.conns++
 		a.ips[ip] = true
-		all[ip] = true
+		all[ip]++
 		out.TCP++
 	}
 	out.IPs = len(all)
@@ -749,7 +754,7 @@ func connStats(text string, ports map[int]bool) metrics.Conns {
 	if len(out.Ports) > maxPortConns {
 		out.Ports = out.Ports[:maxPortConns]
 	}
-	return out
+	return out, all
 }
 
 // peerIP - адрес клиента из "ip:port" ss ([v6]:port, ::ffff:v4); loopback и пустое - "".
