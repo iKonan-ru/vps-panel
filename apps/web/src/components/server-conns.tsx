@@ -63,17 +63,3 @@ export function ConnsCount({
     </span>
   );
 }
-
-/** Шапка сервера: "клиентов 23, подключений 1712"; нет счётчика - ничего. */
-export function ServerConns({ m }: { m: Metrics | null | undefined }) {
-  const clients = clientsOf(m);
-  const conns = connsOf(m);
-  if (clients === null && conns === null) return null;
-  return (
-    <span className="whitespace-nowrap tabular-nums" title={`${CLIENTS_HINT}. ${CONNS_HINT}`}>
-      {clients !== null && <>клиентов {clients}</>}
-      {clients !== null && conns !== null && ', '}
-      {conns !== null && <>подключений {conns}</>}
-    </span>
-  );
-}

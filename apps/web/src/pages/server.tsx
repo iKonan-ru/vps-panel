@@ -1,6 +1,6 @@
 import { ActionOutput } from '@/components/action-output';
 import { Breadcrumbs } from '@/components/breadcrumbs';
-import { ServerConns } from '@/components/server-conns';
+import { ClientsChip, ConnsCount } from '@/components/server-conns';
 import { ServerStatusChip } from '@/components/server-status';
 import { ActiveActions } from '@/components/server/active-actions';
 import { AwgTab } from '@/components/server/awg/awg-tab';
@@ -161,9 +161,10 @@ export function ServerPage() {
 
       <div className="flex flex-wrap items-start gap-4">
         <div className="flex min-w-0 flex-col gap-1.5">
-          <div className="flex items-center gap-3">
+          <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
             <PageTitle hero>{s.name}</PageTitle>
             <ServerStatusChip s={s} />
+            <ClientsChip s={s} />
             {s.panelHost && (
               <Chip tone="accent" title="Сервер панели">
                 панель
@@ -211,7 +212,7 @@ export function ServerPage() {
             {s.metrics && <span className={more}>аптайм {uptime(s.metrics.uptimeSec)}</span>}
             {online && (
               <span className={more}>
-                <ServerConns m={s.metrics} />
+                <ConnsCount m={s.metrics} />
               </span>
             )}
             <button
