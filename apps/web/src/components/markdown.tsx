@@ -113,13 +113,14 @@ function Blocks({ blocks }: { blocks: Block[] }): ReactNode {
           <Tag
             key={key}
             start={b.ordered ? b.start : undefined}
-            className={`flex flex-col gap-1 pl-5 ${b.ordered ? 'list-decimal' : 'list-disc'}`}
+            className={`pl-5 [&>li+li]:mt-1 ${b.ordered ? 'list-decimal' : 'list-disc'}`}
           >
             {b.items.map((it, k) => (
               <li
                 // biome-ignore lint/suspicious/noArrayIndexKey: порядок пунктов не меняется
                 key={k}
-                className={`flex flex-col gap-1 ${it.task !== null ? 'list-none' : ''}`}
+                // не flex: у flex-элемента пропадает маркер списка
+                className={`[&>*+*]:mt-1 ${it.task !== null ? 'list-none' : ''}`}
               >
                 {it.task !== null && (
                   <input
