@@ -146,8 +146,8 @@ export function ServerPage() {
   if ((error && !fullCleanup) || !s)
     return <Card className="p-8 text-bad">{cap(error?.message ?? 'сервер не найден')}</Card>;
   const inv = s.inventory;
-  // сведения шапки, кроме адреса: на узком экране свёрнуты
-  const more = infoOpen ? '' : 'max-md:hidden';
+  // сведения шапки, кроме адреса: на узком экране свёрнуты; ! - иначе inline-flex контейнера перебивает hidden
+  const more = infoOpen ? '' : 'max-md:hidden!';
   const online = s.status === 'online';
   const noAgent = s.status === 'no-agent';
   const lock = serverLock(s);
@@ -218,7 +218,7 @@ export function ServerPage() {
               type="button"
               aria-expanded={infoOpen}
               onClick={() => setInfoOpen((v) => !v)}
-              className="gap-1 text-xs text-accent md:hidden"
+              className="gap-1 text-xs text-accent md:hidden!"
             >
               {infoOpen ? 'Скрыть' : 'Подробнее'}
               <ChevronDown
