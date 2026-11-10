@@ -181,3 +181,33 @@ func TestParseXrayOnlineIPsAndUserConns(t *testing.T) {
 		t.Errorf("общий адрес делится поровну: %+v", top)
 	}
 }
+
+func TestConnAddrs(t *testing.T) {
+	ss := "0 0 10.0.0.1:8443 5.5.5.5:1\n0 0 10.0.0.1:8443 5.5.5.5:2\n0 0 10.0.0.1:443 5.5.5.5:3\n" +
+		"0 0 10.0.0.1:8443 6.6.6.6:4\n0 0 10.0.0.1:22 9.9.9.9:5\n0 0 10.0.0.1:8443 127.0.0.1:6\n"
+	procs := map[int]string{8443: "xray", 443: "telemt"}
+	addrs, ls := connAddrs(ss, procs, map[string][]string{"anna-1": {"5.5.5.5"}, "vp-cascade-x": {"5.5.5.5"}})
+	if len(addrs) != 2 || addrs[0].IP != "5.5.5.5" || addrs[0].Conns != 3 {
+		t.Fatalf("адреса: %+v", addrs)
+	}
+	if len(addrs[0].Ports) != 2 || addrs[0].Ports[0].Port != 8443 || addrs[0].Ports[0].Conns != 2 {
+		t.Errorf("порты адреса: %+v", addrs[0].Ports)
+	}
+	if len(addrs[0].Users) != 2 || addrs[0].Users[0] != "anna-1" || len(addrs[1].Users) != 0 {
+		t.Errorf("пользователи: %+v", addrs)
+	}
+	if len(ls) != 2 || ls[0].Port != 8443 || ls[0].Process != "xray" || ls[0].Conns != 3 || ls[0].IPs != 2 {
+		t.Errorf("порты: %+v", ls)
+	}
+}
+
+func TestParseAwgActive(t *testing.T) {
+	now := time.Unix(10_000, 0)
+	dump := "awg0\tPRIV\tPUB\t51820\toff\n" +
+		"awg0\tKEY1=\t(none)\t203.0.113.7:5000\t10.8.0.2/32\t9950\t100\t200\t0\n" +
+		"awg0\tKEY2=\t(none)\t203.0.113.8:5000\t10.8.0.3/32\t100\t1\t2\t0\n"
+	got := parseAwgActive("amnezia-awg2", dump, now)
+	if len(got) != 1 || got[0].Key != "KEY1=" || got[0].IP != "203.0.113.7" || got[0].Rx != 100 {
+		t.Errorf("пиры: %+v", got)
+	}
+}

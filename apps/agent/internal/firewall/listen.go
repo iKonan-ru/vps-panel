@@ -137,6 +137,19 @@ func PublicTCPPorts(ctx context.Context, skip ...string) map[int]bool {
 
 func publicTCPPorts(socks []socket, skip []string) map[int]bool {
 	out := map[int]bool{}
+	for port := range publicTCPProcs(socks, skip) {
+		out[port] = true
+	}
+	return out
+}
+
+// PublicTCPProcs - то же с именем процесса-владельца порта (пусто - ss его не показал).
+func PublicTCPProcs(ctx context.Context, skip ...string) map[int]string {
+	return publicTCPProcs(sockets(ctx), skip)
+}
+
+func publicTCPProcs(socks []socket, skip []string) map[int]string {
+	out := map[int]string{}
 	for _, s := range socks {
 		if s.proto != "tcp" || IsLoopback(s.addr) {
 			continue
@@ -144,7 +157,13 @@ func publicTCPPorts(socks []socket, skip []string) map[int]bool {
 		if slices.ContainsFunc(s.procs, func(p string) bool { return slices.Contains(skip, p) }) {
 			continue
 		}
-		out[s.port] = true
+		owner := ""
+		if len(s.procs) > 0 {
+			owner = s.procs[0]
+		}
+		if cur, ok := out[s.port]; !ok || cur == "" {
+			out[s.port] = owner
+		}
 	}
 	return out
 }

@@ -38,6 +38,8 @@ type Conns struct {
 	// IPs - уникальные адреса клиентов среди TCP-соединений (NAT даёт один адрес на многих).
 	IPs int `json:"ips"`
 	AWG int `json:"awg"`
+	// Clients - клиенты на связи: пользователи xray, MTProxy, WDTT и пиры AWG; нет - не определено.
+	Clients *int `json:"clients,omitempty"`
 	// Ports - порты с наибольшим числом соединений.
 	Ports []PortConns `json:"ports,omitempty"`
 	// Top - пользователи xray (email клиента или служебного клиента каскада) с наибольшим числом

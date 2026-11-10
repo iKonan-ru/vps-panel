@@ -1,4 +1,3 @@
-import { ConnsSection } from '@/components/server-conns';
 import { AccessCard } from '@/components/server/access-card';
 import { CleanupDialog } from '@/components/server/cleanup-dialog';
 import { ClientHostCard } from '@/components/server/client-host-card';
@@ -198,7 +197,6 @@ export function OverviewTab({ s, onTab }: { s: ServerDetail; onTab?: (tab: strin
               </div>
             ))}
           </Section>
-          <ConnsSection s={s} />
           <ReachCard serverId={s.id} online={online} />
           <Maintenance s={s} onTab={onTab} onCleanup={() => setCleanup(true)} />
         </div>

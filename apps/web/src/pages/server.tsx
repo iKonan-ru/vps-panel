@@ -6,6 +6,7 @@ import { ActiveActions } from '@/components/server/active-actions';
 import { AwgTab } from '@/components/server/awg/awg-tab';
 import { BackupsTab } from '@/components/server/backups-tab';
 import { CertsTab } from '@/components/server/certs/certs-tab';
+import { ConnsTab } from '@/components/server/conns-tab';
 import { DockerTab } from '@/components/server/docker-tab';
 import { FirewallTab } from '@/components/server/firewall-tab';
 import { FullCleanupDialog } from '@/components/server/full-cleanup-dialog';
@@ -66,6 +67,7 @@ const TerminalTab = lazy(() =>
 
 type Tab =
   | 'overview'
+  | 'conns'
   | 'firewall'
   | 'docker'
   | 'certs'
@@ -81,6 +83,7 @@ type Tab =
 /** Вкладка с service показывается, только если агент нашёл сервис. */
 const tabs: { id: Tab; title: string; service?: string }[] = [
   { id: 'overview', title: 'Обзор' },
+  { id: 'conns', title: 'Подключения' },
   { id: 'xui', title: '3X-UI', service: 'xui' },
   { id: 'mtproxyl', title: 'MTProxyL', service: 'mtproxyl' },
   { id: 'awg', title: 'AWG', service: 'amnezia' },
@@ -348,6 +351,7 @@ export function ServerPage() {
       {/* fade-in - только прозрачность: transform сломал бы fixed у терминала на весь экран */}
       <div key={tab} className="flex animate-fade-in flex-col gap-5 [&>*]:shrink-0">
         {tab === 'overview' && <OverviewTab s={s} onTab={(t) => setTab(t as Tab)} />}
+        {tab === 'conns' && <ConnsTab s={s} />}
         {tab === 'firewall' && <FirewallTab s={s} />}
         {tab === 'docker' && <DockerTab s={s} />}
         {tab === 'certs' && <CertsTab s={s} />}

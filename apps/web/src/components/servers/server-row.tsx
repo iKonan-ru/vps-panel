@@ -1,4 +1,4 @@
-import { ServerConns } from '@/components/server-conns';
+import { ClientsChip } from '@/components/server-conns';
 import { ServerStatusChip } from '@/components/server-status';
 import { AttentionChips } from '@/components/servers/attention';
 import { ServerTags } from '@/components/servers/server-tags';
@@ -102,14 +102,12 @@ export function ServerRow({ s, i = 0, tag, onTag }: { s: ServerSummary; i?: numb
         <PayCell s={s} />
       </td>
       <td>
-        <ServerStatusChip s={s} />
+        <div className="flex flex-wrap items-center gap-1.5">
+          <ServerStatusChip s={s} />
+          <ClientsChip s={s} />
+        </div>
         {s.metrics && s.status === 'online' && (
           <div className="mt-1 text-xs text-muted">аптайм {uptime(s.metrics.uptimeSec)}</div>
-        )}
-        {s.status === 'online' && (
-          <div className="mt-0.5 text-xs text-muted empty:hidden">
-            <ServerConns m={s.metrics} />
-          </div>
         )}
         <div className="mt-0.5 text-xs text-muted empty:hidden">
           <RuRtt s={s} />
@@ -164,6 +162,7 @@ export function ServerCard({ s, i = 0, tag, onTag }: { s: ServerSummary; i?: num
             {countryLabel(s.hosting.country)} {s.hosting.provider}
           </span>
           <div className="grow" />
+          <ClientsChip s={s} />
           <ServerStatusChip s={s} dotOnly />
         </div>
         {s.metrics && s.status === 'online' && (
@@ -175,7 +174,6 @@ export function ServerCard({ s, i = 0, tag, onTag }: { s: ServerSummary; i?: num
             <span>
               Диск {Math.round((s.metrics.diskUsedGb / Math.max(1, s.metrics.diskTotalGb)) * 100)}%
             </span>
-            <ServerConns m={s.metrics} short />
             <RuRtt s={s} short />
           </div>
         )}

@@ -47,6 +47,8 @@ export const MetricsSchema = z.object({
       tcp: z.number().int().nonnegative(),
       ips: z.number().int().nonnegative().optional(),
       awg: z.number().int().nonnegative(),
+      /** Клиенты на связи: пользователи xray, MTProxy, WDTT и пиры AWG; нет - агент не определил. */
+      clients: z.number().int().nonnegative().optional(),
       ports: z
         .array(
           z.object({

@@ -693,6 +693,7 @@ func ServerConns(ctx context.Context) metrics.Conns {
 			out.Top = userConns(users, byIP)
 		}
 	}
+	clients := onlineClients(ctx)
 	awgConns.Lock()
 	defer awgConns.Unlock()
 	if time.Since(awgConns.at) >= awgConnsTTL {
@@ -702,7 +703,51 @@ func ServerConns(ctx context.Context) metrics.Conns {
 		awgConns.n, awgConns.at = activeAwgPeers(all, time.Now()), time.Now()
 	}
 	out.AWG = awgConns.n
+	if clients != nil {
+		n := *clients + out.AWG
+		out.Clients = &n
+	}
 	return out
+}
+
+// onlineClients - клиенты на связи сейчас без AWG: пользователи xray с активным адресом (кроме
+// служебных клиентов каскадов), пользователи MTProxy с соединением и пароли WDTT с устройством.
+// Один человек в VLESS и MTProxy (общая метка) считается один раз. nil - ни один источник не
+// ответил: число неизвестно.
+func onlineClients(ctx context.Context) *int {
+	set := map[string]bool{}
+	known := false
+	if users := xrayOnlineUsers(ctx); users != nil {
+		known = true
+		for email, ips := range users {
+			if len(ips) > 0 && !strings.HasPrefix(email, "vp-cascade-") {
+				set[email] = true
+			}
+		}
+	}
+	c, cancel := context.WithTimeout(ctx, statsTimeout)
+	defer cancel()
+	if mt, err := mtUserStats(c); err == nil {
+		known = true
+		for label, u := range mt {
+			if u.Conns > 0 {
+				set[label] = true
+			}
+		}
+	}
+	if wd, err := wdttStats(c); err == nil {
+		known = true
+		for key, w := range wd {
+			if w.Devices > 0 {
+				set["wdtt:"+key] = true
+			}
+		}
+	}
+	if !known {
+		return nil
+	}
+	n := len(set)
+	return &n
 }
 
 // maxPortConns - сколько портов с наибольшим числом соединений уходит в метрики.

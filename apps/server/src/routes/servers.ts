@@ -1,5 +1,7 @@
 import { isIP } from 'node:net';
 import {
+  type ConnsListSnapshot,
+  type ConnsView,
   HostingSchema,
   type ServerDetail,
   type ServerSummary,
@@ -18,6 +20,7 @@ import type { Db } from '../db/index.js';
 import { actionLog, servers } from '../db/schema.js';
 import { installCommand, issueRegistration, latestAgentVersion } from '../lib/agent-dist.js';
 import { rollPaymentDate } from '../lib/billing.js';
+import { buildConns } from '../lib/conn-detail.js';
 import { labelConns } from '../lib/conn-labels.js';
 import { newId } from '../lib/ids.js';
 import { panelAddresses } from '../lib/panel-host.js';
@@ -145,6 +148,24 @@ export async function serverRoutes(
       activeActions,
     };
     return detail;
+  });
+
+  /** Подключения сервера по адресам: снимок агента с подписями панели (клиент, вход каскада, сервер). */
+  app.get('/api/servers/:id/connections', async (req, reply): Promise<ConnsView | undefined> => {
+    const { id } = z.object({ id: z.string() }).parse(req.params);
+    const row = (await db.select().from(servers).where(eq(servers.id, id)).limit(1))[0];
+    if (!row) return reply.code(404).send({ error: 'сервер не найден' });
+    const snap = await registry.request<ConnsListSnapshot>(
+      id,
+      'conns.list',
+      {},
+      { timeoutMs: 10_000 },
+    );
+    return buildConns(db, id, snap, {
+      services: row.statusCache?.inventory?.services ?? [],
+      panelIps: await panelIps(),
+      clients: registry.latestMetrics(id)?.metrics.conns?.clients ?? null,
+    });
   });
 
   app.patch('/api/servers/:id', async (req, reply) => {
