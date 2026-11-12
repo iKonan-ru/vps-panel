@@ -17,10 +17,11 @@ import { PageTitle } from '@/components/ui/page-title';
 import { LoadState } from '@/components/ui/placeholder';
 import { Section } from '@/components/ui/section';
 import { api } from '@/lib/api';
-import { ago, bytes, dateTime } from '@/lib/format';
+import { ago, bytes, cap, dateTime } from '@/lib/format';
 import { useQuery } from '@tanstack/react-query';
 import { Link, useParams } from '@tanstack/react-router';
 import {
+  type ClientConnsView,
   type GBinding,
   type GClientDetail,
   type GDevice,
@@ -88,6 +89,7 @@ export function ClientServerPage() {
       {s?.error && <Alert tone="bad">Агент не ответил: {s.error}</Alert>}
 
       <ServerNow live={live} serverId={serverId} lives={lives} total={list.length} />
+      <ClientConns clientId={id} serverId={serverId} />
 
       <div className="grid items-start gap-4 lg:grid-cols-2">
         {list.map((b) => (
@@ -158,6 +160,94 @@ function ServerNow({
         </div>
         <RateChart points={live.serverHistory(serverId)} />
       </div>
+    </Section>
+  );
+}
+
+const linkCls = 'text-accent hover:underline';
+
+/**
+ * Адреса клиента на сервере сейчас: соединения и порты, чем опознан (VLESS, AWG) и тот же адрес на
+ * других серверах - у этого клиента или неопознанным (тогда, вероятно, это тоже он).
+ */
+function ClientConns({ clientId, serverId }: { clientId: string; serverId: string }) {
+  const { data, error } = useQuery({
+    queryKey: ['gclient', clientId, 'servers', serverId, 'connections'],
+    queryFn: () =>
+      api<ClientConnsView>(`/api/gclients/${clientId}/servers/${serverId}/connections`),
+    refetchInterval: 5_000,
+  });
+  const reason = error?.message ?? data?.error;
+  return (
+    <Section
+      title="Адреса"
+      info="С каких адресов клиент подключён к серверу и тот же адрес на других серверах. За одним адресом (мобильная сеть, NAT) могут быть и другие люди"
+      extra={<span className="text-xs text-muted">обновляется раз в 5&nbsp;с</span>}
+    >
+      {!data && !reason && <div className="px-4 py-3 text-[13px] text-muted">Загрузка&hellip;</div>}
+      {reason && <div className="px-4 py-3 text-[13px] text-muted">{cap(reason)}</div>}
+      {data && !data.error && data.addrs.length === 0 && (
+        <div className="px-4 py-3 text-[13px] text-muted">Сейчас подключений нет</div>
+      )}
+      {data?.addrs.map((a) => (
+        <div
+          key={a.ip}
+          className="flex flex-col gap-1.5 border-b border-border px-4 py-3 text-[13px] last:border-b-0"
+        >
+          <div className="flex flex-wrap items-center gap-x-2.5 gap-y-1">
+            <span className="font-mono select-all">{a.ip}</span>
+            <span className="text-xs text-muted">{a.via.join(', ')}</span>
+            <div className="grow" />
+            {a.conns > 0 ? (
+              <span className="tabular-nums">
+                {a.conns}
+                <span className="text-xs text-muted"> соед.</span>
+              </span>
+            ) : (
+              a.handshakeAt && (
+                <span className="text-xs text-muted">handshake {ago(a.handshakeAt)}</span>
+              )
+            )}
+          </div>
+          {a.ports.length > 0 && (
+            <div className="flex flex-wrap gap-x-4 gap-y-0.5 text-xs text-muted">
+              {a.ports.map((p) => (
+                <span key={p.port} className="tabular-nums">
+                  порт <span className="font-mono text-text">{p.port}</span>
+                  {p.label && ` ${p.label}`}: {p.conns}
+                </span>
+              ))}
+            </div>
+          )}
+          {a.elsewhere.map((e) =>
+            e.kind === 'unknown' ? (
+              <div key={e.serverId} className="text-xs text-warn">
+                На{' '}
+                <Link
+                  to="/servers/$id/$tab"
+                  params={{ id: e.serverId, tab: 'conns' }}
+                  className={linkCls}
+                >
+                  {e.serverName}
+                </Link>{' '}
+                этот адрес не опознан ({e.conns}&nbsp;соед.): вероятно, это тоже этот клиент
+              </div>
+            ) : (
+              <div key={e.serverId} className="text-xs text-muted">
+                С этого же адреса клиент был на{' '}
+                <Link
+                  to="/clients/$id/servers/$serverId"
+                  params={{ id: clientId, serverId: e.serverId }}
+                  className={linkCls}
+                >
+                  {e.serverName}
+                </Link>
+                , {ago(e.at)}
+              </div>
+            ),
+          )}
+        </div>
+      ))}
     </Section>
   );
 }

@@ -2,6 +2,7 @@ import { type AgentRegistry, requireOnline } from '../agents/registry.js';
 import type { Env } from '../config.js';
 import type { Db } from '../db/index.js';
 import type { actionJournal } from './action-journal.js';
+import type { ConnsHub } from './conns-hub.js';
 import type { EngineCatalog } from './mtproxyl-engine.js';
 import { SECRET_OUTPUT_NOTE } from './mtproxyl-secrets.js';
 import type { SecretBox } from './secret-box.js';
@@ -15,6 +16,7 @@ export interface ServerRouteOpts {
   hub: UiHub;
   box: SecretBox;
   engines: EngineCatalog;
+  conns: ConnsHub;
 }
 
 /**

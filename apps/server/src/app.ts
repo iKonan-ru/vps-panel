@@ -25,6 +25,7 @@ import { Cascades } from './lib/cascades.js';
 import { catalogRunner } from './lib/catalog-runner.js';
 import { createClientStatsHub } from './lib/client-live.js';
 import { ClientWatch } from './lib/client-watch.js';
+import { ConnsHub } from './lib/conns-hub.js';
 import { startFail2banIgnore } from './lib/fail2ban-ignore.js';
 import { FirefoxSigner } from './lib/firefox.js';
 import { GClients } from './lib/gclients.js';
@@ -239,10 +240,12 @@ export async function buildApp(opts: AppOptions) {
   });
   // версии движка MTProxyL: готовые образы в реестре (ghcr.io), чтобы не собирать на сервере
   const engines = new EngineCatalog(registry, outFetch);
-  await app.register(serverRoutes, { db, registry, env, hub, proxy: panelProxy });
+  // подключения серверов: снимки для вкладки, страницы клиента и уведомлений, журнал адресов
+  const connsHub = new ConnsHub(db, registry, () => panelAddresses(env.PANEL_PUBLIC_URL));
+  await app.register(serverRoutes, { db, registry, env, hub, conns: connsHub, proxy: panelProxy });
   await app.register(tagRoutes, { db, hub });
   // действия над сервером через агента - по файлу на область
-  const serverRouteOpts = { db, env, registry, hub, box, engines };
+  const serverRouteOpts = { db, env, registry, hub, box, engines, conns: connsHub };
   // новые версии панели (релизы GitHub) и обновление через службу на хосте; уведомление -
   // через notifier, он создаётся ниже
   let onPanelRelease: (r: PanelRelease) => Promise<void> = async () => undefined;
@@ -341,13 +344,11 @@ export async function buildApp(opts: AppOptions) {
     env.TG_PROXY_URL,
   );
   await app.register(notifyRoutes, { telegram });
-  const notifier = new Notifier(db, registry, telegram, env.PANEL_PUBLIC_URL, () =>
-    panelAddresses(env.PANEL_PUBLIC_URL),
-  );
+  const notifier = new Notifier(db, registry, telegram, env.PANEL_PUBLIC_URL, connsHub);
   onPanelRelease = (r) => notifier.panelRelease(r);
   // остановка фоновых таймеров при закрытии: в тестах и при выключении они не трогают базу
   const stops: (() => void)[] = [];
-  stops.push(panelUpdates.start());
+  stops.push(panelUpdates.start(), connsHub.start());
   // доступность из России: адрес и inbound-ы - агент через Globalping, MTProxyL - его итог
   const ruReach = new RuReach(db, box, registry, app.log, (id, note) => notifier.reach(id, note));
   stops.push(ruReach.start());
@@ -406,7 +407,7 @@ export async function buildApp(opts: AppOptions) {
   stops.push(startMetricsPace(registry, hub, app.log));
   // снимки clients.stats серверов: общие для карточек клиентов и уведомлений о подключении
   const liveHub = createClientStatsHub(db, box, registry);
-  await app.register(gclientRoutes, { db, registry, box, gc, env, liveHub });
+  await app.register(gclientRoutes, { db, registry, box, gc, env, liveHub, conns: connsHub });
   // уведомления о подключении клиентов: правила, проверка раз в минуту
   const clientWatch = new ClientWatch({
     db,

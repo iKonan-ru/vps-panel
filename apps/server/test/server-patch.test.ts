@@ -21,6 +21,7 @@ it('сохранение имени и тегов независимо от см
     registry: {} as never,
     env: {} as never,
     hub: { broadcast: () => {} } as never,
+    conns: {} as never,
   });
   const patch = (payload: Record<string, unknown>) =>
     app.inject({ method: 'PATCH', url: '/api/servers/s', payload });

@@ -8,7 +8,6 @@ import type {
   Service,
 } from '@vps/protocol';
 import { and, eq } from 'drizzle-orm';
-import type { AgentRegistry } from '../agents/registry.js';
 import type { Db } from '../db/index.js';
 import { gclientBindings, gclientDevices, gclients, servers } from '../db/schema.js';
 import { cascadeClientEmail, isCascadeClient } from './cascades.js';
@@ -138,6 +137,7 @@ export function buildConns(
       name: b ? [b.client, b.device].filter(Boolean).join(', ') : 'неизвестный пир',
       kind: b ? 'client' : 'unknown',
       ...(b ? { clientId: b.clientId } : {}),
+      ...(b?.device ? { device: b.device } : {}),
       handshakeAt: new Date(p.handshake * 1000).toISOString(),
       rx: p.rx,
       tx: p.tx,
@@ -161,26 +161,4 @@ export function buildConns(
     awg,
     errors: snap.errors ?? {},
   };
-}
-
-/** Снимок conns.list агента и его разбор панелью: вкладка "Подключения" и проверка уведомлений. */
-export async function loadConns(
-  db: Db,
-  registry: Pick<AgentRegistry, 'request' | 'latestMetrics'>,
-  serverId: string,
-  panelIps: string[],
-): Promise<ConnsView | null> {
-  const row = db.select().from(servers).where(eq(servers.id, serverId)).get();
-  if (!row) return null;
-  const snap = await registry.request<ConnsListSnapshot>(
-    serverId,
-    'conns.list',
-    {},
-    { timeoutMs: 10_000 },
-  );
-  return buildConns(db, serverId, snap, {
-    services: row.statusCache?.inventory?.services ?? [],
-    panelIps,
-    clients: registry.latestMetrics(serverId)?.metrics.conns?.clients ?? null,
-  });
 }

@@ -11,7 +11,6 @@ import { requireOnline } from '../agents/registry.js';
 import { firewallRules, portsyncConfigs, servers } from '../db/schema.js';
 import { actionJournal } from '../lib/action-journal.js';
 import { type ServerRouteOpts, actionRunners } from '../lib/action-runners.js';
-import { loadConns } from '../lib/conn-detail.js';
 import { newId } from '../lib/ids.js';
 import { panelAddresses } from '../lib/panel-host.js';
 import { changeSshPort } from '../lib/ssh-port.js';
@@ -280,7 +279,7 @@ export async function baselineFirewallRoutes(app: FastifyInstance, opts: ServerR
         .all()
         .map((s) => s.host),
     ];
-    const view = await loadConns(db, registry, id, own).catch(() => null);
+    const view = await opts.conns.view(id, 0).catch(() => null);
     const kind = view?.addrs.find((a) => a.ip === ip)?.kind;
     if (own.includes(ip) || kind === 'server' || kind === 'cascade')
       throw Object.assign(

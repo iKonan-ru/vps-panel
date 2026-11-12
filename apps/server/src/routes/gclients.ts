@@ -1,4 +1,5 @@
 import {
+  type ClientConnsView,
   DEVICE_IDS,
   type GBinding,
   type GBindingLinks,
@@ -25,6 +26,7 @@ import { gclientBindings, gclientDevices, gclients, openfluxDocs, servers } from
 import { extsByClient } from '../lib/browser-ext.js';
 import { clientLive, presenceOf } from '../lib/client-live.js';
 import type { ClientStatsHub } from '../lib/client-stats.js';
+import type { ConnsHub } from '../lib/conns-hub.js';
 import { extensionVersion } from '../lib/extension.js';
 import { clientSlug, newClientToken, newXuiSubId } from '../lib/gclient-names.js';
 import { awgRef, wdttKey } from '../lib/gclient-services.js';
@@ -70,9 +72,11 @@ export async function gclientRoutes(
     env: Env;
     /** снимки clients.stats - общие с уведомлениями о подключении */
     liveHub: ClientStatsHub;
+    /** подключения серверов: адреса клиента на сервере */
+    conns: ConnsHub;
   },
 ) {
-  const { db, registry, box, gc, env, liveHub } = opts;
+  const { db, registry, box, gc, env, liveHub, conns } = opts;
   /** Адрес подписок: отдельное имя (SUB_PUBLIC_URL) или временно - адрес панели. */
   const subBase = (env.SUB_PUBLIC_URL ?? env.PANEL_PUBLIC_URL).replace(/\/+$/, '');
 
@@ -279,6 +283,23 @@ export async function gclientRoutes(
     reply.header('Cache-Control', 'no-store');
     return { at: new Date().toISOString(), ...live };
   });
+
+  /** Адреса клиента на сервере: соединения, порты и тот же адрес на других серверах. */
+  app.get(
+    '/api/gclients/:id/servers/:serverId/connections',
+    async (req, reply): Promise<ClientConnsView> => {
+      const { id, serverId } = z
+        .object({ id: z.string(), serverId: z.string().max(64) })
+        .parse(req.params);
+      const c = getClient(id);
+      reply.header('Cache-Control', 'no-store');
+      try {
+        return await conns.clientConns(c.id, serverId);
+      } catch (e) {
+        return { at: null, addrs: [], error: (e as Error).message };
+      }
+    },
+  );
 
   /** Ссылки привязки из кэша (MTProxy - tg:// и t.me): в них секрет, не кэшируются браузером. */
   app.get('/api/gclients/:id/links/:bid', async (req, reply) => {

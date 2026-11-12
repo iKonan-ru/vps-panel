@@ -114,6 +114,22 @@ function UserName({ u }: { u: ConnUser }) {
 }
 
 function AddrName({ a }: { a: ConnAddrView }): ReactNode {
+  if (!a.name && a.guess?.length) {
+    const names = [...new Map(a.guess.map((g) => [g.clientId, g.name])).entries()];
+    return (
+      <span title="Предположительно: адрес недавно был у этого клиента">
+        <span className="text-muted">вероятно, </span>
+        {names.map(([id, name], i) => (
+          <span key={id}>
+            {i > 0 && ', '}
+            <Link to="/clients/$id" params={{ id }} className={cn(linkCls, 'font-medium')}>
+              {name}
+            </Link>
+          </span>
+        ))}
+      </span>
+    );
+  }
   if (!a.name) return null;
   if (a.clientId)
     return (
@@ -155,6 +171,28 @@ function AddrRow({
         </span>
       </div>
       <div className="text-xs text-muted">{a.note}</div>
+      {a.guess && a.guess.length > 0 && (
+        <div className="text-xs text-muted">
+          Адрес был у клиентов:{' '}
+          {a.guess.map((g, i) => (
+            <span key={`${g.clientId}-${g.serverId}`}>
+              {i > 0 && '; '}
+              <Link to="/clients/$id" params={{ id: g.clientId }} className={linkCls}>
+                {g.name}
+              </Link>{' '}
+              на{' '}
+              <Link
+                to="/servers/$id/$tab"
+                params={{ id: g.serverId, tab: 'conns' }}
+                className={linkCls}
+              >
+                {g.serverName}
+              </Link>
+              , {ago(g.at)}
+            </span>
+          ))}
+        </div>
+      )}
       {a.users.length > 1 && a.kind !== 'cascade' && (
         <div className="text-xs text-muted">
           Пользователи с этим адресом:{' '}
@@ -324,7 +362,7 @@ export function ConnsTab({ s }: { s: ServerDetail }) {
   const addrKey: Record<AddrSort, (a: ConnAddrView) => string | number> = {
     conns: (a) => a.conns,
     ip: (a) => a.ip,
-    name: (a) => a.name ?? '',
+    name: (a) => a.name ?? a.guess?.[0]?.name ?? '',
     kind: (a) => a.kind,
   };
   const addrs = sorted(

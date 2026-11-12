@@ -15,7 +15,7 @@ import type { Db } from '../db/index.js';
 import { loginAttempts, servers } from '../db/schema.js';
 import { busyAction } from './action-lock.js';
 import { daysToPayment, rollPaymentDate } from './billing.js';
-import { loadConns } from './conn-detail.js';
+import type { ConnsHub } from './conns-hub.js';
 import { schedule } from './schedule.js';
 import { getJsonSetting, putSetting } from './settings.js';
 import { type Telegram, esc, tgSpan } from './telegram.js';
@@ -110,8 +110,8 @@ export class Notifier {
     private tg: Telegram,
     /** Адрес панели для ссылок на серверы (PANEL_PUBLIC_URL); пусто - без ссылок. */
     private panelUrl = '',
-    /** Адреса домена панели: подключения от сервера панели - не чужие. */
-    private panelIps: () => Promise<string[]> = async () => [],
+    /** Подключения серверов: неопознанные адреса для уведомления. */
+    private conns: ConnsHub | null = null,
   ) {}
 
   /** Имя сервера ссылкой на его карточку; tab - вкладка, где разбираться с событием. */
@@ -557,14 +557,13 @@ export class Notifier {
    * порога: две проверки подряд - одно сообщение, соединений стало меньше - правка исходного.
    */
   private async checkConns() {
-    if (this.quiet()) return;
+    if (this.quiet() || !this.conns) return;
     const st = await this.cachedSettings();
     if (!st.token || !st.chatId || !st.events.connsUnknown) return;
-    const ips = await this.panelIps();
     const rows = this.db.select({ id: servers.id }).from(servers).all();
     for (const { id } of rows) {
       if (!this.registry.isOnline(id) || !this.registry.supports(id, 'conns.list')) continue;
-      const view = await loadConns(this.db, this.registry, id, ips).catch(() => null);
+      const view = await this.conns.view(id, 0).catch(() => null);
       if (!view) continue;
       const seen = this.unknownAddrs.get(id) ?? new Map();
       this.unknownAddrs.set(id, seen);
@@ -581,8 +580,9 @@ export class Notifier {
           cur.notified = true;
           if (await this.tg.wants('connsUnknown', id)) {
             const port = a.ports[0];
+            const g = a.guess?.[0];
             await this.tg.send(
-              `${await this.serverName(id, 'conns')}: неопознанный адрес <code>${esc(ip)}</code> держит ${a.conns}\u00a0соед.${port ? `, порт ${port.port}${port.label ? ` (${esc(port.label)})` : ''}` : ''}. Адрес не клиент и не сервер панели`,
+              `${await this.serverName(id, 'conns')}: неопознанный адрес <code>${esc(ip)}</code> держит ${a.conns}\u00a0соед.${port ? `, порт ${port.port}${port.label ? ` (${esc(port.label)})` : ''}` : ''}. ${g ? `Возможно, клиент ${esc(g.name)}: адрес был у него на сервере ${esc(g.serverName)}` : 'Адрес не клиент и не сервер панели'}`,
               { meta: { event: 'connsUnknown', serverId: id, ref: `conns:${id}:${ip}` } },
             );
           }

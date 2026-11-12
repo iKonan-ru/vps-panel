@@ -19,7 +19,7 @@ import type { Db } from '../db/index.js';
 import { actionLog, servers } from '../db/schema.js';
 import { installCommand, issueRegistration, latestAgentVersion } from '../lib/agent-dist.js';
 import { rollPaymentDate } from '../lib/billing.js';
-import { loadConns } from '../lib/conn-detail.js';
+import type { ConnsHub } from '../lib/conns-hub.js';
 import { newId } from '../lib/ids.js';
 import { panelAddresses } from '../lib/panel-host.js';
 import type { PanelProxy } from '../lib/panel-proxy.js';
@@ -78,9 +78,16 @@ function hostingToRow(h: HostingPatch | undefined) {
 
 export async function serverRoutes(
   app: FastifyInstance,
-  opts: { db: Db; registry: AgentRegistry; env: Env; hub: UiHub; proxy?: PanelProxy },
+  opts: {
+    db: Db;
+    registry: AgentRegistry;
+    env: Env;
+    hub: UiHub;
+    conns: ConnsHub;
+    proxy?: PanelProxy;
+  },
 ) {
-  const { db, registry, env, hub, proxy } = opts;
+  const { db, registry, env, hub, conns, proxy } = opts;
   const withLinks = (s: ServerSummary): ServerSummary =>
     proxy ? { ...s, panelLinks: proxy.links(s.id, s.name, s.services) } : s;
 
@@ -151,7 +158,7 @@ export async function serverRoutes(
     const { id } = z.object({ id: z.string() }).parse(req.params);
     const row = (await db.select().from(servers).where(eq(servers.id, id)).limit(1))[0];
     if (!row) return reply.code(404).send({ error: 'сервер не найден' });
-    return (await loadConns(db, registry, id, await panelIps())) ?? undefined;
+    return (await conns.view(id)) ?? undefined;
   });
 
   app.patch('/api/servers/:id', async (req, reply) => {

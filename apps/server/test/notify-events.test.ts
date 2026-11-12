@@ -7,6 +7,7 @@ import Database from 'better-sqlite3';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { createDb } from '../src/db/index.js';
 import { actionLog, servers } from '../src/db/schema.js';
+import { ConnsHub } from '../src/lib/conns-hub.js';
 import { Notifier, reachEvent } from '../src/lib/notify.js';
 import { SecretBox } from '../src/lib/secret-box.js';
 import { getSetting, putSetting } from '../src/lib/settings.js';
@@ -30,7 +31,7 @@ async function make() {
     isUpdating: () => false,
     refreshInventory: async (...a: unknown[]) => void refreshes.push(a),
   });
-  const n = new Notifier(db, reg as never, tg);
+  const n = new Notifier(db, reg as never, tg, '', new ConnsHub(db, reg as never, async () => []));
   return { db, tg, sent, reg, n, refreshes };
 }
 

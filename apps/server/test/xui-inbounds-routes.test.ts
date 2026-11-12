@@ -128,6 +128,7 @@ async function setup(
     hub: { broadcast: () => {} } as never,
     env: {} as never,
     engines: {} as never,
+    conns: {} as never,
     gc: { kick: () => void kicks++ },
     xrayChecksMs: [10, 10],
     xray: { exits: () => [] },
