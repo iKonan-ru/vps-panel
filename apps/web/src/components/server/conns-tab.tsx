@@ -173,7 +173,9 @@ function AddrRow({
       <div className="text-xs text-muted">{a.note}</div>
       {a.guess && a.guess.length > 0 && (
         <div className="text-xs text-muted">
-          Адрес был у клиентов:{' '}
+          {new Set(a.guess.map((g) => g.clientId)).size > 1
+            ? 'Адрес был у клиентов: '
+            : 'Адрес был у клиента: '}
           {a.guess.map((g, i) => (
             <span key={`${g.clientId}-${g.serverId}`}>
               {i > 0 && '; '}
