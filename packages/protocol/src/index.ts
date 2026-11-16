@@ -18,3 +18,4 @@ export * from './bot.js';
 export * from './uninstall.js';
 export * from './ssh-port.js';
 export * from './connections.js';
+export * from './logs.js';

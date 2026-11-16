@@ -35,6 +35,25 @@ export function onActionFinished(fn: FinishedListener): () => void {
   };
 }
 
+/** Итог действия для журнала серверов: id записи action_log, код и записанный вывод. */
+export interface ActionDone {
+  id: string;
+  serverId: string;
+  kind: string;
+  exitCode: number;
+  output: string;
+}
+
+const doneListeners = new Set<(a: ActionDone) => void>();
+
+/** Подписка на итог каждого действия (запись уже в action_log); возвращает отписку. */
+export function onActionDone(fn: (a: ActionDone) => void): () => void {
+  doneListeners.add(fn);
+  return () => {
+    doneListeners.delete(fn);
+  };
+}
+
 /** Действие на сервере закончилось: сказать подписчикам. */
 export function actionFinished(
   serverId: string,
@@ -70,10 +89,16 @@ export function actionJournal(db: Db, hub: UiHub, registry: AgentRegistry) {
     running.delete(id);
     const kind = kinds.get(id) ?? '';
     kinds.delete(id);
+    const saved = output.slice(-MAX_OUTPUT);
     await db
       .update(actionLog)
-      .set({ finishedAt: new Date().toISOString(), exitCode, output: output.slice(-MAX_OUTPUT) })
+      .set({ finishedAt: new Date().toISOString(), exitCode, output: saved })
       .where(eq(actionLog.id, id));
+    for (const fn of doneListeners) {
+      try {
+        fn({ id, serverId, kind, exitCode, output: saved });
+      } catch {}
+    }
     hub.broadcast({ type: 'action.finished', serverId, actionId: id, exitCode });
     // после любого действия просим агента прислать свежий inventory: интерфейс обновится сам
     actionFinished(serverId, kind, registry.refreshInventory(serverId));

@@ -285,6 +285,14 @@ export function mergeMt(
 
 export class RuReach {
   private running = new Map<string, Promise<ServerReach>>();
+  /** Итог проверки сервера с зондами по целям (журнал серверов). */
+  onResult:
+    | ((
+        serverId: string,
+        reach: ServerReach,
+        probes: { key: string; at: string; probes: ReachProbe[] }[],
+      ) => void)
+    | null = null;
   private manualAt = new Map<string, number>();
 
   constructor(
@@ -625,6 +633,9 @@ export class RuReach {
     store[serverId] = out;
     this.save(store);
     this.addProbes(serverId, probes, new Set(out.targets.map((t) => t.key)));
+    try {
+      this.onResult?.(serverId, out, probes);
+    } catch {}
     for (const m of messages) await this.notify(serverId, m).catch(() => undefined);
     return out;
   }

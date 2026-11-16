@@ -38,6 +38,17 @@ export function requireOnline(registry: Pick<AgentRegistry, 'isOnline'>, serverI
   if (!registry.isOnline(serverId)) throw new AgentError('сервер не в сети', 'offline');
 }
 
+/** Код закрытия websocket агента - словами. */
+export function closeReason(code?: number, reason?: Buffer): string {
+  const text = reason?.toString().trim() ?? '';
+  if (code === 4000) return 'заменено новым подключением агента';
+  if (code === 1000) return text ? `агент закрыл соединение: ${text}` : 'агент закрыл соединение';
+  if (code === 1001) return 'агент остановлен';
+  if (code === 1006) return 'обрыв без закрытия';
+  if (code === undefined) return 'соединение закрыто';
+  return text ? `код ${code}: ${text}` : `код ${code}`;
+}
+
 /** Агент не знает операции: её нет в списке из hello. */
 export const AGENT_OUTDATED = 'агент устарел: нужно обновить агент';
 
@@ -51,7 +62,8 @@ export interface AgentSocket {
   ping(): void;
   terminate(): void;
   on(event: 'message', listener: (raw: Buffer) => void): unknown;
-  on(event: 'close' | 'error' | 'pong', listener: () => void): unknown;
+  on(event: 'close', listener: (code?: number, reason?: Buffer) => void): unknown;
+  on(event: 'error' | 'pong', listener: () => void): unknown;
   once(event: 'close', listener: () => void): unknown;
 }
 
@@ -73,7 +85,8 @@ interface Pending {
 
 interface RegistryEvents {
   online: [serverId: string];
-  offline: [serverId: string];
+  /** reason - почему связь прервалась, для журнала серверов. */
+  offline: [serverId: string, reason: string];
   metrics: [serverId: string, metrics: Metrics];
   inventory: [serverId: string, inventory: Inventory];
   heartbeat: [serverId: string];
@@ -177,8 +190,10 @@ export class AgentRegistry extends EventEmitter<RegistryEvents> {
     if (old && old.ws !== conn.ws) old.ws.close(4000, 'replaced by new connection');
     this.conns.set(conn.serverId, conn);
     conn.ws.on('message', (raw) => this.handle(conn, raw.toString()));
-    conn.ws.on('close', () => this.detach(conn));
-    conn.ws.on('error', () => this.detach(conn));
+    // почему прервалась связь: тайм-аут пинга помечается до terminate, иначе - код закрытия
+    let why = '';
+    conn.ws.on('close', (code, reason) => this.detach(conn, why || closeReason(code, reason)));
+    conn.ws.on('error', () => this.detach(conn, why || 'ошибка соединения'));
     // Пинг раз в 30 с; если агент молчит 90 с (ни pong, ни сообщений) - соединение мёртвое.
     let alive = Date.now();
     conn.ws.on('pong', () => {
@@ -189,12 +204,14 @@ export class AgentRegistry extends EventEmitter<RegistryEvents> {
     });
     const ping = setInterval(() => {
       if (Date.now() - alive > 90_000) {
+        why = 'агент не отвечал 90 с';
         conn.ws.terminate();
         return;
       }
       try {
         conn.ws.ping();
       } catch {
+        why = 'пинг не отправлен';
         conn.ws.terminate();
       }
     }, 30_000);
@@ -208,7 +225,7 @@ export class AgentRegistry extends EventEmitter<RegistryEvents> {
     });
   }
 
-  private detach(conn: AgentConn) {
+  private detach(conn: AgentConn, reason = '') {
     if (this.conns.get(conn.serverId)?.ws !== conn.ws) return;
     this.conns.delete(conn.serverId);
     for (const [id, p] of this.pending) {
@@ -218,7 +235,7 @@ export class AgentRegistry extends EventEmitter<RegistryEvents> {
         this.pending.delete(id);
       }
     }
-    this.emit('offline', conn.serverId);
+    this.emit('offline', conn.serverId, reason);
   }
 
   private handle(conn: AgentConn, raw: string) {

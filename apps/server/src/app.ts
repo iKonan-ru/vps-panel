@@ -42,6 +42,7 @@ import { PanelUpdates } from './lib/panel-updates.js';
 import { RuReach } from './lib/ru-reach.js';
 import { schedule } from './lib/schedule.js';
 import { SecretBox } from './lib/secret-box.js';
+import { startServerLog } from './lib/server-log-bind.js';
 import { onServerRemoved } from './lib/server-remove.js';
 import { serverSetup } from './lib/server-setup.js';
 import { ServiceUpdates } from './lib/service-updates.js';
@@ -74,6 +75,7 @@ import { gclientRoutes } from './routes/gclients.js';
 import { installRoutes } from './routes/install.js';
 import { ipChangeRoutes } from './routes/ip-change.js';
 import { journalRoutes } from './routes/journal.js';
+import { logRoutes } from './routes/logs.js';
 import { mtproxylRoutes } from './routes/mtproxyl.js';
 import { notifyRoutes } from './routes/notify.js';
 import { openfluxRoutes } from './routes/openflux.js';
@@ -355,6 +357,17 @@ export async function buildApp(opts: AppOptions) {
   // имена сервисов сервера панели с сертификатом от её Caddy - из снимков
   stops.push(schedule(() => void panelCerts.refresh().catch(() => undefined), 5_000, 5 * 60_000));
   await app.register(reachRoutes, { reach: ruReach });
+  // журнал серверов (logs.db): связь, подключения, доступность, действия, изменения, нагрузка
+  const serverLog = startServerLog({
+    db,
+    registry,
+    conns: connsHub,
+    reach: ruReach,
+    dataDir: env.DATA_DIR,
+    log: app.log,
+  });
+  stops.push(serverLog.stop);
+  await app.register(logRoutes, { db, slog: serverLog.slog, stepUp, secure });
   stops.push(xraySpares.start());
   // доставка в Telegram: раз в 5 минут проверка выходов xray и getMe бота
   stops.push(

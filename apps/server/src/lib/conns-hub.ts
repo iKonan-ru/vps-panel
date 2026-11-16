@@ -73,6 +73,8 @@ export class ConnsHub {
   readonly seen: SeenAddrs;
   private views = new Map<string, { at: number; view: ConnsView }>();
   private inflight = new Map<string, Promise<ConnsView | null>>();
+  /** Каждый свежий снимок сервера (журнал серверов). */
+  onView: ((serverId: string, view: ConnsView) => void) | null = null;
 
   constructor(
     private db: Db,
@@ -111,6 +113,9 @@ export class ConnsHub {
     this.remember(serverId, view, snap.at);
     this.guess(view);
     this.views.set(serverId, { at: this.now(), view });
+    try {
+      this.onView?.(serverId, view);
+    } catch {}
     return view;
   }
 

@@ -1,5 +1,6 @@
 import { ClientWatchSettings } from '@/components/client-watch';
 import { FirefoxSettings } from '@/components/firefox-settings';
+import { LogsSettings } from '@/components/logs-settings';
 import { OpenfluxDocsSettings } from '@/components/openflux-docs-settings';
 import { PanelBackupSettings } from '@/components/panel-backup-settings';
 import { PANEL_VERSION_ANCHOR } from '@/components/panel-version-badge';
@@ -28,6 +29,8 @@ export function SettingsPage() {
       <ClientWatchSettings />
 
       <ReachSettings />
+
+      <LogsSettings />
 
       <TagsSettings />
 
