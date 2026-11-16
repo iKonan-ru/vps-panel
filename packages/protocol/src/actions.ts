@@ -54,6 +54,7 @@ export const actionTitles: Record<string, string> = {
   'cascade:remove': 'Каскад: удаление',
   'cascade:sync': 'Каскад: сверка шаблона Xray',
   'cascade:release': 'Каскад: служебные пользователи выхода',
+  'xray:accesslog': 'Xray: журнал доступа',
   'awg:client.add': 'AWG: новый пользователь',
   'wdtt:password.add': 'WDTT: новый пароль',
   'wdtt:password.update': 'WDTT: изменение пароля',

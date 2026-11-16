@@ -1,3 +1,4 @@
+import { ActionPanel } from '@/components/action-output';
 import { Alert } from '@/components/ui/alert';
 import { Button } from '@/components/ui/button';
 import { Checkbox } from '@/components/ui/checkbox';
@@ -20,6 +21,7 @@ import {
   LOG_DAYS_MAX,
   LOG_MB_MAX,
   LOG_MB_MIN,
+  type LogAccessState,
   type LogCategory,
   type LogFilter,
   type LogSettings,
@@ -69,6 +71,8 @@ export function LogsSettings() {
   const confirm = useConfirm();
   const { stepUp, dialog } = useStepUp();
   const [msg, setMsg] = useState<{ tone: 'ok' | 'bad'; text: string } | null>(null);
+  // запущенное действие журнала доступа: до его конца и свежего состояния блок занят
+  const [act, setAct] = useState<{ id: string; title: string; done: boolean } | null>(null);
   const note: { tone: 'ok' | 'bad'; text: string } | null = op.error
     ? { tone: 'bad', text: op.error }
     : msg;
@@ -78,7 +82,7 @@ export function LogsSettings() {
   }, [data, draft]);
 
   if (!data || !draft) return null;
-  const busy = op.busy || isFetching;
+  const busy = op.busy || isFetching || Boolean(act && !act.done);
   const st = data.stats;
   const valid =
     LOG_CATEGORIES.every((c) => intIn(draft.days[c], 1, LOG_DAYS_MAX)) &&
@@ -139,8 +143,30 @@ export function LogsSettings() {
         method: 'POST',
         json: all ? {} : filter(),
       });
-      qc.setQueryData(['logs'], { settings: r.settings, stats: r.stats });
+      qc.setQueryData(['logs'], { settings: r.settings, stats: r.stats, access: r.access });
       setMsg({ tone: 'ok', text: `Удалено записей: ${r.deleted}` });
+    });
+  }
+
+  async function toggleAccess(a: LogAccessState) {
+    const on = !a.enabled;
+    const ok = await confirm({
+      title: on
+        ? `Включить журнал доступа Xray на ${a.name}?`
+        : `Выключить журнал доступа Xray на ${a.name}?`,
+      text: on
+        ? 'Xray перезапустится, клиенты VLESS этого сервера переподключатся. Журнал пишется на диск сервера, агент раз в минуту забирает из него сводку по часам и не даёт ему разрастись.'
+        : 'Xray перезапустится, клиенты VLESS этого сервера переподключатся. Назначения клиентов этого сервера перестанут записываться.',
+      okLabel: on ? 'Включить' : 'Выключить',
+    });
+    if (!ok) return;
+    setMsg(null);
+    await op.run(async () => {
+      const r = await api<{ actionId: string }>(`/api/logs/access/${a.serverId}`, {
+        method: 'POST',
+        json: { enabled: on },
+      });
+      setAct({ id: r.actionId, title: `${a.name}: журнал доступа Xray`, done: false });
     });
   }
 
@@ -148,7 +174,7 @@ export function LogsSettings() {
     <>
       <Section
         title="Журнал серверов"
-        info="Связь агентов с панелью, подключения адресов к сервисам и их клиенты, проверки доступности по каждому зонду, действия и их ошибки, изменения на серверах (сервисы, контейнеры, порты, баны fail2ban, перезагрузки), нагрузка. Хранится отдельно от базы панели и не входит в её резервную копию. В записях есть адреса клиентов."
+        info="Связь агентов с панелью, подключения адресов к сервисам и их клиенты, назначения клиентов VLESS, проверки доступности по каждому зонду, действия и их ошибки, изменения на серверах (сервисы, контейнеры, порты, баны fail2ban, входы по SSH, нехватка памяти, падения служб, перезагрузки), нагрузка. Агент копит записи и без связи с панелью. Хранится отдельно от базы панели и не входит в её резервную копию. В записях есть адреса клиентов."
         extra={
           data.settings.enabled ? (
             <Chip tone="ok">{bytes(st.bytes)}</Chip>
@@ -229,6 +255,48 @@ export function LogsSettings() {
             Сохранить
           </Button>
         </div>
+
+        {data.access.length > 0 && (
+          <div className="border-t border-border">
+            <div className="flex items-center gap-1 px-4 pt-4 text-[13px] font-medium">
+              Журнал доступа Xray
+            </div>
+            <div className="px-4 pt-1 text-xs text-muted">
+              Из него берутся назначения: куда ходят клиенты VLESS, по часам.
+            </div>
+            <Table className="mt-2">
+              <TBody>
+                {data.access.map((a) => (
+                  <tr key={a.serverId}>
+                    <td className="w-full">{a.name}</td>
+                    <td className="whitespace-nowrap">
+                      {!a.online ? (
+                        <Chip tone="muted">не в сети</Chip>
+                      ) : !a.agent ? (
+                        <Chip tone="muted">агент устарел</Chip>
+                      ) : a.error ? (
+                        <Chip tone="bad">{a.error}</Chip>
+                      ) : a.enabled === null ? (
+                        <Chip tone="muted">нет данных</Chip>
+                      ) : a.enabled ? (
+                        <Chip tone="ok">включён</Chip>
+                      ) : (
+                        <Chip tone="muted">выключен</Chip>
+                      )}
+                    </td>
+                    <td className="text-right">
+                      {a.online && a.agent && a.enabled !== null && (
+                        <Button size="sm" disabled={busy} onClick={() => void toggleAccess(a)}>
+                          {a.enabled ? 'Выключить' : 'Включить'}
+                        </Button>
+                      )}
+                    </td>
+                  </tr>
+                ))}
+              </TBody>
+            </Table>
+          </div>
+        )}
 
         <div className="flex flex-col gap-3 border-t border-border p-4">
           <div className="grid gap-3 sm:grid-cols-2">
@@ -326,6 +394,21 @@ export function LogsSettings() {
           {note && <Alert tone={note.tone}>{note.text}</Alert>}
         </div>
       </Section>
+      {act && (
+        <ActionPanel
+          title={act.title}
+          actionId={act.id}
+          onHide={() => setAct(null)}
+          onFinished={() =>
+            void (async () => {
+              // состояние журнала доступа панель забирает у агента сразу после действия
+              await new Promise((r) => setTimeout(r, 1500));
+              await qc.invalidateQueries({ queryKey: ['logs'] });
+              setAct((x) => x && { ...x, done: true });
+            })()
+          }
+        />
+      )}
       {dialog}
     </>
   );

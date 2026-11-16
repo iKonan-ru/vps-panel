@@ -59,7 +59,7 @@ func decode(params json.RawMessage, v any) error {
 // его с AgentMethodSchema в packages/protocol.
 func registry(panelURL string) map[string]op {
 	all := map[string]op{}
-	for _, part := range []map[string]op{systemOps(panelURL), serviceOps(), taskOps(panelURL)} {
+	for _, part := range []map[string]op{systemOps(panelURL), serviceOps(), taskOps(panelURL), eventOps()} {
 		for name, o := range part {
 			if _, dup := all[name]; dup {
 				panic("операция объявлена дважды: " + name)

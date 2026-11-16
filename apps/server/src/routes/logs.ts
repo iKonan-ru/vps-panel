@@ -6,6 +6,7 @@ import {
   LOG_DAYS_MAX,
   LOG_MB_MAX,
   LOG_MB_MIN,
+  type LogAccessState,
   type LogFilter,
   type LogsView,
 } from '@vps/protocol';
@@ -13,6 +14,7 @@ import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 import { z } from 'zod';
 import type { Db } from '../db/index.js';
 import { sha256 } from '../lib/auth.js';
+import type { Cascades } from '../lib/cascades.js';
 import { saveLogSettings } from '../lib/server-log-bind.js';
 import { type ServerLog, formatRows } from '../lib/server-log.js';
 import { type StepUp, hasStepUp } from '../lib/step-up.js';
@@ -77,9 +79,16 @@ function filterText(f: LogFilter): string {
 /** Журнал серверов: настройки, размер, выгрузка и удаление записей. */
 export async function logRoutes(
   app: FastifyInstance,
-  opts: { db: Db; slog: ServerLog; stepUp: StepUp; secure: boolean },
+  opts: {
+    db: Db;
+    slog: ServerLog;
+    access: () => LogAccessState[];
+    cascades: Pick<Cascades, 'setAccessLog'>;
+    stepUp: StepUp;
+    secure: boolean;
+  },
 ) {
-  const { db, slog, stepUp, secure } = opts;
+  const { db, slog, access, cascades, stepUp, secure } = opts;
   // выгрузка (адреса клиентов) и удаление - после подтверждения пароля и 2FA
   const guard = (req: FastifyRequest, reply: FastifyReply) => {
     const sid = sessionToken(req);
@@ -90,7 +99,11 @@ export async function logRoutes(
     return null;
   };
 
-  const view = (): LogsView => ({ settings: slog.settings, stats: slog.stats() });
+  const view = (): LogsView => ({
+    settings: slog.settings,
+    stats: slog.stats(),
+    access: access(),
+  });
 
   app.get('/api/logs', async () => view());
 
@@ -124,6 +137,15 @@ export async function logRoutes(
       .header('Content-Disposition', `attachment; filename="server-log-${ts}.${format}.gz"`)
       .header('Cache-Control', 'no-store')
       .send(stream);
+  });
+
+  /**
+   * Журнал доступа xray на сервере (назначения клиентов): запись в шаблон Xray 3X-UI -
+   * действием сервера, Xray перезапускается.
+   */
+  app.post('/api/logs/access/:id', async (req) => {
+    const { enabled } = z.object({ enabled: z.boolean() }).parse(req.body ?? {});
+    return { actionId: cascades.setAccessLog((req.params as { id: string }).id, enabled) };
   });
 
   /** Удаление по фильтру; без фильтра - весь журнал. */

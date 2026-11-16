@@ -84,6 +84,8 @@ type Json = Record<string, unknown>;
 
 /** Проверка Xray после записи шаблона: изменения применяются через API ядра за секунды. */
 const TEMPLATE_CHECKS_MS = [3_000, 5_000, 5_000];
+/** Журнал доступа Xray, который включает панель (агент читает путь из config.json сам). */
+const ACCESS_LOG_PATH = '/usr/local/x-ui/access.log';
 /** Сверка шаблона входа с базой (порт и ключи выхода, адрес, удалённый inbound). */
 const SYNC_EVERY_MS = 30 * 60_000;
 /** Проверка выхода с входа. */
@@ -486,6 +488,57 @@ export class Cascades {
       comment: 'каскад VPS Panel',
     });
     return { address: exit.host, port: Number(inbound.port), uuid, ...reality };
+  }
+
+  /**
+   * Журнал доступа Xray (назначения клиентов в журнале серверов): путь в шаблоне Xray сервера,
+   * с проверкой Xray после записи - упал, шаблон возвращается. Выключается только путь,
+   * записанный панелью: чужой журнал доступа (ограничение адресов 3X-UI) остаётся.
+   */
+  setAccessLog(serverId: string, on: boolean): string {
+    this.server(serverId);
+    this.requireForm(serverId);
+    const api = this.api(serverId);
+    const form = this.form(serverId);
+    return this.d.journal.background(serverId, 'xray:accesslog', { enabled: on }, (action) =>
+      this.serial(serverId, async () => {
+        const say = (line: string) => action.stream('log', `${line}\n`);
+        const tpl = await this.readTemplate(api);
+        const log = (tpl.xraySetting.log as Json | undefined) ?? {};
+        const cur = String(log.access ?? '').trim();
+        const enabled = cur !== '' && cur.toLowerCase() !== 'none';
+        if (on === enabled) {
+          say(on ? `Журнал доступа уже включён: ${cur}` : 'Журнал доступа уже выключен');
+          return;
+        }
+        if (!on && cur !== ACCESS_LOG_PATH) {
+          say(`Журнал доступа включён не панелью (${cur}): оставлен как есть`);
+          return;
+        }
+        const want = on ? ACCESS_LOG_PATH : 'none';
+        const before = await xrayState(api).catch(() => null);
+        const write = (access: string) =>
+          this.writeTemplate(form, {
+            ...tpl,
+            xraySetting: { ...tpl.xraySetting, log: { ...log, access } },
+          });
+        say(on ? `Записываю шаблон Xray: журнал доступа ${want}` : 'Записываю шаблон Xray');
+        try {
+          await write(want);
+        } catch (e) {
+          await write(cur || 'none').catch(() => undefined);
+          throw e;
+        }
+        if (before?.state === 'running') {
+          const bad = await watchXray(api, this.d.checksMs ?? TEMPLATE_CHECKS_MS);
+          if (bad) {
+            await write(cur || 'none').catch(() => undefined);
+            throw new Error(`Xray остановился, шаблон возвращён как был: ${bad}`);
+          }
+          say('Xray работает');
+        }
+      }),
+    );
   }
 
   private async readTemplate(api: XuiCall): Promise<Template> {

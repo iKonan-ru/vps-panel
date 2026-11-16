@@ -183,6 +183,9 @@ func main() {
 		}
 	}()
 
+	// журнал сервера копится и без связи с панелью
+	go runEventlog(ctx, log)
+
 	collector := metrics.NewCollector()
 	ops := withConfigOps(registry(cfg.PanelURL), cfg, *cfgPath)
 	panelKey, _ := cfg.Key() // проверен в config.Load

@@ -1,7 +1,7 @@
 import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import type { ConnsView, Inventory, Metrics } from '@vps/protocol';
+import type { AgentLogEvent, AgentLogPull, ConnsView, Inventory, Metrics } from '@vps/protocol';
 import { afterEach, describe, expect, it } from 'vitest';
 import { createDb } from '../src/db/index.js';
 import { loadLogSettings, saveLogSettings } from '../src/lib/server-log-bind.js';
@@ -236,7 +236,7 @@ describe('журнал серверов', () => {
     const db = createDb(':memory:');
     saveLogSettings(db, {
       enabled: false,
-      days: { agent: 0, reach: 30, conn: 99999, action: 10, server: 10, metric: 10 },
+      days: { agent: 0, reach: 30, conn: 99999, dest: 10, action: 10, server: 10, metric: 10 },
       maxMb: 1,
     });
     const s = loadLogSettings(db);
@@ -261,9 +261,22 @@ describe('маршруты /api/logs', () => {
     // как общий обработчик приложения: ошибка схемы - 400
     const { ZodError } = await import('zod');
     a.setErrorHandler((e, _req, reply) => reply.code(e instanceof ZodError ? 400 : 500).send());
-    await a.register(logRoutes, { db, slog: t.log, stepUp, secure: false });
+    const calls: [string, boolean][] = [];
+    await a.register(logRoutes, {
+      db,
+      slog: t.log,
+      access: () => [],
+      cascades: {
+        setAccessLog: (id: string, on: boolean) => {
+          calls.push([id, on]);
+          return 'act1';
+        },
+      },
+      stepUp,
+      secure: false,
+    });
     const cookies = { vps_session: 'tok', vps_stepup: stepUp.issue(sha256('tok')) };
-    return { a, t, db, cookies };
+    return { a, t, db, cookies, calls };
   }
 
   it('выгрузка и удаление - только после подтверждения; выгрузка - gzip с записями', async () => {
@@ -291,6 +304,18 @@ describe('маршруты /api/logs', () => {
     await a.close();
   });
 
+  it('журнал доступа xray включается действием сервера', async () => {
+    const { a, calls } = await app();
+    const r = await a.inject({
+      method: 'POST',
+      url: '/api/logs/access/s1',
+      payload: { enabled: true },
+    });
+    expect(r.json()).toEqual({ actionId: 'act1' });
+    expect(calls).toEqual([['s1', true]]);
+    await a.close();
+  });
+
   it('настройки сохраняются и проверяются', async () => {
     const { a, db } = await app();
     const bad = await a.inject({
@@ -301,12 +326,96 @@ describe('маршруты /api/logs', () => {
     expect(bad.statusCode).toBe(400);
     const body = {
       enabled: false,
-      days: { agent: 30, reach: 30, conn: 7, action: 30, server: 30, metric: 14 },
+      days: { agent: 30, reach: 30, conn: 7, dest: 7, action: 30, server: 30, metric: 14 },
       maxMb: 200,
     };
     const ok = await a.inject({ method: 'PUT', url: '/api/logs/settings', payload: body });
     expect(ok.json().settings).toEqual(body);
     expect(loadLogSettings(db)).toEqual(body);
     await a.close();
+  });
+});
+
+describe('буфер агента (events.pull)', () => {
+  const users = () => new Map([['anna@x', { id: 'c1', name: 'Анна' }]]);
+  const pull = (epoch: string, events: AgentLogEvent[], dropped = 0): AgentLogPull => ({
+    epoch,
+    events,
+    dropped,
+    more: false,
+    access: { enabled: true },
+  });
+
+  it('нагрузка, системный журнал и назначения; отметка забранного', () => {
+    const t = setup();
+    const hour = '2026-11-10T11:00:00.000Z';
+    const dest = (n: number): AgentLogEvent => ({
+      seq: 0,
+      at: hour,
+      kind: 'dest',
+      level: 'info',
+      data: {
+        hour,
+        rows: [
+          { email: 'anna@x', host: 'example.com', port: 443, net: 'tcp', out: 'direct', n },
+          { email: 'bob@x', host: 'example.org', port: 443, net: 'tcp', out: 'direct', n: 1 },
+        ],
+      },
+    });
+    const after = t.log.ingest(
+      's1',
+      pull(
+        'e1',
+        [
+          { seq: 5, at: '2026-11-10T11:30:00Z', kind: 'metric', level: 'info', data: metrics(10) },
+          {
+            seq: 6,
+            at: '2026-11-10T11:31:00Z',
+            kind: 'ssh.login',
+            level: 'info',
+            text: 'Вход по SSH: root с 198.51.100.4',
+            ip: '198.51.100.4',
+          },
+          { ...dest(2), seq: 7 },
+        ],
+        3,
+      ),
+      users,
+    );
+    expect(after).toBe(7);
+    expect(t.log.pullState('s1')).toEqual({ epoch: 'e1', after: 7 });
+    // прирост за тот же час складывается
+    t.log.ingest('s1', pull('e1', [{ ...dest(3), seq: 8 }]), users);
+    expect(
+      t.log.sqlite.prepare('select email, client_name, n from dest order by email').all(),
+    ).toEqual([
+      { email: 'anna@x', client_name: 'Анна', n: 5 },
+      { email: 'bob@x', client_name: null, n: 2 },
+    ]);
+    expect(t.log.sqlite.prepare('select category, type, ip from event order by id').all()).toEqual([
+      { category: 'agent', type: 'agent.dropped', ip: null },
+      { category: 'server', type: 'ssh.login', ip: '198.51.100.4' },
+    ]);
+    // нагрузка из буфера - со временем замера и без события о перезагрузке
+    expect(t.log.sqlite.prepare('select at from metric').get()).toEqual({
+      at: Date.parse('2026-11-10T11:30:00Z'),
+    });
+    // выгрузка и удаление назначений по клиенту
+    const rows = [...t.log.rows({ categories: ['dest'], clientId: 'c1' })];
+    expect(rows).toHaveLength(1);
+    expect(rows[0]?.text).toBe('Анна -> example.com:443 (tcp, direct): 5');
+    expect(t.log.delete({ categories: ['dest'], ip: 'example.org' })).toBe(1);
+  });
+
+  it('пустой забор не сдвигает отметку; новая эпоха агента - с начала', () => {
+    const t = setup();
+    t.log.ingest(
+      's1',
+      pull('e1', [{ seq: 3, at: '2026-11-10T11:00:00Z', kind: 'x', level: 'info' }]),
+      users,
+    );
+    expect(t.log.ingest('s1', pull('e1', []), users)).toBe(3);
+    expect(t.log.ingest('s1', pull('e2', []), users)).toBe(0);
+    expect(t.log.pullState('s1')).toEqual({ epoch: 'e2', after: 0 });
   });
 });

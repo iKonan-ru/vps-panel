@@ -1,5 +1,6 @@
 import { statSync } from 'node:fs';
 import {
+  type AgentLogPull,
   type ConnsView,
   type Inventory,
   LOG_CATEGORIES,
@@ -33,7 +34,10 @@ const OUTPUT_TAIL = 4_000;
 export type LogLevel = 'info' | 'warn' | 'error';
 
 /** Раздел события: разделы журнала, кроме таблиц сеансов и нагрузки, и операции с журналом. */
-export type EventCategory = Exclude<LogCategory, 'conn' | 'metric'> | 'logs';
+export type EventCategory = Exclude<LogCategory, 'conn' | 'metric' | 'dest'> | 'logs';
+
+/** Пользователь xray (email) -> клиент панели на этом сервере. */
+export type XrayUsers = (serverId: string) => Map<string, { id: string; name: string }>;
 
 export interface LogEvent {
   serverId: string | null;
@@ -53,7 +57,7 @@ export interface LogEvent {
 
 /** Строка выгрузки: событие, сеанс подключения или нагрузка - в общем виде. */
 export interface LogRow {
-  type: 'event' | 'conn' | 'metric';
+  type: 'event' | 'conn' | 'metric' | 'dest';
   at: string;
   until?: string;
   serverId: string | null;
@@ -95,9 +99,28 @@ create table if not exists metric (
   primary key (server_id, at, span)
 ) without rowid;
 create index if not exists metric_at on metric(at);
+create table if not exists dest (
+  server_id text not null, hour integer not null, email text not null, client_id text,
+  client_name text, host text not null, port integer not null, net text not null,
+  outbound text not null, n integer not null,
+  primary key (server_id, hour, email, host, port, net, outbound)
+) without rowid;
+create index if not exists dest_hour on dest(hour);
+create index if not exists dest_client on dest(client_id, hour) where client_id is not null;
+create index if not exists dest_host on dest(host, hour);
 create table if not exists kv (key text primary key, value text not null);
 create table if not exists server_ref (id text primary key, name text not null, host text not null);
 `;
+
+/** Строка сводки назначений агента. */
+interface DestIn {
+  email: string;
+  host: string;
+  port: number;
+  net: string;
+  out: string;
+  n: number;
+}
 
 interface ConnData {
   ports: { port: number; label: string; conns: number }[];
@@ -301,7 +324,7 @@ function where(
 /** Какие таблицы и разделы событий касаются фильтра. */
 function scope(f: LogFilter) {
   const cats = f.categories?.length ? f.categories : [...LOG_CATEGORIES];
-  const events: string[] = cats.filter((c) => c !== 'conn' && c !== 'metric');
+  const events: string[] = cats.filter((c) => c !== 'conn' && c !== 'metric' && c !== 'dest');
   // операции с журналом - вместе с полным набором разделов
   if (!f.categories?.length) events.push('logs');
   return {
@@ -309,6 +332,8 @@ function scope(f: LogFilter) {
     conn: cats.includes('conn'),
     // у нагрузки нет клиента и адреса: фильтр по ним её не касается
     metric: cats.includes('metric') && !f.clientId && !f.ip,
+    // адрес в фильтре - назначение с этим адресом
+    dest: cats.includes('dest'),
   };
 }
 
@@ -455,12 +480,18 @@ export class ServerLog {
     for (const [k, v] of this.open) if (now - v.lastAt > SESSION_GAP_MS) this.open.delete(k);
   }
 
-  /** Метрики агента: строка в минуту; сдвиг времени загрузки - событие о перезагрузке. */
-  metric(serverId: string, m: Metrics) {
+  /**
+   * Метрики агента: строка в минуту; сдвиг времени загрузки - событие о перезагрузке. at -
+   * время замера из буфера агента: без проверки частоты и без события о перезагрузке (о ней
+   * агент сообщает по системному журналу).
+   */
+  metric(serverId: string, m: Metrics, at?: number) {
     if (!this.cfg.enabled) return;
-    const now = this.now();
-    if (now - (this.metricAt.get(serverId) ?? 0) < METRIC_STEP_MS) return;
-    this.metricAt.set(serverId, now);
+    const now = at ?? this.now();
+    if (at === undefined) {
+      if (now - (this.metricAt.get(serverId) ?? 0) < METRIC_STEP_MS) return;
+      this.metricAt.set(serverId, now);
+    }
     this.sqlite
       .prepare(
         `insert or replace into metric (server_id, at, span, cpu, mem_used, mem_total, disk_used,
@@ -484,6 +515,7 @@ export class ServerLog {
         m.conns?.ips ?? null,
         m.conns?.awg ?? null,
       );
+    if (at !== undefined) return;
     const bootAt = now - m.uptimeSec * 1000;
     const key = `boot:${serverId}`;
     const prev = Number(this.kv(key) ?? Number.NaN);
@@ -499,6 +531,90 @@ export class ServerLog {
         at: bootAt,
         data: { bootAt: iso(bootAt), uptimeSec: m.uptimeSec },
       });
+  }
+
+  /** С какого события забирать буфер агента: эпоха буфера и последнее сохранённое. */
+  pullState(serverId: string): { epoch: string; after: number } {
+    const v = parse(this.kv(`pull:${serverId}`) ?? null) as {
+      epoch?: string;
+      after?: number;
+    } | null;
+    return { epoch: v?.epoch ?? '', after: v?.after ?? 0 };
+  }
+
+  /**
+   * Забранное у агента: нагрузка, системный журнал, назначения. Сохраняется вместе с отметкой
+   * забранного (одной транзакцией): следующий забор подтверждает их агенту. Выключенный
+   * журнал отметку двигает, но не пишет - буфер агента не копится зря.
+   */
+  ingest(serverId: string, pull: AgentLogPull, users: XrayUsers): number {
+    const last = pull.events.at(-1)?.seq;
+    const prev = this.pullState(serverId);
+    let after = 0;
+    this.sqlite.transaction(() => {
+      if (this.cfg.enabled) {
+        let resolve: ReturnType<XrayUsers> | null = null;
+        const up = this.sqlite.prepare(
+          `insert into dest (server_id, hour, email, client_id, client_name, host, port, net,
+            outbound, n) values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            on conflict (server_id, hour, email, host, port, net, outbound)
+            do update set n = n + excluded.n, client_id = coalesce(excluded.client_id, client_id),
+              client_name = coalesce(excluded.client_name, client_name)`,
+        );
+        if (pull.dropped > 0)
+          this.write({
+            serverId,
+            category: 'agent',
+            level: 'warn',
+            type: 'agent.dropped',
+            text: `Агент потерял ${pull.dropped} записей журнала: буфер переполнился, пока панель их не забирала`,
+            data: { dropped: pull.dropped },
+          });
+        for (const e of pull.events) {
+          const at = Date.parse(e.at);
+          if (!Number.isFinite(at)) continue;
+          if (e.kind === 'metric') {
+            this.metric(serverId, e.data as Metrics, at);
+            continue;
+          }
+          if (e.kind === 'dest') {
+            const d = e.data as { hour?: string; rows?: DestIn[] } | undefined;
+            const hour = Date.parse(d?.hour ?? '');
+            if (!Number.isFinite(hour) || !Array.isArray(d?.rows)) continue;
+            resolve ??= users(serverId);
+            for (const r of d.rows) {
+              const c = resolve.get(r.email);
+              up.run(
+                serverId,
+                hour,
+                r.email,
+                c?.id ?? null,
+                c?.name ?? null,
+                r.host,
+                r.port,
+                r.net,
+                r.out,
+                r.n,
+              );
+            }
+            continue;
+          }
+          this.write({
+            serverId,
+            category: 'server',
+            level: e.level === 'error' || e.level === 'warn' ? e.level : 'info',
+            type: e.kind,
+            text: e.text ?? e.kind,
+            ip: e.ip ?? null,
+            data: e.data,
+            at,
+          });
+        }
+      }
+      after = last ?? (prev.epoch === pull.epoch ? prev.after : 0);
+      this.setKv(`pull:${serverId}`, JSON.stringify({ epoch: pull.epoch, after }));
+    })();
+    return after;
   }
 
   /** Снимок агента: изменения относительно прошлого снимка - событиями. */
@@ -567,6 +683,7 @@ export class ServerLog {
         .run(cut(OPS_DAYS));
       this.sqlite.prepare('delete from conn where last_at < ?').run(cut(d.conn));
       this.sqlite.prepare('delete from metric where at < ?').run(cut(d.metric));
+      this.sqlite.prepare('delete from dest where hour < ?').run(cut(d.dest));
       this.rollup(now - METRIC_ROLLUP_AFTER_MS);
     })();
     this.sqlite.pragma('incremental_vacuum');
@@ -611,12 +728,17 @@ export class ServerLog {
           )
           .run(k);
     }
-    const n = (this.sqlite.prepare('select count(*) n from metric').get() as { n: number }).n;
-    if (n) {
+    // таблицы без rowid - по времени: всё до границы доли самых старых
+    for (const [table, col] of [
+      ['metric', 'at'],
+      ['dest', 'hour'],
+    ] as const) {
+      const n = (this.sqlite.prepare(`select count(*) n from ${table}`).get() as { n: number }).n;
+      if (!n) continue;
       const at = this.sqlite
-        .prepare('select at from metric order by at limit 1 offset ?')
+        .prepare(`select ${col} at from ${table} order by ${col} limit 1 offset ?`)
         .get(Math.max(0, Math.ceil(n * share) - 1)) as { at: number } | undefined;
-      if (at) this.sqlite.prepare('delete from metric where at <= ?').run(at.at);
+      if (at) this.sqlite.prepare(`delete from ${table} where ${col} <= ?`).run(at.at);
     }
   }
 
@@ -657,12 +779,18 @@ export class ServerLog {
       at: number | null;
     };
     categories.metric = { rows: met.n, oldest: met.at === null ? null : iso(met.at) };
+    const dst = this.sqlite.prepare('select count(*) n, min(hour) at from dest').get() as {
+      n: number;
+      at: number | null;
+    };
+    categories.dest = { rows: dst.n, oldest: dst.at === null ? null : iso(dst.at) };
     const servers = this.sqlite
       .prepare(
         `select s.id, coalesce(r.name, s.id) name, sum(s.n) n from (
           select server_id id, count(*) n from event where server_id is not null group by server_id
           union all select server_id, count(*) from conn group by server_id
           union all select server_id, count(*) from metric group by server_id
+          union all select server_id, count(*) from dest group by server_id
         ) s left join server_ref r on r.id = s.id group by s.id order by n desc`,
       )
       .all() as { id: string; name: string; n: number }[];
@@ -698,6 +826,10 @@ export class ServerLog {
       if (sc.metric) {
         const w = where(f, { at: 'at', server: 'server_id' });
         n += this.sqlite.prepare(`delete from metric ${w.sql}`).run(...w.args).changes;
+      }
+      if (sc.dest) {
+        const w = where(f, { at: 'hour', server: 'server_id', client: 'client_id', ip: 'host' });
+        n += this.sqlite.prepare(`delete from dest ${w.sql}`).run(...w.args).changes;
       }
     })();
     this.sqlite.pragma('incremental_vacuum');
@@ -833,6 +965,46 @@ export class ServerLog {
             data: rest,
           };
         }
+      }
+      if (sc.dest) {
+        const w = where(f, { at: 'hour', server: 'server_id', client: 'client_id', ip: 'host' });
+        const it = ro
+          .prepare(`select * from dest ${w.sql} order by hour, server_id, email, n desc`)
+          .iterate(...w.args) as IterableIterator<{
+          server_id: string;
+          hour: number;
+          email: string;
+          client_id: string | null;
+          client_name: string | null;
+          host: string;
+          port: number;
+          net: string;
+          outbound: string;
+          n: number;
+        }>;
+        for (const r of it)
+          yield {
+            type: 'dest',
+            at: iso(r.hour),
+            serverId: r.server_id,
+            server: server(r.server_id),
+            category: 'dest',
+            level: 'info',
+            event: r.outbound,
+            clientId: r.client_id,
+            client: r.client_name,
+            ip: null,
+            actionId: null,
+            text: `${r.client_name ?? r.email} -> ${r.host}${r.port ? `:${r.port}` : ''} (${r.net}, ${r.outbound}): ${r.n}`,
+            data: {
+              email: r.email,
+              host: r.host,
+              port: r.port,
+              net: r.net,
+              outbound: r.outbound,
+              n: r.n,
+            },
+          };
       }
     } finally {
       ro.close();

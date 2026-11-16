@@ -367,7 +367,6 @@ export async function buildApp(opts: AppOptions) {
     log: app.log,
   });
   stops.push(serverLog.stop);
-  await app.register(logRoutes, { db, slog: serverLog.slog, stepUp, secure });
   stops.push(xraySpares.start());
   // доставка в Telegram: раз в 5 минут проверка выходов xray и getMe бота
   stops.push(
@@ -462,6 +461,14 @@ export async function buildApp(opts: AppOptions) {
   });
   stops.push(cascades.start());
   await app.register(cascadeRoutes, { cascades });
+  await app.register(logRoutes, {
+    db,
+    slog: serverLog.slog,
+    access: serverLog.access,
+    cascades,
+    stepUp,
+    secure,
+  });
   await app.register(uninstallRoutes, {
     ...serverRouteOpts,
     links: new UninstallLinks({ db, registry, box, journal, cascades, xray, spares: xraySpares }),

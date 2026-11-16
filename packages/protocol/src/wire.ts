@@ -113,6 +113,7 @@ export const AgentMethodSchema = z.enum([
   'clients.stats',
   'conns.list',
   'conns.kill',
+  'events.pull',
 ]);
 export type AgentMethod = z.infer<typeof AgentMethodSchema>;
 

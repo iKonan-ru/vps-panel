@@ -974,3 +974,47 @@ describe('снятие каскадов перед полной очисткой
     expect(xui.exit?.clients.has(cascadeClientEmail('entry'))).toBe(false);
   });
 });
+
+describe('журнал доступа Xray (журнал серверов)', () => {
+  const access = (t: Record<string, unknown> | undefined) =>
+    (t?.log as { access?: string } | undefined)?.access;
+
+  it('включение и выключение пишут путь в шаблон; повтор шаблон не трогает', async () => {
+    const { c, xui, done } = await setup();
+    c.setAccessLog('entry', true);
+    let a = await done();
+    expect(a?.exitCode, a?.output).toBe(0);
+    expect(access(xui.entry?.template)).toBe('/usr/local/x-ui/access.log');
+    const writes = xui.entry?.writes;
+    c.setAccessLog('entry', true);
+    a = await done();
+    expect(a?.output).toContain('уже включён');
+    expect(xui.entry?.writes).toBe(writes);
+    c.setAccessLog('entry', false);
+    a = await done();
+    expect(a?.exitCode, a?.output).toBe(0);
+    expect(access(xui.entry?.template)).toBe('none');
+  });
+
+  it('чужой журнал доступа (ограничение адресов 3X-UI) не выключается', async () => {
+    const { c, xui, done } = await setup();
+    c.setAccessLog('entry', true);
+    await done();
+    const t = xui.entry?.template as { log: { access: string } };
+    t.log.access = './access.log';
+    c.setAccessLog('entry', false);
+    const a = await done();
+    expect(a?.output).toContain('включён не панелью');
+    expect(access(xui.entry?.template)).toBe('./access.log');
+  });
+
+  it('Xray упал после записи - шаблон возвращается', async () => {
+    const { c, xui, done } = await setup();
+    if (xui.entry) xui.entry.breakAll = true;
+    c.setAccessLog('entry', true);
+    const a = await done();
+    expect(a?.exitCode).toBe(1);
+    expect(a?.output).toContain('шаблон возвращён');
+    expect(access(xui.entry?.template)).toBe('none');
+  });
+});
