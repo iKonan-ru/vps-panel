@@ -130,7 +130,7 @@ export function ServerNewPage() {
               value={name}
               onChange={setCustomName}
               taken={taken}
-              placeholder="kind-badger"
+              placeholder="Kind Badger"
               required
             />
           </Field>

@@ -1,7 +1,7 @@
 /**
- * Случайные имена серверов "прилагательное-животное" (kind-badger, speedy-eagle): только
- * латиница и дефис - имя без изменений становится частью поддоменов панели и адреса для
- * клиентов. Слова короткие, дружелюбные и однозначные.
+ * Случайные имена серверов "Прилагательное Животное" (Kind Badger, Speedy Eagle): латиница -
+ * из имени составляются поддомены панели и адрес для клиентов (kind-badger). Слова короткие,
+ * дружелюбные и однозначные.
  */
 export const NAME_ADJECTIVES = [
   'agile',
@@ -140,22 +140,32 @@ export const NAME_ANIMALS = [
   'zebra',
 ] as const;
 
+/** Вид имени в поддомене: занятым считается и "kind-badger" для "Kind Badger". */
+const slugOf = (name: string) =>
+  name
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '');
+
+const title = (w: string) => w.charAt(0).toUpperCase() + w.slice(1);
+
 /**
- * Случайное имя, которого нет среди taken (сравнение без учёта регистра). Все сочетания заняты
+ * Случайное имя, которого нет среди taken (сравнение по виду в поддомене). Все сочетания заняты
  * (несколько тысяч серверов) - к имени добавляется номер.
  */
 export function randomServerName(
   taken: Iterable<string> = [],
   rnd: () => number = Math.random,
 ): string {
-  const used = new Set([...taken].map((n) => n.trim().toLowerCase()));
+  const used = new Set([...taken].map(slugOf));
   const pick = <T>(list: readonly T[]) => list[Math.floor(rnd() * list.length)] as T;
   let name = '';
   for (let i = 0; i < 100; i++) {
-    name = `${pick(NAME_ADJECTIVES)}-${pick(NAME_ANIMALS)}`;
-    if (!used.has(name)) return name;
+    name = `${title(pick(NAME_ADJECTIVES))} ${title(pick(NAME_ANIMALS))}`;
+    if (!used.has(slugOf(name))) return name;
   }
   let n = 2;
-  while (used.has(`${name}-${n}`)) n++;
-  return `${name}-${n}`;
+  while (used.has(slugOf(`${name} ${n}`))) n++;
+  return `${name} ${n}`;
 }
