@@ -5,6 +5,7 @@ import {
   formToHosting,
 } from '@/components/server/hosting-form';
 import { InstallAgent } from '@/components/server/install-agent';
+import { ServerNameInput } from '@/components/server/server-name-input';
 import { Alert } from '@/components/ui/alert';
 import { Button, ButtonLink } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
@@ -14,15 +15,15 @@ import { Input } from '@/components/ui/input';
 import { PageTitle } from '@/components/ui/page-title';
 import { TagInput } from '@/components/ui/tag-input';
 import { api } from '@/lib/api';
-import { countryName } from '@/lib/countries';
 import { clampInt } from '@/lib/masks';
 import { useServer, useServers } from '@/lib/servers';
 import { useTags } from '@/lib/tags';
 import { useAction } from '@/lib/use-action';
 import { useQueryClient } from '@tanstack/react-query';
 import { useNavigate } from '@tanstack/react-router';
+import { randomServerName } from '@vps/protocol';
 import { Check, Radar, Wand2, X as XIcon } from 'lucide-react';
-import { type FormEvent, useState } from 'react';
+import { type FormEvent, useEffect, useState } from 'react';
 
 interface Probe {
   ok: boolean;
@@ -37,8 +38,9 @@ interface Created {
 
 /** Добавление сервера: данные и хостинг, затем установка агента. */
 export function ServerNewPage() {
-  // имя по умолчанию - "Хостинг Страна", пока его не поправили руками
+  // имя по умолчанию - случайное, пока его не поправили руками или не выбрали другое
   const [customName, setCustomName] = useState<string | null>(null);
+  const [autoName, setAutoName] = useState('');
   const [host, setHost] = useState('');
   const [sshPort, setSshPort] = useState('22');
   const [tags, setTags] = useState<string[]>([]);
@@ -46,7 +48,12 @@ export function ServerNewPage() {
   const [hosting, setHosting] = useState<HostingForm>(emptyHostingForm);
   const setH = (patch: Partial<HostingForm>) => setHosting((h) => ({ ...h, ...patch }));
   const { data: servers } = useServers();
-  const name = customName ?? autoName(hosting, servers?.map((x) => x.name) ?? []);
+  const taken = servers?.map((x) => x.name) ?? [];
+  // после загрузки списка серверов: случайное имя не должно совпасть с уже занятым
+  useEffect(() => {
+    if (servers && !autoName) setAutoName(randomServerName(servers.map((x) => x.name)));
+  }, [servers, autoName]);
+  const name = customName ?? autoName;
   const op = useAction();
   const [created, setCreated] = useState<Created | null>(null);
   const [probe, setProbe] = useState<Probe | null>(null);
@@ -116,15 +123,15 @@ export function ServerNewPage() {
           <Field
             label="Имя в панели"
             htmlFor="srv-name"
-            hint="если не задано, составляется из хостинга и страны"
+            hint="из него составляются поддомены панели и адрес для клиентов"
           >
-            <Input
+            <ServerNameInput
               id="srv-name"
               value={name}
-              onChange={(e) => setCustomName(e.target.value)}
-              placeholder="Hoster Финляндия"
+              onChange={setCustomName}
+              taken={taken}
+              placeholder="kind-badger"
               required
-              maxLength={64}
             />
           </Field>
           <Field label="Теги" htmlFor="srv-tags">
@@ -208,15 +215,6 @@ export function ServerNewPage() {
       </div>
     </form>
   );
-}
-
-/** Имя из хостинга и страны ("Hoster Финляндия"); занятое получает номер: " 2", " 3". */
-function autoName(h: HostingForm, taken: string[]): string {
-  const base = [h.provider.trim(), countryName(h.country)].filter(Boolean).join(' ');
-  if (!base) return '';
-  let name = base;
-  for (let i = 2; taken.includes(name); i++) name = `${base} ${i}`;
-  return name;
 }
 
 /** После добавления: настройка в один клик, когда агент в сети, или просто открыть сервер. */

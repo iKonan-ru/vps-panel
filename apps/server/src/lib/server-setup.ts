@@ -30,7 +30,7 @@ import type { BackupRestorer } from './backup-restore.js';
 import { type BackupSetup, backupSnapshot, subnetOf } from './backup-setup.js';
 import { telegramListeners } from './cascades.js';
 import type { CatalogRunner } from './catalog-runner.js';
-import { checkClientHost } from './client-host.js';
+import { checkClientHost, clientHostSuggestion } from './client-host.js';
 import { type GClients, PANEL_HOST_KEY, panelHostOptIn, queued } from './gclients.js';
 import { setMtproxylHost } from './mtproxyl-host.js';
 import { isPanelHost, panelAddresses } from './panel-host.js';
@@ -288,6 +288,7 @@ export function serverSetup(deps: SetupDeps) {
         title: 'Адрес для клиентов',
         enabled: true,
         answers: { NAME: r.clientHost ?? '' },
+        suggest: clientHostSuggestion(r, env.PANEL_PUBLIC_URL),
       },
     ];
     for (const svc of SERVICES) {

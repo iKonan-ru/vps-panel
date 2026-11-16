@@ -5,7 +5,7 @@ import { type SetupSearch, SourceCard, wipeOf } from '@/components/server/setup/
 import { SshPortFields } from '@/components/server/ssh-port-fields';
 import { PortField } from '@/components/server/xui-inbound-fields';
 import { Alert } from '@/components/ui/alert';
-import { Button } from '@/components/ui/button';
+import { Button, ButtonLink } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Field } from '@/components/ui/field';
@@ -27,7 +27,7 @@ import type {
   SetupProgress,
   SetupStep,
 } from '@vps/protocol';
-import { ChevronDown, Play } from 'lucide-react';
+import { ChevronDown, Play, Server } from 'lucide-react';
 import { useEffect, useRef, useState } from 'react';
 
 /** Поля команд, которые настройка задаёт сама: экземпляр AWG и поведение при уже стоящем. */
@@ -77,13 +77,25 @@ function StepFields({
         htmlFor="setup-client-host"
         hint={<>A-запись на IP сервера; пусто&nbsp;&mdash; клиенты получат IP</>}
       >
-        <Input
-          id="setup-client-host"
-          value={a.NAME ?? ''}
-          placeholder="srv.example.com"
-          disabled={disabled}
-          onChange={(e) => set('NAME', e.target.value.trim().toLowerCase())}
-        />
+        <div className="flex flex-col gap-1.5">
+          <Input
+            id="setup-client-host"
+            value={a.NAME ?? ''}
+            placeholder={step.suggest || 'srv.example.com'}
+            disabled={disabled}
+            onChange={(e) => set('NAME', e.target.value.trim().toLowerCase())}
+          />
+          {step.suggest && !a.NAME && (
+            <Button
+              variant="link"
+              className="w-fit text-xs"
+              disabled={disabled}
+              onClick={() => set('NAME', step.suggest ?? '')}
+            >
+              Подставить {step.suggest}
+            </Button>
+          )}
+        </div>
       </Field>
     );
   if (step.kind === 'inbounds')
@@ -375,7 +387,19 @@ export function ServerSetupPage() {
           { label: 'Настройка сервера' },
         ]}
       />
-      <PageTitle hero>Настройка сервера</PageTitle>
+      <div className="flex flex-wrap items-center gap-3">
+        <PageTitle hero>Настройка сервера</PageTitle>
+        <div className="grow" />
+        <ButtonLink
+          to="/servers/$id"
+          params={{ id }}
+          size="sm"
+          label="Сервер"
+          title="Карточка сервера"
+        >
+          <Server className="size-3.5" />
+        </ButtonLink>
+      </div>
       <SourceCard
         serverId={id}
         q={q}
@@ -404,6 +428,7 @@ export function ServerSetupPage() {
 
       {progress && (
         <ProgressCard
+          serverId={id}
           progress={progress}
           disabled={busy || missingPasswords}
           title={missingPasswords ? 'Не заполнены пароли' : lock.reason}

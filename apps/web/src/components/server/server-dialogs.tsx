@@ -1,4 +1,5 @@
 import { InstallAgent } from '@/components/server/install-agent';
+import { ServerNameInput } from '@/components/server/server-name-input';
 import { SshPortSettings } from '@/components/server/ssh-port-settings';
 import { Alert } from '@/components/ui/alert';
 import { Button } from '@/components/ui/button';
@@ -8,6 +9,7 @@ import { Field } from '@/components/ui/field';
 import { Input } from '@/components/ui/input';
 import { TagInput } from '@/components/ui/tag-input';
 import { actions } from '@/lib/actions';
+import { useServers } from '@/lib/servers';
 import { useTags } from '@/lib/tags';
 import { useAction } from '@/lib/use-action';
 import { useQueryClient } from '@tanstack/react-query';
@@ -26,6 +28,8 @@ export function EditServerDialog({
   const [v, setV] = useState(name);
   const [t, setT] = useState(tags);
   const { data: tagList } = useTags();
+  const { data: servers } = useServers();
+  const taken = (servers ?? []).filter((x) => x.id !== serverId).map((x) => x.name);
   const save = useAction();
   async function submit(e: FormEvent) {
     e.preventDefault();
@@ -47,13 +51,17 @@ export function EditServerDialog({
       title="Настройки сервера"
     >
       <form onSubmit={submit} className="flex flex-col gap-4">
-        <Field label="Имя сервера" htmlFor="ed-name">
-          <Input
+        <Field
+          label="Имя сервера"
+          htmlFor="ed-name"
+          hint="Из имени составляются поддомены панели сервисов: после смены они меняются"
+        >
+          <ServerNameInput
             id="ed-name"
             value={v}
-            onChange={(e) => setV(e.target.value)}
+            onChange={setV}
+            taken={taken}
             required
-            maxLength={64}
             disabled={save.busy || sshBusy}
           />
         </Field>

@@ -5,10 +5,9 @@ import type { AgentRegistry } from '../agents/registry.js';
 import type { Db } from '../db/index.js';
 import { servers } from '../db/schema.js';
 import type { actionJournal } from '../lib/action-journal.js';
-import { checkClientHost } from '../lib/client-host.js';
+import { checkClientHost, clientHostSuggestion } from '../lib/client-host.js';
 import type { GClients } from '../lib/gclients.js';
 import { applyClientHost } from '../lib/mtproxyl-host.js';
-import { slugify } from '../lib/panel-proxy.js';
 import type { UiHub } from '../lib/ui-hub.js';
 
 const Id = z.object({ id: z.string() });
@@ -37,14 +36,10 @@ export async function clientHostRoutes(
     const { id } = Id.parse(req.params);
     const r = row(id);
     if (!r) return reply.code(404).send({ error: 'сервер не найден' });
-    // подсказка: имя прокси для браузера (A-запись уже есть) или <слаг>.<домен панели>
-    const inv = r.statusCache?.inventory;
-    const naive = inv?.services.find((s) => s.kind === 'naive')?.details?.domain;
-    const domain = new URL(opts.panelUrl).hostname;
     return {
       host: r.host,
       clientHost: r.clientHost ?? '',
-      suggestion: typeof naive === 'string' && naive ? naive : `${slugify(r.name)}.${domain}`,
+      suggestion: clientHostSuggestion(r, opts.panelUrl),
     };
   });
 

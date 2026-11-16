@@ -1,10 +1,10 @@
 import { ActionOutput } from '@/components/action-output';
-import { Button } from '@/components/ui/button';
+import { Button, ButtonLink } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { Chip } from '@/components/ui/chip';
 import { dateTime } from '@/lib/format';
 import type { SetupProgress, SetupStepState } from '@vps/protocol';
-import { ChevronDown, RotateCcw } from 'lucide-react';
+import { ArrowRight, ChevronDown, RotateCcw } from 'lucide-react';
 import { useState } from 'react';
 
 const STATE: Record<
@@ -18,13 +18,18 @@ const STATE: Record<
   failed: { text: 'ошибка', tone: 'bad' },
 };
 
-/** Ход последней настройки: шаги, вывод и продолжение с упавшего шага. */
+/**
+ * Ход последней настройки: итог (выполняется, завершена, остановилась на ошибке), шаги, вывод,
+ * продолжение с упавшего шага и переход к серверу после успешной.
+ */
 export function ProgressCard({
+  serverId,
   progress,
   disabled,
   title,
   onContinue,
 }: {
+  serverId: string;
   progress: SetupProgress;
   /** Продолжить нельзя (идёт действие, не заполнены пароли...). */
   disabled: boolean;
@@ -39,9 +44,37 @@ export function ProgressCard({
     <Card className="flex flex-col gap-3 p-4">
       <div className="flex flex-wrap items-center gap-2">
         <div className="font-semibold">
-          {running ? 'Настройка выполняется' : `Настройка от ${dateTime(progress.startedAt)}`}
+          {running
+            ? 'Настройка выполняется'
+            : failed
+              ? 'Настройка остановилась на ошибке'
+              : 'Настройка завершена'}
         </div>
+        {running ? (
+          <Chip tone="accent" dot pulse>
+            выполняется
+          </Chip>
+        ) : failed ? (
+          <Chip tone="bad">ошибка</Chip>
+        ) : (
+          <Chip tone="ok">готово</Chip>
+        )}
+        <span className="text-xs text-muted">
+          {progress.finishedAt ? (
+            <>
+              {dateTime(progress.startedAt)}&nbsp;&ndash; {dateTime(progress.finishedAt)}
+            </>
+          ) : (
+            `с ${dateTime(progress.startedAt)}`
+          )}
+        </span>
         <div className="grow" />
+        {progress.finishedAt && !failed && (
+          <ButtonLink to="/servers/$id" params={{ id: serverId }} size="sm" variant="primary">
+            Перейти к серверу
+            <ArrowRight className="size-3.5" />
+          </ButtonLink>
+        )}
         {failed && (
           <Button
             size="sm"

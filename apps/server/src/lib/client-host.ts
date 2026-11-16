@@ -1,5 +1,7 @@
 import { Resolver } from 'node:dns/promises';
 import { isIP } from 'node:net';
+import type { Inventory } from '@vps/protocol';
+import { slugify } from './panel-proxy.js';
 
 /**
  * Адрес сервера в конфигах людей (VLESS, AWG, WDTT, OpenFlux): имя под A-записью, если задано
@@ -7,6 +9,21 @@ import { isIP } from 'node:net';
  */
 export function clientHost(row: { host: string; clientHost?: string | null }): string {
   return row.clientHost || row.host;
+}
+
+/**
+ * Подсказка адреса для клиентов: имя прокси для браузера (A-запись уже есть) или
+ * <слаг имени сервера>.<домен панели>.
+ */
+export function clientHostSuggestion(
+  row: { name: string; statusCache?: { inventory?: Inventory } | null },
+  panelUrl: string,
+): string {
+  const naive = row.statusCache?.inventory?.services.find((s) => s.kind === 'naive')?.details
+    ?.domain;
+  return typeof naive === 'string' && naive
+    ? naive
+    : `${slugify(row.name)}.${new URL(panelUrl).hostname}`;
 }
 
 /** Имя хоста для конфигов: латиница, цифры, дефисы, точки, хотя бы одна точка. */
