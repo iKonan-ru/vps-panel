@@ -6,6 +6,9 @@ import {
   LOG_CATEGORIES,
   LOG_DEFAULTS,
   type LogCategory,
+  type LogDestRow,
+  type LogFeed,
+  type LogFeedRow,
   type LogFilter,
   type LogSettings,
   type LogStats,
@@ -111,6 +114,60 @@ create index if not exists dest_host on dest(host, hour);
 create table if not exists kv (key text primary key, value text not null);
 create table if not exists server_ref (id text primary key, name text not null, host text not null);
 `;
+
+/** Фильтр ленты и назначений. level - не ниже: warn (с ошибками) или error. */
+export interface FeedFilter {
+  servers?: string[];
+  categories?: string[];
+  level?: 'warn' | 'error';
+  from?: string;
+  to?: string;
+  q?: string;
+}
+
+interface EventRowDb {
+  id: number;
+  at: number;
+  server_id: string | null;
+  category: string;
+  level: string;
+  type: string;
+  text: string;
+  client_id: string | null;
+  client_name: string | null;
+  ip: string | null;
+  action_id: string | null;
+  data: string | null;
+}
+
+interface ConnRowDb {
+  id: number;
+  server_id: string;
+  ip: string;
+  kind: string;
+  via: string;
+  name: string | null;
+  client_id: string | null;
+  client_name: string | null;
+  first_at: number;
+  last_at: number;
+  samples: number;
+  max_conns: number;
+  data: string | null;
+}
+
+/** Сеанс подключения словами: адрес, чей, через что. */
+function connText(r: ConnRowDb, data: ConnData): string {
+  const who =
+    r.client_name ??
+    r.name ??
+    (data.guess?.length ? `возможно ${data.guess.join(', ')}` : 'не опознан');
+  const via =
+    r.via === 'awg'
+      ? `AWG${data.device ? `: ${data.device}` : ''}`
+      : data.ports.map((p) => p.label || p.port).join(', ') || 'TCP';
+  return `${r.ip} (${who}): ${via}`;
+}
 
 /** Строка сводки назначений агента. */
 interface DestIn {
@@ -359,6 +416,10 @@ export class ServerLog {
     // действует только на новой базе, до первой таблицы
     this.sqlite.pragma('auto_vacuum = incremental');
     this.sqlite.pragma('journal_mode = WAL');
+    // поиск без учёта регистра и для кириллицы (lower в SQLite - только латиница)
+    this.sqlite.function('ulower', { deterministic: true }, (v: unknown) =>
+      typeof v === 'string' ? v.toLowerCase() : null,
+    );
     this.sqlite.exec(SCHEMA);
     this.loadOpen();
   }
@@ -1009,6 +1070,188 @@ export class ServerLog {
     } finally {
       ro.close();
     }
+  }
+
+  /**
+   * Лента: события и сеансы подключений, новые первыми, страница за страницей. Порядок -
+   * (время, событие раньше сеанса, id) по убыванию; курсор - "время:тип:id" последней строки.
+   */
+  feed(f: FeedFilter, limit = 100, cursor?: string): LogFeed {
+    const names = this.refNames();
+    const cats = f.categories?.length
+      ? f.categories
+      : ['agent', 'reach', 'conn', 'action', 'server'];
+    const evCats = cats.filter((c) => c !== 'conn');
+    const withConns = cats.includes('conn') && !f.level;
+    const [cAt, cType, cId] = (cursor ?? '').split(':').map(Number);
+    const hasCursor = Number.isFinite(cAt) && Number.isFinite(cType) && Number.isFinite(cId);
+    const q = f.q?.trim().toLowerCase() ?? '';
+    const like = `%${q.replace(/[\\%_]/g, (m) => `\\${m}`)}%`;
+    const rows: (LogFeedRow & { _at: number; _t: number; _id: number })[] = [];
+
+    if (evCats.length) {
+      const parts = [`category in (${evCats.map(() => '?').join(',')})`];
+      const args: unknown[] = [...evCats];
+      this.common(f, parts, args, 'at');
+      if (f.level) {
+        parts.push(`level in (${f.level === 'error' ? "'error'" : "'warn','error'"})`);
+      }
+      if (q) {
+        parts.push(
+          "(ulower(text) like ? escape '\\' or ip = ? or ulower(client_name) like ? escape '\\')",
+        );
+        args.push(like, q, like);
+      }
+      if (hasCursor) {
+        parts.push('(at < ? or (at = ? and ? = 1 and id < ?))');
+        args.push(cAt, cAt, cType, cId);
+      }
+      const list = this.sqlite
+        .prepare(
+          `select * from event where ${parts.join(' and ')} order by at desc, id desc limit ?`,
+        )
+        .all(...args, limit + 1) as EventRowDb[];
+      for (const r of list)
+        rows.push({
+          key: `${r.at}:1:${r.id}`,
+          type: 'event',
+          at: iso(r.at),
+          serverId: r.server_id,
+          server: r.server_id ? (names.get(r.server_id) ?? r.server_id) : '',
+          category: r.category,
+          level: r.level,
+          event: r.type,
+          text: r.text,
+          ip: r.ip,
+          clientId: r.client_id,
+          client: r.client_name,
+          actionId: r.action_id,
+          data: parse(r.data),
+          _at: r.at,
+          _t: 1,
+          _id: r.id,
+        });
+    }
+    if (withConns) {
+      const parts: string[] = ['1 = 1'];
+      const args: unknown[] = [];
+      this.common(f, parts, args, 'first_at');
+      if (q) {
+        parts.push(
+          "(ip like ? escape '\\' or ulower(name) like ? escape '\\' or ulower(client_name) like ? escape '\\')",
+        );
+        args.push(`${like.slice(1)}`, like, like);
+      }
+      if (hasCursor) {
+        parts.push('(first_at < ? or (first_at = ? and (? = 1 or id < ?)))');
+        args.push(cAt, cAt, cType, cId);
+      }
+      const list = this.sqlite
+        .prepare(
+          `select * from conn where ${parts.join(' and ')} order by first_at desc, id desc limit ?`,
+        )
+        .all(...args, limit + 1) as ConnRowDb[];
+      for (const r of list) {
+        const data = (parse(r.data) as ConnData | null) ?? { ports: [] };
+        rows.push({
+          key: `${r.first_at}:0:${r.id}`,
+          type: 'conn',
+          at: iso(r.first_at),
+          until: iso(r.last_at),
+          serverId: r.server_id,
+          server: names.get(r.server_id) ?? r.server_id,
+          category: 'conn',
+          level: 'info',
+          event: r.via,
+          text: connText(r, data),
+          ip: r.ip,
+          clientId: r.client_id,
+          client: r.client_name,
+          actionId: null,
+          data: { kind: r.kind, name: r.name, samples: r.samples, maxConns: r.max_conns, ...data },
+          _at: r.first_at,
+          _t: 0,
+          _id: r.id,
+        });
+      }
+    }
+    rows.sort((a, b) => b._at - a._at || b._t - a._t || b._id - a._id);
+    const page = rows.slice(0, limit);
+    const more = rows.length > limit;
+    return {
+      rows: page.map(({ _at, _t, _id, ...r }) => r),
+      next: more ? (page.at(-1)?.key ?? null) : null,
+    };
+  }
+
+  /** Назначения за период по клиенту и адресу, самые частые первыми. */
+  destTop(f: FeedFilter, limit = 300): LogDestRow[] {
+    const names = this.refNames();
+    const parts: string[] = ['1 = 1'];
+    const args: unknown[] = [];
+    this.common(f, parts, args, 'hour');
+    const q = f.q?.trim().toLowerCase() ?? '';
+    if (q) {
+      const like = `%${q.replace(/[\\%_]/g, (m) => `\\${m}`)}%`;
+      parts.push(
+        "(ulower(client_name) like ? escape '\\' or ulower(email) like ? escape '\\' or ulower(host) like ? escape '\\')",
+      );
+      args.push(like, like, like);
+    }
+    const list = this.sqlite
+      .prepare(
+        `select server_id, email, max(client_id) client_id, max(client_name) client_name, host,
+          port, outbound, sum(n) n from dest where ${parts.join(' and ')}
+          group by server_id, email, host, port, outbound order by n desc limit ?`,
+      )
+      .all(...args, limit) as {
+      server_id: string;
+      email: string;
+      client_id: string | null;
+      client_name: string | null;
+      host: string;
+      port: number;
+      outbound: string;
+      n: number;
+    }[];
+    return list.map((r) => ({
+      serverId: r.server_id,
+      server: names.get(r.server_id) ?? r.server_id,
+      email: r.email,
+      clientId: r.client_id,
+      client: r.client_name,
+      host: r.host,
+      port: r.port,
+      outbound: r.outbound,
+      n: r.n,
+    }));
+  }
+
+  /** Сервер и период фильтра ленты. */
+  private common(f: FeedFilter, parts: string[], args: unknown[], at: string) {
+    if (f.servers?.length) {
+      parts.push(`server_id in (${f.servers.map(() => '?').join(',')})`);
+      args.push(...f.servers);
+    }
+    if (f.from) {
+      parts.push(`${at} >= ?`);
+      args.push(Date.parse(f.from));
+    }
+    if (f.to) {
+      parts.push(`${at} < ?`);
+      args.push(Date.parse(f.to));
+    }
+  }
+
+  private refNames(): Map<string, string> {
+    return new Map(
+      (
+        this.sqlite.prepare('select id, name from server_ref').all() as {
+          id: string;
+          name: string;
+        }[]
+      ).map((r) => [r.id, r.name]),
+    );
   }
 
   /** Хвост вывода для события о неудачном действии. */

@@ -4,9 +4,12 @@ import {
   LOG_CATEGORIES,
   LOG_CATEGORY_TITLES,
   LOG_DAYS_MAX,
+  LOG_FEED_CATEGORIES,
   LOG_MB_MAX,
   LOG_MB_MIN,
   type LogAccessState,
+  type LogDestRow,
+  type LogFeed,
   type LogFilter,
   type LogsView,
 } from '@vps/protocol';
@@ -16,7 +19,7 @@ import type { Db } from '../db/index.js';
 import { sha256 } from '../lib/auth.js';
 import type { Cascades } from '../lib/cascades.js';
 import { saveLogSettings } from '../lib/server-log-bind.js';
-import { type ServerLog, formatRows } from '../lib/server-log.js';
+import { type FeedFilter, type ServerLog, formatRows } from '../lib/server-log.js';
 import { type StepUp, hasStepUp } from '../lib/step-up.js';
 import { sessionToken } from './auth.js';
 
@@ -63,6 +66,38 @@ function queryFilter(q: Record<string, string | undefined>): LogFilter {
   ) as LogFilter;
 }
 
+const FeedQuery = z.object({
+  servers: z.string().max(4000).optional(),
+  categories: z.string().max(200).optional(),
+  level: z.enum(['warn', 'error']).optional(),
+  from: isoDate,
+  to: isoDate,
+  q: z.string().max(200).optional(),
+  cursor: z
+    .string()
+    .regex(/^\d+:[01]:\d+$/)
+    .optional(),
+});
+
+/** Фильтр ленты из строки запроса. */
+function feedFilter(raw: unknown): { f: FeedFilter; cursor?: string } {
+  const q = FeedQuery.parse(raw ?? {});
+  const list = (v?: string) => (v ? v.split(',').filter(Boolean) : undefined);
+  const cats = list(q.categories)?.filter((c) =>
+    (LOG_FEED_CATEGORIES as readonly string[]).includes(c),
+  );
+  const servers = list(q.servers);
+  const f: FeedFilter = {
+    ...(servers?.length ? { servers } : {}),
+    ...(cats?.length ? { categories: cats } : {}),
+    ...(q.level ? { level: q.level } : {}),
+    ...(q.from ? { from: q.from } : {}),
+    ...(q.to ? { to: q.to } : {}),
+    ...(q.q?.trim() ? { q: q.q.trim() } : {}),
+  };
+  return { f, ...(q.cursor ? { cursor: q.cursor } : {}) };
+}
+
 /** Фильтр словами: для записи об операции с журналом. */
 function filterText(f: LogFilter): string {
   const parts: string[] = [];
@@ -106,6 +141,18 @@ export async function logRoutes(
   });
 
   app.get('/api/logs', async () => view());
+
+  /** Лента: события и сеансы подключений, новые первыми, по 100. */
+  app.get('/api/logs/feed', async (req): Promise<LogFeed> => {
+    const { f, cursor } = feedFilter(req.query);
+    return slog.feed(f, 100, cursor);
+  });
+
+  /** Назначения за период по клиенту и адресу (поиск - клиент, пользователь xray, адрес). */
+  app.get(
+    '/api/logs/dest',
+    async (req): Promise<LogDestRow[]> => slog.destTop(feedFilter(req.query).f),
+  );
 
   app.put('/api/logs/settings', async (req) => {
     const s = SettingsBody.parse(req.body ?? {});

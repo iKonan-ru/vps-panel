@@ -104,3 +104,45 @@ export interface LogFilter {
   clientId?: string;
   ip?: string;
 }
+
+/** Строка ленты журнала: событие или сеанс подключения (until - конец сеанса). */
+export interface LogFeedRow {
+  /** Курсор этой строки: следующая страница - после неё. */
+  key: string;
+  type: 'event' | 'conn';
+  at: string;
+  until?: string;
+  serverId: string | null;
+  server: string;
+  category: string;
+  level: string;
+  event: string;
+  text: string;
+  ip: string | null;
+  clientId: string | null;
+  client: string | null;
+  actionId: string | null;
+  data: unknown;
+}
+
+export interface LogFeed {
+  rows: LogFeedRow[];
+  /** Курсор следующей страницы; null - дальше записей нет. */
+  next: string | null;
+}
+
+/** Разделы ленты: назначения и нагрузка в ней не показываются. */
+export const LOG_FEED_CATEGORIES = ['agent', 'reach', 'conn', 'action', 'server'] as const;
+
+/** Назначения за период, сложенные по клиенту и адресу. */
+export interface LogDestRow {
+  serverId: string;
+  server: string;
+  email: string;
+  clientId: string | null;
+  client: string | null;
+  host: string;
+  port: number;
+  outbound: string;
+  n: number;
+}

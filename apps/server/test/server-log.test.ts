@@ -304,6 +304,31 @@ describe('маршруты /api/logs', () => {
     await a.close();
   });
 
+  it('лента: фильтры из строки запроса, неверный курсор - 400', async () => {
+    const { a, t } = await app();
+    t.log.event({
+      serverId: 's1',
+      category: 'server',
+      level: 'error',
+      type: 'oom',
+      text: 'Нехватка памяти',
+    });
+    t.log.event({
+      serverId: 's1',
+      category: 'agent',
+      level: 'info',
+      type: 'online',
+      text: 'на связи',
+    });
+    const r = await a.inject({
+      url: `/api/logs/feed?level=error&categories=server,metric&q=${encodeURIComponent('ПАМЯТ')}`,
+    });
+    expect(r.json().rows.map((x: { text: string }) => x.text)).toEqual(['Нехватка памяти']);
+    expect((await a.inject({ url: '/api/logs/feed?cursor=1;drop' })).statusCode).toBe(400);
+    expect((await a.inject({ url: '/api/logs/dest?q=x' })).json()).toEqual([]);
+    await a.close();
+  });
+
   it('журнал доступа xray включается действием сервера', async () => {
     const { a, calls } = await app();
     const r = await a.inject({
@@ -417,5 +442,145 @@ describe('буфер агента (events.pull)', () => {
     expect(t.log.ingest('s1', pull('e1', []), users)).toBe(3);
     expect(t.log.ingest('s1', pull('e2', []), users)).toBe(0);
     expect(t.log.pullState('s1')).toEqual({ epoch: 'e2', after: 0 });
+  });
+});
+
+describe('лента журнала', () => {
+  it('события и сеансы по убыванию времени; страницы без пропусков при одинаковом времени', () => {
+    const t = setup();
+    // пять событий в одну миллисекунду (как разница снимка) и сеанс в то же время
+    for (let i = 0; i < 5; i++)
+      t.log.event({
+        serverId: 's1',
+        category: 'server',
+        level: 'info',
+        type: 'x',
+        text: `e${i}`,
+        at: T0,
+      });
+    t.log.conns('s1', view([{ ip: '198.51.100.7', user: 'anna', clientId: 'c1' }]), names);
+    t.log.event({
+      serverId: 's1',
+      category: 'agent',
+      level: 'warn',
+      type: 'offline',
+      text: 'обрыв',
+      at: T0 + 1000,
+    });
+    const seen: string[] = [];
+    let cursor: string | undefined;
+    for (let i = 0; i < 10; i++) {
+      const page = t.log.feed({}, 2, cursor);
+      seen.push(...page.rows.map((r) => r.text));
+      if (!page.next) break;
+      cursor = page.next;
+    }
+    expect(seen).toEqual([
+      'обрыв',
+      'e4',
+      'e3',
+      'e2',
+      'e1',
+      'e0',
+      '198.51.100.7 (Клиент c1): 3X-UI RAW',
+    ]);
+    const first = t.log.feed({}, 100).rows[0];
+    expect(first).toMatchObject({ server: 'Hoster', level: 'warn', type: 'event' });
+  });
+
+  it('поиск без учёта регистра и для кириллицы; уровень; разделы', () => {
+    const t = setup();
+    t.log.event({
+      serverId: 's1',
+      category: 'server',
+      level: 'info',
+      type: 'x',
+      text: 'Служба X-UI упала',
+    });
+    t.log.event({
+      serverId: 's1',
+      category: 'server',
+      level: 'error',
+      type: 'oom',
+      text: 'Нехватка памяти',
+    });
+    t.log.event({
+      serverId: 's1',
+      category: 'agent',
+      level: 'info',
+      type: 'online',
+      text: 'на связи',
+      ip: '203.0.113.9',
+    });
+    t.log.conns('s1', view([{ ip: '198.51.100.7', user: 'anna', clientId: 'c1' }]), names);
+    const texts = (f: Parameters<ServerLog['feed']>[0]) => t.log.feed(f).rows.map((r) => r.text);
+    expect(texts({ q: 'СЛУЖБА x-ui' })).toEqual(['Служба X-UI упала']);
+    expect(texts({ q: '203.0.113.9' })).toEqual(['на связи']);
+    expect(texts({ q: 'клиент C1' })).toEqual(['198.51.100.7 (Клиент c1): 3X-UI RAW']);
+    expect(texts({ q: '198.51.100' })).toHaveLength(1);
+    // проценты в поиске - буквально
+    expect(texts({ q: '%' })).toEqual([]);
+    expect(texts({ level: 'error' })).toEqual(['Нехватка памяти']);
+    expect(texts({ categories: ['agent'] })).toEqual(['на связи']);
+  });
+
+  it('назначения за период по клиенту и адресу', () => {
+    const t = setup();
+    const users = () => new Map([['anna@x', { id: 'c1', name: 'Анна' }]]);
+    const hour = (h: number) => new Date(T0 + h * 3_600_000).toISOString();
+    for (const h of [0, 1])
+      t.log.ingest(
+        's1',
+        {
+          epoch: 'e',
+          dropped: 0,
+          more: false,
+          access: { enabled: true },
+          events: [
+            {
+              seq: h + 1,
+              at: hour(h),
+              kind: 'dest',
+              level: 'info',
+              data: {
+                hour: hour(h),
+                rows: [
+                  {
+                    email: 'anna@x',
+                    host: 'example.com',
+                    port: 443,
+                    net: 'tcp',
+                    out: 'direct',
+                    n: 2,
+                  },
+                  {
+                    email: 'bob@x',
+                    host: 'example.org',
+                    port: 80,
+                    net: 'tcp',
+                    out: 'direct',
+                    n: 1,
+                  },
+                ],
+              },
+            },
+          ],
+        },
+        users,
+      );
+    expect(t.log.destTop({ q: 'анна' })).toEqual([
+      {
+        serverId: 's1',
+        server: 'Hoster',
+        email: 'anna@x',
+        clientId: 'c1',
+        client: 'Анна',
+        host: 'example.com',
+        port: 443,
+        outbound: 'direct',
+        n: 4,
+      },
+    ]);
+    expect(t.log.destTop({ from: hour(1) }).map((r) => r.n)).toEqual([2, 1]);
   });
 });
