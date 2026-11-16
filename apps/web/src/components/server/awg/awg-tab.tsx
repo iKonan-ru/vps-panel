@@ -35,6 +35,8 @@ export function AwgTab({ s }: { s: ServerDetail }) {
   const act = useAction();
   // экземпляр, чьи параметры менялись последними: ошибка - в его окне
   const [paramsFor, setParamsFor] = useState<string | null>(null);
+  // экземпляр, где последним переключали скрытие в трассировке: ошибка - в его карточке
+  const [traceFor, setTraceFor] = useState<string | null>(null);
   const { setError } = act;
   const lock = serverLock(s);
   // ошибка - того окна, где была операция: открыли или закрыли окно клиента - сброс
@@ -123,10 +125,11 @@ export function AwgTab({ s }: { s: ServerDetail }) {
           onClient={(c) => setOpen({ container: inst.container, publicKey: c.publicKey })}
           onAdd={() => setAdding(inst.container)}
           onUninstall={() => uninstall(s.id, 'amnezia', { AWG_CONTAINER: inst.container })}
-          addDisabled={act.busy || lock.busy}
+          addDisabled={act.busy || lock.busy || isFetching}
           addTitle={lock.reason}
           onSetParams={(profile) => {
             setParamsFor(inst.container);
+            setTraceFor(null);
             return act.run(async () => {
               await api(`/api/servers/${s.id}/awg/exec`, {
                 method: 'POST',
@@ -137,6 +140,22 @@ export function AwgTab({ s }: { s: ServerDetail }) {
             });
           }}
           paramsError={paramsFor === inst.container ? act.error : null}
+          onTraceroute={(enabled) => {
+            setTraceFor(inst.container);
+            setParamsFor(null);
+            void act.run(async () => {
+              try {
+                await api(`/api/servers/${s.id}/awg/traceroute`, {
+                  method: 'PUT',
+                  json: { container: inst.container, enabled },
+                });
+              } finally {
+                // переключатель - по свежему состоянию агента, и после ошибки тоже
+                await qc.invalidateQueries({ queryKey: ['awg', s.id] });
+              }
+            });
+          }}
+          traceError={traceFor === inst.container ? act.error : null}
         />
       ))}
 

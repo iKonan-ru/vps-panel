@@ -67,6 +67,7 @@ export const actionTitles: Record<string, string> = {
   'awg:client.enable': 'AWG: включение пользователя',
   'awg:client.rename': 'AWG: переименование пользователя',
   'awg:instance.setparams': 'AWG: смена версии и параметров',
+  'awg:traceroute': 'AWG: скрытие узла в трассировке',
   // панель их не запускает, названия - для записей журнала
   'awg:import': 'AWG: перенос ключей пользователей AWP в панель',
   'awg:table.stripkeys': 'AWG: удаление ключей пользователей AWP с сервера',

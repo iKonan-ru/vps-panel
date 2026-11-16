@@ -11,9 +11,12 @@ import { Button } from '@/components/ui/button';
 import { Chip } from '@/components/ui/chip';
 import { Dialog } from '@/components/ui/dialog';
 import { Field } from '@/components/ui/field';
+import { InfoTip } from '@/components/ui/info-tip';
 import { Section } from '@/components/ui/section';
 import { Select } from '@/components/ui/select';
+import { Switch } from '@/components/ui/switch';
 import { cn } from '@/lib/cn';
+import { cap } from '@/lib/format';
 import type { GOwner } from '@vps/protocol';
 import { deviceOf } from '@vps/protocol';
 import { Plus, UserRound } from 'lucide-react';
@@ -29,6 +32,8 @@ export function Instance({
   paramsError,
   onUninstall,
   owner,
+  onTraceroute,
+  traceError,
 }: {
   inst: AwgInstance;
   /** Клиент панели, чей это пир (по ключу), - значок на плитке. */
@@ -42,6 +47,9 @@ export function Instance({
   paramsError: string | null;
   /** Удаление экземпляра - через команду каталога. */
   onUninstall: () => void;
+  /** Скрытие узла в трассировке: включить, выключить или применить сохранённое повторно. */
+  onTraceroute: (enabled: boolean) => void;
+  traceError: string | null;
 }) {
   const uninstall = (
     <Button
@@ -108,6 +116,15 @@ export function Instance({
             <Fact label="Пользователи" value={`${inst.clients.length}, онлайн: ${onlineCount}`} />
             <Fact label="Реализация" value={impl} title={inst.tools} />
           </dl>
+          {inst.traceroute && (
+            <TracerouteRow
+              t={inst.traceroute}
+              disabled={addDisabled}
+              title={addTitle}
+              onSet={onTraceroute}
+              error={traceError}
+            />
+          )}
           {inst.tableError && (
             <div className="px-4 pt-3">
               <Alert tone="info">{inst.tableError}</Alert>
@@ -256,6 +273,79 @@ export function Instance({
         </>
       )}
     </Section>
+  );
+}
+
+/**
+ * Скрытие узла в трассировке IPv4: переключатель - по сохранённой настройке; расхождение с
+ * действующим правилом и ручное правило без метки панели - отдельной строкой.
+ */
+function TracerouteRow({
+  t,
+  disabled,
+  title,
+  onSet,
+  error,
+}: {
+  t: NonNullable<AwgInstance['traceroute']>;
+  disabled: boolean;
+  title: string | undefined;
+  onSet: (enabled: boolean) => void;
+  error: string | null;
+}) {
+  const label = 'Скрытие узла в трассировке IPv4';
+  return (
+    <div className="flex flex-col gap-2 border-b border-border px-4 py-3 text-[13px]">
+      <div className="flex items-center gap-3">
+        <Switch
+          checked={t.configured}
+          disabled={disabled}
+          label={label}
+          onChange={() => onSet(!t.configured)}
+        />
+        <span className="flex min-w-0 items-center gap-1" title={title}>
+          {label}
+          <InfoTip>
+            Вместо ответа этого узла в трассировке будут звёздочки. Публичный IP выхода VPN остаётся
+            виден. Для всех пользователей экземпляра, без перезапуска VPN.
+          </InfoTip>
+        </span>
+      </div>
+      {t.error && (
+        <Alert tone="bad" className="flex flex-wrap items-center gap-x-3 gap-y-1">
+          <span>{cap(t.error)}</span>
+          {t.configured && t.applied === false && (
+            <Button
+              variant="link"
+              className="text-xs"
+              disabled={disabled}
+              title={title}
+              onClick={() => onSet(true)}
+            >
+              Применить повторно
+            </Button>
+          )}
+          {!t.configured && t.applied === true && (
+            <Button
+              variant="link"
+              className="text-xs"
+              disabled={disabled}
+              title={title}
+              onClick={() => onSet(false)}
+            >
+              Убрать правило
+            </Button>
+          )}
+        </Alert>
+      )}
+      {t.manual && (
+        <Alert tone="info">
+          На сервере есть такое же правило, добавленное вручную: панель им не управляет, и узел
+          скрыт, пока оно есть.
+        </Alert>
+      )}
+      {error && <Alert tone="bad">{error}</Alert>}
+    </div>
   );
 }
 

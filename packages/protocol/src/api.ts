@@ -316,6 +316,22 @@ export interface XuiOwnInbound {
   excluded: boolean;
 }
 
+// ---- AmneziaWG ----
+
+/**
+ * Скрытие узла AWG в трассировке IPv4 (поле экземпляра в awg.status; нет у старого агента -
+ * не поддерживается, а не выключено).
+ */
+export interface AwgTraceroute {
+  /** В конфиге экземпляра сохранены хуки панели. */
+  configured: boolean;
+  /** Правило панели стоит до разрешающего правила интерфейса; null - проверить нельзя. */
+  applied: boolean | null;
+  /** Такое же правило без метки панели: им панель не управляет. */
+  manual?: boolean;
+  error?: string;
+}
+
 // ---- Карточка сервера ----
 
 export interface ServerDetail extends ServerSummary {

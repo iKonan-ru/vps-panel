@@ -94,6 +94,7 @@ export const AgentMethodSchema = z.enum([
   'awg.status',
   'awg.exec',
   'awg.config',
+  'awg.traceroute.set',
   'openflux.status',
   'openflux.logs',
   'openflux.link',

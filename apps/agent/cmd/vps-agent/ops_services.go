@@ -74,6 +74,16 @@ func serviceOps() map[string]op {
 			}
 			return adapters.AwgExec(ctx, p)
 		}),
+		// скрытие узла в трассировке IPv4: правило в контейнере и хуки в конфиге экземпляра
+		"awg.traceroute.set": typed(func(ctx context.Context, p struct {
+			Container string `json:"container"`
+			Enabled   *bool  `json:"enabled"`
+		}, _ stream) (any, error) {
+			if p.Enabled == nil {
+				return nil, errors.New("нужен enabled")
+			}
+			return adapters.AwgTracerouteSet(ctx, p.Container, *p.Enabled)
+		}),
 
 		"openflux.status": plain(func(ctx context.Context, _ stream) (any, error) {
 			return adapters.OfStatus(ctx), nil

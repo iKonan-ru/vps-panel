@@ -1,4 +1,4 @@
-import { DEVICE_IDS } from '@vps/protocol';
+import { type AwgTraceroute, DEVICE_IDS } from '@vps/protocol';
 import { and, eq, notInArray } from 'drizzle-orm';
 import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
@@ -97,6 +97,21 @@ export async function awgRoutes(app: FastifyInstance, opts: ServerRouteOpts) {
     });
     reply.header('Cache-Control', 'no-store');
     return cfg;
+  });
+
+  /**
+   * Скрытие узла в трассировке IPv4 у экземпляра: правило в контейнере и хуки в его конфиге,
+   * без перезапуска VPN. Ответ - проверенное агентом состояние.
+   */
+  app.put('/api/servers/:id/awg/traceroute', async (req) => {
+    const { id } = Id.parse(req.params);
+    const body = z
+      .object({
+        container: z.string().regex(/^amnezia-awg[0-9]*(-[0-9]{1,5})?$/),
+        enabled: z.boolean(),
+      })
+      .parse(req.body ?? {});
+    return quickAction<AwgTraceroute>(id, 'awg:traceroute', 'awg.traceroute.set', body, 60_000);
   });
 
   /**

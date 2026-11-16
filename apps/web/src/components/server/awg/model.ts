@@ -1,3 +1,5 @@
+import type { AwgTraceroute } from '@vps/protocol';
+
 interface AwgParam {
   key: string;
   value: string;
@@ -37,6 +39,8 @@ export interface AwgInstance {
   clients: AwgClient[];
   tableError?: string;
   error?: string;
+  /** Скрытие узла в трассировке IPv4; нет у старого агента - не поддерживается. */
+  traceroute?: AwgTraceroute;
 }
 
 /** Ответ агента на awg.status. */

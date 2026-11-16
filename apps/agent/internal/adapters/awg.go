@@ -61,6 +61,8 @@ type AwgInstance struct {
 	Clients    []AwgClient `json:"clients"`
 	TableError string      `json:"tableError,omitempty"`
 	Error      string      `json:"error,omitempty"`
+	// Traceroute - скрытие узла в трассировке IPv4 (нет у старого агента - не поддерживается)
+	Traceroute *AwgTraceroute `json:"traceroute,omitempty"`
 
 	// прочитанные конфиг и clientsTable: AwgConfigData не читает их второй раз
 	conf, table string
@@ -206,6 +208,11 @@ func awgInstance(ctx context.Context, name, state string) AwgInstance {
 			inst.Port, _ = strconv.Atoi(p.Value)
 		case "Address":
 			inst.Address = p.Value
+		case "PostUp", "PostDown":
+			// хуки панели - служебные, их состояние - в Traceroute
+			if strings.Contains(p.Value, awgTraceComment) {
+				continue
+			}
 		}
 		inst.Params = append(inst.Params, p)
 	}
@@ -236,6 +243,10 @@ func awgInstance(ctx context.Context, name, state string) AwgInstance {
 		}
 	}
 	inst.Clients = mergeAwgClients(peers, stats, table)
+	if reAwgIface.MatchString(inst.Iface) {
+		tr := awgTraceState(ctx, name, inst.Iface, conf)
+		inst.Traceroute = &tr
+	}
 	return inst
 }
 
