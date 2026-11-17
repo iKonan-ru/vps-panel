@@ -18,29 +18,54 @@ import (
 	"github.com/iKonan-ru/vps-panel/apps/agent/internal/sshd"
 )
 
-// Кэш числа обновлений: apt-get -s upgrade идёт около секунды, а меняется редко.
+// Кэш числа обновлений: apt-get -s upgrade занимает ядро на секунду-полторы, а ответ меняется
+// только после apt update (списки пакетов) или установки пакетов (база dpkg). Пересчёт - когда
+// изменилась одна из них, и не реже updTTL на случай правки источников без apt update.
 var (
-	updMu  sync.Mutex
-	updAt  time.Time
-	updN   int
-	updTTL = 10 * time.Minute
+	updMu    sync.Mutex
+	updAt    time.Time
+	updStamp string
+	updN     int
+	updTTL   = 6 * time.Hour
+	// файлы, по времени изменения которых виден новый ответ apt-get -s upgrade
+	updWatch = []string{"/var/lib/dpkg/status", "/var/lib/apt/lists"}
+	// подсчёт - переменная ради тестов
+	updCount = countSecurityUpdates
 )
 
-// PendingUpdates - число ожидающих обновлений безопасности (apt-get -s upgrade), с кэшем на 10 минут.
-func PendingUpdates(ctx context.Context) int {
-	updMu.Lock()
-	defer updMu.Unlock()
-	if time.Since(updAt) < updTTL {
-		return updN
-	}
+func countSecurityUpdates(ctx context.Context) int {
 	n := 0
 	for _, l := range strings.Split(shell.Out(ctx, "apt-get", "-s", "upgrade"), "\n") {
 		if strings.HasPrefix(l, "Inst ") && strings.Contains(l, "security") {
 			n++
 		}
 	}
-	updN, updAt = n, time.Now()
 	return n
+}
+
+// aptStamp - времена изменения файлов updWatch одной строкой; нет файла - пустое место в ней.
+func aptStamp() string {
+	var b strings.Builder
+	for _, p := range updWatch {
+		if st, err := os.Stat(p); err == nil {
+			b.WriteString(strconv.FormatInt(st.ModTime().UnixNano(), 10))
+		}
+		b.WriteByte('|')
+	}
+	return b.String()
+}
+
+// PendingUpdates - число ожидающих обновлений безопасности (apt-get -s upgrade). Повторный
+// подсчёт - только после изменения списков пакетов или базы dpkg, либо раз в updTTL.
+func PendingUpdates(ctx context.Context) int {
+	updMu.Lock()
+	defer updMu.Unlock()
+	stamp := aptStamp()
+	if !updAt.IsZero() && stamp == updStamp && time.Since(updAt) < updTTL {
+		return updN
+	}
+	updN, updAt, updStamp = updCount(ctx), time.Now(), stamp
+	return updN
 }
 
 // InvalidateUpdates сбрасывает кэш: после apt upgrade или приведения к эталону.
