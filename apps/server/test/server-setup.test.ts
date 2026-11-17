@@ -812,6 +812,7 @@ describe('настройка сервера', () => {
     // запуски port-sync без агента выключены
     expect(calls).toContain('portsync-off:s0');
     expect(db.select().from(servers).where(eq(servers.id, 's0')).get()).toBeUndefined();
+    expect(getSetting(db, 'migrate_leftover:s0')).toBeUndefined();
   });
 
   it('перенос: старый не в сети - только удалить из панели или оставить', async () => {
@@ -846,13 +847,25 @@ describe('настройка сервера', () => {
       // оставлен в панели, но клиентов на нём больше нет
       const old = db.select().from(servers).where(eq(servers.id, 's0')).get();
       expect(old?.gclients).toBe(false);
+      // привязки перешли новому, а записи клиентов на старом - в очереди на снятие: клиенты на
+      // нём не включены, синхронизация удалит их, когда он вернётся в сеть
+      const bs = db.select().from(gclientBindings).all();
       expect(
-        db
-          .select()
-          .from(gclientBindings)
-          .all()
-          .every((b) => b.serverId === 's1'),
-      ).toBe(true);
+        bs
+          .filter((b) => b.serverId === 's1')
+          .map((b) => b.id)
+          .sort(),
+      ).toEqual(['b-old-awg', 'b-old-xui']);
+      const left = bs.filter((b) => b.serverId === 's0');
+      expect(left.map((b) => [b.service, b.ref, b.state, b.links]).sort()).toEqual([
+        ['awg', '3|amnezia-awg2|PUBOLD', 'pending', []],
+        ['xui', 'olya', 'pending', []],
+      ]);
+      expect(left.every((b) => b.clientId === 'c1' && !b.id.startsWith('b-'))).toBe(true);
+      expect(p?.steps.find((x) => x.id === 'retire')?.note).toMatch(
+        /записи перенесённых клиентов \(2\)/,
+      );
+      expect(getSetting(db, 'migrate_leftover:s0')).toBeUndefined();
     } finally {
       registry.isOnline = online;
     }

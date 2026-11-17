@@ -36,7 +36,7 @@ import { setMtproxylHost } from './mtproxyl-host.js';
 import { isPanelHost, panelAddresses } from './panel-host.js';
 import { redactOutput } from './redact.js';
 import type { SecretBox } from './secret-box.js';
-import { transferClients } from './server-migrate.js';
+import { forgetRetired, retireClients, transferClients } from './server-migrate.js';
 import { removeServer } from './server-remove.js';
 import { deleteSetting, getJsonSetting, putSetting } from './settings.js';
 import { changeSshPort } from './ssh-port.js';
@@ -1091,16 +1091,21 @@ export function serverSetup(deps: SetupDeps) {
 
   /**
    * Старый сервер после переноса: remove - снять наши сервисы, ключ панели и агента, затем
-   * удалить из панели; delete - только удалить из панели; keep - оставить без клиентов.
+   * удалить из панели; delete - только удалить из панели; keep - оставить с сервисами, но
+   * снять с него записи перенесённых клиентов.
    */
   async function retire(fromId: string, mode: string, ctx: Ctx): Promise<string> {
     const from = db.select().from(servers).where(eq(servers.id, fromId)).get();
     if (!from) return 'старого сервера в панели уже нет';
     if (mode === 'keep') {
       db.update(servers).set({ gclients: false }).where(eq(servers.id, fromId)).run();
+      const n = retireClients(db, fromId);
       hub.broadcast({ type: 'server.changed', serverId: fromId });
-      return `${from.name} оставлен в панели, клиентов на нём больше нет`;
+      return n
+        ? `${from.name} оставлен в панели, записи перенесённых клиентов (${n}) синхронизация снимет с него`
+        : `${from.name} оставлен в панели, клиентов на нём больше нет`;
     }
+    forgetRetired(db, fromId);
     if (mode === 'remove') {
       if (!registry.isOnline(fromId))
         throw new Error(
