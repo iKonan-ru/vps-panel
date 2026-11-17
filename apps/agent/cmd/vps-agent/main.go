@@ -174,6 +174,15 @@ func main() {
 	} else if updated {
 		log.Info("port-sync: скрипт и юниты обновлены до версии агента")
 	}
+	// адреса панели - в ignoreip fail2ban: её SSH-подключения не банятся (DNS - не задерживает подключение)
+	baseline.SetPanelURL(cfg.PanelURL)
+	go func() {
+		if changed, err := baseline.RefreshFail2banIgnore(ctx); err != nil {
+			log.Warn("fail2ban: адреса панели не записаны в ignoreip", "err", err)
+		} else if changed {
+			log.Info("fail2ban: адреса панели в ignoreip обновлены")
+		}
+	}()
 	// прокси для браузера: Caddyfile по шаблону этой версии (reload до минуты - не задерживает подключение)
 	go func() {
 		if changed, err := adapters.NaiveRefreshInstalled(ctx); err != nil {

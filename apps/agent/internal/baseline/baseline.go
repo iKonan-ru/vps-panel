@@ -322,7 +322,8 @@ func applySSH(ctx context.Context, plan Plan, run runFn, write writeFn, asset as
 func applyFail2ban(ctx context.Context, plan Plan, run runFn, write writeFn, asset assetFn, log logFn) error {
 	log("== fail2ban")
 	jail := strings.ReplaceAll(string(asset("jail.local")), "{{SSH_PORT}}", strconv.Itoa(plan.SSHPort))
-	if err := write("/etc/fail2ban/jail.local", []byte(jail), 0o644); err != nil {
+	jail = withIgnoreIP(jail, panelIPs(ctx))
+	if err := write(jailLocal, []byte(jail), 0o644); err != nil {
 		return err
 	}
 	if err := write("/etc/fail2ban/filter.d/xui-panel.conf", asset("fail2ban-xui-panel.conf"), 0o644); err != nil {
