@@ -1,5 +1,6 @@
 import { ActionStatusChip } from '@/components/actions-table';
 import { MobileActions } from '@/components/mobile-actions';
+import { useServerLabel } from '@/components/server-origin';
 import { Alert } from '@/components/ui/alert';
 import { Button, ButtonLink } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
@@ -28,7 +29,8 @@ export function CommandsPage() {
     refetchInterval: 30_000,
   });
   const { data: servers } = useServers();
-  const names = new Map((servers ?? []).map((s) => [s.id, s.name]));
+  const label = useServerLabel();
+  const names = new Map((servers ?? []).map((s) => [s.id, label(s.id, s.name)]));
   // команда запускается на сервере: без серверов кнопки ведут в форму без выбора
   const noServers = servers?.length === 0;
   const [q, setQ] = useState('');

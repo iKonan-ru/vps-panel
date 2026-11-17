@@ -1,6 +1,7 @@
 import { ActionOutput } from '@/components/action-output';
 import { Breadcrumbs } from '@/components/breadcrumbs';
 import { ClientsChip, ConnsCount } from '@/components/server-conns';
+import { ServerOrigin } from '@/components/server-origin';
 import { ServerStatusChip } from '@/components/server-status';
 import { ActiveActions } from '@/components/server/active-actions';
 import { AwgTab } from '@/components/server/awg/awg-tab';
@@ -183,6 +184,7 @@ export function ServerPage() {
           <ServerTags tags={s.tags} onPick={(tag) => void navigate({ to: '/', search: { tag } })} />
           <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-[13px] leading-7 text-muted [&>*]:inline-flex [&>*]:h-7 [&>*]:items-center">
             <CopyText text={s.host} />
+            <ServerOrigin hosting={s.hosting} className="text-[13px]" />
             <span className={more}>SSH {s.sshPort}</span>
             {inv && (
               <>

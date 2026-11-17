@@ -1,3 +1,4 @@
+import { useServerLabel } from '@/components/server-origin';
 import { Alert } from '@/components/ui/alert';
 import { Button } from '@/components/ui/button';
 import { Chip } from '@/components/ui/chip';
@@ -41,9 +42,13 @@ export function useWatch() {
   });
 }
 
-/** За чем следит правило: "AWG, Hoster", "все сервисы и серверы". */
-function scope(r: WatchRuleView): string {
-  const server = r.serverId ? r.serverName || 'сервер удалён' : null;
+/** За чем следит правило: "AWG, Hoster", "все сервисы и серверы"; label - имя сервера с хостингом. */
+function scope(r: WatchRuleView, label: (id: string, name: string) => string): string {
+  const server = r.serverId
+    ? r.serverName
+      ? label(r.serverId, r.serverName)
+      : 'сервер удалён'
+    : null;
   const service = r.service ? serviceTitle(r.service) : null;
   if (service && server) return `${service}, ${server}`;
   if (service) return `${service}, все серверы`;
@@ -106,6 +111,7 @@ function WatchRules({
   const ask = useConfirm();
   const op = useAction();
   const [edit, setEdit] = useState<WatchRuleView | null>(null);
+  const label = useServerLabel();
   const list = clientId ? rules.filter((r) => r.clientId === clientId) : rules;
   const reload = () => qc.invalidateQueries({ queryKey: ['watch'] });
 
@@ -122,7 +128,7 @@ function WatchRules({
   async function remove(r: WatchRuleView) {
     const ok = await ask({
       title: 'Удалить уведомление?',
-      text: `${r.clientName}${r.deviceName ? `, ${r.deviceName}` : ''}: ${scope(r)}`,
+      text: `${r.clientName}${r.deviceName ? `, ${r.deviceName}` : ''}: ${scope(r, label)}`,
       okLabel: 'Удалить',
       danger: true,
     });
@@ -156,7 +162,7 @@ function WatchRules({
                 className="stagger flex animate-rise items-start gap-3 border-b border-border px-4 py-2.5 last:border-b-0 @lg:items-center"
               >
                 <Switch
-                  label={`${r.clientName}: ${scope(r)}`}
+                  label={`${r.clientName}: ${scope(r, label)}`}
                   checked={r.enabled}
                   disabled={op.busy}
                   className="mt-0.5 @lg:mt-0"
@@ -165,7 +171,7 @@ function WatchRules({
                 <div className="min-w-0 grow">
                   <div className={cn('break-words text-[13px]', !r.enabled && 'text-muted')}>
                     {clientId ? (
-                      scope(r)
+                      scope(r, label)
                     ) : (
                       <>
                         <Link
@@ -182,7 +188,7 @@ function WatchRules({
                   <div className="mt-0.5 break-words text-xs text-muted">
                     {clientId
                       ? r.deviceName !== null && `${r.deviceName || 'устройство удалено'}, `
-                      : `${scope(r)}\u00a0\u2014 `}
+                      : `${scope(r, label)}\u00a0\u2014 `}
                     {event.toLocaleLowerCase('ru')}, {r.delayMinutes}
                     {NB}мин
                   </div>
@@ -253,6 +259,7 @@ function WatchRuleDialog({
   const op = useAction();
   const { setError } = op;
   const id = useId();
+  const label = useServerLabel();
   const [v, setV] = useState<WatchRuleBody>(() => blank(clientId));
   const [delay, setDelay] = useState(String(WATCH_DELAY_DEFAULT));
 
@@ -348,7 +355,7 @@ function WatchRuleDialog({
             <option value="">Любой</option>
             {serverOpts.map(([sid, name]) => (
               <option key={sid} value={sid}>
-                {name}
+                {label(sid, name)}
               </option>
             ))}
           </Select>

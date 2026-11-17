@@ -1,3 +1,5 @@
+import { ServerOrigin } from '@/components/server-origin';
+import { serverOrigin } from '@/components/server-origin';
 import { Alert } from '@/components/ui/alert';
 import { Button } from '@/components/ui/button';
 import { Checkbox } from '@/components/ui/checkbox';
@@ -171,7 +173,8 @@ export function XrayRouteDialog({ open, onClose }: { open: boolean; onClose: () 
                     className="flex items-start gap-3 border-b border-border px-3 py-2 text-[13px] last:border-b-0"
                   >
                     <span className="min-w-0 grow">
-                      <span className="font-medium">{x.serverName}</span>
+                      <span className="font-medium">{x.serverName}</span>{' '}
+                      <ServerOrigin id={x.serverId} />
                       {x.primary && (
                         <Chip tone="accent" className="ml-2">
                           основной
@@ -228,7 +231,12 @@ export function XrayRouteDialog({ open, onClose }: { open: boolean; onClose: () 
                       checked={!off.has(s.id)}
                       disabled={locked}
                       onChange={() => toggleSpare(s.id)}
-                      label={<span className="font-medium">{s.name}</span>}
+                      label={
+                        <>
+                          <span className="font-medium">{s.name}</span>{' '}
+                          <ServerOrigin hosting={s.hosting} />
+                        </>
+                      }
                       hint={
                         off.has(s.id)
                           ? 'не используется'
@@ -277,7 +285,7 @@ export function XrayRouteDialog({ open, onClose }: { open: boolean; onClose: () 
                   <option value="">не выбран</option>
                   {candidates.map((s) => (
                     <option key={s.id} value={s.id}>
-                      {s.name} ({s.hosting.country || s.host})
+                      {`${s.name} \u00b7 ${serverOrigin(s.hosting) || s.host}`}
                     </option>
                   ))}
                 </Select>

@@ -9,6 +9,7 @@ import {
   useClientLive,
 } from '@/components/clients/live-stats';
 import { RateChart } from '@/components/clients/rate-chart';
+import { ServerOrigin } from '@/components/server-origin';
 import { Alert } from '@/components/ui/alert';
 import { ButtonLink } from '@/components/ui/button';
 import { Chip } from '@/components/ui/chip';
@@ -73,6 +74,7 @@ export function ClientServerPage() {
       <Breadcrumbs items={crumbs} />
       <div className="flex flex-wrap items-center gap-3">
         <PageTitle>{serverName}</PageTitle>
+        <ServerOrigin id={serverId} className="text-[13px]" />
         <span className="text-[13px] text-muted">{c.name}</span>
         <div className="grow" />
         <ButtonLink
@@ -230,7 +232,8 @@ function ClientConns({ clientId, serverId }: { clientId: string; serverId: strin
                 >
                   {e.serverName}
                 </Link>{' '}
-                этот адрес не опознан ({e.conns}&nbsp;соед.): вероятно, это тоже этот клиент
+                <ServerOrigin id={e.serverId} /> этот адрес не опознан ({e.conns}&nbsp;соед.):
+                вероятно, это тоже этот клиент
               </div>
             ) : (
               <div key={e.serverId} className="text-xs text-muted">
@@ -241,8 +244,8 @@ function ClientConns({ clientId, serverId }: { clientId: string; serverId: strin
                   className={linkCls}
                 >
                   {e.serverName}
-                </Link>
-                , {ago(e.at)}
+                </Link>{' '}
+                <ServerOrigin id={e.serverId} />, {ago(e.at)}
               </div>
             ),
           )}

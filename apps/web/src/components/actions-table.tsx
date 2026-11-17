@@ -1,4 +1,5 @@
 import { ActionOutput } from '@/components/action-output';
+import { ServerOrigin } from '@/components/server-origin';
 import { Button } from '@/components/ui/button';
 import { Chip } from '@/components/ui/chip';
 import { Dialog } from '@/components/ui/dialog';
@@ -59,13 +60,16 @@ export function ActionsTable({
                     {r.serverId === null ? (
                       <span className="text-muted">панель</span>
                     ) : serverNames.has(r.serverId) ? (
-                      <Link
-                        to="/servers/$id"
-                        params={{ id: r.serverId }}
-                        className="hover:text-accent"
-                      >
-                        {serverNames.get(r.serverId)}
-                      </Link>
+                      <>
+                        <Link
+                          to="/servers/$id"
+                          params={{ id: r.serverId }}
+                          className="hover:text-accent"
+                        >
+                          {serverNames.get(r.serverId)}
+                        </Link>{' '}
+                        <ServerOrigin id={r.serverId} />
+                      </>
                     ) : (
                       <span className="text-muted">удалён</span>
                     )}

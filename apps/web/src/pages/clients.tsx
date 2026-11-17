@@ -9,6 +9,7 @@ import {
 import { SyncPanel, useSyncState } from '@/components/clients/sync-panel';
 import { DeviceSelect } from '@/components/device-select';
 import { PageActions } from '@/components/page-actions';
+import { ServerOrigin } from '@/components/server-origin';
 import { Alert } from '@/components/ui/alert';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
@@ -344,7 +345,10 @@ function ServersList() {
                 }
               />
               <div className="min-w-0 flex-1">
-                <div className="text-[13px] font-medium">{s.name}</div>
+                <div className="flex items-baseline gap-2">
+                  <span className="text-[13px] font-medium">{s.name}</span>
+                  <ServerOrigin id={s.id} />
+                </div>
                 <div className="text-xs text-muted">
                   {panelHost && !s.enabled
                     ? 'сервер панели: клиенты не заводятся'

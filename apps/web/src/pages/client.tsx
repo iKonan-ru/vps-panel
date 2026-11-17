@@ -16,6 +16,7 @@ import {
 import { LiveSummary, ServerOnlineMark, useClientLive } from '@/components/clients/live-stats';
 import { SyncPanel } from '@/components/clients/sync-panel';
 import { ClientConfig } from '@/components/links/awg-config';
+import { ServerOrigin } from '@/components/server-origin';
 import { ActionBar } from '@/components/ui/action-bar';
 import { Alert } from '@/components/ui/alert';
 import { Button } from '@/components/ui/button';
@@ -304,6 +305,7 @@ export function ClientPage() {
                 >
                   {list[0]?.serverName}
                 </Link>
+                <ServerOrigin id={serverId} className="pt-1 sm:pt-0" />
                 <ServerOnlineMark serverId={serverId} live={live} />
               </div>
               <div className="flex min-w-0 grow flex-col gap-1.5">

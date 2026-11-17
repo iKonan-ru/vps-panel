@@ -4,6 +4,7 @@ import { BrowserExtList } from '@/components/clients/browser-ext';
 import { DeviceSelect } from '@/components/device-select';
 import { MtLinksView } from '@/components/links/mt-links';
 import { WdttLinksView } from '@/components/links/wdtt-links';
+import { useServerLabel } from '@/components/server-origin';
 import { Alert } from '@/components/ui/alert';
 import { Button } from '@/components/ui/button';
 import { Checkbox } from '@/components/ui/checkbox';
@@ -186,10 +187,11 @@ export function AccessForm({
   const ask = useConfirm();
   const save = useAction();
   const removes = accessRemoves(bindings, access);
-  const removed = [...new Set(removes.map((b) => b.serverName))].map(
-    (server) =>
-      `${server}: ${removes
-        .filter((b) => b.serverName === server)
+  const label = useServerLabel();
+  const removed = [...new Set(removes.map((b) => b.serverId))].map(
+    (sid) =>
+      `${label(sid, removes.find((b) => b.serverId === sid)?.serverName ?? '')}: ${removes
+        .filter((b) => b.serverId === sid)
         .map((b) =>
           pillLabel(
             b,

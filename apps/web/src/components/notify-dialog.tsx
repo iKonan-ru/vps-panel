@@ -1,3 +1,4 @@
+import { ServerOrigin } from '@/components/server-origin';
 import { Alert } from '@/components/ui/alert';
 import { Button } from '@/components/ui/button';
 import { Dialog } from '@/components/ui/dialog';
@@ -161,7 +162,8 @@ export function NotifyDialog({
             return (
               <div key={s.id} className="flex items-center gap-3 py-2 pl-3">
                 <div className={cn('min-w-0 grow truncate text-[13px]', !on && 'text-muted')}>
-                  {s.name} <span className="text-xs text-muted">{s.host}</span>
+                  {s.name} <ServerOrigin hosting={s.hosting} />{' '}
+                  <span className="text-xs text-muted">{s.host}</span>
                 </div>
                 <Switch
                   label={s.name}

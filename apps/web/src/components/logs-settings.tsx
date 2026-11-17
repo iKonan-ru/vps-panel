@@ -1,4 +1,6 @@
 import { ActionPanel } from '@/components/action-output';
+import { ServerOrigin } from '@/components/server-origin';
+import { useServerLabel } from '@/components/server-origin';
 import { Alert } from '@/components/ui/alert';
 import { Button } from '@/components/ui/button';
 import { Checkbox } from '@/components/ui/checkbox';
@@ -56,6 +58,7 @@ const dayStart = (v: string, plus = 0): string => {
  */
 export function LogsSettings() {
   const qc = useQueryClient();
+  const label = useServerLabel();
   const { data, isFetching } = useQuery({
     queryKey: ['logs'],
     queryFn: () => api<LogsView>('/api/logs'),
@@ -268,7 +271,9 @@ export function LogsSettings() {
               <TBody>
                 {data.access.map((a) => (
                   <tr key={a.serverId}>
-                    <td className="w-full">{a.name}</td>
+                    <td className="w-full">
+                      {a.name} <ServerOrigin id={a.serverId} />
+                    </td>
                     <td className="whitespace-nowrap">
                       {!a.online ? (
                         <Chip tone="muted">не в сети</Chip>
@@ -310,7 +315,7 @@ export function LogsSettings() {
                 <option value="">Все серверы</option>
                 {st.servers.map((s) => (
                   <option key={s.id} value={s.id}>
-                    {s.name}
+                    {label(s.id, s.name)}
                   </option>
                 ))}
               </Select>

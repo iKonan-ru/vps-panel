@@ -1,3 +1,4 @@
+import { ServerOrigin } from '@/components/server-origin';
 import { Button } from '@/components/ui/button';
 import { Switch } from '@/components/ui/switch';
 import { cn } from '@/lib/cn';
@@ -88,7 +89,10 @@ export function AccessEditor({
           return (
             <div key={s.id} className="flex flex-col gap-2.5 rounded-lg border border-border p-3">
               <div className="flex items-center gap-3">
-                <div className="min-w-0 grow truncate text-sm font-medium">{s.name}</div>
+                <div className="flex min-w-0 grow items-baseline gap-2">
+                  <span className="truncate text-sm font-medium">{s.name}</span>
+                  <ServerOrigin id={s.id} />
+                </div>
                 <Switch
                   checked={on.length > 0}
                   onChange={() => {

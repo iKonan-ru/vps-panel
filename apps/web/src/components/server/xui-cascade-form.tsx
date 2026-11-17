@@ -1,3 +1,4 @@
+import { useServerLabel } from '@/components/server-origin';
 import type { EditData } from '@/components/server/xui-edit-inbound';
 import {
   FingerprintField,
@@ -62,6 +63,7 @@ export function CascadeForm({
   onStarted: (actionId: string) => void;
 }) {
   const editing = Boolean(cascade);
+  const label = useServerLabel();
   const info = useQuery({
     queryKey: ['cascade-new', serverId],
     queryFn: () => api<CascadeNewInfo>(`/api/servers/${serverId}/cascades/new`),
@@ -198,7 +200,9 @@ export function CascadeForm({
           {!d && <option value="">{info.isFetching ? 'Загрузка\u2026' : 'Нет данных'}</option>}
           {d?.exits.map((x) => (
             <option key={x.serverId} value={x.serverId} disabled={Boolean(x.reason)}>
-              {x.reason ? `${x.serverName} (${x.reason})` : x.serverName}
+              {x.reason
+                ? `${label(x.serverId, x.serverName)} (${x.reason})`
+                : label(x.serverId, x.serverName)}
             </option>
           ))}
         </Select>

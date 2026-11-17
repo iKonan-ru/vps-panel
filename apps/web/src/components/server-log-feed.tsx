@@ -1,3 +1,4 @@
+import { serverOrigin } from '@/components/server-origin';
 import { Button } from '@/components/ui/button';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Chip } from '@/components/ui/chip';
@@ -127,6 +128,7 @@ export function ServerLogFeed({ serverId }: { serverId?: string }) {
                   {(servers ?? []).map((s) => (
                     <option key={s.id} value={s.id}>
                       {s.name}
+                      {serverOrigin(s.hosting) && ` \u00b7 ${serverOrigin(s.hosting)}`}
                     </option>
                   ))}
                 </Select>

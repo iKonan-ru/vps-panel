@@ -1,4 +1,5 @@
 import { SERVICES, accessAllows } from '@/components/clients/access-editor';
+import { useServerLabel } from '@/components/server-origin';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Select } from '@/components/ui/select';
@@ -156,6 +157,7 @@ export function ClientsFilter({
   servers: GServer[];
 }) {
   const active = servers.filter((s) => s.active);
+  const label = useServerLabel();
   // сервисы, которые стоят хоть где-то (или выбранного сервера)
   const here = active.filter((s) => !view.server || s.id === view.server);
   const services = SERVICES.filter((x) => here.some((s) => s[x.id]) || x.id === view.service);
@@ -181,7 +183,7 @@ export function ClientsFilter({
         <option value="">Все серверы</option>
         {active.map((s) => (
           <option key={s.id} value={s.id}>
-            {s.name}
+            {label(s.id, s.name)}
           </option>
         ))}
       </Select>
