@@ -1,7 +1,8 @@
 /**
- * Случайные имена серверов "Прилагательное Животное" (Kind Badger, Speedy Eagle): латиница -
- * из имени составляются поддомены панели и адрес для клиентов (kind-badger). Слова короткие,
- * дружелюбные и однозначные.
+ * Случайные имена серверов "Прилагательное Животное" или "Прилагательное Растение" (Kind Badger,
+ * Misty Willow): латиница - из имени составляются поддомены панели и адрес для клиентов
+ * (kind-badger). Слова короткие, дружелюбные и однозначные; имён людей нет - их легко спутать с
+ * клиентами.
  */
 export const NAME_ADJECTIVES = [
   'agile',
@@ -140,6 +141,60 @@ export const NAME_ANIMALS = [
   'zebra',
 ] as const;
 
+export const NAME_PLANTS = [
+  'acacia',
+  'aloe',
+  'aspen',
+  'bamboo',
+  'basil',
+  'birch',
+  'cactus',
+  'cedar',
+  'clover',
+  'cypress',
+  'dahlia',
+  'fern',
+  'fig',
+  'hazel',
+  'heather',
+  'iris',
+  'ivy',
+  'jasmine',
+  'juniper',
+  'larch',
+  'laurel',
+  'lavender',
+  'lilac',
+  'lily',
+  'linden',
+  'lotus',
+  'magnolia',
+  'maple',
+  'mimosa',
+  'mint',
+  'myrtle',
+  'oak',
+  'olive',
+  'orchid',
+  'palm',
+  'peony',
+  'pine',
+  'poppy',
+  'rowan',
+  'saffron',
+  'sage',
+  'sequoia',
+  'spruce',
+  'thistle',
+  'thyme',
+  'tulip',
+  'violet',
+  'willow',
+  'yucca',
+] as const;
+
+const NAME_NOUNS: readonly string[] = [...NAME_ANIMALS, ...NAME_PLANTS];
+
 /** Вид имени в поддомене: занятым считается и "kind-badger" для "Kind Badger". */
 const slugOf = (name: string) =>
   name
@@ -151,18 +206,28 @@ const slugOf = (name: string) =>
 const title = (w: string) => w.charAt(0).toUpperCase() + w.slice(1);
 
 /**
- * Случайное имя, которого нет среди taken (сравнение по виду в поддомене). Все сочетания заняты
- * (несколько тысяч серверов) - к имени добавляется номер.
+ * Случайное имя, которого нет среди taken (сравнение по виду в поддомене), из слов, которых ещё нет
+ * в именах taken: ни прилагательное, ни существительное не повторяются - серверы различаются с
+ * первого взгляда. Свободные слова кончились - повторяются, но не имя целиком; все сочетания
+ * заняты - к имени добавляется номер.
  */
 export function randomServerName(
   taken: Iterable<string> = [],
   rnd: () => number = Math.random,
 ): string {
-  const used = new Set([...taken].map(slugOf));
-  const pick = <T>(list: readonly T[]) => list[Math.floor(rnd() * list.length)] as T;
+  const slugs = [...taken].map(slugOf);
+  const used = new Set(slugs);
+  const words = new Set(slugs.flatMap((s) => s.split('-')));
+  const fresh = (list: readonly string[]) => {
+    const left = list.filter((w) => !words.has(w));
+    return left.length ? left : list;
+  };
+  const adjectives = fresh(NAME_ADJECTIVES);
+  const nouns = fresh(NAME_NOUNS);
+  const pick = (list: readonly string[]) => list[Math.floor(rnd() * list.length)] as string;
   let name = '';
   for (let i = 0; i < 100; i++) {
-    name = `${title(pick(NAME_ADJECTIVES))} ${title(pick(NAME_ANIMALS))}`;
+    name = `${title(pick(adjectives))} ${title(pick(nouns))}`;
     if (!used.has(slugOf(name))) return name;
   }
   let n = 2;

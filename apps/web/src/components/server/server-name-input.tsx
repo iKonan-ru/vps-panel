@@ -5,7 +5,7 @@ import { Dices } from 'lucide-react';
 import type { InputHTMLAttributes } from 'react';
 
 /**
- * Имя сервера с кнопкой случайного имени "Прилагательное Животное"; taken - имена других
+ * Имя сервера с кнопкой случайного имени "Прилагательное Животное/Растение"; taken - имена других
  * серверов (повторов нет: имя - основа поддоменов панели).
  */
 export function ServerNameInput({
