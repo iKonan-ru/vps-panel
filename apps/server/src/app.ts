@@ -295,6 +295,7 @@ export async function buildApp(opts: AppOptions) {
     db,
     registry,
     dataDir: env.DATA_DIR,
+    panelUrl: env.PANEL_PUBLIC_URL,
     allowV2: env.AGENT_V2_COMPAT,
   });
   await app.register(proxyRoutes, {

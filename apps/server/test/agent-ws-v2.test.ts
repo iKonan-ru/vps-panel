@@ -19,6 +19,7 @@ import { createDb } from '../src/db/index.js';
 import { servers } from '../src/db/schema.js';
 import { HANDSHAKE_CONTEXT, panelKey, proof, transcript } from '../src/lib/agent-channel.js';
 import { sha256 } from '../src/lib/auth.js';
+import { loadPanelKey } from '../src/lib/ssh.js';
 
 // Сторона агента канала v2 - как apps/agent/internal/transport (secure.go, client.go).
 const X25519_SPKI = Buffer.from('302a300506032b656e032100', 'hex');
@@ -77,6 +78,28 @@ beforeAll(async () => {
       registrationExpiresAt: new Date(Date.now() + 3600_000).toISOString(),
     } as never)
     .run();
+  built.db
+    .insert(servers)
+    .values({
+      id: 's5',
+      name: 's5',
+      host: '1.1.1.5',
+      registrationToken: sha256('regtoken-v3-new-server'),
+      registrationExpiresAt: new Date(Date.now() + 3600_000).toISOString(),
+    } as never)
+    .run();
+  built.db
+    .insert(servers)
+    .values({
+      id: 's6',
+      name: 's6',
+      host: '1.1.1.6',
+      // переустановка агента: постоянный токен уже был
+      agentTokenHash: sha256('old-token-s6'),
+      registrationToken: sha256('regtoken-v3-reinstall'),
+      registrationExpiresAt: new Date(Date.now() + 3600_000).toISOString(),
+    } as never)
+    .run();
   const addr = await built.app.listen({ port: 0, host: '127.0.0.1' });
   url = `${addr.replace('http', 'ws')}/ws/agent?v=2`;
   urlV3 = `${addr.replace('http', 'ws')}/ws/agent?v=3`;
@@ -89,7 +112,7 @@ afterAll(async () => {
 /** Агент: рукопожатие, auth и hello; возвращает welcome, сокет и шифрование. */
 async function agent(
   credential: string,
-  opts: { reg?: string; tamper?: boolean; v3?: boolean } = {},
+  opts: { reg?: string; tamper?: boolean; v3?: boolean; methods?: string[] } = {},
 ) {
   const ws = new WebSocket(opts.v3 ? urlV3 : url);
   const queue: { data: Buffer; binary: boolean }[] = [];
@@ -173,7 +196,12 @@ async function agent(
     agentVersion: '0.3.0',
     publicIp: '1.1.1.1',
   };
-  const hello = seal({ type: 'hello', protocol: '1.0', host, methods: ['inventory.get'] });
+  const hello = seal({
+    type: 'hello',
+    protocol: '1.0',
+    host,
+    methods: opts.methods ?? ['inventory.get'],
+  });
   if (opts.tamper) hello[0] = (hello[0] ?? 0) ^ 1;
   ws.send(hello);
   const w = await next();
@@ -292,6 +320,43 @@ describe('канал агента v3', () => {
       .find((r) => r.id === 's4');
     expect(row?.agentTokenHash).toBe(sha256('agent-made-token-v3'));
     expect(row?.registrationToken).toBeNull();
+    a.ws.close();
+  });
+
+  /** Методы запросов панели к агенту за время ожидания. */
+  async function requested(a: Awaited<ReturnType<typeof agent>>) {
+    const out: { method?: string; params?: { keys?: string[] } }[] = [];
+    const until = Date.now() + 1000;
+    while (Date.now() < until) {
+      const m = await Promise.race([a.next(), new Promise<null>((r) => setTimeout(r, 300, null))]);
+      if (!m) continue;
+      const msg = a.open(m.data);
+      if (msg.type === 'request') out.push(msg);
+    }
+    return out;
+  }
+
+  it('новый сервер: ключ панели сразу добавляется в root', async () => {
+    const a = await agent('regtoken-v3-new-server', {
+      v3: true,
+      reg: 'agent-made-token-s5',
+      methods: ['inventory.get', 'ssh.keys.add'],
+    });
+    expect(a.welcome?.serverId).toBe('s5');
+    const add = (await requested(a)).filter((r) => r.method === 'ssh.keys.add');
+    expect(add).toHaveLength(1);
+    expect(add[0]?.params?.keys).toEqual([loadPanelKey(dir).publicKey]);
+    a.ws.close();
+  });
+
+  it('переустановка агента ключ панели не возвращает', async () => {
+    const a = await agent('regtoken-v3-reinstall', {
+      v3: true,
+      reg: 'agent-made-token-s6',
+      methods: ['inventory.get', 'ssh.keys.add'],
+    });
+    expect(a.welcome?.serverId).toBe('s6');
+    expect((await requested(a)).some((r) => r.method === 'ssh.keys.add')).toBe(false);
     a.ws.close();
   });
 

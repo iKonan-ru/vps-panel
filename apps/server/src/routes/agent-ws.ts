@@ -22,6 +22,8 @@ import {
   toBuffer,
 } from '../lib/agent-channel.js';
 import { sha256 } from '../lib/auth.js';
+import { isPanelHost, panelAddresses } from '../lib/panel-host.js';
+import { loadPanelKey } from '../lib/ssh.js';
 
 /**
  * Очередь сообщений сокета на время рукопожатия: агент шлёт auth и hello подряд, и пока панель
@@ -140,9 +142,9 @@ function wsAllowed(ip: string, now = Date.now()): boolean {
  */
 export async function agentWsRoutes(
   app: FastifyInstance,
-  opts: { db: Db; registry: AgentRegistry; dataDir: string; allowV2?: boolean },
+  opts: { db: Db; registry: AgentRegistry; dataDir: string; panelUrl: string; allowV2?: boolean },
 ) {
-  const { db, registry, dataDir, allowV2 = true } = opts;
+  const { db, registry, dataDir, panelUrl, allowV2 = true } = opts;
   const key = panelKey(dataDir);
   const v2Warned = new Set<string>();
 
@@ -168,6 +170,30 @@ export async function agentWsRoutes(
     sock.send(JSON.stringify(welcome));
     // Сразу просим полный снимок; дальше агент шлёт его сам раз в 5 минут.
     void registry.refreshInventory(serverId);
+  }
+
+  /**
+   * Новый сервер (первая регистрация агента): ключ панели сразу в root, иначе смена порта SSH
+   * не пройдёт проверку входа. Сервер панели не трогаем: туда ключ ставят только явно.
+   */
+  async function addPanelKey(serverId: string, methods: string[]) {
+    if (!methods.includes('ssh.keys.add')) return;
+    const row = db
+      .select({ host: servers.host })
+      .from(servers)
+      .where(eq(servers.id, serverId))
+      .get();
+    if (!row || isPanelHost(row.host, undefined, await panelAddresses(panelUrl))) return;
+    try {
+      await registry.request(
+        serverId,
+        'ssh.keys.add',
+        { keys: [loadPanelKey(dataDir).publicKey] },
+        { timeoutMs: 30_000 },
+      );
+    } catch (e) {
+      app.log.warn({ serverId, err: (e as Error).message }, 'ключ панели в root не добавлен');
+    }
   }
 
   function readHello(raw: string | null) {
@@ -202,11 +228,12 @@ export async function agentWsRoutes(
     let serverId: string | null = null;
     let credHash = '';
     let reg: string | null = null;
+    let isNew = false;
     if (a.reg) {
       if (!a.tokenHash) return socket.close(4002, 'bad auth');
       // в базе - sha256 одноразового токена и срок; просроченный не подходит
       const rows = await db
-        .select({ id: servers.id, reg: servers.registrationToken })
+        .select({ id: servers.id, reg: servers.registrationToken, prev: servers.agentTokenHash })
         .from(servers)
         .where(
           and(
@@ -219,6 +246,7 @@ export async function agentWsRoutes(
           serverId = r.id;
           credHash = r.reg;
           reg = r.reg;
+          isNew = !r.prev;
         }
       }
     } else {
@@ -262,6 +290,7 @@ export async function agentWsRoutes(
       { proof: proof(credHash, 'panel', th) },
       addr,
     );
+    if (isNew) void addPanelKey(serverId, res.hello.methods);
   }
 
   async function secureV3(socket: WebSocket, addr: string) {
@@ -276,11 +305,12 @@ export async function agentWsRoutes(
     let serverId: string | null = null;
     let credHash = '';
     let registrationHash: string | null = null;
+    let isNew = false;
     if (a.reg) {
       if (!a.newToken) return socket.close(4002, 'bad auth');
       const row = (
         await db
-          .select({ id: servers.id })
+          .select({ id: servers.id, prev: servers.agentTokenHash })
           .from(servers)
           .where(
             and(
@@ -293,6 +323,7 @@ export async function agentWsRoutes(
       if (!row) return socket.close(4003, 'bad registration token');
       serverId = row.id;
       registrationHash = tokenHash;
+      isNew = !row.prev;
       credHash = sha256(a.newToken);
     } else {
       const row = (
@@ -333,6 +364,7 @@ export async function agentWsRoutes(
       { proof: proof(credHash, 'panel', th) },
       addr,
     );
+    if (isNew) void addPanelKey(serverId, res.hello.methods);
   }
 
   app.get('/ws/agent', { websocket: true }, async (socket, req) => {
