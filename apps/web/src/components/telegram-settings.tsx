@@ -167,8 +167,10 @@ export function TelegramSettings() {
         </>
       }
     >
-      <form onSubmit={save} className="flex flex-col gap-4 p-4">
-        <div className="grid gap-3 sm:grid-cols-2">
+      <div className="flex flex-col gap-4 p-4">
+        {/* форма - только поля: строка бота открывает своё окно с формой подтверждения, а
+            вложенную форму браузер отправляет сам, перезагружая страницу */}
+        <form id="tg-settings-form" onSubmit={save} className="grid gap-3 sm:grid-cols-2">
           <Field label="Токен бота" htmlFor="tg-token">
             <Input
               id="tg-token"
@@ -199,7 +201,7 @@ export function TelegramSettings() {
               </Button>
             </div>
           </Field>
-        </div>
+        </form>
         {found && found.length > 0 && (
           <div className="flex flex-col gap-1 text-[13px]">
             <div className="text-muted">Боту писали:</div>
@@ -244,11 +246,11 @@ export function TelegramSettings() {
         </div>
         {note && <Alert tone={note.tone}>{note.text}</Alert>}
         <div className="flex justify-end">
-          <Button type="submit" variant="primary" disabled={op.busy}>
+          <Button type="submit" form="tg-settings-form" variant="primary" disabled={op.busy}>
             Сохранить
           </Button>
         </div>
-      </form>
+      </div>
       <NotifyDialog open={choose} onClose={() => setChoose(false)} value={st} />
       <XrayRouteDialog open={routeOpen} onClose={() => setRouteOpen(false)} />
     </Section>
