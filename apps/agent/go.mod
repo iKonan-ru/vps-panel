@@ -4,7 +4,7 @@ go 1.25.0
 
 require (
 	github.com/creack/pty v1.1.24
-	github.com/gorilla/websocket v1.5.3
+	github.com/gorilla/websocket v1.5.4-0.20240701034025-d67f41855da4
 	github.com/shirou/gopsutil/v4 v4.24.12
 	modernc.org/sqlite v1.59.0
 )
@@ -22,6 +22,7 @@ require (
 	github.com/tklauser/go-sysconf v0.3.12 // indirect
 	github.com/tklauser/numcpus v0.6.1 // indirect
 	github.com/yusufpapurcu/wmi v1.2.4 // indirect
+	golang.org/x/net v0.26.0 // indirect
 	golang.org/x/sys v0.47.0 // indirect
 	modernc.org/libc v1.75.7 // indirect
 	modernc.org/mathutil v1.7.1 // indirect
