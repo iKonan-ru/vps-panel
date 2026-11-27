@@ -294,6 +294,8 @@ export class RuReach {
       ) => void)
     | null = null;
   private manualAt = new Map<string, number>();
+  /** Inbound-ы 3X-UI сервера, прочитанные проверкой (ссылки клиентов сверяются по ним). */
+  onInbounds: ((serverId: string, list: Record<string, unknown>[]) => void) | null = null;
 
   constructor(
     private db: Db,
@@ -566,7 +568,9 @@ export class RuReach {
     if (xuiToken && this.registry.isOnline(serverId)) {
       try {
         const api = xuiApi(this.registry, serverId, xuiToken);
-        agentTargets.push(...inboundTargets(await listInbounds(api), row.host));
+        const list = await listInbounds(api);
+        this.onInbounds?.(serverId, list);
+        agentTargets.push(...inboundTargets(list, row.host));
       } catch (e) {
         out.error = `inbound 3X-UI: ${(e as Error).message}`;
       }

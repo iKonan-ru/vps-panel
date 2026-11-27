@@ -111,10 +111,13 @@ export function MtproxylTab({ s }: { s: ServerDetail }) {
     return ok ? r : null;
   }
 
-  /** Сменить версию движка telemt: только готовый образ docker или бинарник (без сборки). */
+  /** Сменить версию движка: telemt - только готовый образ docker или бинарник (без сборки). */
   async function changeEngine(tag: string) {
     const ok = await ask({
-      title: `Установить движок telemt ${tag}?`,
+      title:
+        data?.engineKind === 'mtdd'
+          ? `Установить сборку mtdd из канала ${tag}?`
+          : `Установить движок telemt ${tag}?`,
       text: 'Прокси перезапустится, подключения прервутся на несколько секунд',
       okLabel: 'Установить',
     });
@@ -151,6 +154,7 @@ export function MtproxylTab({ s }: { s: ServerDetail }) {
     return <Placeholder>MTProxyL не установлен: установка через каталог команд</Placeholder>;
 
   const st = data.status;
+  const engine = data.engineKind ?? 'telemt';
   // доступность из России проверяет сам MTProxyL (зонды Globalping), итог агент кладёт в снимок
   const reach = s.services.find((x) => x.kind === 'mtproxyl')?.details?.ruReach as
     | { percent: number; ok: number; total: number; checkedAt: string; error?: string }
@@ -399,11 +403,13 @@ export function MtproxylTab({ s }: { s: ServerDetail }) {
         action={action?.inVersions ? action : null}
         onHideAction={() => setAction(null)}
       >
-        {/* движок telemt - не обновление: версия меняется по желанию */}
+        {/* движок - не обновление: версия меняется по желанию; у mtdd сборка видна в окне версий */}
         <div className="flex items-center gap-3 px-4 py-3">
           <div className="min-w-0 grow">
-            <div className="font-medium">Движок telemt</div>
-            <div className="text-xs text-muted">установлена {data.engine || '?'}</div>
+            <div className="font-medium">Движок {engine}</div>
+            {engine === 'telemt' && (
+              <div className="text-xs text-muted">установлена {data.engine || '?'}</div>
+            )}
           </div>
           <Button
             size="sm"
@@ -434,7 +440,11 @@ export function MtproxylTab({ s }: { s: ServerDetail }) {
         }
       />
 
-      <Dialog open={engineOpen} onClose={() => setEngineOpen(false)} title="Версия движка telemt">
+      <Dialog
+        open={engineOpen}
+        onClose={() => setEngineOpen(false)}
+        title={`Версия движка ${engine}`}
+      >
         {engineOpen && (
           <EngineForm
             serverId={s.id}

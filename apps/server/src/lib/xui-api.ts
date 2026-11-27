@@ -76,6 +76,33 @@ export function ownVlessInbounds(list: RawInbound[]): RawInbound[] {
   return list.filter((i) => i.protocol === 'vless' && !inboundNode(i));
 }
 
+/**
+ * Отпечаток того в своих VLESS-inbound-ах, из чего 3X-UI собирает ссылки клиентов: порт, вкл,
+ * транспорт и защита, Reality (имена, ключ, shortIds), путь XHTTP. Меняется, когда 3X-UI сам
+ * заменил цель Reality ("Keep REALITY working") или inbound правили в 3X-UI, - ссылки устарели.
+ */
+export function vlessLinkPrint(list: RawInbound[]): string {
+  return JSON.stringify(
+    ownVlessInbounds(list)
+      .map((i) => {
+        const ss = streamOf(i);
+        const r = parseJson(ss.realitySettings);
+        return [
+          Number(i.id),
+          Number(i.port),
+          Boolean(i.enable),
+          ss.network ?? '',
+          ss.security ?? '',
+          r.serverNames ?? null,
+          parseJson(r.settings).publicKey ?? null,
+          r.shortIds ?? null,
+          parseJson(ss.xhttpSettings).path ?? null,
+        ];
+      })
+      .sort((a, b) => Number(a[0]) - Number(b[0])),
+  );
+}
+
 export async function listInbounds(api: XuiCall): Promise<RawInbound[]> {
   return (unwrap(await api('GET', 'inbounds/list'), 'inbounds/list') as RawInbound[] | null) ?? [];
 }

@@ -28,7 +28,7 @@ import { ClientWatch } from './lib/client-watch.js';
 import { ConnsHub } from './lib/conns-hub.js';
 import { startFail2banIgnore } from './lib/fail2ban-ignore.js';
 import { FirefoxSigner } from './lib/firefox.js';
-import { GClients } from './lib/gclients.js';
+import { GClients, XuiLinkWatch } from './lib/gclients.js';
 import { startHousekeeping } from './lib/housekeeping.js';
 import { INITIATOR_HEADER, isInternal } from './lib/internal-auth.js';
 import { startMetricsPace } from './lib/metrics-pace.js';
@@ -354,6 +354,9 @@ export async function buildApp(opts: AppOptions) {
   stops.push(panelUpdates.start(), connsHub.start());
   // доступность из России: адрес и inbound-ы - агент через Globalping, MTProxyL - его итог
   const ruReach = new RuReach(db, box, registry, app.log, (id, note) => notifier.reach(id, note));
+  // 3X-UI сам сменил цель Reality или inbound правили в 3X-UI - ссылки клиентов заново
+  const linkWatch = new XuiLinkWatch(db, gc);
+  ruReach.onInbounds = (id, list) => linkWatch.note(id, list);
   stops.push(ruReach.start());
   // имена сервисов сервера панели с сертификатом от её Caddy - из снимков
   stops.push(schedule(() => void panelCerts.refresh().catch(() => undefined), 5_000, 5 * 60_000));
@@ -401,6 +404,7 @@ export async function buildApp(opts: AppOptions) {
     app.log,
     (id, u) => notifier.serviceUpdate(id, u),
     outFetch,
+    { filesDir: env.FILES_DIR, panelUrl: env.PANEL_PUBLIC_URL },
   );
   stops.push(serviceUpdates.start());
   // обновили сервис (в интерфейсе или из Telegram) - версии перепроверяются после свежего снимка:

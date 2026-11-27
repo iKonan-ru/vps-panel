@@ -1,4 +1,4 @@
-FROM node:24-alpine@sha256:8a32c8cf649a49915a66e81e7a609223c708d0adabf288ee3f4077d765542f85 AS build
+FROM node:24-alpine@sha256:116b800c3754b440ee0aa3ed2f20f5bf3d99a554bfd9adeea09ea8017f6e85f5 AS build
 RUN corepack enable && corepack prepare pnpm@10.34.5 --activate
 WORKDIR /src
 # системные пакеты - до package.json: смена зависимостей не пересобирает этот слой
@@ -16,12 +16,12 @@ RUN pnpm --filter @vps/protocol build && pnpm --filter @vps/web build && pnpm --
 RUN --mount=type=cache,id=pnpm-store,target=/pnpm-store pnpm --filter @vps/server --prod --legacy deploy /out/server --store-dir /pnpm-store
 
 # xray-клиент для выхода панели в Telegram (запускается панелью как дочерний процесс)
-FROM alpine:3@sha256:be2656061b536c1883c4034790e21d0a09c5aaaf51968b89368a3c0371ea2c9a AS xray
-ARG XRAY_VERSION=v26.3.27
+FROM alpine:3@sha256:f59abe656b692d901e184be3445e084786602108599d2a51d229c0f5a48c71bf AS xray
+ARG XRAY_VERSION=v26.11.9
 # sha256 архивов этой версии (SHA2-256 из .dgst релиза): xray живёт в образе рядом с секретами,
 # скачанное проверяется; при смене версии - обновить
-ARG XRAY_SHA256_AMD64=23cd9af937744d97776ee35ecad4972cf4b2109d1e0fe6be9930467608f7c8ae
-ARG XRAY_SHA256_ARM64=4d30283ae614e3057f730f67cd088a42be6fdf91f8639d82cb69e48cde80413c
+ARG XRAY_SHA256_AMD64=b651f7e1d9966ee2c1b1ee1bf8b52c72771824d3065dce96bbc8bcc19ed95f82
+ARG XRAY_SHA256_ARM64=64ed6858982a7f5eb85d88b811089063bd4f17561f4c8f44e0f1dc8e6f6430be
 ARG TARGETARCH
 RUN apk add --no-cache curl unzip && \
     case "$TARGETARCH" in arm64) A=arm64-v8a H=$XRAY_SHA256_ARM64 ;; *) A=64 H=$XRAY_SHA256_AMD64 ;; esac && \
@@ -31,10 +31,10 @@ RUN apk add --no-cache curl unzip && \
 
 # Агент (vps-agent-linux-*) и сборки naive и wdtt для раздачи серверам: релиз (release.yml)
 # подставляет их вместо этой стадии (--build-context artifacts=<каталог>).
-FROM alpine:3@sha256:be2656061b536c1883c4034790e21d0a09c5aaaf51968b89368a3c0371ea2c9a AS artifacts
+FROM alpine:3@sha256:f59abe656b692d901e184be3445e084786602108599d2a51d229c0f5a48c71bf AS artifacts
 RUN mkdir -p /agent-dist /files
 
-FROM node:24-alpine@sha256:8a32c8cf649a49915a66e81e7a609223c708d0adabf288ee3f4077d765542f85
+FROM node:24-alpine@sha256:116b800c3754b440ee0aa3ed2f20f5bf3d99a554bfd9adeea09ea8017f6e85f5
 # версия релиза (тег без v) и коммит: их показывает панель и по ним сверяет обновления
 ARG PANEL_VERSION=dev
 ARG PANEL_COMMIT=

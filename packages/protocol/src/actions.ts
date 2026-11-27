@@ -81,6 +81,8 @@ export const actionTitles: Record<string, string> = {
   'mtproxyl:engine.versions': 'MTProxyL: версии движка',
   'mtproxyl:engine.update': 'MTProxyL: обновление движка',
   'mtproxyl:host': 'MTProxyL: адрес в ссылках',
+  'wdtt:update': 'WDTT: обновление',
+  'naive:update': 'Прокси для браузера: обновление',
   // не действие: перепроверка состояния сервера после действия (кнопки недоступны)
   'status.refresh': 'Проверка состояния сервера',
 };
@@ -110,6 +112,8 @@ export const SERVICE_UPDATE_ACTIONS: ReadonlySet<string> = new Set([
   'xui:xray',
   'mtproxyl:update',
   'mtproxyl:panel.update',
+  'wdtt:update',
+  'naive:update',
 ]);
 
 /** Строка журнала действий в списках (без вывода: он - в /api/actions/:id). */

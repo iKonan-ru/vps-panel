@@ -102,6 +102,7 @@ interface MtStatus {
   } | null;
   secrets?: unknown[] | null;
   engine?: string;
+  engineKind?: string;
   errors?: string[];
 }
 
@@ -112,7 +113,9 @@ export function mtView(s: ServerDetail, st: MtStatus | null, updates: ServiceUpd
     `<b>${esc(s.name)}</b>${DASH}MTProxyL ${dn === null ? `${I.ok} работает` : `${I.bad} не работает${dn ? `: ${esc(dn)}` : ''}`}`,
   ];
   if (x?.version)
-    lines.push(`Версия ${esc(x.version)}${st?.engine ? `, движок ${esc(st.engine)}` : ''}`);
+    lines.push(
+      `Версия ${esc(x.version)}${st?.engineKind === 'mtdd' ? ', движок mtdd' : st?.engine ? `, движок ${esc(st.engine)}` : ''}`,
+    );
   if (x?.port) lines.push(`Порт ${x.port}`);
   if (x?.connections !== undefined)
     lines.push(

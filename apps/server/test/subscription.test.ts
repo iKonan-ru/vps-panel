@@ -6,7 +6,12 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { type Db, createDb } from '../src/db/index.js';
 import { gclientBindings, gclients, servers } from '../src/db/schema.js';
 import { countryFlag } from '../src/lib/awg-config.js';
-import { buildSubscription, buildWdttSubscription, rewriteLink } from '../src/lib/subscription.js';
+import {
+  buildSubscription,
+  buildWdttSubscription,
+  rewriteLink,
+  wdttProfile,
+} from '../src/lib/subscription.js';
 import { wdttLinks } from '../src/lib/wdtt.js';
 
 describe('rewriteLink', () => {
@@ -140,6 +145,7 @@ describe('buildWdttSubscription', () => {
         password: 'pa ss',
       },
     ]);
+    expect(wdttProfile(`${l.qwdtt}&dk=key`).diagKey).toBe('key');
     expect(buildWdttSubscription(db, 'nope')).toBeNull();
     db.update(gclients).set({ enabled: false }).run();
     expect(buildWdttSubscription(db, 'tok')?.profiles).toEqual([]);

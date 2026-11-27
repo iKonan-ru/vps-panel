@@ -19,7 +19,7 @@ export async function mtproxylRoutes(app: FastifyInstance, opts: ServerRouteOpts
     const { id } = Id.parse(req.params);
     return registry.request(id, 'mtproxyl.status', {}, { timeoutMs: 120_000 });
   });
-  /** Версии движка telemt: установленная и те, что ставятся без сборки на сервере. */
+  /** Версии движка (telemt или mtdd): установленная и те, что ставятся без сборки на сервере. */
   app.get('/api/servers/:id/mtproxyl/engine', async (req, reply) => {
     reply.header('Cache-Control', 'no-store');
     const { id } = Id.parse(req.params);

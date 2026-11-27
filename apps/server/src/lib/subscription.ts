@@ -135,6 +135,8 @@ export function wdttProfile(link: string) {
     workers: Number(q.get('workers') ?? 9),
     port: Number(q.get('port') ?? 9000),
     password: q.get('pass') ?? '',
+    // ключ диагностики сервера: приложение 1.4.5+ проверяет им соединение
+    ...(q.get('dk') ? { diagKey: q.get('dk') ?? '' } : {}),
   };
 }
 

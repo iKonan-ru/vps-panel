@@ -16,6 +16,8 @@ export const UPDATE: Record<string, { code: string; title: string }> = {
   xray: { code: 'y', title: 'Xray' },
   mtproxyl: { code: 'm', title: 'MTProxyL' },
   'mtproxyl-panel': { code: 'p', title: 'веб-панель MTProxyL' },
+  wdtt: { code: 'w', title: 'WDTT' },
+  naive: { code: 'n', title: 'прокси для браузера' },
 };
 
 export interface NotifyInfo {
@@ -70,7 +72,9 @@ export function notifyButtons(n: NotifyInfo, level: BotLevel, ref: (v: string) =
     case 'updXui':
     case 'updXray':
     case 'updMtproxyl':
-    case 'updMtproxylPanel': {
+    case 'updMtproxylPanel':
+    case 'updWdtt':
+    case 'updNaive': {
       const u = UPDATE[n.data?.kind ?? ''];
       if (act && u) rows.push([{ text: `Обновить ${u.title}`, data: cb('up', sid, u.code) }]);
       rows.push([server]);

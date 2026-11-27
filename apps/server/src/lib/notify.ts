@@ -41,6 +41,8 @@ const UPDATE_EVENT: Record<ServiceUpdateKind, NotifyEvent> = {
   xray: 'updXray',
   mtproxyl: 'updMtproxyl',
   'mtproxyl-panel': 'updMtproxylPanel',
+  wdtt: 'updWdtt',
+  naive: 'updNaive',
 };
 
 /** Дата платежа (полночь UTC) для текста: 22.10 в текущем году, иначе 22.10.2027. */

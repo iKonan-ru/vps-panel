@@ -201,7 +201,10 @@ export interface AppView {
 // ---- Движок MTProxyL ----
 
 export interface EngineVersion {
+  /** Тег релиза telemt или канал сборок mtdd (main, dev). */
   tag: string;
+  /** Подпись канала mtdd ("main 1.0.3 - основной канал"). */
+  name?: string;
   date: string;
   prerelease: boolean;
   installed: boolean;
@@ -212,6 +215,9 @@ export interface EngineVersion {
 }
 
 export interface EngineInfo {
+  /** Движок прокси MTProxyL. */
+  kind: 'telemt' | 'mtdd';
+  /** Версия telemt или подпись сборки mtdd. */
   current: string;
   binary: boolean;
   versions: EngineVersion[];
@@ -221,8 +227,8 @@ export interface EngineInfo {
 
 // ---- Обновления сервисов ----
 
-/** 3X-UI, ядро Xray в ней, MTProxyL (менеджер) и его веб-панель. */
-export type ServiceUpdateKind = 'xui' | 'xray' | 'mtproxyl' | 'mtproxyl-panel';
+/** 3X-UI, ядро Xray в ней, MTProxyL (менеджер) и его веб-панель, сборки WDTT и naive панели. */
+export type ServiceUpdateKind = 'xui' | 'xray' | 'mtproxyl' | 'mtproxyl-panel' | 'wdtt' | 'naive';
 
 export interface ServiceUpdate {
   kind: ServiceUpdateKind;

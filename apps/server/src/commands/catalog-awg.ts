@@ -9,7 +9,7 @@ import { ENSURE_DOCKER, PROLOGUE } from './util.js';
  */
 
 /** Образ закреплён тегом: latest может сменить протокол под уже выданными конфигами. */
-const IMAGE = 'amneziavpn/amneziawg-go:3.1.20260828';
+const IMAGE = 'amneziavpn/amneziawg-go:3.1.20261116';
 
 // awg-quick берёт модуль ядра, если он загружен, даже старый (модуль 1.x не знает параметров
 // 3.x: "Invalid argument"). AWG_USERSPACE=1 - всегда amneziawg-go; решает start.sh.

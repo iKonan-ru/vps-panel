@@ -298,6 +298,7 @@ export async function wdttEnsure(
     password,
     hashes: wdttHashes(deps.db),
     name,
+    diag: entry,
   });
   return { secret: deps.box.seal(password), links: [l.qwdtt, l.wdtt] };
 }
@@ -353,7 +354,8 @@ export async function awgRemove(deps: ServiceDeps, serverId: string, ref: string
 /**
  * Клиент в 3X-UI v3 (3.1+): создать или привязать к нужным inbound-ам, отвязать от лишних,
  * затем полной записью - вкл/выкл, subId (свой, не токен клиента), Vision (attach берёт flow из старых
- * привязок, а update заменяет запись целиком). Итог - ссылки для подписки.
+ * привязок). Запись полная, потому что 3X-UI до 3.11 включительно сбрасывает поля, которых нет в
+ * теле update, а новые оставляют их как есть. Итог - ссылки для подписки.
  */
 export async function xuiEnsure(api: XuiCall, c: Client, email: string, target: number[]) {
   const got = await api('GET', `clients/get/${encodeURIComponent(email)}`);

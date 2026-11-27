@@ -4,7 +4,7 @@
 # лимит паролей 200, admin API только на 127.0.0.1.
 # Коммит закреплён: обновлять осознанно, проверяя deploy.sh на изменения.
 set -eu
-COMMIT="${WDTT_COMMIT:-a296c57}"
+COMMIT="${WDTT_COMMIT:-7345d56}"
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 OUT="$ROOT/deploy/files/wdtt"
 TMP="$(mktemp -d)"
@@ -36,6 +36,9 @@ for arch in amd64 arm64; do
   CGO_ENABLED=0 GOOS=linux GOARCH=$arch go build -trimpath -ldflags "-s -w" -o "$OUT/wdtt-server-linux-$arch" ./server
 done
 git rev-parse HEAD > "$OUT/COMMIT"
+# метка сборки "версия приложения+коммит": по ней панель видит устаревший WDTT на серверах
+ver=$(sed -n 's/.*versionName *= *"\([^"]*\)".*/\1/p' app/build.gradle.kts | head -n 1)
+printf '%s+%s\n' "${ver:-0}" "$(git rev-parse --short=7 HEAD)" > "$OUT/VERSION"
 (cd "$OUT" && sha256sum deploy.sh wdtt-server-linux-amd64 wdtt-server-linux-arm64 > SHA256SUMS)
 chmod a+rX "$OUT"/*
 echo "wdtt: собрано из $COMMIT в $OUT"

@@ -5,8 +5,17 @@ import type { Db } from '../db/index.js';
 import { servers } from '../db/schema.js';
 import type { Action } from './action-journal.js';
 import { githubReleases } from './github.js';
+import { newId } from './ids.js';
 import { schedule } from './schedule.js';
 import type { SecretBox } from './secret-box.js';
+import {
+  BUILD_CHECK_SCRIPT,
+  BUILD_KINDS,
+  type BuildKind,
+  buildUpdateScript,
+  panelBuild,
+  parseBuildCheck,
+} from './service-builds.js';
 import { getJsonSetting, putSetting } from './settings.js';
 import { type XuiEnvelope, xuiApi } from './xui-api.js';
 import { xuiToken } from './xui-token.js';
@@ -20,12 +29,23 @@ type Store = Record<string, Partial<Record<ServiceUpdateKind, Checked>>>;
 
 const KEY = 'service_updates';
 const EVERY_MS = 6 * 60 * 60_000;
-const KINDS: ServiceUpdateKind[] = ['xui', 'xray', 'mtproxyl', 'mtproxyl-panel'];
+const KINDS: ServiceUpdateKind[] = ['xui', 'xray', 'mtproxyl', 'mtproxyl-panel', 'wdtt', 'naive'];
 const TITLES: Record<ServiceUpdateKind, string> = {
   xui: '3X-UI',
   xray: 'Xray',
   mtproxyl: 'MTProxyL',
   'mtproxyl-panel': 'MTProxyL: веб-панель',
+  wdtt: 'WDTT',
+  naive: 'Прокси для браузера',
+};
+/** Сервис в снимке агента, к которому относится обновление. */
+const SERVICE_OF: Record<ServiceUpdateKind, string> = {
+  xui: 'xui',
+  xray: 'xui',
+  mtproxyl: 'mtproxyl',
+  'mtproxyl-panel': 'mtproxyl',
+  wdtt: 'wdtt',
+  naive: 'naive',
 };
 /** Релизы веб-панели лежат в репозитории MTProxyL с этим префиксом тега. */
 const PANEL_TAG = 'mtproxyl-panel-v';
@@ -59,8 +79,9 @@ export function cmpVersion(a: string, b: string): number | null {
 
 /**
  * Проверка обновлений раз в 6 часов через агента: 3X-UI - своим API, Xray - новейшей из версий,
- * что предлагает 3X-UI, MTProxyL - update-check, веб-панель - релизом на GitHub. Итог хранится в
- * setting, чтобы уведомление о версии не повторялось после перезапуска.
+ * что предлагает 3X-UI, MTProxyL - update-check, веб-панель - релизом на GitHub, WDTT и прокси
+ * для браузера - меткой сборки против сборки, которую раздаёт панель (lib/service-builds.ts).
+ * Итог хранится в setting, чтобы уведомление о версии не повторялось после перезапуска.
  */
 export class ServiceUpdates {
   /** Проверки по очереди: расписание и кнопка не затирают общий store друг друга. */
@@ -80,6 +101,8 @@ export class ServiceUpdates {
     private onNew: (serverId: string, u: ServiceUpdate) => Promise<void>,
     /** Запрос наружу (GitHub) с хоста панели: напрямую, при сбое - через xray. */
     private fetchOut: (url: string, init?: RequestInit) => Promise<Response>,
+    /** Сборки WDTT и naive: каталог files панели и её адрес для скриптов; нет - не проверяются. */
+    private builds?: { filesDir: string; panelUrl: string },
   ) {}
 
   start() {
@@ -103,9 +126,7 @@ export class ServiceUpdates {
       const out: ServiceUpdate[] = [];
       for (const kind of KINDS) {
         const c = checked[kind];
-        const svc = services.find(
-          (s) => s.kind === (kind === 'xui' || kind === 'xray' ? 'xui' : 'mtproxyl'),
-        );
+        const svc = services.find((s) => s.kind === SERVICE_OF[kind]);
         if (!c?.available || !svc) continue;
         // Xray проверялся при другой версии 3X-UI (её обновили или поставили заново после
         // переустановки): у новой свой Xray - строка устарела, перепроверить
@@ -226,6 +247,7 @@ export class ServiceUpdates {
       results.xray = await this.guard(id, 'xray', () => this.checkXray(id));
     }
     if (kinds.has('mtproxyl')) Object.assign(results, await this.checkMtproxyl(id));
+    if (this.builds) Object.assign(results, await this.checkBuilds(id, kinds));
     const now = new Date().toISOString();
     for (const [k, res] of Object.entries(results) as [ServiceUpdateKind, Checked | null][]) {
       const prev = store[id]?.[k];
@@ -367,6 +389,78 @@ export class ServiceUpdates {
     } finally {
       await this.recheck(serverId).catch(() => undefined);
     }
+  }
+
+  /**
+   * WDTT и прокси для браузера: метки сборок на сервере одним скриптом. Сервиса нет или панель
+   * его сборку не раздаёт - записи нет; метки нет (поставлен до меток) - обновление доступно.
+   */
+  private async checkBuilds(id: string, kinds: Set<string>) {
+    const out: Partial<Record<ServiceUpdateKind, Checked | null>> = {};
+    const latest = new Map<BuildKind, string>();
+    for (const k of BUILD_KINDS) {
+      const v = this.builds && kinds.has(k) ? panelBuild(this.builds.filesDir, k) : '';
+      if (v) latest.set(k, v);
+      else out[k] = null;
+    }
+    if (!latest.size) return out;
+    let found: Partial<Record<BuildKind, string>> = {};
+    let error = '';
+    try {
+      let output = '';
+      const r = await this.registry.request<{ exitCode: number }>(
+        id,
+        'command.run',
+        {
+          runId: newId(),
+          script: BUILD_CHECK_SCRIPT,
+          env: {},
+          files: {},
+          cleanup: [],
+          timeoutSec: 30,
+        },
+        {
+          timeoutMs: 60_000,
+          onStream: (_ch, chunk) => {
+            output += chunk;
+          },
+        },
+      );
+      if (r.exitCode !== 0) throw new Error(`код ${r.exitCode}`);
+      found = parseBuildCheck(output);
+    } catch (e) {
+      error = `сборки на сервере: ${(e as Error).message}`;
+      this.log.warn({ serverId: id, err: error }, 'service updates');
+    }
+    for (const [k, v] of latest) {
+      const current = found[k] ?? '';
+      out[k] = error
+        ? { latest: '', available: false, error }
+        : { ...(current ? { current } : {}), latest: v, available: current !== v };
+    }
+    return out;
+  }
+
+  /**
+   * Заменить бинарник WDTT или прокси для браузера сборкой панели (скрипт с откатом), вывод - в
+   * действие журнала. Версии перепроверяются по окончании действия (SERVICE_UPDATE_ACTIONS).
+   */
+  async installBuild(serverId: string, kind: BuildKind, action: Action): Promise<void> {
+    if (!this.builds) throw new Error('панель не раздаёт сборки');
+    const r = await this.registry.request<{ exitCode: number }>(
+      serverId,
+      'command.run',
+      {
+        runId: action.id,
+        script: buildUpdateScript(kind),
+        env: { PANEL_URL: this.builds.panelUrl },
+        files: {},
+        cleanup: [],
+        timeoutSec: 600,
+      },
+      { timeoutMs: 660_000, onStream: action.stream },
+    );
+    if (r.exitCode !== 0) throw new Error(`${TITLES[kind]}: обновление не удалось`);
   }
 
   /** Менеджер и веб-панель - из одного mtproxyl.status. */

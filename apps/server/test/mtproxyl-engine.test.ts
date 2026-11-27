@@ -41,6 +41,31 @@ const fetchOut = async (url: string) => {
 };
 
 describe('EngineCatalog', () => {
+  it('mtdd: каналы сборок, без реестра образов, канал ставится и повторно', async () => {
+    calls = 0;
+    const reg = {
+      request: async () => ({
+        output: JSON.stringify({
+          engine_kind: 'mtdd',
+          current: 'main 1.0.3 от 20 ноября',
+          binary: true,
+          releases: [
+            { tag: 'main', name: 'main 1.0.3 - основной канал', date: '2026-11-20' },
+            { tag: 'dev', name: 'dev 1.1.0 - тестовый канал', date: '2026-11-25' },
+          ],
+        }),
+      }),
+    } as unknown as AgentRegistry;
+    const info = await new EngineCatalog(reg, fetchOut).info('s1');
+    expect(info).toMatchObject({ kind: 'mtdd', current: 'main 1.0.3 от 20 ноября', binary: true });
+    expect(info.versions.map((v) => [v.tag, v.ready, v.installed, v.prerelease])).toEqual([
+      ['main', true, true, false],
+      ['dev', true, false, true],
+    ]);
+    expect(info.versions[0]?.name).toBe('main 1.0.3 - основной канал');
+    expect(calls).toBe(0);
+  });
+
   it('docker: ставится только версия с готовым образом', async () => {
     calls = 0;
     const c = new EngineCatalog(agent({ current: '3.5.7-4ca7418', binary: false }), fetchOut);

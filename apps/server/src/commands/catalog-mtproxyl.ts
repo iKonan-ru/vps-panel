@@ -203,7 +203,7 @@ else
   if [ "$MT_ENGINE" = "docker" ]; then
 ${ENSURE_DOCKER}  fi
   say "Скачиваю установщик MTProxyL"
-  fetch_sha https://raw.githubusercontent.com/Liafanx/MTProxyL/d5019cf86c7833f6956a74ff8415ab531b196d4e/install.sh /tmp/mtproxyl-install.sh 9a90e55e64fc93bdbd321e2c1dfda194cc92c07a09837ba6408ef81bb7dc57e0
+  fetch_sha https://raw.githubusercontent.com/Liafanx/MTProxyL/5f7a99968f48b0c56fcffc204615dca95e51a918/install.sh /tmp/mtproxyl-install.sh 034a2f57a4a0b73e35f34b3e5d25ea7aad93680c8aa8d1abf18954a724cf1552
   args=(--mode manager --port "$MT_PORT" --sni "$MT_SNI" --engine "$MT_ENGINE" --zapret2 "$MT_ZAPRET2")
   # адрес в ссылках - "Адрес для клиентов" сервера, если задано имя (lib/mtproxyl-host.ts)
   [ "$CLIENT_HOST" != "$SERVER_HOST" ] && args+=(--host "$CLIENT_HOST")
@@ -250,7 +250,7 @@ if [ "$panel" = yes ]; then
       ;;
   esac
   say "Скачиваю установщик панели"
-  fetch_sha https://raw.githubusercontent.com/Liafanx/MTProxyL/d5019cf86c7833f6956a74ff8415ab531b196d4e/mtproxyl-panel/install.sh /tmp/mtproxyl-panel-install.sh 093beaad14b54345e07d276488bfbfbdea86cba39f9745d9c48f25f3cc7c35df
+  fetch_sha https://raw.githubusercontent.com/Liafanx/MTProxyL/5f7a99968f48b0c56fcffc204615dca95e51a918/mtproxyl-panel/install.sh /tmp/mtproxyl-panel-install.sh cc33b6e3cede3eeb8b9de61cbb33b5f715b79a78405d09fdd07b4e10a8da2749
   say "Запускаю установщик панели (отвечаю на его вопросы автоматически)"
   export MTP_USER MTP_PASSWORD MTP_PORT SERVER_HOST
   apt_wait

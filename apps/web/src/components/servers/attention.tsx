@@ -8,12 +8,17 @@ import { Link } from '@tanstack/react-router';
 import type { ReachTarget, ServerReach, ServerSummary, ServiceUpdate } from '@vps/protocol';
 import { CircleAlert } from 'lucide-react';
 
-/** Вкладка, где обновляется сервис: xray - в 3X-UI, веб-панель MTProxyL - в MTProxyL. */
+/**
+ * Вкладка, где обновляется сервис: xray - в 3X-UI, веб-панель MTProxyL - в MTProxyL, сборки
+ * WDTT и прокси для браузера - в "Обслуживании" обзора.
+ */
 const updateTab: Record<ServiceUpdate['kind'], string> = {
   xui: 'xui',
   xray: 'xui',
   mtproxyl: 'mtproxyl',
   'mtproxyl-panel': 'mtproxyl',
+  wdtt: 'overview',
+  naive: 'overview',
 };
 
 /** Обновления 3x-ui и MTProxyL по всем серверам: один запрос на страницу. */

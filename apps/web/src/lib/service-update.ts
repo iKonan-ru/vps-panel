@@ -18,6 +18,8 @@ export const startServiceUpdate: Record<
   xray: (id) => api(`/api/servers/${id}/xray/update`, { method: 'POST' }),
   mtproxyl: (id) => mtExec(id, 'update'),
   'mtproxyl-panel': (id) => mtExec(id, 'panel.update'),
+  wdtt: (id) => api(`/api/servers/${id}/wdtt/update`, { method: 'POST' }),
+  naive: (id) => api(`/api/servers/${id}/naive/update`, { method: 'POST' }),
 };
 
 /**

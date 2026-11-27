@@ -15,8 +15,9 @@ export type MtVersionKind = 'mtproxyl' | 'mtproxyl-panel';
 export type MtVersions = Versions<MtVersionKind>;
 
 /**
- * Выбор версии движка telemt: только с готовым образом или любые при бинарнике - сборка из
- * исходников может повесить слабый сервер.
+ * Выбор версии движка: telemt - только с готовым образом или любые при бинарнике (сборка из
+ * исходников может повесить слабый сервер); mtdd - канал сборок, повторная установка канала
+ * ставит его свежую сборку.
  */
 export function EngineForm({
   serverId,
@@ -37,14 +38,22 @@ export function EngineForm({
   const [tag, setTag] = useState<string | null>(null);
   if (error) return <Alert tone="bad">{error.message}</Alert>;
   if (!data) return <div className="text-sm text-muted">Загрузка&hellip;</div>;
+  const mtdd = data.kind === 'mtdd';
   return (
     <div className="flex flex-col gap-3">
+      {mtdd && data.current && (
+        <div className="text-sm">
+          Установлена: <span className="font-mono text-[13px]">{data.current}</span>
+        </div>
+      )}
       <div className="flex items-center gap-1 text-[13px] text-muted">
         Обновлять движок необязательно
         <InfoTip>
-          {data.binary
-            ? 'Движок установлен бинарником: доступна любая версия'
-            : 'Движок в docker: доступны только версии с готовым образом, сборка из исходников может повесить слабый сервер'}
+          {mtdd
+            ? 'Движок mtdd: сборки из каналов main (основной) и dev (тестовый), установка канала ставит его свежую сборку'
+            : data.binary
+              ? 'Движок установлен бинарником: доступна любая версия'
+              : 'Движок в docker: доступны только версии с готовым образом, сборка из исходников может повесить слабый сервер'}
         </InfoTip>
       </div>
       {data.registryError && (
@@ -58,7 +67,7 @@ export function EngineForm({
             key={v.tag}
             className={cn(
               'flex items-center gap-3 border-b border-border px-3 py-2.5 last:border-b-0',
-              (!v.ready || v.installed) && 'opacity-60',
+              (!v.ready || (v.installed && !mtdd)) && 'opacity-60',
             )}
           >
             <input
@@ -66,11 +75,11 @@ export function EngineForm({
               name="engine-version"
               className="accent-accent"
               checked={tag === v.tag}
-              disabled={!v.ready || v.installed}
+              disabled={!v.ready || (v.installed && !mtdd)}
               onChange={() => setTag(v.tag)}
             />
             <span className="min-w-0 grow">
-              <span className="font-mono text-[13px]">{v.tag}</span>
+              <span className="font-mono text-[13px]">{v.name ?? v.tag}</span>
               <span className="ml-2 text-xs text-muted">{v.date}</span>
               {!v.ready && (
                 <span className="block text-xs text-muted">
@@ -80,7 +89,7 @@ export function EngineForm({
             </span>
             <span className="flex flex-wrap justify-end gap-1">
               {v.installed && <Chip tone="ok">установлена</Chip>}
-              {v.prerelease && <Chip tone="muted">предварительная</Chip>}
+              {v.prerelease && <Chip tone="muted">{mtdd ? 'тестовый' : 'предварительная'}</Chip>}
             </span>
           </label>
         ))}

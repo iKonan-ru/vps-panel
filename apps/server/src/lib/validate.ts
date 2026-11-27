@@ -28,7 +28,7 @@ const MtArgs: Record<string, RegExp> = {
   label: MtLabel,
   new: MtLabel,
   secret: /^[0-9a-fA-F]{32}$/,
-  version: /^v?[0-9][0-9A-Za-z.+-]{0,40}$/,
+  version: /^(v?[0-9][0-9A-Za-z.+-]{0,40}|main|dev)$/,
 };
 /** Аргументы операций MTProxyL: только известные ключи, каждый по своей регулярке. */
 export const MtproxylArgs = z.record(z.string(), z.string().max(300)).superRefine((a, ctx) => {

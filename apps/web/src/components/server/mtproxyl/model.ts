@@ -20,8 +20,10 @@ interface MtStatus {
   } | null;
   secrets: MtUser[] | null;
   panel: string;
-  /** Версия движка telemt; "" - неизвестна (status.version - версия самого MTProxyL). */
+  /** Версия движка telemt; "" - неизвестна или mtdd (status.version - версия самого MTProxyL). */
   engine?: string;
+  /** Движок прокси: telemt или mtdd; нет поля - агент старый (telemt). */
+  engineKind?: 'telemt' | 'mtdd';
   errors: string[];
 }
 

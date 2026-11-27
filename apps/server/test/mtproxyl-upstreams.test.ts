@@ -190,6 +190,17 @@ describe('маршруты MTProxyL каскада Telegram', () => {
     expect(b.file('calls.log')).toContain('upstream disable direct');
   });
 
+  it('движок mtdd: включение - отказ без изменений, снять свои маршруты можно', () => {
+    const b = box();
+    b.run({ WANT });
+    writeFileSync(join(b.dir, 'settings.conf'), "ENGINE_KIND='mtdd'\n");
+    const before = b.routes();
+    expect(() => b.run({ WANT: 'vpc-a:2001:100' })).toThrow();
+    expect(b.routes()).toEqual(before);
+    b.run({ WANT: '' });
+    expect(b.routes()).toEqual(['direct|direct||||10||true|']);
+  });
+
   it('суперэксперт - отказ без изменений', () => {
     const b = box();
     writeFileSync(join(b.dir, 'settings.conf'), "SUPEREXPERT_ENABLED='true'\n");

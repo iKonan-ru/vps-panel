@@ -3,9 +3,9 @@
 # в deploy/files/naive: HTTPS-прокси для браузера.
 # Версии закреплены: обновлять осознанно, проверив прокси для браузера на тестовом сервере.
 set -eu
-CADDY="${CADDY_VERSION:-v2.11.7}"
-FWD="${FORWARDPROXY_VERSION:-v0.0.0-20250118002110-d62c80d3dd2c}"
-XCADDY="${XCADDY_VERSION:-v0.4.5}"
+CADDY="${CADDY_VERSION:-v2.11.9}"
+FWD="${FORWARDPROXY_VERSION:-v0.0.0-20261022172731-e747854e7874}"
+XCADDY="${XCADDY_VERSION:-v0.4.7}"
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 OUT="$ROOT/deploy/files/naive"
 GO="${GO:-$(command -v go || echo /tmp/go/bin/go)}"

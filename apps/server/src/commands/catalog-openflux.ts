@@ -7,8 +7,8 @@ import { PROLOGUE } from './util.js';
  * вместе с каналом, поэтому установка - это первый канал.
  */
 const INSTALLER_URL =
-  'https://raw.githubusercontent.com/p1neappleXpress/OpenFlux/ba31d0fc38b9b227231056a5ef845f7eae08f42c/deploy/node-install.sh';
-const INSTALLER_SHA256 = '90fd4532ac960fa2c508d55f978baf64871f15128a9531f71144e6f063d9c858';
+  'https://raw.githubusercontent.com/p1neappleXpress/OpenFlux/3459bfdf73be83b1128865de8737deb009ce0e7e/deploy/node-install.sh';
+const INSTALLER_SHA256 = '8a75cfd72a642a464d8d2e871172bcf37b1241d0d37e9323568557d3033f250f';
 const INSTALLED = '/opt/openflux-node/node-install.sh';
 
 /** Скачать установщик в $OF_INST и сверить sha256. */

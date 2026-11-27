@@ -39,7 +39,7 @@ import { schedule } from './schedule.js';
 import type { SecretBox } from './secret-box.js';
 import { getJsonSetting, getSetting, putSetting } from './settings.js';
 import { type WdttPassword, wdttApi } from './wdtt.js';
-import { type XuiCall, listInbounds, ownVlessInbounds, xuiApi } from './xui-api.js';
+import { type XuiCall, listInbounds, ownVlessInbounds, vlessLinkPrint, xuiApi } from './xui-api.js';
 import { xuiToken } from './xui-token.js';
 
 type Client = typeof gclients.$inferSelect;
@@ -103,6 +103,26 @@ export function resyncXui(db: Db, gc: Pick<GClients, 'kick'>, serverId: string) 
     .where(and(eq(gclientBindings.serverId, serverId), eq(gclientBindings.service, 'xui')))
     .run();
   gc.kick();
+}
+
+/**
+ * Следит за inbound-ами 3X-UI, которые панель видит по ходу других проверок: отпечаток ссылок
+ * (vlessLinkPrint) сменился - ссылки клиентов этого сервера собираются заново, не дожидаясь
+ * перепроверки раз в 6 часов. Первый отпечаток после запуска только запоминается.
+ */
+export class XuiLinkWatch {
+  private prints = new Map<string, string>();
+  constructor(
+    private db: Db,
+    private gc: Pick<GClients, 'kick'>,
+  ) {}
+
+  note(serverId: string, list: Record<string, unknown>[]) {
+    const print = vlessLinkPrint(list);
+    const prev = this.prints.get(serverId);
+    this.prints.set(serverId, print);
+    if (prev !== undefined && prev !== print) resyncXui(this.db, this.gc, serverId);
+  }
 }
 
 /** Клиенту разрешён сервис на сервере: доступ null - всё, иначе только отмеченное. */

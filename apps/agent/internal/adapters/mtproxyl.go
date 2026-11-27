@@ -29,7 +29,8 @@ type MtStatus struct {
 	Secrets     json.RawMessage `json:"secrets"`     // mtproxyl secret list --json
 	UpdateCheck json.RawMessage `json:"updateCheck"` // mtproxyl update-check
 	Panel       string          `json:"panel"`       // mtproxyl panel status (текст)
-	Engine      string          `json:"engine"`      // версия движка telemt ("3.5.13"), "" - неизвестна
+	Engine      string          `json:"engine"`      // версия движка telemt ("3.5.13"), "" - неизвестна или mtdd
+	EngineKind  string          `json:"engineKind"`  // движок: telemt или mtdd
 	Errors      []string        `json:"errors"`
 }
 
@@ -71,8 +72,21 @@ func MtStatusAll(ctx context.Context) MtStatus {
 		mu.Unlock()
 	}()
 	wg.Wait()
-	out.Engine = telemtVersion()
+	out.EngineKind = mtEngineKind()
+	if out.EngineKind == "telemt" {
+		out.Engine = telemtVersion()
+	}
 	return out
+}
+
+// mtEngineKind - движок прокси из настроек MTProxyL (ENGINE_KIND='mtdd'); по умолчанию telemt.
+// Файл версии telemt после смены движка остаётся и врёт - его читают только для telemt.
+func mtEngineKind() string {
+	b, err := os.ReadFile("/opt/mtproxyl/settings.conf")
+	if err == nil && reMtdd.Match(b) {
+		return "mtdd"
+	}
+	return "telemt"
 }
 
 // telemtVersion - версия движка telemt, которую MTProxyL записывает при установке образа или
@@ -100,7 +114,9 @@ var (
 	// без ведущего "-": метка - аргумент CLI, "--all" стал бы опцией
 	reLabel = regexp.MustCompile(`^[a-zA-Z0-9_][a-zA-Z0-9_-]{0,31}$`)
 	reHex   = regexp.MustCompile(`^[0-9a-fA-F]{32}$`)
-	reTag   = regexp.MustCompile(`^v?[0-9][0-9A-Za-z.+-]{0,40}$`)
+	reMtdd  = regexp.MustCompile(`(?m)^ENGINE_KIND='mtdd'`)
+	// тег релиза telemt или канал сборок mtdd (main, dev)
+	reTag = regexp.MustCompile(`^(v?[0-9][0-9A-Za-z.+-]{0,40}|main|dev)$`)
 )
 
 // mtOps - белый список операций: аргументы проверяются, argv собирается без оболочки.
@@ -136,12 +152,13 @@ var mtOps = map[string]struct {
 	"update":        {fixed("update", "--no-restart"), 10 * time.Minute, true},
 	"panel.restart": {fixed("panel", "restart"), 2 * time.Minute, false},
 	"panel.update":  {fixed("panel", "update"), 10 * time.Minute, false},
-	// Движок telemt: образ docker или бинарник. versions - JSON с текущей версией и релизами,
-	// update с тегом не задаёт вопросов и сам перезапускает прокси; без тега меню ждёт ввода.
+	// Движок telemt (образ docker или бинарник) или mtdd (каналы сборок main и dev). versions -
+	// JSON с текущей версией и релизами, update с тегом не задаёт вопросов и сам перезапускает
+	// прокси; без тега меню ждёт ввода.
 	"engine.versions": {fixed("engine", "versions"), time.Minute, false},
 	"engine.update": {func(a map[string]string) ([]string, error) {
 		if !reTag.MatchString(a["version"]) {
-			return nil, errors.New("версия: тег релиза telemt")
+			return nil, errors.New("версия: тег релиза telemt или канал mtdd")
 		}
 		return []string{"engine", "update", a["version"]}, nil
 	}, 14 * time.Minute, false}, // меньше 15 минут, которые ждёт панель

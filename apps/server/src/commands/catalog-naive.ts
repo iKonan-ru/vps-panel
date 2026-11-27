@@ -1,4 +1,5 @@
 import { randomBytes } from 'node:crypto';
+import { BUILD_MARK } from '../lib/service-builds.js';
 import type { CommandDef } from './types.js';
 import { NAIVE_FUNCS, PROLOGUE } from './util.js';
 
@@ -144,6 +145,8 @@ id vps-naive >/dev/null 2>&1 || useradd --system --no-create-home --home-dir /va
 install -d -m 755 /opt/vps-naive
 naive_unit_active && systemctl stop vps-naive || true
 install -m 755 /tmp/vps-naive-caddy /opt/vps-naive/caddy
+# метка сборки: по ней панель видит, что прокси на сервере устарел
+fetch "$PANEL_URL/files/naive/VERSION" -o ${BUILD_MARK.naive} 2>/dev/null || true
 install -d -m 750 -o root -g vps-naive /etc/vps-naive
 install -d -m 700 -o vps-naive -g vps-naive /var/lib/vps-naive
 

@@ -20,6 +20,8 @@ export const NOTIFY_EVENTS = [
   'updXray',
   'updMtproxyl',
   'updMtproxylPanel',
+  'updWdtt',
+  'updNaive',
   'payment',
   'backupFail',
   'updPanel',
@@ -172,6 +174,8 @@ export const NOTIFY_GROUPS: NotifyGroup[] = [
       { key: 'updXray', title: 'Xray в 3X-UI' },
       { key: 'updMtproxyl', title: 'MTProxyL' },
       { key: 'updMtproxylPanel', title: 'Веб-панель MTProxyL' },
+      { key: 'updWdtt', title: 'WDTT', hint: 'новая сборка панели' },
+      { key: 'updNaive', title: 'Прокси для браузера', hint: 'новая сборка панели' },
     ],
   },
   {

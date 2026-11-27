@@ -33,6 +33,17 @@ describe('wdttLinks', () => {
     });
     expect(v6.wdtt).toBe('wdtt://[::1]:1:2:9000:x:');
   });
+
+  it('ключ и порты диагностики сервера - dk, raw, direct после pass', () => {
+    const base = { host: '1.2.3.4', dtlsPort: 56000, wgPort: 56001, password: 'p', hashes: [] };
+    const l = wdttLinks({
+      ...base,
+      name: 'n',
+      diag: { diag_key: 'k+1', raw_port: 56003, direct_port: 56002 },
+    });
+    expect(l.qwdtt).toMatch(/&pass=p&dk=k%2B1&raw=56003&direct=56002$/);
+    expect(wdttLinks({ ...base, name: 'n', diag: {} }).qwdtt).toMatch(/&pass=p$/);
+  });
 });
 
 let dir: string;

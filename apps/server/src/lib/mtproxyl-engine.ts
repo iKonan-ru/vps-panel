@@ -3,9 +3,10 @@ import type { AgentRegistry } from '../agents/registry.js';
 import { githubReleases } from './github.js';
 
 /**
- * Версии движка telemt MTProxyL. Без готового образа в ghcr.io (тег "<версия>-<коммит релиза>")
- * `mtproxyl engine update` собирает telemt из исходников прямо на сервере и может подвесить
- * слабый сервер, поэтому ставятся только версии с образом (при носителе-бинарнике - любые).
+ * Версии движка MTProxyL: telemt или mtdd (у mtdd - каналы сборок main и dev, всегда бинарник).
+ * Без готового образа в ghcr.io (тег "<версия>-<коммит релиза>") `mtproxyl engine update`
+ * собирает telemt из исходников прямо на сервере и может подвесить слабый сервер, поэтому
+ * ставятся только версии с образом (при носителе-бинарнике - любые).
  * Образ на сервере от сборки не спасает: engine update удаляет его и тянет из реестра.
  */
 const IMAGE = 'liafanx/mtproxyl-telemt';
@@ -56,8 +57,26 @@ export class EngineCatalog {
     const v = JSON.parse((r.output ?? '').trim()) as {
       current: string;
       binary: boolean;
-      releases: { tag: string; date: string }[];
+      releases: { tag: string; name?: string; date: string }[];
+      engine_kind?: string;
     };
+    // mtdd: каналы сборок (main, dev) вместо релизов, current - подпись сборки ("main 1.0.3 от
+    // 20 ноября"); канал можно поставить и повторно - так приходит его свежая сборка
+    if (v.engine_kind === 'mtdd')
+      return {
+        kind: 'mtdd',
+        current: v.current,
+        binary: true,
+        versions: v.releases.map((x) => ({
+          tag: x.tag,
+          ...(x.name ? { name: x.name } : {}),
+          date: x.date,
+          prerelease: x.tag !== 'main',
+          installed: v.current === x.tag || v.current.startsWith(`${x.tag} `),
+          image: false,
+          ready: true,
+        })),
+      };
     let c: Awaited<ReturnType<EngineCatalog['catalog']>> | null = null;
     let registryError: string | undefined;
     if (!v.binary)
@@ -79,6 +98,7 @@ export class EngineCatalog {
       };
     });
     return {
+      kind: 'telemt',
       current: norm(v.current),
       binary: v.binary,
       versions,

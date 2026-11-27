@@ -19,6 +19,10 @@ export interface WdttPassword {
   down_bytes: number;
   up_bytes: number;
   active_devices: number;
+  /** Ключ диагностики сервера (сборки с диагностикой; у старых полей нет). */
+  diag_key?: string;
+  raw_port?: number;
+  direct_port?: number;
 }
 
 interface WdttResponse {
@@ -70,7 +74,8 @@ export function setWdttHashes(db: Db, hashes: string[]) {
 
 /**
  * Ссылки на пароль: qwdtt://config (оба Android-клиента qWDTT и PWDTT) и wdtt://.
- * Пробел - %20, а не "+": Android-клиент "+" не раскодирует.
+ * Пробел - %20, а не "+": Android-клиент "+" не раскодирует. diag - ключ и порты диагностики из
+ * admin API (dk, raw, direct - как в ссылках самого сервера; старые приложения их пропускают).
  */
 export function wdttLinks(o: {
   host: string;
@@ -79,10 +84,11 @@ export function wdttLinks(o: {
   password: string;
   hashes: string[];
   name: string;
+  diag?: Pick<WdttPassword, 'diag_key' | 'raw_port' | 'direct_port'> | undefined;
 }) {
   const host = o.host.includes(':') ? `[${o.host}]` : o.host;
   const hashes = o.hashes.join(',');
-  const q = {
+  const q: Record<string, string> = {
     name: o.name,
     peer: `${host}:${o.dtlsPort}`,
     hashes,
@@ -90,6 +96,9 @@ export function wdttLinks(o: {
     port: '9000',
     pass: o.password,
   };
+  if (o.diag?.diag_key) q.dk = o.diag.diag_key;
+  if (o.diag?.raw_port) q.raw = String(o.diag.raw_port);
+  if (o.diag?.direct_port) q.direct = String(o.diag.direct_port);
   return {
     qwdtt: `qwdtt://config?${Object.entries(q)
       .map(([k, v]) => `${k}=${encodeURIComponent(v)}`)

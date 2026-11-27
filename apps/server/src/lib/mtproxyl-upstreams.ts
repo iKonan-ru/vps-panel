@@ -74,6 +74,11 @@ fi
 if grep -q "^SUPEREXPERT_ENABLED='true'" "$D/settings.conf" 2>/dev/null && [ -f "$D/superexpert.toml" ]; then
   echo "ERR:MTProxyL в режиме суперэксперта: маршруты движка задаёт его файл, а не MTProxyL"; exit 3
 fi
+# движок mtdd: свой JSON-конфиг без ключей telemt (middle proxy, tls_fetch_scope), маршруты через
+# socks на нём не проверены - включать нельзя, снять свои маршруты можно
+if [ -n "\${WANT:-}" ] && grep -q "^ENGINE_KIND='mtdd'" "$D/settings.conf" 2>/dev/null; then
+  echo "ERR:MTProxyL на движке mtdd: каскад Telegram работает только с движком telemt"; exit 3
+fi
 export MTPROXYL_ASSUME_YES=1 MTPROXYL_NONINTERACTIVE=true UPSTREAM_DEFER_RESTART=true
 cur() {
   if [ -f "$U" ]; then grep -v -e '^[[:space:]]*#' -e '^[[:space:]]*$' "$U" || true
@@ -114,7 +119,7 @@ while IFS='|' read -r n t a u p w i en sc; do
     *)
       [ "$en" = true ] && [ -z "$sc" ] || continue
       if [ "$t" != direct ]; then
-        [ $on = 0 ] || { echo "ERR:в MTProxyL включён маршрут $n ($t, например WARP или донор): сначала нужно выключить его"; exit 4; }
+        [ $on = 0 ] || { echo "ERR:в MTProxyL включён маршрут $n ($t, например WARP, донор или VLESS MTProxyL): сначала нужно выключить его"; exit 4; }
         foreign_on=1
       fi
       if [ $on = 1 ]; then

@@ -295,13 +295,11 @@ const ACTIONS: Record<string, Make> = {
       stale: u ? undefined : `${title}: новой версии нет`,
       done: `<b>${esc(s.name)}</b>: ${title} обновлён${u ? ` до ${esc(u.latest)}` : ''}`,
       run: () =>
-        kind === 'xui'
-          ? d.api.post(`${base}/xui/update`)
-          : kind === 'xray'
-            ? d.api.post(`${base}/xray/update`)
-            : d.api.post(`${base}/mtproxyl/exec`, {
-                op: kind === 'mtproxyl' ? 'update' : 'panel.update',
-              }),
+        kind === 'xui' || kind === 'xray' || kind === 'wdtt' || kind === 'naive'
+          ? d.api.post(`${base}/${kind}/update`)
+          : d.api.post(`${base}/mtproxyl/exec`, {
+              op: kind === 'mtproxyl' ? 'update' : 'panel.update',
+            }),
     };
   },
   bf: async ({ a0, d, server }) => {

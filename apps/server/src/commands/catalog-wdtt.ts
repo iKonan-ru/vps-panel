@@ -1,4 +1,5 @@
 import { randomBytes } from 'node:crypto';
+import { BUILD_MARK } from '../lib/service-builds.js';
 import type { CommandDef } from './types.js';
 import { PROLOGUE, WDTT_FW_FUNCS } from './util.js';
 
@@ -106,6 +107,8 @@ export WDTT_SSH_PORT="$SERVER_SSH_PORT"
 say "Запускаю deploy.sh (порты: DTLS $WDTT_DTLS_PORT, WG $WDTT_WG_PORT, admin $WDTT_ADMIN_PORT)"
 apt_wait
 bash /tmp/wdtt-deploy.sh install </dev/null
+# метка сборки: по ней панель видит, что WDTT на сервере устарел
+fetch "$PANEL_URL/files/wdtt/VERSION" -o ${BUILD_MARK.wdtt} 2>/dev/null || true
 ${WDTT_FW_FUNCS}
 if portsync_governs; then
   say "Порты ведут ufw и port-sync: открываю порты WDTT в ufw, убираю зеркальные правила iptables"

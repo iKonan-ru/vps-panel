@@ -88,6 +88,7 @@ export async function wdttRoutes(
           password: p.password,
           hashes,
           name,
+          diag: p,
         }),
       })),
     };
