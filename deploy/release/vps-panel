@@ -158,7 +158,10 @@ print(best)' "$1" || die "не удалось узнать последнюю в
 fetch_release() { # fetch_release <версия> <каталог>
   local v="$1" dir="$2" f
   local base="https://github.com/$REPO/releases/download/v$v"
+  local k=0
   for f in release.sha256 vps-panel compose.yml Caddyfile fail2ban-panel.conf fail2ban-panel.jail; do
+    progress "файл $((k + 1)) из 6: $f" "$(awk -v a="$k" 'BEGIN { printf "%.2f", a / 6 }')"
+    k=$((k + 1))
     curl -fsSL -m 60 --retry 3 "$base/$f" -o "$dir/$f" || die "не скачался $f релиза v$v"
   done
   (cd "$dir" && sha256sum -c --quiet release.sha256) || die "файлы релиза v$v не сходятся с release.sha256"
@@ -184,11 +187,139 @@ os.replace(tmp, p)
 PY
 }
 
-wait_health() { # wait_health <версия> <секунд>: /api/health отвечает этой версией (-k: сертификат
-  # на свежей установке может быть ещё не выпущен, а проверяется здесь только ответ панели)
-  local v="$1" n=$(($2 / 5)) dom
+# Ход внутри шага (только во время обновления): текст и доля шага 0..1. Запись обновляет и
+# updatedAt - панель видит, что шаг жив, и не считает долгую загрузку оборванной.
+progress() { # progress <текст> [доля]
+  [ "$STARTED" != 0 ] && [ -f "$STATUS" ] || return 0
+  python3 - "$STATUS" "$1" "${2:-}" <<'PY' || true
+import json, os, sys, time
+p, text, frac = sys.argv[1:4]
+with open(p, encoding="utf-8") as f:
+    d = json.load(f)
+d["progress"] = text
+if frac:
+    d["fraction"] = max(0.0, min(1.0, float(frac)))
+else:
+    d.pop("fraction", None)
+d["updatedAt"] = int(time.time())
+tmp = p + ".tmp"
+with open(tmp, "w") as f:
+    json.dump(d, f, ensure_ascii=False)
+os.chmod(tmp, 0o644)
+os.replace(tmp, p)
+PY
+}
+
+# Разбор "docker compose --progress json pull" (stdin): слои по событиям, раз в 2 с - ход в
+# deploy.json (аргумент 1): "слоёв N из M, скачано X МБ, скорость", потом распаковка. Слои, что
+# уже есть ("Already exists"), и блобы конфигурации не считаются. Не-JSON строки и ошибки - в журнал (аргумент 2).
+read -r -d '' PULL_PROGRESS_PY <<'PY' || true
+import json, os, sys, time
+status, tail = sys.argv[1:3]
+layers = {}
+hist = []
+last = [0.0]
+
+
+def mb(b):
+    return f"{b / 1e6:.0f} МБ" if b >= 1e7 else f"{b / 1e6:.1f} МБ"
+
+
+def write(force=False):
+    now = time.time()
+    if not force and now - last[0] < 2:
+        return
+    last[0] = now
+    new = [l for l in layers.values() if l["fs"] and l["st"] != "have"]
+    if not new:
+        return
+    got = sum(l["cur"] for l in new)
+    loaded = sum(1 for l in new if l["st"] in ("got", "pulled"))
+    pulled = sum(1 for l in new if l["st"] == "pulled")
+    hist.append((now, got))
+    while len(hist) > 2 and now - hist[0][0] > 15:
+        hist.pop(0)
+    dt = now - hist[0][0]
+    speed = (got - hist[0][1]) / dt if dt >= 1 else 0
+    if loaded < len(new):
+        text = f"слоёв {loaded} из {len(new)}, скачано {mb(got)}"
+        if speed > 0:
+            text += f", {speed / 1e3:.0f} КБ/с"
+    else:
+        text = f"скачано {mb(got)}, распаковка: слоёв {pulled} из {len(new)}"
+    part = sum(
+        1 if l["st"] in ("got", "pulled") else (l["cur"] / l["tot"] if l["tot"] else 0) for l in new
+    )
+    frac = 0.9 * part / len(new) + 0.1 * pulled / len(new)
+    try:
+        with open(status, encoding="utf-8") as f:
+            d = json.load(f)
+        d["progress"] = text
+        d["fraction"] = round(frac, 3)
+        d["updatedAt"] = int(now)
+        tmp = status + ".tmp"
+        with open(tmp, "w") as f:
+            json.dump(d, f, ensure_ascii=False)
+        os.chmod(tmp, 0o644)
+        os.replace(tmp, status)
+    except (OSError, ValueError):
+        pass
+
+
+with open(tail, "a", encoding="utf-8") as log:
+    for line in sys.stdin:
+        try:
+            e = json.loads(line)
+        except ValueError:
+            if line.strip():
+                log.write(line)
+            continue
+        # сбой разбора не должен рвать конвейер: загрузка важнее хода
+        try:
+            if not isinstance(e, dict):
+                continue
+            if e.get("status") == "Error":
+                log.write(f"{e.get('id', '')}: {e.get('text', '')} {e.get('details', '')}\n")
+            if not e.get("parent_id"):
+                continue
+            l = layers.setdefault(e.get("id", ""), {"cur": 0, "tot": 0, "st": "new", "fs": False})
+            text = e.get("text", "")
+            # слой - только с "Pulling fs layer" или "Already exists": конфиг образа и
+            # подписи приходят как "Downloading" без них и в слоях не считаются
+            if text in ("Pulling fs layer", "Waiting", "Already exists"):
+                l["fs"] = True
+            if text == "Already exists":
+                l["st"] = "have"
+            elif text == "Downloading":
+                l["cur"] = int(e.get("current") or 0)
+                l["tot"] = int(e.get("total") or l["tot"])
+            elif text in ("Verifying Checksum", "Download complete", "Extracting", "Pull complete"):
+                if l["st"] != "have":
+                    if l["tot"]:
+                        l["cur"] = l["tot"]
+                    l["st"] = "pulled" if text == "Pull complete" else "got"
+            write()
+        except Exception:
+            pass
+write(True)
+PY
+
+# Загрузка образов с ходом в deploy.json; compose без --progress json - обычная загрузка.
+pull_images() {
+  if compose --progress json version >/dev/null 2>&1; then
+    compose --progress json pull 2>&1 | python3 -c "$PULL_PROGRESS_PY" "$STATUS" "$TAIL_FILE"
+  else
+    compose pull >>"$TAIL_FILE" 2>&1
+  fi
+}
+
+wait_health() { # wait_health <версия> <секунд> [progress]: /api/health отвечает этой версией (-k:
+  # сертификат на свежей установке может быть ещё не выпущен, а проверяется здесь только ответ
+  # панели); progress - ход ожидания в deploy.json
+  local v="$1" n=$(($2 / 5)) dom i
   dom="$(env_get PANEL_DOMAIN)"
-  for _ in $(seq 1 "$n"); do
+  for i in $(seq 1 "$n"); do
+    [ "${3:-}" = progress ] && progress "ожидание ответа: $((i * 5 - 5)) с из $2" "$(awk -v a="$i" -v b="$n" 'BEGIN { printf "%.2f", (a - 1) / b }')"
     # --connect-to: и для имени, и для IP (за NAT свой внешний адрес изнутри недоступен)
     if curl -kfsS -m 8 --connect-to "$dom:443:127.0.0.1:443" "https://$dom/api/health" 2>/dev/null | grep -q "\"version\":\"$v\""; then
       return 0
@@ -602,7 +733,7 @@ cmd_update() {
   mkdir -p "$SITES"
 
   status building 2 4 "загрузка образов"
-  if ! compose pull >>"$TAIL_FILE" 2>&1; then
+  if ! pull_images; then
     restore
     status failed 2 4 "загрузка образов"
     die "образы $TARGET не скачались - осталась $CURRENT"
@@ -620,7 +751,7 @@ cmd_update() {
   # статус пишется до перезапуска: прежняя панель успевает показать полосу
   compose up -d --remove-orphans >>"$TAIL_FILE" 2>&1 || true
   status building 4 4 "проверка новой версии"
-  if ! wait_health "$TARGET" 180; then
+  if ! wait_health "$TARGET" 180 progress; then
     restore
     status failed 4 4 "проверка новой версии" "$CURRENT"
     die "$TARGET не ответила за 3 минуты, возвращена $CURRENT (vps-panel logs)"

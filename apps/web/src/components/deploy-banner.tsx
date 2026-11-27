@@ -15,6 +15,10 @@ export interface DeployStatus {
   step: number;
   total: number;
   stepName: string;
+  /** Ход внутри шага ("слоёв 3 из 12, скачано 45 МБ, 105 КБ/с"), где служба его знает. */
+  progress?: string;
+  /** Доля шага 0..1 к ходу; нет - шаг считается целиком. */
+  fraction?: number;
   tail?: string[];
 }
 export interface DeployInfo {
@@ -108,7 +112,9 @@ export function DeployBanner() {
   if (!data || !st || hidden === st.startedAt) return null;
 
   if (building) {
-    const pct = Math.round((st.step / Math.max(1, st.total)) * 100);
+    const frac = typeof st.fraction === 'number' ? Math.min(1, Math.max(0, st.fraction)) : 1;
+    // шаг N идёт: N-1 шагов позади плюс его доля; шаг 0 - запуск, полоса пустая
+    const pct = st.step > 0 ? Math.round(((st.step - 1 + frac) / Math.max(1, st.total)) * 100) : 0;
     return (
       <Bar tone="accent">
         <RefreshCw className="size-4 shrink-0 animate-spin" />
@@ -117,6 +123,7 @@ export function DeployBanner() {
             Обновление до {st.commit}: шаг {st.step} из {st.total}, {st.stepName},{' '}
             {mmss(Math.round(now / 1000) - st.startedAt)}
           </div>
+          {st.progress && <div className="text-xs opacity-80">{st.progress}</div>}
           <Meter pct={pct} className="mt-1.5 h-1 bg-accent/20" fill="bg-accent" />
         </div>
       </Bar>
