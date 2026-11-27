@@ -31,6 +31,7 @@ import {
   platformsHtml,
   qrPart,
   setFavicon,
+  subAppsBlock,
 } from '../lib/personal-page.js';
 import type { SecretBox } from '../lib/secret-box.js';
 import { wdttHashes } from '../lib/wdtt.js';
@@ -142,13 +143,15 @@ export async function personalRoutes(
         `<p class="hint">Нажмите \u00abПодключить\u00bb: Telegram предложит добавить прокси</p>${top ? `<div class="devblk">${top}</div>` : ''}${n ? fold({ head: top ? 'Другие серверы' : 'Серверы', n, body: items }) : ''}`,
       );
     }
-    // VLESS: одна подписка на все серверы
+    // VLESS: одна подписка на все серверы, ссылка импорта - для выбранного приложения
     if (rows.some((r) => r.b.service === 'xui')) {
+      const catalog = apps.list().apps;
+      const osOf = (id: string) =>
+        catalog.find((a) => a.id === id)?.platforms.map((p) => p.os) ?? [...OS_IDS];
       body += card(
         'VPN по подписке',
-        `<p class="hint">Добавьте подписку в Happ, v2rayNG или Hiddify кнопкой, ссылкой или QR-кодом. Серверы будут обновляться автоматически.</p>
-${await linkBtn({ href: `happ://add/${subUrl}`, label: 'Добавить в Happ', copy: subUrl, qr: subUrl, primary: true, wide: true })}
-${appsLink(c.token, 'vless', 'Скачать приложение Happ')}`,
+        `<p class="hint">Выберите приложение и добавьте в него подписку кнопкой, ссылкой или QR-кодом. Серверы будут обновляться автоматически.</p>
+${await subAppsBlock({ url: subUrl, name: c.name, token: c.token, prefer: c.apps.vless, osOf })}`,
       );
     }
     // AWG: конфиги по устройствам; блоки устройств свёрнуты

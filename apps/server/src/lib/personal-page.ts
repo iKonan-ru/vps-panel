@@ -1,5 +1,5 @@
 import { createHash } from 'node:crypto';
-import type { AppLink, AppOs } from '@vps/protocol';
+import { type AppLink, type AppOs, SUB_APPS, subApp } from '@vps/protocol';
 import QRCode from 'qrcode';
 
 /**
@@ -64,13 +64,19 @@ summary.devh .n{margin-left:auto;font-weight:400;color:var(--muted)}summary.devh
 .empty{color:var(--muted);text-align:center;padding:28px 16px}
 .steps{margin:0;padding-left:20px;display:flex;flex-direction:column;gap:6px;font-size:13px}.steps b{font-weight:600;word-break:break-all}
 .fold-b{display:flex;flex-direction:column;gap:10px;padding:10px 12px;border-top:1px solid var(--border)}
-.browsers{display:grid;grid-template-columns:repeat(auto-fit,minmax(120px,1fr));gap:8px}`;
+.browsers{display:grid;grid-template-columns:repeat(auto-fit,minmax(120px,1fr));gap:8px}
+.subapps{display:flex;flex-direction:column;gap:10px}.chips{display:flex;flex-wrap:wrap;gap:6px}
+.chip{height:30px;padding:0 12px;border-radius:15px;border:1px solid var(--border);background:var(--surface-2);color:var(--text);font:inherit;font-size:13px;cursor:pointer}
+.chip:hover{border-color:var(--muted)}.chip.on{background:var(--accent);border-color:var(--accent);color:#fff}
+.chip[hidden],[data-pane][hidden]{display:none!important}.subapps .split>[data-pane]{border-radius:8px 0 0 8px}`;
 
 /**
  * Копирование ссылок; QR - под стеком кнопок по нажатию, кадры Amnezia VPN листаются раз в 1,2 с.
  * Приложения - сначала для ОС устройства (data-prefer) или посетителя (iPad в новых версиях
  * представляется Mac - отличаем по сенсорному экрану), остальные платформы - кнопкой, она же
- * их и скрывает. Без скрипта видны все платформы.
+ * их и скрывает. Без скрипта видны все платформы. Приложение подписки (data-subapps): видны
+ * только приложения ОС посетителя, выбрано - его прошлый выбор (localStorage), иначе приложение
+ * клиента из панели, иначе первое для ОС; без скрипта - приложение клиента.
  */
 const SCRIPT = `document.addEventListener('click',function(e){var b=e.target.closest('[data-copy]');if(b){navigator.clipboard.writeText(b.getAttribute('data-copy')).then(function(){b.classList.add('done');setTimeout(function(){b.classList.remove('done')},1200)});return}
 var q=e.target.closest('[data-qr]');if(q){var p=document.getElementById(q.getAttribute('data-qr'));p.hidden=!p.hidden;q.classList.toggle('on',!p.hidden);q.setAttribute('aria-expanded',String(!p.hidden));return}
@@ -78,6 +84,12 @@ var m=e.target.closest('.more');if(m){var a=m.previousElementSibling,on=a.classL
 var u=navigator.userAgent,os=/Android/i.test(u)?'android':/iPhone|iPad|iPod/.test(u)||(/Macintosh/.test(u)&&navigator.maxTouchPoints>1)?'ios':/Windows/.test(u)?'windows':/Macintosh|Mac OS X/.test(u)?'macos':/Linux|X11|CrOS/.test(u)?'linux':'';
 var ff=/Firefox\\//.test(u);document.querySelectorAll('[data-browser]').forEach(function(b){b.classList.toggle('primary',b.getAttribute('data-browser')===(ff?'firefox':'chrome'))});
 document.querySelectorAll('[data-pick]').forEach(function(a){var m=a.querySelector('[data-os="'+(a.getAttribute('data-prefer')||os)+'"]');if(m){m.classList.add('mine');a.classList.add('pickable','picked')}});
+document.querySelectorAll('[data-subapps]').forEach(function(w){var k='vps-subapp',bs=w.querySelectorAll('[data-app]'),ok=[],sv=null;
+bs.forEach(function(b){var f=!os||(' '+b.getAttribute('data-os')+' ').indexOf(' '+os+' ')>=0;b.hidden=!f;if(f)ok.push(b.getAttribute('data-app'))});
+var pick=function(id,save){bs.forEach(function(b){var on=b.getAttribute('data-app')===id;b.classList.toggle('on',on);b.setAttribute('aria-pressed',String(on))});w.querySelectorAll('[data-pane]').forEach(function(p){p.hidden=p.getAttribute('data-pane')!==id});if(save)try{localStorage.setItem(k,id)}catch(x){}};
+try{sv=localStorage.getItem(k)}catch(x){}var d=w.getAttribute('data-default');
+pick([sv,d].concat(ok).filter(function(x){return x&&ok.indexOf(x)>=0})[0]||d,false);
+w.addEventListener('click',function(e){var b=e.target.closest('[data-app]');if(b)pick(b.getAttribute('data-app'),true)})});
 setInterval(function(){document.querySelectorAll('.qrp:not([hidden]) [data-frames]').forEach(function(x){var f=x.querySelectorAll('.frame'),i=0;f.forEach(function(e,j){if(e.classList.contains('on'))i=j});f[i].classList.remove('on');i=(i+1)%f.length;f[i].classList.add('on');var c=x.parentNode.querySelector('.cap');if(c)c.firstChild.textContent='кадр '+(i+1)+' из '+f.length})},1200)`;
 
 /** Иконки lucide - те же, что в панели. */
@@ -230,6 +242,43 @@ const appLinks = async (links: AppLink[]) =>
       ),
     )
   ).join('');
+
+/**
+ * Подписка VLESS с выбором приложения: кнопки приложений (data-os - на каких ОС оно есть),
+ * под ними ссылка импорта выбранного (у приложения без ссылки - копирование с подсказкой), общие
+ * копирование и QR самой подписки и "Скачать" выбранного. prefer - приложение клиента из панели.
+ */
+export const subAppsBlock = async (o: {
+  url: string;
+  name: string;
+  token: string;
+  prefer: string | undefined;
+  /** ОС, на которых есть приложение (из каталога); нет в каталоге - на всех. */
+  osOf: (id: string) => AppOs[];
+}) => {
+  const def = subApp(o.prefer)?.id ?? SUB_APPS[0]?.id ?? '';
+  const hide = (id: string) => (id === def ? '' : ' hidden');
+  const chips = SUB_APPS.map(
+    (a) =>
+      `<button type="button" class="chip${a.id === def ? ' on' : ''}" data-app="${a.id}" data-os="${o.osOf(a.id).join(' ')}" aria-pressed="${a.id === def}">${esc(a.name)}</button>`,
+  ).join('');
+  const mains = SUB_APPS.map((a) =>
+    a.link
+      ? `<a class="btn main primary" data-pane="${a.id}" href="${esc(a.link(o.url, o.name))}"${hide(a.id)}>${icon('external')}Добавить в ${esc(a.name)}</a>`
+      : `<button type="button" class="btn main primary copy" data-pane="${a.id}" data-copy="${esc(o.url)}"${hide(a.id)}><span class="cp">${icon('copy')}Скопировать подписку</span><span class="ok">${icon('check')}Скопировано</span></button>`,
+  ).join('');
+  const q = await qrPart(false, [o.url]);
+  const hints = SUB_APPS.filter((a) => a.hint)
+    .map((a) => `<p class="hint" data-pane="${a.id}"${hide(a.id)}>${esc(a.hint ?? '')}</p>`)
+    .join('');
+  const downloads = SUB_APPS.map((a) =>
+    appsLink(o.token, a.id, `Скачать ${a.name}`).replace(
+      '<a class="go"',
+      `<a class="go" data-pane="${a.id}"${hide(a.id)}`,
+    ),
+  ).join('');
+  return `<div class="subapps" data-subapps data-default="${def}"><div class="chips" aria-label="Приложение">${chips}</div><span class="split">${mains}${copyBtn(o.url)}${q.btn}</span>${q.panel}${hints}${downloads}</div>`;
+};
 
 /** Ссылка на страницу приложений (раздел anchor, сверху - ОС устройства os). */
 export const appsLink = (token: string, anchor: string, label: string, os?: AppOs | null) =>

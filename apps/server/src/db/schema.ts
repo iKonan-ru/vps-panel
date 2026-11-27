@@ -3,6 +3,7 @@ import type {
   CascadeMode,
   CascadeTelegramCheck,
   GClientAccess,
+  GClientApps,
   Inventory,
   Metrics,
   PortsyncConfig,
@@ -228,6 +229,8 @@ export const gclients = sqliteTable('gclient', {
   enabled: integer('enabled', { mode: 'boolean' }).notNull().default(true),
   /** null - все серверы и сервисы; список - только отмеченное (GClientAccess) */
   access: text('access', { mode: 'json' }).$type<GClientAccess>(),
+  /** приложение клиента по сервисам (GClientApps): на личной странице выбрано сразу */
+  apps: text('apps', { mode: 'json' }).$type<GClientApps>().notNull().default({}),
   deletedAt: text('deleted_at'),
   createdAt: text('created_at').notNull().default(now),
 });

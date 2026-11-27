@@ -75,7 +75,8 @@ describe('личная страница', () => {
     expect(r.body.match(/data-qr="/g)).toHaveLength(2);
     // приложения - на отдельной странице, на главной только ссылка на неё
     expect(r.body).not.toContain('class="apps"');
-    expect(r.body).toContain(`/c/${token}/apps#vless`);
+    // "Скачать" - на выбранное приложение подписки (раздел приложения на странице приложений)
+    expect(r.body).toContain(`/c/${token}/apps#happ`);
     // встроенный скрипт должен разбираться: ошибка синтаксиса ломала бы все кнопки страницы
     const script = /<script>([\s\S]*?)<\/script>/.exec(r.body)?.[1] ?? '';
     expect(script.length).toBeGreaterThan(100);

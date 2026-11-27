@@ -173,6 +173,12 @@ const STEPS: ((sqlite: Database.Database) => void)[] = [
     if (!cols.some((c) => c.name === 'agent_protocol'))
       sqlite.exec("alter table server add column agent_protocol text not null default ''");
   },
+  // 30: приложение клиента для подписки на личной странице - только добавление столбца
+  (sqlite) => {
+    const cols = sqlite.prepare('pragma table_info(gclient)').all() as { name: string }[];
+    if (!cols.some((c) => c.name === 'apps'))
+      sqlite.exec("alter table gclient add column apps text not null default '{}'");
+  },
 ];
 
 /** Шаги, которых база ещё не видела, - по порядку, каждый с отметкой версии. */
@@ -257,8 +263,8 @@ create table if not exists awg_client (
 create table if not exists gclient (
   id text primary key, name text not null, note text not null default '',
   token text not null unique, xui_sub_id text not null default '', slug text not null unique,
-  enabled integer not null default 1, access text, deleted_at text,
-  created_at text not null default (strftime('%Y-%m-%dT%H:%M:%fZ','now'))
+  enabled integer not null default 1, access text, apps text not null default '{}',
+  deleted_at text, created_at text not null default (strftime('%Y-%m-%dT%H:%M:%fZ','now'))
 );
 create table if not exists gclient_device (
   id text primary key, client_id text not null references gclient(id) on delete cascade,

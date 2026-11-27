@@ -3,6 +3,8 @@
  * интерфейс не описывает их сам и не разбирает внутренние форматы сервера (ref привязки AWG,
  * порядок ссылок WDTT).
  */
+import type { GClientApps } from './sub-apps.js';
+
 export type GService = 'xui' | 'mtproxyl' | 'wdtt' | 'awg' | 'openflux' | 'naive';
 export type GBindingState = 'ok' | 'pending' | 'error';
 export const G_SERVICES: GService[] = ['xui', 'mtproxyl', 'awg', 'wdtt', 'openflux', 'naive'];
@@ -128,6 +130,8 @@ export interface GClientDetail {
     token: string;
     createdAt: string;
     access: GClientAccess;
+    /** Приложение клиента по сервисам: на личной странице выбрано сразу. */
+    apps: GClientApps;
   };
   /** Сверка с серверами идёт сейчас: "Сверить сейчас" ждёт её конца. */
   syncing: boolean;

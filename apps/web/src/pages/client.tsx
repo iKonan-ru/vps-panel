@@ -14,6 +14,7 @@ import {
   RenameForm,
 } from '@/components/clients/client-dialogs';
 import { LiveSummary, ServerOnlineMark, useClientLive } from '@/components/clients/live-stats';
+import { SubAppPicker } from '@/components/clients/sub-app-picker';
 import { SyncPanel } from '@/components/clients/sync-panel';
 import { ClientConfig } from '@/components/links/awg-config';
 import { ServerOrigin } from '@/components/server-origin';
@@ -381,22 +382,17 @@ export function ClientPage() {
           <div className="flex items-center gap-1 self-stretch text-[13px] text-muted">
             Одна подписка на все серверы
             <InfoTip>
-              Для Happ, v2rayNG, Hiddify и других. Список серверов обновляется в приложении
-              автоматически.
+              Подписка одна для всех приложений, различается только ссылка добавления. Список
+              серверов обновляется в приложении автоматически.
             </InfoTip>
           </div>
           <QrCode text={data.subscription.url} alt="QR-код подписки VLESS" />
-          <LinkButton
-            href={`happ://add/${data.subscription.url}`}
-            variant="primary"
-            size="md"
-            wide
-            title="Добавить подписку VLESS в Happ"
-            copyText={data.subscription.url}
-            copyTitle="Скопировать ссылку подписки VLESS"
-          >
-            Добавить в Happ
-          </LinkButton>
+          <SubAppPicker
+            clientId={id}
+            url={data.subscription.url}
+            name={c.name}
+            saved={c.apps.vless}
+          />
         </div>
         {qr && watchButton(qr, () => setQr(null))}
       </Dialog>

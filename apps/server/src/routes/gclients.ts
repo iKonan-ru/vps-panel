@@ -15,6 +15,7 @@ import {
   type GService,
   type GSyncState,
   G_SERVICES,
+  subApp,
 } from '@vps/protocol';
 import { and, eq, isNull, or } from 'drizzle-orm';
 import type { FastifyInstance } from 'fastify';
@@ -355,14 +356,31 @@ export async function gclientRoutes(
         note: z.string().max(500).optional(),
         enabled: z.boolean().optional(),
         access: AccessBody.optional(),
+        // приложение подписки: только из списка, null - снять (по умолчанию для ОС)
+        apps: z
+          .object({
+            vless: z
+              .string()
+              .refine((v) => Boolean(subApp(v)), 'неизвестное приложение')
+              .nullable()
+              .optional(),
+          })
+          .optional(),
       })
       .parse(req.body ?? {});
+    // null снимает приложение: ключ уходит из записи, а не остаётся пустым
+    const vless = body.apps?.vless;
+    const apps =
+      vless === undefined
+        ? null
+        : Object.fromEntries(Object.entries({ ...c.apps, vless }).filter(([, v]) => v !== null));
     db.update(gclients)
       .set({
         ...(body.name !== undefined ? { name: body.name } : {}),
         ...(body.note !== undefined ? { note: body.note } : {}),
         ...(body.enabled !== undefined ? { enabled: body.enabled } : {}),
         ...(body.access !== undefined ? { access: body.access } : {}),
+        ...(apps ? { apps } : {}),
       })
       .where(eq(gclients.id, c.id))
       .run();
