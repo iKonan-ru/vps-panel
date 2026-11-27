@@ -14,7 +14,6 @@ import { LinkButton } from '@/components/ui/link-button';
 import { LoadState } from '@/components/ui/placeholder';
 import { QrCode } from '@/components/ui/qr-code';
 import { Section } from '@/components/ui/section';
-import { Switch } from '@/components/ui/switch';
 import { api } from '@/lib/api';
 import { ago } from '@/lib/format';
 import { serverLock } from '@/lib/servers';
@@ -45,6 +44,8 @@ interface OfChannel {
 interface OfStatus {
   installed: boolean;
   core: string;
+  /** Ядро закреплённого установщика; нет - агент старый. */
+  pinned?: string;
   autoupdate: boolean;
   channels: OfChannel[];
 }
@@ -54,6 +55,8 @@ const transportTitle: Record<string, string> = {
   yandex: 'Яндекс Документ',
   mailru: 'Mail.ru Документ',
   cupsonline: 'cups.online',
+  avito: 'Avito',
+  telemost: 'Телемост',
   boards: 'Яндекс Доска',
   direct: 'напрямую',
 };
@@ -103,27 +106,25 @@ export function OpenfluxTab({ s }: { s: ServerDetail }) {
           <span>
             Ядро <span className="font-mono">{data.core || '?'}</span>
           </span>
-          <Switch
-            checked={data.autoupdate}
-            disabled={blocked}
-            label="Автообновление ядра"
-            onChange={() =>
-              void call('OpenFlux: автообновление', {
-                op: data.autoupdate ? 'autoupdate-off' : 'autoupdate-on',
-              })
-            }
-          />
+          <span className="text-muted">
+            {data.pinned
+              ? 'закреплено, обновляется вместе с панелью'
+              : 'обновите агент: ядро закрепляет агент новой версии'}
+          </span>
           <div className="grow" />
-          <Button
-            size="sm"
-            disabled={blocked}
-            title={lock.reason ?? 'Каналы перезапустятся'}
-            onClick={() => void call('OpenFlux: обновление ядра', { op: 'update' })}
-            label="Обновить ядро"
-            short="Обновить ядро"
-          >
-            <Download className="size-3.5" />
-          </Button>
+          {/* ядро не той версии или включено прежнее автообновление - привести к закреплённому */}
+          {data.pinned && (data.core !== data.pinned || data.autoupdate) && (
+            <Button
+              size="sm"
+              disabled={blocked}
+              title={lock.reason ?? 'Каналы перезапустятся'}
+              onClick={() => void call('OpenFlux: обновление ядра', { op: 'update' })}
+              label={`Обновить ядро до ${data.pinned}`}
+              short="Обновить ядро"
+            >
+              <Download className="size-3.5" />
+            </Button>
+          )}
         </div>
       )}
       <Section
@@ -306,25 +307,44 @@ export function OpenfluxTab({ s }: { s: ServerDetail }) {
 function ChannelForm({
   onSubmit,
 }: {
-  onSubmit: (v: { vyandex: string; mailru: string; cupsonline: string }) => Promise<void>;
+  onSubmit: (v: {
+    vyandex: string;
+    mailru: string;
+    telemost: string;
+    boards: string;
+    cupsonline: string;
+    avito: string;
+  }) => Promise<void>;
 }) {
   const [vyandex, setVyandex] = useState('');
   const [mailru, setMailru] = useState('');
+  const [telemost, setTelemost] = useState('');
+  const [boards, setBoards] = useState('');
   const [cups, setCups] = useState(true);
+  const [avito, setAvito] = useState(true);
   const save = useAction();
   function submit(e: FormEvent) {
     e.preventDefault();
     void save.run(() =>
-      onSubmit({ vyandex: vyandex.trim(), mailru: mailru.trim(), cupsonline: cups ? 'auto' : '' }),
+      onSubmit({
+        vyandex: vyandex.trim(),
+        mailru: mailru.trim(),
+        telemost: telemost.trim(),
+        boards: boards.trim(),
+        cupsonline: cups ? 'auto' : '',
+        avito: avito ? 'auto' : '',
+      }),
     );
   }
   return (
     <form className="flex flex-col gap-3" onSubmit={submit}>
       <div className="text-[13px] text-muted">
-        Прямое подключение есть всегда. Документы служат запасными транспортами: нужен документ с
-        редактированием по ссылке, один документ на канал.
+        Прямое подключение есть всегда. Документы, конференция и доска служат запасными
+        транспортами: документ с редактированием по ссылке, доска, открытая гостям, по одной ссылке
+        на канал.
       </div>
       <Checkbox checked={cups} onChange={() => setCups(!cups)} label="Комнаты cups.online" />
+      <Checkbox checked={avito} onChange={() => setAvito(!avito)} label="Комнаты Avito" />
       <Field label="Яндекс Документ (необязательно)" htmlFor="of-ya">
         <Input
           id="of-ya"
@@ -339,6 +359,22 @@ function ChannelForm({
           value={mailru}
           onChange={(e) => setMailru(e.target.value)}
           placeholder="https://cloud.mail.ru/public/..."
+        />
+      </Field>
+      <Field label="Телемост (необязательно)" htmlFor="of-tm">
+        <Input
+          id="of-tm"
+          value={telemost}
+          onChange={(e) => setTelemost(e.target.value)}
+          placeholder="https://telemost.yandex.ru/j/..."
+        />
+      </Field>
+      <Field label="Яндекс Доска (необязательно)" htmlFor="of-bd">
+        <Input
+          id="of-bd"
+          value={boards}
+          onChange={(e) => setBoards(e.target.value)}
+          placeholder="https://boards.yandex.ru/whiteboard/?hash=..."
         />
       </Field>
       {save.error && <Alert tone="bad">{save.error}</Alert>}

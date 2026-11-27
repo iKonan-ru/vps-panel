@@ -17,14 +17,29 @@ import { type FormEvent, useState } from 'react';
 
 interface OfDoc {
   id: string;
-  kind: 'vyandex' | 'mailru';
+  kind: 'vyandex' | 'mailru' | 'telemost' | 'boards';
   url: string;
   usedBy: { client: string; device: string; server: string } | null;
 }
 
-const kindTitle = { vyandex: 'Яндекс', mailru: 'Mail.ru' };
+const kindTitle: Record<OfDoc['kind'], string> = {
+  vyandex: 'Яндекс Документ',
+  mailru: 'Mail.ru',
+  telemost: 'Телемост',
+  boards: 'Яндекс Доска',
+};
+const KINDS = Object.keys(kindTitle) as OfDoc['kind'][];
+const linkTitle: Record<OfDoc['kind'], string> = {
+  vyandex: 'Документ',
+  mailru: 'Документ',
+  telemost: 'Конференция',
+  boards: 'Доска',
+};
 
-/** Пул документов OpenFlux: каждый канал клиента берёт свободный документ Яндекса и Mail.ru. */
+/**
+ * Пул ресурсов OpenFlux: каждый канал клиента берёт по свободному ресурсу каждого вида - документ
+ * Яндекса и Mail.ru, конференцию Телемоста, Яндекс Доску.
+ */
 export function OpenfluxDocsSettings() {
   const qc = useQueryClient();
   const ask = useConfirm();
@@ -74,8 +89,6 @@ export function OpenfluxDocsSettings() {
     const all = docs.filter((d) => d.kind === k);
     return { all: all.length, free: all.filter((d) => !d.usedBy).length };
   };
-  const ya = count('vyandex');
-  const mr = count('mailru');
   // пустой пул - сразу форма; иначе форма и список по кнопкам: 100+ строк не занимают страницу
   const formShown = showForm || (data !== undefined && docs.length === 0);
   const needle = q.trim().toLowerCase();
@@ -93,7 +106,7 @@ export function OpenfluxDocsSettings() {
 
   async function remove(d: OfDoc) {
     const ok = await ask({
-      title: 'Удалить документ из пула?',
+      title: 'Удалить ссылку из пула?',
       text: d.usedBy
         ? `У клиента ${d.usedBy.client} на ${d.usedBy.server} сменится ссылка.`
         : undefined,
@@ -109,9 +122,9 @@ export function OpenfluxDocsSettings() {
 
   return (
     <Section
-      title="OpenFlux: документы"
+      title="OpenFlux: документы и конференции"
       info={
-        'Запасной транспорт каналов клиентов: Яндекс Документ или документ Облака Mail.ru с доступом на редактирование по ссылке. Один документ\u00a0\u2014 один канал. Без свободных документов канал работает без них'
+        'Запасные транспорты каналов клиентов: Яндекс Документ и документ Облака Mail.ru с доступом на редактирование по ссылке, конференция Телемоста, Яндекс Доска, открытая гостям. Одна ссылка\u00a0\u2014 один канал, у канала по одной ссылке каждого вида. Без свободных ссылок канал работает без них'
       }
     >
       <div className="flex flex-wrap items-center gap-2 px-4 py-3 text-[13px]">
@@ -119,12 +132,7 @@ export function OpenfluxDocsSettings() {
           <span className="text-muted">Загрузка&hellip;</span>
         ) : (
           <>
-            {(
-              [
-                ['Яндекс', ya],
-                ['Mail.ru', mr],
-              ] as const
-            ).map(([t, n]) => {
+            {KINDS.map((k) => [kindTitle[k], count(k)] as const).map(([t, n]) => {
               return (
                 <span key={t} className="flex items-center gap-1.5">
                   <span className="text-muted">{t}:</span>
@@ -159,14 +167,14 @@ export function OpenfluxDocsSettings() {
       </div>
       {formShown && (
         <form className="flex flex-col gap-3 border-t border-border p-4" onSubmit={add}>
-          <Field label="Ссылки на документы, по одной в строке" htmlFor="of-docs">
+          <Field label="Ссылки, по одной в строке" htmlFor="of-docs">
             <Textarea
               id="of-docs"
               rows={4}
               value={text}
               onChange={(e) => setText(e.target.value)}
               placeholder={
-                'https://docs.yandex.ru/edit/d/...\nhttps://cloud.mail.ru/public/.../...'
+                'https://docs.yandex.ru/edit/d/...\nhttps://cloud.mail.ru/public/.../...\nhttps://telemost.yandex.ru/j/...\nhttps://boards.yandex.ru/whiteboard/?hash=...'
               }
             />
           </Field>
@@ -192,8 +200,11 @@ export function OpenfluxDocsSettings() {
               onChange={(e) => setKind(e.target.value as typeof kind)}
             >
               <option value="all">все виды</option>
-              <option value="vyandex">Яндекс</option>
-              <option value="mailru">Mail.ru</option>
+              {KINDS.map((k) => (
+                <option key={k} value={k}>
+                  {kindTitle[k]}
+                </option>
+              ))}
             </Select>
             <Select
               size="sm"
@@ -233,9 +244,9 @@ export function OpenfluxDocsSettings() {
               </span>
               <LinkButton
                 href={d.url}
-                label="Документ"
-                title="Открыть документ"
-                copyTitle="Скопировать ссылку на документ"
+                label={linkTitle[d.kind]}
+                title={`Открыть: ${kindTitle[d.kind]}`}
+                copyTitle="Скопировать ссылку"
               />
               <Button
                 size="icon-sm"

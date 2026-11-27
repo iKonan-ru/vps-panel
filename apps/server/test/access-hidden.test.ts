@@ -76,10 +76,16 @@ describe('команды OpenFlux', () => {
     const c = findCommand('openflux');
     expect(c?.service).toBe('OpenFlux');
     expect(findCommand('openflux-uninstall')?.group).toBe('maintain');
-    const ok = { OF_CHANNEL: 'main', OF_CUPS: 'yes', OF_AUTOUPDATE: 'yes' };
+    const ok = { OF_CHANNEL: 'main', OF_CUPS: 'yes', OF_AVITO: 'yes' };
     expect(c && validateAnswers(c, ok)).toEqual([]);
     expect(c && validateAnswers(c, { ...ok, OF_CHANNEL: 'Main!' }).length).toBe(1);
     expect(c && validateAnswers(c, { ...ok, OF_VYANDEX: 'https://evil.example/x' }).length).toBe(1);
+    expect(
+      c && validateAnswers(c, { ...ok, OF_TELEMOST: 'https://telemost.yandex.ru/j/1234567' }),
+    ).toEqual([]);
+    expect(
+      c && validateAnswers(c, { ...ok, OF_BOARDS: 'https://evil.example/?hash=x' }).length,
+    ).toBe(1);
     expect(c?.script).toContain('sha256sum -c');
   });
 });

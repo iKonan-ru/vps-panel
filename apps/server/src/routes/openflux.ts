@@ -63,11 +63,12 @@ export async function openfluxRoutes(app: FastifyInstance, opts: ServerRouteOpts
       op: z.enum(['restart', 'stop', 'start', 'enable', 'disable', 'remove']),
       channel: OfChannelName,
     }),
-    z.object({ op: z.enum(['autoupdate-on', 'autoupdate-off', 'update']) }),
+    // автообновление ядра не включается: ядро закреплено агентом и обновляется с панелью
+    z.object({ op: z.enum(['autoupdate-off', 'update']) }),
     z.object({
       op: z.literal('create'),
       channel: OfChannelName.optional(),
-      // как в node-install.sh; cups.online - "auto" (комнаты создаст сервер) или список комнат
+      // как в node-install.sh; комнаты cups.online и Avito - "auto" (создаст сервер) или список
       vyandex: z
         .string()
         .trim()
@@ -84,10 +85,32 @@ export async function openfluxRoutes(app: FastifyInstance, opts: ServerRouteOpts
           'Mail.ru Документ: https://cloud.mail.ru/public/.../...',
         )
         .default(''),
+      telemost: z
+        .string()
+        .trim()
+        .regex(
+          /^(https:\/\/telemost\.yandex\.ru\/j\/[0-9]{6,32})?$/,
+          'Телемост: https://telemost.yandex.ru/j/...',
+        )
+        .default(''),
+      boards: z
+        .string()
+        .trim()
+        .regex(
+          /^(https:\/\/boards\.yandex\.ru\/whiteboard\/\?hash=[0-9a-f]{32})?$/,
+          'Яндекс Доска: https://boards.yandex.ru/whiteboard/?hash=...',
+        )
+        .default(''),
       cupsonline: z
         .string()
         .trim()
         .regex(/^(auto|[A-Za-z0-9_-]{8,})?$/, 'cups.online: auto или список комнат')
+        .max(4096)
+        .default(''),
+      avito: z
+        .string()
+        .trim()
+        .regex(/^(auto|[A-Za-z0-9_-]{8,})?$/, 'Avito: auto или список комнат')
         .max(4096)
         .default(''),
     }),
@@ -107,6 +130,9 @@ export async function openfluxRoutes(app: FastifyInstance, opts: ServerRouteOpts
               transports: [
                 body.vyandex && 'vyandex',
                 body.mailru && 'mailru',
+                body.telemost && 'telemost',
+                body.boards && 'boards',
+                body.avito && 'avito',
                 body.cupsonline && 'cupsonline',
                 'direct',
               ].filter(Boolean),

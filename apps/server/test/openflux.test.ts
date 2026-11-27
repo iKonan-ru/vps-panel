@@ -65,6 +65,20 @@ describe('OpenFlux', () => {
     expect(ofDocKind('https://cloud.mail.ru/public/Ab12/Cd34/')?.kind).toBe('mailru');
     expect(ofDocKind('https://docs.yandex.ru/edit/d/short')).toBeNull();
     expect(ofDocKind('https://evil.example/public/a/b')).toBeNull();
+    expect(ofDocKind('https://telemost.yandex.ru/j/12345678901234?x=1')).toEqual({
+      kind: 'telemost',
+      url: 'https://telemost.yandex.ru/j/12345678901234',
+    });
+    // у доски hash - в запросе: остаётся, лишние параметры уходят
+    expect(
+      ofDocKind(
+        'https://boards.yandex.ru/whiteboard?utm_source=x&hash=0123456789abcdef0123456789abcdef#y',
+      ),
+    ).toEqual({
+      kind: 'boards',
+      url: 'https://boards.yandex.ru/whiteboard/?hash=0123456789abcdef0123456789abcdef',
+    });
+    expect(ofDocKind('https://boards.yandex.ru/whiteboard/?hash=short')).toBeNull();
   });
 
   it('пул: документ выдаётся одному каналу и возвращается после удаления', () => {

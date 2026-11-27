@@ -9,7 +9,7 @@ import { awgTunnelNames } from './awg-config.js';
 import { awgKeyPair } from './awg-keys.js';
 import { clientHost, openfluxLink } from './client-host.js';
 import { peerName } from './gclient-names.js';
-import { takeOfDocs } from './openflux-docs.js';
+import { OF_DOC_KINDS, type OfDocs, takeOfDocs } from './openflux-docs.js';
 import type { SecretBox } from './secret-box.js';
 import { type WdttPassword, wdttApi, wdttHashes, wdttLinks } from './wdtt.js';
 import { type XuiCall, ownVlessInbounds, readClient, unwrap } from './xui-api.js';
@@ -422,14 +422,26 @@ export async function xuiRemove(api: XuiCall, email: string) {
   throw new Error(`3X-UI (clients/del): ${env?.msg ?? r.status}`);
 }
 
+/** Комнаты, которые создаёт сервер: cups.online и Avito (у каждого своё ограничение частоты). */
+const OF_ROOMS = [
+  { key: 'cupsonline', off: 'cupsOff', title: 'cups.online' },
+  { key: 'avito', off: 'avitoOff', title: 'Avito' },
+] as const;
+
+/** Общее на проход по серверу: сервис комнат уже отказал - комнаты у него не просить. */
+export interface OfPass {
+  cupsOff: boolean;
+  avitoOff?: boolean;
+}
+
 /**
- * Канал OpenFlux устройства на сервере. Транспорты: документы из пула
- * (Яндекс, Mail.ru - по одному на канал, если в пуле есть свободные), комнаты cups.online
- * (создаёт сервер) и прямое подключение. Нет канала - создать; есть, но транспорты не те -
- * перенастроить (ключ и порт остаются; ссылка новая: с документом меняется контекст
- * шифрования); вкл/выкл по клиенту. Какие документы стоят в канале - в secret привязки
- * (зашифровано). Комнаты не создались (cups.online ограничивает частоту) - канал работает без
- * них, причина - в warning, повтор - позже. Имя профиля - "флаг Страна :: Сервер".
+ * Канал OpenFlux устройства на сервере. Транспорты: ресурсы из пула (документы Яндекса и Mail.ru,
+ * Телемост, Яндекс Доска - по одному на канал, если в пуле есть свободные), комнаты cups.online и
+ * Avito (создаёт сервер) и прямое подключение. Нет канала - создать; есть, но транспорты не те -
+ * перенастроить установщиком (ключ, порт и контекст остаются, ссылка новая: в ней список
+ * транспортов); вкл/выкл по клиенту. Какие ресурсы стоят в канале - в secret привязки
+ * (зашифровано). Комнаты не создались (сервис ограничивает частоту) - канал работает без них,
+ * причина - в warning, повтор - позже. Имя профиля - "флаг Страна :: Сервер".
  */
 export async function ofEnsure(
   deps: ServiceDeps,
@@ -437,41 +449,49 @@ export async function ofEnsure(
   st: OfStatus,
   c: Client,
   b: Binding,
-  /** Общее на проход по серверу: cups.online уже отказал - комнаты не просить. */
-  pass: { cupsOff: boolean } = { cupsOff: false },
+  pass: OfPass = { cupsOff: false },
 ): Promise<{ links: string[]; secret: string; warning: string }> {
   const exec = (json: Record<string, unknown>) =>
     deps.registry.request<Record<string, unknown>>(row.id, 'openflux.exec', json, {
       timeoutMs: 10 * 60_000,
     });
   const want = takeOfDocs(deps.db, b.id);
-  const had = b.secret
-    ? (JSON.parse(deps.box.open(b.secret)) as { vyandex?: string; mailru?: string })
-    : null;
+  const had = b.secret ? (JSON.parse(deps.box.open(b.secret)) as Partial<OfDocs>) : null;
   let ch = st.channels?.find((x) => x.channel === b.ref);
   let links = b.links;
-  let warning = '';
-  const cupsLater = 'cups.online ограничил частоту, канал пока без комнат, повтор позже';
+  const warnings: string[] = [];
+  /** Комнаты по ответу агента: не создались - причина и больше на этом проходе не просить. */
+  const rooms = (asked: Record<string, string>, r: Record<string, unknown>) => {
+    for (const k of OF_ROOMS) {
+      if (asked[k.key] === 'auto' && r[k.key] !== true) {
+        warnings.push(`${k.title} не выдал комнаты, канал пока без них, повтор позже`);
+        pass[k.off] = true;
+      }
+    }
+  };
+  const roomReq = (has: (key: string) => boolean) => {
+    const asked: Record<string, string> = {};
+    for (const k of OF_ROOMS) {
+      if (has(k.key)) asked[k.key] = 'keep';
+      else if (pass[k.off]) {
+        asked[k.key] = '';
+        warnings.push(`${k.title} ограничил частоту, канал пока без комнат, повтор позже`);
+      } else asked[k.key] = 'auto';
+    }
+    return asked;
+  };
   if (!ch) {
     try {
-      const r = await exec({
-        op: 'create',
-        channel: b.ref,
-        ...want,
-        cupsonline: pass.cupsOff ? '' : 'auto',
-      });
-      if (r.cupsonline !== true) {
-        warning = pass.cupsOff
-          ? cupsLater
-          : 'cups.online не выдал комнаты, канал пока без них, повтор позже';
-        pass.cupsOff = true;
-      }
+      const asked = roomReq(() => false);
+      const r = await exec({ op: 'create', channel: b.ref, ...want, ...asked });
+      rooms(asked, r);
       if (!c.enabled) await exec({ op: 'disable', channel: b.ref });
       links = [];
     } catch (e) {
       // канал появился после снимка состояния (его досоздал прерванный прошлый проход) -
       // дальше как с существующим
       if (!/уже есть на сервере/.test((e as Error).message)) throw e;
+      warnings.length = 0;
       const fresh = await deps.registry.request<OfStatus>(
         row.id,
         'openflux.status',
@@ -485,31 +505,15 @@ export async function ofEnsure(
   }
   if (ch) {
     const types = new Set((ch.transports ?? []).map((t) => t.type));
-    const docsChanged =
-      want.vyandex !== (had?.vyandex ?? '') ||
-      want.mailru !== (had?.mailru ?? '') ||
-      Boolean(want.vyandex) !== types.has('vyandex') ||
-      Boolean(want.mailru) !== types.has('mailru');
-    const needCups = !types.has('cupsonline') && !pass.cupsOff;
-    if (!types.has('cupsonline') && pass.cupsOff) warning = cupsLater;
-    if (docsChanged || needCups) {
-      try {
-        await exec({
-          op: 'configure',
-          channel: b.ref,
-          ...want,
-          cupsonline: needCups ? 'auto' : 'keep',
-        });
-        links = [];
-      } catch (e) {
-        if (!needCups) throw e;
-        warning = `cups.online: ${(e as Error).message}`;
-        pass.cupsOff = true;
-        if (docsChanged) {
-          await exec({ op: 'configure', channel: b.ref, ...want, cupsonline: 'keep' });
-          links = [];
-        }
-      }
+    const docsChanged = OF_DOC_KINDS.some(
+      (k) => want[k] !== (had?.[k] ?? '') || Boolean(want[k]) !== types.has(k),
+    );
+    const asked = roomReq((k) => types.has(k));
+    const needRooms = OF_ROOMS.some((k) => asked[k.key] === 'auto');
+    if (docsChanged || needRooms) {
+      const r = await exec({ op: 'configure', channel: b.ref, ...want, ...asked });
+      rooms(asked, r);
+      links = [];
     }
     if (ch.enabled !== c.enabled)
       await exec({ op: c.enabled ? 'enable' : 'disable', channel: b.ref });
@@ -523,7 +527,7 @@ export async function ofEnsure(
     const r = await openfluxLink(deps.registry, row, b.ref, title);
     links = [r.link];
   }
-  return { links, secret: deps.box.seal(JSON.stringify(want)), warning };
+  return { links, secret: deps.box.seal(JSON.stringify(want)), warning: warnings.join('; ') };
 }
 
 export async function ofRemove(deps: ServiceDeps, serverId: string, ref: string) {

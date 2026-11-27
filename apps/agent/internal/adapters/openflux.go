@@ -19,7 +19,6 @@ import (
 	"regexp"
 	"strconv"
 	"strings"
-	"syscall"
 	"time"
 
 	"github.com/iKonan-ru/vps-panel/apps/agent/internal/fsutil"
@@ -37,10 +36,14 @@ var ofEtcDir = "/etc/openflux-node"
 const (
 	ofBin       = "/opt/openflux-node/bin/openflux"
 	ofInstaller = "/opt/openflux-node/node-install.sh"
-	// установщик для сервера, где OpenFlux ещё нет: та же версия, что ставят приложения
-	// (sha256 сверен с серверами); при смене - обновить обе строки
-	ofInstallerURL    = "https://raw.githubusercontent.com/p1neappleXpress/OpenFlux/3459bfdf73be83b1128865de8737deb009ce0e7e/deploy/node-install.sh"
-	ofInstallerSHA256 = "8a75cfd72a642a464d8d2e871172bcf37b1241d0d37e9323568557d3033f250f"
+	// установщик - та же версия, что закрепляют приложения OpenFlux (provision/pin.go их
+	// релиза); при смене - обновить все три строки и ofInstallerURL/SHA256 в каталоге панели.
+	// Ядро он берёт из релизов OpenFluxTeam/OpenFlux со сверкой sha256, вписанной в него самого
+	ofInstallerURL    = "https://raw.githubusercontent.com/p1neappleXpress/OpenFlux/e9c29ad968606696802ee2921958a6be294c515d/deploy/node-install.sh"
+	ofInstallerSHA256 = "f13d05c9876e823a187ce7976d78278f117b725f259dd4f3e250389b538ad0e6"
+	// ядро этого установщика (CORE_VERSION без "node-v"): другое на сервере - upgrade к нему.
+	// Автообновление ядра выключено: оно шло бы за чужими релизами без закреплённой sha256
+	ofCoreVersion = "1.7.3"
 )
 
 var (
@@ -75,6 +78,7 @@ type OfChannel struct {
 type OfStatusResult struct {
 	Installed  bool        `json:"installed"`
 	Core       string      `json:"core"`
+	Pinned     string      `json:"pinned"` // ядро закреплённого установщика
 	Autoupdate bool        `json:"autoupdate"`
 	Channels   []OfChannel `json:"channels"`
 }
@@ -153,7 +157,7 @@ func ofChannelExists(ch string) error {
 
 // OfStatus - каналы, ядро, автообновление.
 func OfStatus(ctx context.Context) OfStatusResult {
-	res := OfStatusResult{Channels: []OfChannel{}}
+	res := OfStatusResult{Channels: []OfChannel{}, Pinned: ofCoreVersion}
 	res.Installed = ofInstalled()
 	if t, err := os.Readlink(ofBin); err == nil {
 		res.Core = strings.TrimPrefix(filepath.Base(t), "openflux-node-v")
@@ -285,14 +289,18 @@ type OfRequest struct {
 	Channel    string `json:"channel"`
 	Vyandex    string `json:"vyandex"`
 	Mailru     string `json:"mailru"`
+	Telemost   string `json:"telemost"`
+	Boards     string `json:"boards"`
 	Cupsonline string `json:"cupsonline"`
+	Avito      string `json:"avito"`
 }
 
-// OfExec: rooms - новые комнаты cups.online; configure - транспорты канала заново (ключ, порт
-// и куки остаются); restart, stop, start - служба канала; disable, enable - выключить с автозапуском и
-// включить обратно (выключенный клиент панели); remove - удалить канал (последний канал
-// установщик удаляет вместе со всем OpenFlux); autoupdate-on/off; update - ядро сейчас;
-// create - новый канал.
+// OfExec: rooms - новые комнаты cups.online; configure - транспорты канала заново (ключ, порт,
+// контекст и куки остаются); restart, stop, start - служба канала; disable, enable - выключить с
+// автозапуском и включить обратно (выключенный клиент панели); remove - удалить канал (последний
+// канал установщик удаляет вместе со всем OpenFlux); autoupdate-off; update - установщик и ядро
+// закреплённой версии; create - новый канал. Автообновление не включается: ядро обновляется с
+// панелью.
 func OfExec(ctx context.Context, req OfRequest, stream func(channel, chunk string)) (map[string]any, error) {
 	log := func(s string) {
 		if stream != nil {
@@ -333,10 +341,15 @@ func OfExec(ctx context.Context, req OfRequest, stream func(channel, chunk strin
 			return nil, err
 		}
 		return ofInstallerRun(ctx, log, stream, 3*time.Minute, "remove", req.Channel)
-	case "autoupdate-on", "autoupdate-off":
-		return ofInstallerRun(ctx, log, stream, 2*time.Minute, "autoupdate", strings.TrimPrefix(req.Op, "autoupdate-"))
+	case "autoupdate-on":
+		return nil, errors.New("автообновление ядра OpenFlux выключено: ядро закреплено и обновляется вместе с панелью")
+	case "autoupdate-off":
+		return ofInstallerRun(ctx, log, stream, 2*time.Minute, "autoupdate", "off")
 	case "update":
-		return ofInstallerRun(ctx, log, stream, 10*time.Minute, "update")
+		if err := ofEnsureCurrent(ctx, log, stream); err != nil {
+			return nil, err
+		}
+		return map[string]any{"ok": true, "core": ofCoreVersion}, nil
 	case "create":
 		return ofCreate(ctx, req, log, stream)
 	case "rooms":
@@ -346,7 +359,7 @@ func OfExec(ctx context.Context, req OfRequest, stream func(channel, chunk strin
 		}
 		return map[string]any{"rooms": rooms}, nil
 	case "configure":
-		return ofConfigure(ctx, req, log)
+		return ofConfigure(ctx, req, log, stream)
 	}
 	return nil, errors.New("неизвестная операция: " + req.Op)
 }
@@ -394,7 +407,10 @@ var (
 	// как valid_url и valid_mailru в node-install.sh
 	reOfYandex = regexp.MustCompile(`^https://(docs|disk)\.yandex\.(ru|com|by|kz|uz)/edit/d/[A-Za-z0-9_-]{16,200}$`)
 	reOfMailru = regexp.MustCompile(`^https://cloud\.mail\.ru/public/[A-Za-z0-9_-]{2,64}/[A-Za-z0-9_-]{2,128}$`)
-	reOfRooms  = regexp.MustCompile(`^[A-Za-z0-9_-]+$`)
+	// как valid_telemost и valid_boards в node-install.sh
+	reOfTelemost = regexp.MustCompile(`^https://telemost\.yandex\.ru/j/[0-9]{6,32}$`)
+	reOfBoards   = regexp.MustCompile(`^https://boards\.yandex\.ru/whiteboard/\?hash=[0-9a-f]{32}$`)
+	reOfRooms    = regexp.MustCompile(`^[A-Za-z0-9_-]+$`)
 )
 
 func ofCreate(ctx context.Context, req OfRequest, log func(string), stream func(string, string)) (map[string]any, error) {
@@ -411,15 +427,12 @@ func ofCreate(ctx context.Context, req OfRequest, log func(string), stream func(
 	if err := ofCheckTransports(req, false); err != nil {
 		return nil, err
 	}
-	if req.Cupsonline == "auto" {
-		rooms, err := ofRooms(ctx, log)
-		if err != nil {
-			// канал важнее комнат: без них он работает напрямую и через документы
-			log("cups.online: " + err.Error() + " - канал без cups.online")
-			rooms = ""
-		}
-		req.Cupsonline = rooms
+	if err := ofEnsureCurrent(ctx, log, stream); err != nil {
+		return nil, err
 	}
+	// канал важнее комнат: без них он работает напрямую и через остальные транспорты
+	req.Cupsonline, req.Avito = ofAutoRooms(ctx, log, req.Cupsonline, "", ofRooms, "cups.online"),
+		ofAutoRooms(ctx, log, req.Avito, "", ofAvitoRooms, "Avito")
 	script, cleanup, err := ofInstallerPath(ctx, log)
 	if err != nil {
 		return nil, err
@@ -433,30 +446,109 @@ func ofCreate(ctx context.Context, req OfRequest, log func(string), stream func(
 	if _, err := rand.Read(key); err != nil {
 		return nil, err
 	}
-	lines := []string{"channel=" + ch, "key=" + hex.EncodeToString(key), "port=" + strconv.Itoa(port)}
-	for k, v := range map[string]string{"vyandex": req.Vyandex, "mailru": req.Mailru, "cupsonline": req.Cupsonline} {
-		if v != "" {
-			lines = append(lines, k+"="+v)
-		}
-	}
-	// конфиг - файлом 0600 (установщик сам удаляет его после чтения): ключ не в аргументах
-	f, err := os.CreateTemp("/root", "openflux-channel-*.conf")
+	lines := append([]string{"channel=" + ch, "key=" + hex.EncodeToString(key), "port=" + strconv.Itoa(port)},
+		ofTransportLines(req)...)
+	conf, err := ofConfigFile(lines)
 	if err != nil {
 		return nil, err
+	}
+	defer os.Remove(conf)
+	log(fmt.Sprintf("канал %s, порт %d/tcp", ch, port))
+	out, err := ofScript(ctx, script, log, stream, 10*time.Minute, "apply", conf)
+	if err != nil {
+		return nil, err
+	}
+	return map[string]any{"channel": ch, "port": port, "core": out["core"],
+		"cupsonline": req.Cupsonline != "", "avito": req.Avito != ""}, nil
+}
+
+// ofTransportLines - транспорты канала строками конфига node-install.sh (пустые не пишутся).
+func ofTransportLines(req OfRequest) []string {
+	var lines []string
+	for _, kv := range [][2]string{
+		{"vyandex", req.Vyandex}, {"mailru", req.Mailru}, {"telemost", req.Telemost},
+		{"boards", req.Boards}, {"avito", req.Avito}, {"cupsonline", req.Cupsonline},
+	} {
+		if kv[1] != "" {
+			lines = append(lines, kv[0]+"="+kv[1])
+		}
+	}
+	return lines
+}
+
+// ofConfigFile - конфиг файлом 0600 в /root (установщик удаляет его сам после чтения, иначе -
+// вызывающий): ключ и ссылки не попадают в аргументы.
+func ofConfigFile(lines []string) (string, error) {
+	f, err := os.CreateTemp("/root", "openflux-channel-*.conf")
+	if err != nil {
+		return "", err
 	}
 	_ = f.Chmod(0o600)
 	_, werr := f.WriteString(strings.Join(lines, "\n") + "\n")
 	_ = f.Close()
-	defer os.Remove(f.Name())
 	if werr != nil {
-		return nil, werr
+		os.Remove(f.Name())
+		return "", werr
 	}
-	log(fmt.Sprintf("канал %s, порт %d/tcp", ch, port))
-	out, err := ofScript(ctx, script, log, stream, 10*time.Minute, "apply", f.Name())
-	if err != nil {
-		return nil, err
+	return f.Name(), nil
+}
+
+// ofAutoRooms - комнаты по запросу: "auto" - создать (не вышло - без них, причина в журнале),
+// "keep" - нынешние канала (cur), иначе - как есть.
+func ofAutoRooms(ctx context.Context, log func(string), want, cur string, make func(context.Context, func(string)) (string, error), title string) string {
+	switch want {
+	case "keep":
+		return cur
+	case "auto":
+		rooms, err := make(ctx, log)
+		if err != nil {
+			log(title + ": " + err.Error() + " - канал без " + title)
+			return ""
+		}
+		return rooms
 	}
-	return map[string]any{"channel": ch, "port": port, "core": out["core"], "cupsonline": req.Cupsonline != ""}, nil
+	return want
+}
+
+// ofEnsureCurrent - установщик и ядро закреплённой версии, автообновление выключено. Чужой или
+// старый установщик заменяется скачанным со сверкой sha256, ядро другой версии - upgrade
+// установщиком (он сверяет sha256 ядра и перезапускает работающие каналы). OpenFlux нет - ничего:
+// create поставит закреплённое сам.
+func ofEnsureCurrent(ctx context.Context, log func(string), stream func(string, string)) error {
+	if !ofInstalled() {
+		return nil
+	}
+	b, err := os.ReadFile(ofInstaller)
+	sum := sha256.Sum256(b)
+	if err != nil || hex.EncodeToString(sum[:]) != ofInstallerSHA256 {
+		log("установщик OpenFlux не закреплённой версии: заменяю (проверка sha256)")
+		nb, err := ofDownloadInstaller(ctx)
+		if err != nil {
+			return err
+		}
+		if err := os.MkdirAll(filepath.Dir(ofInstaller), 0o755); err != nil {
+			return err
+		}
+		if err := fsutil.WriteAtomic(ofInstaller, nb, 0o755); err != nil {
+			return err
+		}
+	}
+	if strings.TrimSpace(shell.Out(ctx, "systemctl", "is-active", "openflux-node-update.timer")) == "active" {
+		if _, err := ofScript(ctx, ofInstaller, log, stream, 2*time.Minute, "autoupdate", "off"); err != nil {
+			return err
+		}
+	}
+	core := ""
+	if t, err := os.Readlink(ofBin); err == nil {
+		core = strings.TrimPrefix(filepath.Base(t), "openflux-node-v")
+	}
+	if core != ofCoreVersion && len(ofChannels()) > 0 {
+		log("ядро OpenFlux " + core + " -> " + ofCoreVersion)
+		if _, err := ofScript(ctx, ofInstaller, log, stream, 10*time.Minute, "upgrade"); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 // ofDownloadInstaller - node-install.sh закреплённой версии с GitHub со сверкой sha256.
@@ -581,9 +673,9 @@ func randAlnum(n int) string {
 	return string(b)
 }
 
-// ofCheckTransports - ссылки на документы и комнаты, как их проверяет node-install.sh; значения
-// идут в файл построчно, поэтому перевод строки отсекает уже регулярка. cups.online: "auto" -
-// создать комнаты, "keep" (только configure) - оставить нынешние.
+// ofCheckTransports - ссылки (документы, Телемост, доска) и комнаты, как их проверяет
+// node-install.sh; значения идут в файл построчно, поэтому перевод строки отсекает уже регулярка.
+// Комнаты cups.online и Avito: "auto" - создать, "keep" (только configure) - оставить нынешние.
 func ofCheckTransports(req OfRequest, configure bool) error {
 	if req.Vyandex != "" && !reOfYandex.MatchString(req.Vyandex) {
 		return errors.New("Яндекс Документ: ссылка вида https://docs.yandex.ru/edit/d/...")
@@ -591,10 +683,18 @@ func ofCheckTransports(req OfRequest, configure bool) error {
 	if req.Mailru != "" && !reOfMailru.MatchString(req.Mailru) {
 		return errors.New("Mail.ru Документ: публичная ссылка вида https://cloud.mail.ru/public/.../...")
 	}
-	switch c := req.Cupsonline; {
-	case c == "" || c == "auto" || (c == "keep" && configure):
-	case len(c) < 8 || len(c) > 4096 || !reOfRooms.MatchString(c):
-		return errors.New("cups.online: список комнат (буквы, цифры, - и _)")
+	if req.Telemost != "" && !reOfTelemost.MatchString(req.Telemost) {
+		return errors.New("Телемост: ссылка вида https://telemost.yandex.ru/j/...")
+	}
+	if req.Boards != "" && !reOfBoards.MatchString(req.Boards) {
+		return errors.New("Яндекс Доска: ссылка вида https://boards.yandex.ru/whiteboard/?hash=...")
+	}
+	for title, c := range map[string]string{"cups.online": req.Cupsonline, "Avito": req.Avito} {
+		switch {
+		case c == "" || c == "auto" || (c == "keep" && configure):
+		case len(c) < 8 || len(c) > 4096 || !reOfRooms.MatchString(c):
+			return errors.New(title + ": список комнат (буквы, цифры, - и _)")
+		}
 	}
 	return nil
 }
@@ -651,6 +751,74 @@ func ofRooms(ctx context.Context, log func(string)) (string, error) {
 	return base64.RawURLEncoding.EncodeToString(raw), nil
 }
 
+// Комнаты Avito Code: анонимный POST /web/1/code/room отдаёт id комнаты. Так их создаёт ядро
+// OpenFlux (transport/avito, CreateRoomList: 2 x 8 комнат - половина на передачу, половина на
+// приём, пауза 300 мс) и упаковывает списком v2 (полосы по комнатам) - здесь то же.
+const (
+	ofAvitoURL       = "https://code.avito.ru"
+	ofAvitoUA        = "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:155.0) Gecko/20100101 Firefox/155.0"
+	ofAvitoRoomCount = 16
+)
+
+// ofAvitoRoomsBase - адрес Avito Code (тест подменяет).
+var ofAvitoRoomsBase = ofAvitoURL
+
+func ofAvitoRooms(ctx context.Context, log func(string)) (string, error) {
+	var ids []string
+	var lastErr error
+	for i := 0; i < ofAvitoRoomCount; i++ {
+		id, err := ofAvitoRoom(ctx)
+		if err != nil {
+			// ограничение частоты или отказ - дальше так же; канал без Avito или с теми, что есть
+			lastErr = err
+			break
+		}
+		ids = append(ids, id)
+		select {
+		case <-ctx.Done():
+			return "", ctx.Err()
+		case <-time.After(300 * time.Millisecond):
+		}
+	}
+	// полоса - пара комнат (передача и приём): одной комнаты мало
+	if len(ids) < 2 {
+		if lastErr != nil && (strings.Contains(lastErr.Error(), "429") || strings.Contains(lastErr.Error(), "503")) {
+			return "", errors.New("Avito временно не даёт новых комнат этому адресу (ограничение частоты)")
+		}
+		return "", fmt.Errorf("комнаты Avito не созданы: %v", lastErr)
+	}
+	ids = ids[:len(ids)/2*2]
+	log(fmt.Sprintf("Avito: комнат %d", len(ids)))
+	raw, _ := json.Marshal(map[string]any{"v": 2, "rooms": ids})
+	return base64.RawURLEncoding.EncodeToString(raw), nil
+}
+
+func ofAvitoRoom(ctx context.Context) (string, error) {
+	c, cancel := context.WithTimeout(ctx, 30*time.Second)
+	defer cancel()
+	rq, _ := http.NewRequestWithContext(c, http.MethodPost, ofAvitoRoomsBase+"/web/1/code/room", nil)
+	rq.Header.Set("User-Agent", ofAvitoUA)
+	rq.Header.Set("Origin", ofAvitoRoomsBase)
+	resp, err := http.DefaultClient.Do(rq)
+	if err != nil {
+		return "", err
+	}
+	defer resp.Body.Close()
+	b, _ := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
+	if resp.StatusCode != 200 {
+		return "", fmt.Errorf("Avito ответил %d", resp.StatusCode)
+	}
+	var r struct {
+		Room struct {
+			ID string `json:"id"`
+		} `json:"room"`
+	}
+	if json.Unmarshal(b, &r) != nil || !reOfRooms.MatchString(r.Room.ID) {
+		return "", errors.New("Avito: в ответе нет id комнаты")
+	}
+	return r.Room.ID, nil
+}
+
 func ofCupsRoom(ctx context.Context) (string, error) {
 	c, cancel := context.WithTimeout(ctx, 15*time.Second)
 	defer cancel()
@@ -678,76 +846,46 @@ func ofCupsRoom(ctx context.Context) (string, error) {
 
 // ofNodeConf - node.conf в том же виде, что пишет node-install.sh (write_node_conf): контекст
 // шифрования - ссылка самого приоритетного документа, транспорты по приоритету, direct всегда.
-func ofNodeConf(ch string, port int, vyandex, mailru, cups string) string {
-	var b strings.Builder
-	fmt.Fprintf(&b, "# OpenFlux node channel %s, written by node-install.sh\nRole = exit\nMode = l4\n", ch)
-	fmt.Fprintf(&b, "EncryptionKeyFile = %s/%s/encryption-key\nCookieStore = /var/lib/openflux-node/%s/cookies.json\n", ofEtcDir, ch, ch)
-	if vyandex != "" {
-		fmt.Fprintf(&b, "URL = %s\n", vyandex)
-	} else if mailru != "" {
-		fmt.Fprintf(&b, "URL = %s\n", mailru)
-	}
-	if vyandex != "" {
-		fmt.Fprintf(&b, "\n[Transport vyandex]\nType = vyandex\nPriority = 100\nURL = %s\n", vyandex)
-	}
-	if mailru != "" {
-		fmt.Fprintf(&b, "\n[Transport mailru]\nType = mailru\nPriority = 90\nURL = %s\n", mailru)
-	}
-	if cups != "" {
-		fmt.Fprintf(&b, "\n[Transport cupsonline]\nType = cupsonline\nPriority = 70\nURL = %s\n", cups)
-	}
-	fmt.Fprintf(&b, "\n[Transport direct]\nType = direct\nPriority = 50\nListen = 0.0.0.0:%d\n", port)
-	return b.String()
-}
-
-// ofConfigure - транспорты канала заново: node.conf переписывается (права и владелец - как
-// у установщика), служба перезапускается, если работала. Ключ, порт и куки не меняются, но
-// с документом меняется контекст шифрования - профиль в приложении нужен новый (ссылка).
-func ofConfigure(ctx context.Context, req OfRequest, log func(string)) (map[string]any, error) {
+// ofConfigure - транспорты канала заново установщиком (set-transports): ключ, порт, контекст
+// шифрования и куки остаются; канал не поднялся - установщик возвращает прежние. Комнаты: "keep" -
+// нынешние, "auto" - новые (не вышло - канал без них). Ссылка меняется: в ней список транспортов.
+func ofConfigure(ctx context.Context, req OfRequest, log func(string), stream func(string, string)) (map[string]any, error) {
 	if err := ofChannelExists(req.Channel); err != nil {
 		return nil, err
 	}
 	if err := ofCheckTransports(req, true); err != nil {
 		return nil, err
 	}
-	dir := filepath.Join(ofEtcDir, req.Channel)
-	b, _ := os.ReadFile(filepath.Join(dir, "port"))
-	port, err := strconv.Atoi(strings.TrimSpace(string(b)))
-	if err != nil || port <= 0 {
-		return nil, errors.New("у канала нет порта")
+	if err := ofEnsureCurrent(ctx, log, stream); err != nil {
+		return nil, err
 	}
-	cups := req.Cupsonline
-	switch cups {
-	case "keep":
-		cups = ""
-		if conf, err := readOfConf(req.Channel); err == nil {
-			for _, t := range conf.transports {
-				if t.Type == "cupsonline" {
-					cups = t.url
-				}
+	var curCups, curAvito string
+	if conf, err := readOfConf(req.Channel); err == nil {
+		for _, t := range conf.transports {
+			switch t.Type {
+			case "cupsonline":
+				curCups = t.url
+			case "avito":
+				curAvito = t.url
 			}
 		}
-	case "auto":
-		rooms, err := ofRooms(ctx, log)
-		if err != nil {
-			return nil, err
-		}
-		cups = rooms
 	}
-	path := filepath.Join(dir, "node.conf")
-	st, err := os.Stat(path)
+	req.Cupsonline = ofAutoRooms(ctx, log, req.Cupsonline, curCups, ofRooms, "cups.online")
+	req.Avito = ofAutoRooms(ctx, log, req.Avito, curAvito, ofAvitoRooms, "Avito")
+	lines := ofTransportLines(req)
+	if len(lines) == 0 {
+		// установщик не принимает канал из одного прямого подключения: комнаты не дались, а
+		// других транспортов нет - канал остаётся как был, панель повторит позже
+		log("транспортов, кроме прямого, нет - канал без изменений")
+		return map[string]any{"channel": req.Channel, "cupsonline": false, "avito": false, "unchanged": true}, nil
+	}
+	conf, err := ofConfigFile(append([]string{"channel=" + req.Channel}, lines...))
 	if err != nil {
 		return nil, err
 	}
-	owner := fsutil.Keep
-	if sys, ok := st.Sys().(*syscall.Stat_t); ok {
-		owner = fsutil.Owner{UID: int(sys.Uid), GID: int(sys.Gid)}
-	}
-	if err := fsutil.WriteAtomicOwned(path, []byte(ofNodeConf(req.Channel, port, req.Vyandex, req.Mailru, cups)), st.Mode().Perm(), owner); err != nil {
+	defer os.Remove(conf)
+	if _, err := ofScript(ctx, ofInstaller, log, stream, 3*time.Minute, "set-transports", conf); err != nil {
 		return nil, err
 	}
-	unit := "openflux-node@" + req.Channel
-	log("node.conf канала " + req.Channel + " обновлён, перезапуск службы (если работала)")
-	_ = shell.OK(ctx, "systemctl", "try-restart", unit)
-	return map[string]any{"channel": req.Channel, "cupsonline": cups != ""}, nil
+	return map[string]any{"channel": req.Channel, "cupsonline": req.Cupsonline != "", "avito": req.Avito != ""}, nil
 }

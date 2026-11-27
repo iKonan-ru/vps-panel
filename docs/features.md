@@ -338,7 +338,7 @@ Amnezia AWG, WDTT, OpenFlux, прокси для браузера, перево�
 | MTProxyL (движок telemt или mtdd) | [Liafanx/MTProxyL](https://github.com/Liafanx/MTProxyL), [telemt/telemt](https://github.com/telemt/telemt) | установка, секрет на клиента, ссылки, перезапуск, обновление, смена версии движка (у mtdd - канал сборок main или dev), веб-панель через поддомен |
 | AmneziaWG 2.0 и 3.x | [amnezia-vpn](https://github.com/amnezia-vpn) | экземпляры и параметры протокола, пиры на устройство, конфиги и QR, скрытие узла в трассировке IPv4 (ICMP Time Exceeded в туннель не уходит, правило переживает перезапуск) |
 | WDTT (qWDTT) | [SpaceNeuroX/proxy-turn-vk-android](https://github.com/SpaceNeuroX/proxy-turn-vk-android) | установка, пароли и устройства клиентов, хеши звонков VK, ключ диагностики в ссылках, обновление сборки панели |
-| OpenFlux | [p1neappleXpress/OpenFlux](https://github.com/p1neappleXpress/OpenFlux) | установка, каналы клиентов (direct, cups.online, документы) |
+| OpenFlux | [p1neappleXpress/OpenFlux](https://github.com/p1neappleXpress/OpenFlux), ядро узла - [OpenFluxTeam/OpenFlux](https://github.com/OpenFluxTeam/OpenFlux) | установка, каналы клиентов (direct, комнаты cups.online и Avito, документы Яндекса и Mail.ru, Телемост, Яндекс Доска), ядро узла закреплённой версии (sha256), обновляется с панелью |
 | Прокси для браузера | [klzgrad/forwardproxy](https://github.com/klzgrad/forwardproxy) (ветка naive) | установка Caddy с forwardproxy, пользователи, расширение Chrome, обновление сборки панели |
 
 Сервис, установленный не командой панели, панель находит сама и показывает; менять его

@@ -544,7 +544,7 @@ export class GClients {
     let failed = 0;
     // cups.online ограничил частоту на этом проходе: следующие каналы - без комнат (сразу, без
     // минутных повторов на каждый), комнаты добавит повтор через ERROR_RETRY_MS
-    const ofPass = { cupsOff: false };
+    const ofPass = { cupsOff: false, avitoOff: false };
     const prog: SyncProgress = {
       done: 0,
       total: work.length,

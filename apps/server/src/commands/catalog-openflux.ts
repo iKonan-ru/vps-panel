@@ -3,12 +3,13 @@ import { PROLOGUE } from './util.js';
 
 /**
  * OpenFlux: установщик node-install.sh по закреплённому коммиту со сверкой sha256 - тот же, что
- * у агента (ofInstallerURL, ofInstallerSHA256), меняются вместе. Установщик ставит ядро только
- * вместе с каналом, поэтому установка - это первый канал.
+ * у агента (ofInstallerURL, ofInstallerSHA256, ofCoreVersion), меняются вместе. Установщик ставит
+ * ядро только вместе с каналом, поэтому установка - это первый канал. Автообновление ядра
+ * выключено: ядро закреплено установщиком и обновляется вместе с панелью.
  */
 const INSTALLER_URL =
-  'https://raw.githubusercontent.com/p1neappleXpress/OpenFlux/3459bfdf73be83b1128865de8737deb009ce0e7e/deploy/node-install.sh';
-const INSTALLER_SHA256 = '8a75cfd72a642a464d8d2e871172bcf37b1241d0d37e9323568557d3033f250f';
+  'https://raw.githubusercontent.com/p1neappleXpress/OpenFlux/e9c29ad968606696802ee2921958a6be294c515d/deploy/node-install.sh';
+const INSTALLER_SHA256 = 'f13d05c9876e823a187ce7976d78278f117b725f259dd4f3e250389b538ad0e6';
 const INSTALLED = '/opt/openflux-node/node-install.sh';
 
 /** Скачать установщик в $OF_INST и сверить sha256. */
@@ -37,13 +38,33 @@ const CUPS_ROOMS = `of_cups_rooms() {
 }
 `;
 
+/**
+ * Комнаты Avito Code: как агент (ofAvitoRooms) - анонимный POST /web/1/code/room, 16 комнат (пары
+ * передача и приём), список v2 base64url(JSON); отказ - с теми, что есть, меньше пары - без Avito.
+ */
+const AVITO_ROOMS = `of_avito_rooms() {
+  local ids="" id n=0 i
+  for i in $(seq 1 16); do
+    id=$(curl -fsS --max-time 30 -X POST -A "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:155.0) Gecko/20100101 Firefox/155.0" \
+      -H 'Origin: https://code.avito.ru' https://code.avito.ru/web/1/code/room 2>/dev/null \
+      | grep -oE '"room":\\{"id":"[A-Za-z0-9_-]+"' | grep -oE '[A-Za-z0-9_-]+"$' | tr -d '"' || true)
+    [ -n "$id" ] || break
+    ids="\${ids:+$ids,}\\"$id\\""; n=$((n + 1))
+    sleep 0.3
+  done
+  [ "$n" -ge 2 ] || return 0
+  [ $((n % 2)) = 0 ] || ids="\${ids%,*}"
+  printf '{"v":2,"rooms":[%s]}' "$ids" | base64 -w0 | tr '+/' '-_' | tr -d '='
+}
+`;
+
 export const openfluxCmd: CommandDef = {
   id: 'openflux',
   title: 'OpenFlux',
   group: 'install',
   service: 'OpenFlux',
   description:
-    'Нода для приложения OpenFlux с первым каналом. Канал работает напрямую по TCP и, если заданы, через комнаты cups.online и документы Яндекса и Mail.ru.',
+    'Нода для приложения OpenFlux с первым каналом. Канал работает напрямую по TCP и, если заданы, через комнаты cups.online и Avito, документы Яндекса и Mail.ru, Телемост и Яндекс Доску.',
   params: [
     {
       name: 'OF_CHANNEL',
@@ -57,6 +78,17 @@ export const openfluxCmd: CommandDef = {
     {
       name: 'OF_CUPS',
       label: 'Комнаты cups.online',
+      type: 'select',
+      default: 'yes',
+      hint: 'запасной транспорт',
+      options: [
+        { value: 'yes', label: 'создать' },
+        { value: 'no', label: 'не создавать' },
+      ],
+    },
+    {
+      name: 'OF_AVITO',
+      label: 'Комнаты Avito',
       type: 'select',
       default: 'yes',
       hint: 'запасной транспорт',
@@ -82,27 +114,38 @@ export const openfluxCmd: CommandDef = {
       hint: 'необязательно; ссылка https://cloud.mail.ru/public/... с правом редактирования',
     },
     {
-      name: 'OF_AUTOUPDATE',
-      label: 'Автообновление ядра',
-      type: 'select',
-      default: 'yes',
-      hint: 'раз в 6\u00a0ч, с откатом при сбое',
-      options: [
-        { value: 'yes', label: 'включено' },
-        { value: 'no', label: 'выключено' },
-      ],
+      name: 'OF_TELEMOST',
+      label: 'Телемост',
+      type: 'string',
+      secret: true,
+      pattern: '^https://telemost\\.yandex\\.ru/j/[0-9]{6,32}$',
+      hint: 'необязательно; ссылка на конференцию https://telemost.yandex.ru/j/...',
+    },
+    {
+      name: 'OF_BOARDS',
+      label: 'Яндекс Доска',
+      type: 'string',
+      secret: true,
+      pattern: '^https://boards\\.yandex\\.ru/whiteboard/\\?hash=[0-9a-f]{32}$',
+      hint: 'необязательно; доска, открытая гостям: https://boards.yandex.ru/whiteboard/?hash=...',
     },
   ],
   timeoutSec: 10 * 60,
   script: `${PROLOGUE}
 need curl || apt_install curl
 say "Скачиваю установщик OpenFlux (закреплённый коммит, проверка sha256)"
-${FETCH_INSTALLER}${CUPS_ROOMS}
+${FETCH_INSTALLER}${CUPS_ROOMS}${AVITO_ROOMS}
 OF_ROOMS=""
 if [ "$OF_CUPS" = "yes" ]; then
   say "Создаю комнаты cups.online"
   OF_ROOMS=$(of_cups_rooms)
   [ -n "$OF_ROOMS" ] && echo "комнаты созданы" || echo "cups.online не отдал комнат - канал будет без них"
+fi
+OF_AVITO_ROOMS=""
+if [ "$OF_AVITO" = "yes" ]; then
+  say "Создаю комнаты Avito"
+  OF_AVITO_ROOMS=$(of_avito_rooms)
+  [ -n "$OF_AVITO_ROOMS" ] && echo "комнаты созданы" || echo "Avito не отдал комнат - канал будет без них"
 fi
 say "План установщика"
 plan=$(printf 'channel=%s\\n' "$OF_CHANNEL" | sh "$OF_INST" plan) || { echo "$plan" >&2; exit 3; }
@@ -117,8 +160,11 @@ cfg=$(mktemp /root/openflux-cfg-XXXXXX)
   printf 'port=%s\\n' "$port"
   [ -n "$OF_VYANDEX" ] && printf 'vyandex=%s\\n' "$OF_VYANDEX"
   [ -n "$OF_MAILRU" ] && printf 'mailru=%s\\n' "$OF_MAILRU"
+  [ -n "$OF_TELEMOST" ] && printf 'telemost=%s\\n' "$OF_TELEMOST"
+  [ -n "$OF_BOARDS" ] && printf 'boards=%s\\n' "$OF_BOARDS"
+  [ -n "$OF_AVITO_ROOMS" ] && printf 'avito=%s\\n' "$OF_AVITO_ROOMS"
   [ -n "$OF_ROOMS" ] && printf 'cupsonline=%s\\n' "$OF_ROOMS"
-  printf 'autoupdate=%s\\n' "$OF_AUTOUPDATE"
+  printf 'autoupdate=no\\n'
 } > "$cfg"
 # установщик читает конфигурацию из файла 0600 и сам его удаляет
 apt_wait
@@ -135,18 +181,20 @@ case "$(uname -m)" in x86_64|aarch64|armv7l) echo "OK|архитектура $(u
   plan: (a) => [
     'Скачать установщик OpenFlux и проверить контрольную сумму',
     a.OF_CUPS === 'yes' ? 'Создать комнаты cups.online' : 'Без комнат cups.online',
+    a.OF_AVITO === 'yes' ? 'Создать комнаты Avito' : 'Без комнат Avito',
     `Установить OpenFlux и канал ${a.OF_CHANNEL} на свободном порту`,
     [
       'Транспорты: прямое подключение',
       a.OF_CUPS === 'yes' ? 'cups.online' : '',
+      a.OF_AVITO === 'yes' ? 'Avito' : '',
       a.OF_VYANDEX ? 'Яндекс Документ' : '',
       a.OF_MAILRU ? 'документ Mail.ru' : '',
+      a.OF_TELEMOST ? 'Телемост' : '',
+      a.OF_BOARDS ? 'Яндекс Доска' : '',
     ]
       .filter(Boolean)
       .join(', '),
-    a.OF_AUTOUPDATE === 'yes'
-      ? 'Автообновление ядра раз в 6\u00a0ч с откатом при сбое'
-      : 'Без автообновления ядра',
+    'Ядро закреплённой версии, обновляется вместе с панелью',
   ],
   after:
     'Ссылка на канал\u00a0\u2014 на вкладке OpenFlux сервера. Каналы клиентам создаются при синхронизации.',

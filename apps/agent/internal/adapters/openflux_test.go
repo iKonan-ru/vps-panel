@@ -1,6 +1,13 @@
 package adapters
 
 import (
+	"context"
+	"encoding/base64"
+	"encoding/json"
+	"errors"
+	"fmt"
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"strings"
@@ -67,30 +74,6 @@ func TestOfValidation(t *testing.T) {
 	}
 }
 
-func TestOfNodeConfRoundTrip(t *testing.T) {
-	dir := t.TempDir()
-	old := ofEtcDir
-	ofEtcDir = dir
-	defer func() { ofEtcDir = old }()
-	_ = os.MkdirAll(filepath.Join(dir, "vp-x"), 0o755)
-	conf := ofNodeConf("vp-x", 43419, "", "https://cloud.mail.ru/public/Ab/Cd", "eyJhIjoxfQ")
-	_ = os.WriteFile(filepath.Join(dir, "vp-x", "node.conf"), []byte(conf), 0o600)
-	c, err := readOfConf("vp-x")
-	if err != nil {
-		t.Fatal(err)
-	}
-	// контекст - документ Mail.ru (Яндекса нет), транспорты по приоритету, direct с портом
-	if c.context != "https://cloud.mail.ru/public/Ab/Cd" || len(c.transports) != 3 {
-		t.Fatalf("%+v", c)
-	}
-	if c.transports[0].Type != "mailru" || c.transports[1].Type != "cupsonline" || c.transports[1].url != "eyJhIjoxfQ" || c.transports[2].listen != "0.0.0.0:43419" {
-		t.Fatalf("%+v", c.transports)
-	}
-	if !strings.Contains(conf, "EncryptionKeyFile = "+dir+"/vp-x/encryption-key") {
-		t.Fatal("путь ключа")
-	}
-}
-
 func TestOfCheckTransports(t *testing.T) {
 	if ofCheckTransports(OfRequest{Cupsonline: "keep"}, false) == nil {
 		t.Fatal("keep при создании канала")
@@ -100,6 +83,87 @@ func TestOfCheckTransports(t *testing.T) {
 	}
 	if ofCheckTransports(OfRequest{Mailru: "https://cloud.mail.ru/public/Ab/Cd\nRole = client"}, true) == nil {
 		t.Fatal("перевод строки в ссылке")
+	}
+	ok := OfRequest{
+		Telemost: "https://telemost.yandex.ru/j/12345678901234",
+		Boards:   "https://boards.yandex.ru/whiteboard/?hash=0123456789abcdef0123456789abcdef",
+		Avito:    "auto",
+	}
+	if err := ofCheckTransports(ok, false); err != nil {
+		t.Fatal(err)
+	}
+	for _, bad := range []OfRequest{
+		{Telemost: "https://telemost.yandex.ru/j/abc"},
+		{Boards: "https://boards.yandex.ru/whiteboard/?hash=xyz"},
+		{Avito: "keep"},
+		{Avito: "ab\ncd=1234"},
+	} {
+		if ofCheckTransports(bad, false) == nil {
+			t.Fatalf("принято: %+v", bad)
+		}
+	}
+}
+
+func TestOfTransportLines(t *testing.T) {
+	got := ofTransportLines(OfRequest{Mailru: "m", Telemost: "t", Avito: "a", Cupsonline: "c"})
+	want := []string{"mailru=m", "telemost=t", "avito=a", "cupsonline=c"}
+	if strings.Join(got, ",") != strings.Join(want, ",") {
+		t.Fatalf("%v", got)
+	}
+	if ofTransportLines(OfRequest{}) != nil {
+		t.Fatal("пустой канал")
+	}
+}
+
+func TestOfAutoRooms(t *testing.T) {
+	made := func(context.Context, func(string)) (string, error) { return "new", nil }
+	failed := func(context.Context, func(string)) (string, error) { return "", errors.New("429") }
+	log := func(string) {}
+	if ofAutoRooms(context.Background(), log, "keep", "cur", made, "x") != "cur" ||
+		ofAutoRooms(context.Background(), log, "auto", "cur", made, "x") != "new" ||
+		ofAutoRooms(context.Background(), log, "auto", "cur", failed, "x") != "" ||
+		ofAutoRooms(context.Background(), log, "", "cur", made, "x") != "" {
+		t.Fatal("keep, auto, сбой, пусто")
+	}
+}
+
+// Комнаты Avito: POST на /web/1/code/room, список v2 (чётное число), ограничение частоты -
+// понятная ошибка, если не создалось ни одной пары.
+func TestOfAvitoRooms(t *testing.T) {
+	n := 0
+	limit := 3
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost || r.URL.Path != "/web/1/code/room" || r.Header.Get("Origin") == "" {
+			w.WriteHeader(400)
+			return
+		}
+		n++
+		if n > limit {
+			w.WriteHeader(429)
+			return
+		}
+		fmt.Fprintf(w, `{"room":{"id":"room-%d"}}`, n)
+	}))
+	defer srv.Close()
+	old := ofAvitoRoomsBase
+	ofAvitoRoomsBase = srv.URL
+	defer func() { ofAvitoRoomsBase = old }()
+
+	packed, err := ofAvitoRooms(context.Background(), func(string) {})
+	if err != nil {
+		t.Fatal(err)
+	}
+	raw, _ := base64.RawURLEncoding.DecodeString(packed)
+	var v struct {
+		V     int      `json:"v"`
+		Rooms []string `json:"rooms"`
+	}
+	if json.Unmarshal(raw, &v) != nil || v.V != 2 || strings.Join(v.Rooms, ",") != "room-1,room-2" {
+		t.Fatalf("%s", raw)
+	}
+	n, limit = 0, 0
+	if _, err := ofAvitoRooms(context.Background(), func(string) {}); err == nil || !strings.Contains(err.Error(), "ограничение частоты") {
+		t.Fatalf("%v", err)
 	}
 }
 
